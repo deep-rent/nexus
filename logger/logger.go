@@ -1,17 +1,22 @@
 package logger
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 )
 
+// Format defines the log output format, such as JSON or plain text.
 type Format uint8
 
 const (
-	FormatJSON Format = iota
-	FormatText
+	// FormatJSON specifies that log entries should be formatted as JSON.
+	// This is the default format.
+	FormatText Format = iota
+	// FormatText specifies that log entries should be formatted as plain text.
+	FormatJSON
 )
 
 func New(opts ...Option) *slog.Logger {
@@ -28,10 +33,10 @@ func New(opts ...Option) *slog.Logger {
 
 	var handler slog.Handler
 	switch cfg.Format {
-	case FormatText:
-		handler = slog.NewTextHandler(w, o)
-	default:
+	case FormatJSON:
 		handler = slog.NewJSONHandler(w, o)
+	default:
+		handler = slog.NewTextHandler(w, o)
 	}
 
 	return slog.New(handler)
@@ -52,15 +57,19 @@ func defaultConfig() config {
 
 type Option func(*config)
 
-func WithLevel(level string) Option {
+func WithLevel(name string) Option {
 	return func(cfg *config) {
-		cfg.Level = ParseLevel(level)
+		if level, err := ParseLevel(name); err == nil {
+			cfg.Level = level
+		}
 	}
 }
 
-func WithFormat(format string) Option {
+func WithFormat(name string) Option {
 	return func(cfg *config) {
-		cfg.Format = ParseFormat(format)
+		if format, err := ParseFormat(name); err == nil {
+			cfg.Format = format
+		}
 	}
 }
 
@@ -78,17 +87,23 @@ func WithWriter(w io.Writer) Option {
 	}
 }
 
-func ParseLevel(s string) slog.Level {
-	var level slog.Level
-	_ = level.UnmarshalText([]byte(s))
-	return level
+func ParseLevel(s string) (level slog.Level, err error) {
+	if e := level.UnmarshalText([]byte(s)); e != nil {
+		err = fmt.Errorf("invalid log level %q", s)
+	}
+	return
 }
 
-func ParseFormat(s string) Format {
+func ParseFormat(s string) (format Format, err error) {
 	switch strings.ToLower(s) {
+	case "json":
+		format = FormatJSON
+		return
 	case "text":
-		return FormatText
+		format = FormatText
+		return
 	default:
-		return FormatJSON
+		err = fmt.Errorf("invalid log format %q", s)
+		return
 	}
 }
