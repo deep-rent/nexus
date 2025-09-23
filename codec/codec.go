@@ -38,6 +38,11 @@ func (yamlCodec) Encode(v any) ([]byte, error) {
 	return yaml.Marshal(v)
 }
 
+var (
+	JSON Codec = jsonCodec{}
+	YAML Codec = yamlCodec{}
+)
+
 func Infer(path string) Codec {
 	return jsonCodec{}
 }
