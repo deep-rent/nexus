@@ -1,4 +1,4 @@
 {
-  "name": "nexus",
+  "name": "@deep-rent/nexus",
   "packageManager": "yarn@4.9.2"
 }
