@@ -2,35 +2,67 @@ package scheduler
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
 type Job = func(ctx context.Context) time.Duration
 
-func Fixed(d time.Duration, job func(ctx context.Context)) Job {
+func Every(job Job) Job {
 	return func(ctx context.Context) time.Duration {
-		job(ctx)
+		start := time.Now()
+		delay := job(ctx)
+		elapsed := time.Since(start)
+		return max(0, delay-elapsed)
+	}
+}
+
+type Task func(ctx context.Context)
+
+func After(d time.Duration, task Task) Job {
+	return func(ctx context.Context) time.Duration {
+		task(ctx)
 		return d
 	}
 }
 
 type Scheduler interface {
-	Dispatch(ctx context.Context, job Job)
+	Dispatch(job Job)
+	Shutdown()
 }
 
-type scheduler struct{}
-
-func (s *scheduler) Dispatch(ctx context.Context, job Job) {
-	d := job(ctx)
-
-	for {
-		timer := time.NewTimer(d)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-			d = job(ctx)
-		}
+func New(ctx context.Context) Scheduler {
+	ctx, cancel := context.WithCancel(ctx)
+	return &scheduler{
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
+
+type scheduler struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+}
+
+func (s *scheduler) Dispatch(job Job) {
+	s.wg.Go(func() {
+		timer := time.NewTimer(0)
+		for {
+			select {
+			case <-s.ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+				timer.Reset(job(s.ctx))
+			}
+		}
+	})
+}
+
+func (s *scheduler) Shutdown() {
+	s.cancel()
+	s.wg.Wait()
+}
+
+var _ Scheduler = (*scheduler)(nil)
