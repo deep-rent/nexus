@@ -1,9 +1,23 @@
 *          text=auto
 .husky/*   text eol=lf
 *.bat      text eol=crlf
-*.sh       text eol=lf
+*.cjs      text
+*.go       text
+*.gz       binary
+*.js       text
 *.lock     binary
+*.md       text diff=markdown
+*.mjs      text
+*.sh       text eol=lf
+*.svg      text
+*.yaml     text
+*.yml      text
+go.mod     text
+go.sum     text
+LICENSE    text
+Makefile   text
 
+# Yarn
 /.yarn/**            linguist-vendored
 /.yarn/releases/*    binary
 /.yarn/plugins/**/*  binary
