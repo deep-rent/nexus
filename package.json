@@ -2,6 +2,9 @@
   "name": "@deep-rent/nexus",
   "type": "module",
   "packageManager": "yarn@4.10.3",
+  "scripts": {
+    "postinstall": "husky"
+  },
   "devDependencies": {
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
