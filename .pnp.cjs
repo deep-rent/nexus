@@ -29,6 +29,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["@commitlint/cli", "npm:19.8.1"],\
+          ["@commitlint/config-conventional", "npm:19.8.1"],\
           ["@deep-rent/nexus", "workspace:."],\
           ["husky", "npm:9.1.7"]\
         ],\
@@ -68,6 +69,17 @@ const RAW_RUNTIME_STATE =
           ["@commitlint/types", "npm:19.8.1"],\
           ["tinyexec", "npm:1.0.1"],\
           ["yargs", "npm:17.7.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@commitlint/config-conventional", [\
+      ["npm:19.8.1", {\
+        "packageLocation": "../../../.yarn/berry/cache/@commitlint-config-conventional-npm-19.8.1-c2302bed1b-10c0.zip/node_modules/@commitlint/config-conventional/",\
+        "packageDependencies": [\
+          ["@commitlint/config-conventional", "npm:19.8.1"],\
+          ["@commitlint/types", "npm:19.8.1"],\
+          ["conventional-changelog-conventionalcommits", "npm:7.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -259,6 +271,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["@commitlint/cli", "npm:19.8.1"],\
+          ["@commitlint/config-conventional", "npm:19.8.1"],\
           ["@deep-rent/nexus", "workspace:."],\
           ["husky", "npm:9.1.7"]\
         ],\
@@ -412,6 +425,16 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["compare-func", "npm:2.0.0"],\
           ["conventional-changelog-angular", "npm:7.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["conventional-changelog-conventionalcommits", [\
+      ["npm:7.0.2", {\
+        "packageLocation": "../../../.yarn/berry/cache/conventional-changelog-conventionalcommits-npm-7.0.2-f878f86efe-10c0.zip/node_modules/conventional-changelog-conventionalcommits/",\
+        "packageDependencies": [\
+          ["compare-func", "npm:2.0.0"],\
+          ["conventional-changelog-conventionalcommits", "npm:7.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\
