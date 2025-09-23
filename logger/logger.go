@@ -17,19 +17,24 @@ const (
 )
 
 func New(opts ...Option) *slog.Logger {
-	cfg := defaultConfig()
+	c := config{
+		Level:     slog.LevelInfo,
+		AddSource: false,
+		Format:    FormatText,
+		Writer:    os.Stdout,
+	}
 	for _, opt := range opts {
-		opt(&cfg)
+		opt(&c)
 	}
 
-	w := cfg.Writer
+	w := c.Writer
 	o := &slog.HandlerOptions{
-		Level:     cfg.Level,
-		AddSource: cfg.AddSource,
+		Level:     c.Level,
+		AddSource: c.AddSource,
 	}
 
 	var handler slog.Handler
-	switch cfg.Format {
+	switch c.Format {
 	case FormatJSON:
 		handler = slog.NewJSONHandler(w, o)
 	default:
@@ -46,43 +51,34 @@ type config struct {
 	Writer    io.Writer
 }
 
-func defaultConfig() config {
-	return config{
-		Level:     slog.LevelInfo,
-		AddSource: false,
-		Format:    FormatText,
-		Writer:    os.Stdout,
-	}
-}
-
 type Option func(*config)
 
 func WithLevel(name string) Option {
-	return func(cfg *config) {
+	return func(c *config) {
 		if level, err := ParseLevel(name); err == nil {
-			cfg.Level = level
+			c.Level = level
 		}
 	}
 }
 
 func WithFormat(name string) Option {
-	return func(cfg *config) {
+	return func(c *config) {
 		if format, err := ParseFormat(name); err == nil {
-			cfg.Format = format
+			c.Format = format
 		}
 	}
 }
 
 func WithAddSource(add bool) Option {
-	return func(cfg *config) {
-		cfg.AddSource = add
+	return func(c *config) {
+		c.AddSource = add
 	}
 }
 
 func WithWriter(w io.Writer) Option {
-	return func(cfg *config) {
+	return func(c *config) {
 		if w != nil {
-			cfg.Writer = w
+			c.Writer = w
 		}
 	}
 }
