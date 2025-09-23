@@ -12,10 +12,7 @@ import (
 type Format uint8
 
 const (
-	// FormatJSON specifies that log entries should be formatted as JSON.
-	// This is the default format.
 	FormatText Format = iota
-	// FormatText specifies that log entries should be formatted as plain text.
 	FormatJSON
 )
 
@@ -51,7 +48,10 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		Writer: os.Stdout,
+		Level:     slog.LevelInfo,
+		AddSource: false,
+		Format:    FormatText,
+		Writer:    os.Stdout,
 	}
 }
 
