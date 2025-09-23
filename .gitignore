@@ -1,0 +1,26 @@
+# Miscellaneous
+.DS_Store
+*.log
+*.sw[mnpcod]
+*.tmp
+*.tmp.*
+*~
+$RECYCLE.BIN/
+Thumbs.db
+UserInterfaceState.xcuserstate
+
+# Visual Studio Code
+.vscode/*
+!.vscode/*.code-snippets
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+.history/
+*.vsix
+
+# Go
+.go-version
+/coverage.out
+/dist/
+/vendor/
