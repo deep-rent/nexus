@@ -14,7 +14,7 @@ type constant struct {
 }
 
 func Constant(delay time.Duration) Strategy {
-	return &constant{delay: delay}
+	return &constant{delay: max(0, delay)}
 }
 
 func (b *constant) Next() time.Duration     { return b.delay }
