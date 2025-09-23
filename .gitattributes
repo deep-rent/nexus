@@ -5,6 +5,7 @@
 *.go       text
 *.gz       binary
 *.js       text
+*.json     text
 *.lock     binary
 *.md       text diff=markdown
 *.mjs      text
