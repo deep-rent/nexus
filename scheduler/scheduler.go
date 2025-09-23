@@ -8,12 +8,10 @@ import (
 
 // Job defines a function that returns the duration to wait before its next run.
 // It accepts a context for cancellation and timeout control.
-// This is the core type used by the scheduler's loop.
 type Job = func(ctx context.Context) time.Duration
 
-// Task represents a unit of work to be executed.
-// It accepts a context for cancellation and timeout control.
-// Helpers like After and Every adapt a Task into a Job.
+// Task represents a unit of work to be executed in a scheduler's execution
+// loop. Helpers like After and Every adapt a Task into a Job.
 type Task func(ctx context.Context)
 
 // After creates a drifting Job that runs after a fixed delay.
@@ -42,7 +40,8 @@ func Every(d time.Duration, task Task) Job {
 type Scheduler interface {
 	// Dispatch executes the given job in a separate goroutine. The job will
 	// run immediately and then repeat according to the duration it returns
-	// until the scheduler is shut down.
+	// until the scheduler is shut down. Multiple jobs can be dispatched
+	// concurrently without blocking each other.
 	Dispatch(job Job)
 	// Shutdown gracefully stops the scheduler and all its pending jobs.
 	Shutdown()
@@ -86,3 +85,19 @@ func (s *scheduler) Shutdown() {
 }
 
 var _ Scheduler = (*scheduler)(nil)
+
+// Once creates a synchronous Scheduler that runs a single job and exactly once,
+// in a blocking manner. This is useful for testing or scenarios where
+// scheduling is not required.
+func Once(ctx context.Context) Scheduler {
+	return &once{ctx: ctx}
+}
+
+type once struct {
+	ctx context.Context
+}
+
+func (o *once) Dispatch(job Job) { job(o.ctx) }
+func (o *once) Shutdown()        {}
+
+var _ Scheduler = (*once)(nil)
