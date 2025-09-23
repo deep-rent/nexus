@@ -2,6 +2,7 @@ package codec
 
 import (
 	"github.com/goccy/go-json"
+	"github.com/goccy/go-yaml"
 )
 
 type Decoder interface {
@@ -25,6 +26,16 @@ func (jsonCodec) Decode(data []byte, v any) error {
 
 func (jsonCodec) Encode(v any) ([]byte, error) {
 	return json.Marshal(v)
+}
+
+type yamlCodec struct{}
+
+func (yamlCodec) Decode(data []byte, v any) error {
+	return yaml.Unmarshal(data, v)
+}
+
+func (yamlCodec) Encode(v any) ([]byte, error) {
+	return yaml.Marshal(v)
 }
 
 func Infer(path string) Codec {
