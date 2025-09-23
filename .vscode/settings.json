@@ -1,6 +1,35 @@
 {
   "editor.formatOnSave": true,
   "editor.formatOnType": true,
+  "files.encoding": "utf8",
+  "[go]": {
+    "editor.rulers": [
+      80
+    ],
+    "editor.defaultFormatter": "golang.go",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "always"
+    }
+  },
+  "[markdown]": {
+    "editor.rulers": [
+      100
+    ]
+  },
+  "go.lintTool": "golangci-lint",
+  "go.lintFlags": [
+    "--path-mode=abs",
+    "--fast-only"
+  ],
+  "go.formatTool": "custom",
+  "go.alternateTools": {
+    "customFormatter": "golangci-lint"
+  },
+  "go.formatFlags": [
+    "fmt",
+    "--stdin"
+  ],
+  "go.toolsManagement.autoUpdate": true,
   "search.exclude": {
     "**/.husky/_": true,
     "**/.pnp.*": true,
