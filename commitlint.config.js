@@ -1,5 +1,7 @@
 /** @type {import('@commitlint/types/lib').UserConfig} */
 export default {
   extends: ["@commitlint/config-conventional"],
-  rules: {},
+  rules: {
+    "scope-enum": [2, "always", []],
+  },
 };
