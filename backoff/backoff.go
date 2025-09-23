@@ -59,8 +59,7 @@ func Linear(opts ...Option) Strategy {
 func (l *linear) Next() time.Duration {
 	n := l.attempts.Add(1) - 1
 	d := l.minDelay + (time.Duration(n) * l.step)
-
-	return min(l.maxDelay, d)
+	return max(l.minDelay, min(d, l.maxDelay))
 }
 
 func (l *linear) Done()                   { l.attempts.Store(0) }
