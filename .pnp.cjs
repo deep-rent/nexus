@@ -11,7 +11,7 @@ const RAW_RUNTIME_STATE =
   ],\
   "dependencyTreeRoots": [\
     {\
-      "name": "nexus",\
+      "name": "@deep-rent/nexus",\
       "reference": "workspace:."\
     }\
   ],\
@@ -19,7 +19,7 @@ const RAW_RUNTIME_STATE =
   "ignorePatternData": "(^(?:\\\\.yarn\\\\/sdks(?:\\\\/(?!\\\\.{1,2}(?:\\\\/|$))(?:(?:(?!(?:^|\\\\/)\\\\.{1,2}(?:\\\\/|$)).)*?)|$))$)",\
   "pnpZipBackend": "libzip",\
   "fallbackExclusionList": [\
-    ["nexus", ["workspace:."]]\
+    ["@deep-rent/nexus", ["workspace:."]]\
   ],\
   "fallbackPool": [\
   ],\
@@ -28,18 +28,29 @@ const RAW_RUNTIME_STATE =
       [null, {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["nexus", "workspace:."]\
+          ["@deep-rent/nexus", "workspace:."],\
+          ["husky", "npm:9.1.7"]\
         ],\
         "linkType": "SOFT"\
       }]\
     ]],\
-    ["nexus", [\
+    ["@deep-rent/nexus", [\
       ["workspace:.", {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["nexus", "workspace:."]\
+          ["@deep-rent/nexus", "workspace:."],\
+          ["husky", "npm:9.1.7"]\
         ],\
         "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["husky", [\
+      ["npm:9.1.7", {\
+        "packageLocation": "../../../.yarn/berry/cache/husky-npm-9.1.7-5b02eaabc4-10c0.zip/node_modules/husky/",\
+        "packageDependencies": [\
+          ["husky", "npm:9.1.7"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]]\
   ]\

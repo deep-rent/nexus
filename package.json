@@ -1,4 +1,7 @@
 {
   "name": "@deep-rent/nexus",
-  "packageManager": "yarn@4.9.2"
+  "packageManager": "yarn@4.9.2",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
 }
