@@ -1,6 +1,10 @@
 package codec
 
 import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/goccy/go-json"
 	"github.com/goccy/go-yaml"
 )
@@ -43,6 +47,14 @@ var (
 	YAML Codec = yamlCodec{}
 )
 
-func Infer(path string) Codec {
-	return jsonCodec{}
+func Infer(path string) (Codec, error) {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".json":
+		return JSON, nil
+	case ".yml", ".yaml":
+		return YAML, nil
+	default:
+		return nil, fmt.Errorf("unsupported file extension: %s", ext)
+	}
 }
