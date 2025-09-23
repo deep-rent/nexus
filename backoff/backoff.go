@@ -11,7 +11,7 @@ const (
 	DefaultMinDelay     = 1 * time.Second
 	DefaultMaxDelay     = 1 * time.Minute
 	DefaultGrowthFactor = 2.0
-	DefaultJitter       = 0.5
+	DefaultJitterAmount = 0.3
 )
 
 type Strategy interface {
@@ -73,10 +73,43 @@ func (e *exponential) MaxDelay() time.Duration { return e.maxDelay }
 
 var _ Strategy = (*exponential)(nil)
 
+type Rand interface {
+	Float64() float64
+}
+
+var _ Rand = (*rand.Rand)(nil)
+
+type jitter struct {
+	strategy Strategy
+	amount   float64
+	r        Rand
+}
+
+func (j *jitter) Next() time.Duration {
+	f := j.r.Float64()
+	return time.Duration(float64(j.strategy.Next()) * (1 - f*j.amount))
+}
+
+func (j *jitter) Done() {
+	j.strategy.Done()
+}
+
+func (j *jitter) MinDelay() time.Duration {
+	return time.Duration(float64(j.strategy.MinDelay()) * (1 - j.amount))
+}
+
+func (j *jitter) MaxDelay() time.Duration {
+	return j.strategy.MaxDelay()
+}
+
+var _ Strategy = (*jitter)(nil)
+
 type config struct {
 	minDelay     time.Duration
 	maxDelay     time.Duration
 	growthFactor float64
+	jitterAmount float64
+	r            Rand
 }
 
 type Option func(*config)
@@ -99,11 +132,26 @@ func WithGrowthFactor(f float64) Option {
 	}
 }
 
-func Exponential(opts ...Option) Strategy {
+func WithJitterAmount(p float64) Option {
+	return func(c *config) {
+		c.jitterAmount = min(1, p)
+	}
+}
+
+func WithRand(r Rand) Option {
+	return func(c *config) {
+		if r != nil {
+			c.r = r
+		}
+	}
+}
+
+func New(opts ...Option) Strategy {
 	c := config{
 		minDelay:     DefaultMinDelay,
 		maxDelay:     DefaultMaxDelay,
 		growthFactor: DefaultGrowthFactor,
+		jitterAmount: DefaultJitterAmount,
 	}
 	for _, opt := range opts {
 		opt(&c)
@@ -122,86 +170,26 @@ func Exponential(opts ...Option) Strategy {
 		}
 	}
 
-	return &exponential{
+	s := &exponential{
 		minDelay:     c.minDelay,
 		maxDelay:     c.maxDelay,
 		growthFactor: c.growthFactor,
 	}
-}
 
-type Rand interface {
-	Float64() float64
-}
-
-var _ Rand = (*rand.Rand)(nil)
-
-type jitter struct {
-	strategy Strategy
-	p        float64
-	r        Rand
-}
-
-func (j *jitter) Next() time.Duration {
-	f := j.r.Float64()
-	return time.Duration(float64(j.strategy.Next()) * (1 - j.p*f))
-}
-
-func (j *jitter) Done() {
-	j.strategy.Done()
-}
-
-func (j *jitter) MinDelay() time.Duration {
-	return time.Duration(float64(j.strategy.MinDelay()) * (1 - j.p))
-}
-
-func (j *jitter) MaxDelay() time.Duration {
-	return j.strategy.MaxDelay()
-}
-
-var _ Strategy = (*jitter)(nil)
-
-func Jitter(s Strategy, opts ...JitterOption) Strategy {
-	c := jitterConfig{
-		p: DefaultJitter,
-		r: nil,
-	}
-	for _, opt := range opts {
-		opt(&c)
-	}
-	p := c.p
-	if p == 0 {
+	if c.jitterAmount <= 0 {
 		return s
 	}
+
 	r := c.r
 	if r == nil {
 		s1 := uint64(time.Now().UnixNano())
 		s2 := s1 + 1
 		r = rand.New(rand.NewPCG(s1, s2))
 	}
+
 	return &jitter{
 		strategy: s,
-		p:        p,
+		amount:   c.jitterAmount,
 		r:        r,
-	}
-}
-
-type jitterConfig struct {
-	p float64
-	r Rand
-}
-
-type JitterOption func(*jitterConfig)
-
-func WithPercentage(p float64) JitterOption {
-	return func(c *jitterConfig) {
-		c.p = max(0, min(1, p))
-	}
-}
-
-func WithRand(r Rand) JitterOption {
-	return func(c *jitterConfig) {
-		if r != nil {
-			c.r = r
-		}
 	}
 }
