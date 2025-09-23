@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+const (
+	DefaultLevel     = slog.LevelInfo
+	DefaultAddSource = false
+	DefaultFormat    = FormatText
+)
+
 // Format defines the log output format, such as JSON or plain text.
 type Format uint8
 
@@ -18,9 +24,9 @@ const (
 
 func New(opts ...Option) *slog.Logger {
 	c := config{
-		Level:     slog.LevelInfo,
-		AddSource: false,
-		Format:    FormatText,
+		Level:     DefaultLevel,
+		AddSource: DefaultAddSource,
+		Format:    DefaultFormat,
 		Writer:    os.Stdout,
 	}
 	for _, opt := range opts {
