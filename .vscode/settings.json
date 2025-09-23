@@ -1,0 +1,12 @@
+{
+  "search.exclude": {
+    "**/.husky/_": true,
+    "**/.pnp.*": true,
+    "**/.yarn": true,
+    "**/*.lock": true,
+    "**/coverage.out": true,
+    "**/dist": true,
+    "**/go.sum": true,
+    "**/vendor": true
+  }
+}
