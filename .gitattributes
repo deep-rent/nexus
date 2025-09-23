@@ -2,6 +2,7 @@
 .husky/*   text eol=lf
 *.bat      text eol=crlf
 *.sh       text eol=lf
+*.lock     binary
 
 /.yarn/**            linguist-vendored
 /.yarn/releases/*    binary
