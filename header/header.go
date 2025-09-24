@@ -2,6 +2,9 @@ package header
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
@@ -65,6 +68,59 @@ const (
 	Warning                       = "Warning"
 	WWWAuthenticate               = "WWW-Authenticate"
 )
+
+func ParseRetryAfter(
+	h http.Header,
+	clock func() time.Time,
+) (time.Duration, bool) {
+	s := h.Get(RetryAfter)
+	if s == "" {
+		return 0, false
+	}
+	if d, err := strconv.ParseUint(s, 10, 64); err == nil {
+		return time.Duration(d) * time.Second, true
+	}
+	if t, err := http.ParseTime(s); err == nil {
+		return max(0, t.Sub(clock())), true
+	}
+	return 0, false
+}
+
+func ParseExpires(
+	h http.Header,
+	clock func() time.Time,
+) (time.Duration, bool) {
+	s := h.Get(Expires)
+	if s == "" {
+		return 0, false
+	}
+	t, err := http.ParseTime(s)
+	if err != nil {
+		return 0, false
+	}
+	return t.Sub(clock()), true
+}
+
+func ParseCacheControlMaxAge(
+	h http.Header,
+) (time.Duration, bool) {
+	s := h.Get(CacheControl)
+	if s == "" {
+		return 0, false
+	}
+	for directive := range strings.SplitSeq(s, ",") {
+		k, v, found := strings.Cut(strings.TrimSpace(directive), "=")
+		if !found {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(k), "max-age") {
+			if d, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64); err == nil {
+				return time.Duration(d) * time.Second, true
+			}
+		}
+	}
+	return 0, false
+}
 
 type headerTransport struct {
 	wrapped http.RoundTripper
