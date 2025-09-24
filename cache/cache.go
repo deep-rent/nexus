@@ -12,6 +12,7 @@ import (
 
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/header"
+	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/scheduler"
 )
 
@@ -41,8 +42,6 @@ func NewController[T any](
 		headers:     make(map[string]string),
 		minInterval: DefaultMinInterval,
 		maxInterval: DefaultMaxInterval,
-		clock:       time.Now,
-		backoff:     backoff.New(),
 		log:         slog.Default(),
 	}
 	for _, opt := range opts {
@@ -55,7 +54,7 @@ func NewController[T any](
 			Timeout:   c.timeout / 3,
 			KeepAlive: 0,
 		}
-		t := &http.Transport{
+		var t http.RoundTripper = &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           d.DialContext,
 			TLSClientConfig:       c.tls,
@@ -64,9 +63,10 @@ func NewController[T any](
 			ExpectContinueTimeout: 1 * time.Second,
 			DisableKeepAlives:     true,
 		}
+		t = retry.NewTransport(header.NewTransport(t, c.headers), c.retry...)
 		client = &http.Client{
 			Timeout:   c.timeout,
-			Transport: header.NewTransport(t, c.headers),
+			Transport: t,
 		}
 	}
 
@@ -76,8 +76,6 @@ func NewController[T any](
 		client:      client,
 		minInterval: c.minInterval,
 		maxInterval: c.maxInterval,
-		clock:       c.clock,
-		backoff:     c.backoff,
 		log:         c.log,
 		readyChan:   make(chan struct{}),
 	}
@@ -120,8 +118,9 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	c.log.Debug("Fetching resource")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
+		// This is a non-retriable error in request creation.
 		c.log.Error("Failed to create request", "error", err)
-		return c.backoff.Next()
+		return c.minInterval // Wait a long time before trying to create it again.
 	}
 
 	c.mu.RLock()
@@ -136,17 +135,16 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	res, err := c.client.Do(req)
 	if err != nil {
 		if err != context.Canceled {
-			c.log.Warn("HTTP request failed", "error", err)
+			c.log.Error("HTTP request failed after retries", "error", err)
 		}
-		return c.backoff.Next()
+		return c.minInterval
 	}
 	defer res.Body.Close()
 
-	switch res.StatusCode {
+	switch sc := res.StatusCode; sc {
 
 	case http.StatusNotModified:
-		c.log.Debug("ETag match, resource unchanged", "etag", c.etag)
-		c.backoff.Done()
+		c.log.Debug("Resource unchanged", "etag", c.etag)
 		c.ready()
 		return c.delay(res.Header)
 
@@ -154,15 +152,13 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
 			c.log.Error("Failed to read response body", "error", err)
-			return c.backoff.Next()
+			return c.minInterval
 		}
-
 		resource, err := c.mapper(body)
 		if err != nil {
 			c.log.Error("Couldn't parse response body", "error", err)
-			return c.backoff.Next()
+			return c.minInterval
 		}
-
 		c.mu.Lock()
 		c.resource = resource
 		c.etag = res.Header.Get(header.ETag)
@@ -170,14 +166,13 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		c.ok = true
 		c.mu.Unlock()
 
-		c.backoff.Done()
 		c.log.Info("Resource updated successfully")
 		c.ready()
 		return c.delay(res.Header)
 
 	default:
-		c.log.Warn("Unsuccessful HTTP status", "code", res.StatusCode)
-		return c.backoff.Next()
+		c.log.Error("Received a non-retriable HTTP status", "code", sc)
+		return c.minInterval
 	}
 }
 
@@ -201,8 +196,7 @@ type config struct {
 	tls         *tls.Config
 	minInterval time.Duration
 	maxInterval time.Duration
-	clock       func() time.Time
-	backoff     backoff.Strategy
+	retry       []retry.Option
 	log         *slog.Logger
 }
 
@@ -252,19 +246,9 @@ func WithMaxInterval(d time.Duration) Option {
 	}
 }
 
-func WithClock(now func() time.Time) Option {
+func WithRetryOptions(opts ...retry.Option) Option {
 	return func(c *config) {
-		if now != nil {
-			c.clock = now
-		}
-	}
-}
-
-func WithBackoff(s backoff.Strategy) Option {
-	return func(c *config) {
-		if s != nil {
-			c.backoff = s
-		}
+		c.retry = append(c.retry, opts...)
 	}
 }
 
