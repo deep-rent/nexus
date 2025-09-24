@@ -42,7 +42,7 @@ func NewController[T any](
 		headers:     make(map[string]string),
 		minInterval: DefaultMinInterval,
 		maxInterval: DefaultMaxInterval,
-		log:         slog.Default(),
+		logger:      slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(&c)
@@ -76,7 +76,7 @@ func NewController[T any](
 		client:      client,
 		minInterval: c.minInterval,
 		maxInterval: c.maxInterval,
-		log:         c.log,
+		logger:      c.logger,
 		readyChan:   make(chan struct{}),
 	}
 }
@@ -89,7 +89,7 @@ type controller[T any] struct {
 	maxInterval time.Duration
 	clock       func() time.Time
 	backoff     backoff.Strategy
-	log         *slog.Logger
+	logger      *slog.Logger
 	readyOnce   sync.Once
 	readyChan   chan struct{}
 
@@ -115,11 +115,11 @@ func (c *controller[T]) ready() {
 }
 
 func (c *controller[T]) Run(ctx context.Context) time.Duration {
-	c.log.Debug("Fetching resource")
+	c.logger.Debug("Fetching resource")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
 		// This is a non-retriable error in request creation.
-		c.log.Error("Failed to create request", "error", err)
+		c.logger.Error("Failed to create request", "error", err)
 		return c.minInterval // Wait a long time before trying to create it again.
 	}
 
@@ -135,28 +135,28 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	res, err := c.client.Do(req)
 	if err != nil {
 		if err != context.Canceled {
-			c.log.Error("HTTP request failed after retries", "error", err)
+			c.logger.Error("HTTP request failed after retries", "error", err)
 		}
 		return c.minInterval
 	}
 	defer res.Body.Close()
 
-	switch sc := res.StatusCode; sc {
+	switch code := res.StatusCode; code {
 
 	case http.StatusNotModified:
-		c.log.Debug("Resource unchanged", "etag", c.etag)
+		c.logger.Debug("Resource unchanged", "etag", c.etag)
 		c.ready()
 		return c.delay(res.Header)
 
 	case http.StatusOK:
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			c.log.Error("Failed to read response body", "error", err)
+			c.logger.Error("Failed to read response body", "error", err)
 			return c.minInterval
 		}
 		resource, err := c.mapper(body)
 		if err != nil {
-			c.log.Error("Couldn't parse response body", "error", err)
+			c.logger.Error("Couldn't parse response body", "error", err)
 			return c.minInterval
 		}
 		c.mu.Lock()
@@ -166,12 +166,12 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		c.ok = true
 		c.mu.Unlock()
 
-		c.log.Info("Resource updated successfully")
+		c.logger.Info("Resource updated successfully")
 		c.ready()
 		return c.delay(res.Header)
 
 	default:
-		c.log.Error("Received a non-retriable HTTP status", "code", sc)
+		c.logger.Error("Received a non-retriable HTTP status code", "status", code)
 		return c.minInterval
 	}
 }
@@ -197,7 +197,7 @@ type config struct {
 	minInterval time.Duration
 	maxInterval time.Duration
 	retry       []retry.Option
-	log         *slog.Logger
+	logger      *slog.Logger
 }
 
 type Option func(*config)
@@ -255,7 +255,7 @@ func WithRetryOptions(opts ...retry.Option) Option {
 func WithLogger(log *slog.Logger) Option {
 	return func(c *config) {
 		if log != nil {
-			c.log = log
+			c.logger = log
 		}
 	}
 }
