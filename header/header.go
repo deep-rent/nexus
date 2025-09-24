@@ -8,87 +8,6 @@ import (
 	"time"
 )
 
-const (
-	Accept                        = "Accept"
-	AcceptCharset                 = "Accept-Charset"
-	AcceptDatetime                = "Accept-Datetime"
-	AcceptEncoding                = "Accept-Encoding"
-	AcceptLanguage                = "Accept-Language"
-	AcceptPatch                   = "Accept-Patch"
-	AcceptRanges                  = "Accept-Ranges"
-	AccessControlAllowCredentials = "Access-Control-Allow-Credentials"
-	AccessControlAllowHeaders     = "Access-Control-Allow-Headers"
-	AccessControlAllowMethods     = "Access-Control-Allow-Methods"
-	AccessControlAllowOrigin      = "Access-Control-Allow-Origin"
-	AccessControlExposeHeaders    = "Access-Control-Expose-Headers"
-	AccessControlMaxAge           = "Access-Control-Max-Age"
-	AccessControlRequestHeaders   = "Access-Control-Request-Headers"
-	AccessControlRequestMethod    = "Access-Control-Request-Method"
-	Allow                         = "Allow"
-	Authorization                 = "Authorization"
-	CacheControl                  = "Cache-Control"
-	ContentDisposition            = "Content-Disposition"
-	ContentEncoding               = "Content-Encoding"
-	ContentLanguage               = "Content-Language"
-	ContentLength                 = "Content-Length"
-	ContentLocation               = "Content-Location"
-	ContentMD5                    = "Content-MD5"
-	ContentRange                  = "Content-Range"
-	ContentType                   = "Content-Type"
-	Cookie                        = "Cookie"
-	DoNotTrack                    = "DNT"
-	ETag                          = "ETag"
-	Expires                       = "Expires"
-	IfMatch                       = "If-Match"
-	IfModifiedSince               = "If-Modified-Since"
-	IfNoneMatch                   = "If-None-Match"
-	IfRange                       = "If-Range"
-	IfUnmodifiedSince             = "If-Unmodified-Since"
-	LastModified                  = "Last-Modified"
-	Link                          = "Link"
-	Location                      = "Location"
-	MaxForwards                   = "Max-Forwards"
-	Origin                        = "Origin"
-	P3P                           = "P3P"
-	Pragma                        = "Pragma"
-	ProxyAuthenticate             = "Proxy-Authenticate"
-	ProxyAuthorization            = "Proxy-Authorization"
-	Range                         = "Range"
-	Referer                       = "Referer"
-	Refresh                       = "Refresh"
-	RetryAfter                    = "Retry-After"
-	Server                        = "Server"
-	SetCookie                     = "Set-Cookie"
-	StrictTransportSecurity       = "Strict-Transport-Security"
-	TE                            = "TE"
-	TransferEncoding              = "Transfer-Encoding"
-	Upgrade                       = "Upgrade"
-	UserAgent                     = "User-Agent"
-	Vary                          = "Vary"
-	Via                           = "Via"
-	Warning                       = "Warning"
-	WWWAuthenticate               = "WWW-Authenticate"
-)
-
-const (
-	XFrameOptions          = "X-Frame-Options"
-	XXSSProtection         = "X-XSS-Protection"
-	ContentSecurityPolicy  = "Content-Security-Policy"
-	XContentSecurityPolicy = "X-Content-Security-Policy"
-	XWebKitCSP             = "X-WebKit-CSP"
-	XContentTypeOptions    = "X-Content-Type-Options"
-	XPoweredBy             = "X-Powered-By"
-	XUACompatible          = "X-UA-Compatible"
-	XForwardedProto        = "X-Forwarded-Proto"
-	XHTTPMethodOverride    = "X-HTTP-Method-Override"
-	XForwardedFor          = "X-Forwarded-For"
-	XRealIP                = "X-Real-IP"
-	XCSRFToken             = "X-CSRF-Token"
-	XRatelimitLimit        = "X-Ratelimit-Limit"
-	XRatelimitRemaining    = "X-Ratelimit-Remaining"
-	XRatelimitReset        = "X-Ratelimit-Reset"
-)
-
 type Directive struct {
 	Key   string
 	Value string
@@ -165,12 +84,12 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	return 0
 }
 
-type headerTransport struct {
+type transport struct {
 	wrapped http.RoundTripper
 	headers map[string]string
 }
 
-func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	for k, v := range t.headers {
 		clone.Header.Set(k, v)
@@ -178,7 +97,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.wrapped.RoundTrip(clone)
 }
 
-var _ http.RoundTripper = (*headerTransport)(nil)
+var _ http.RoundTripper = (*transport)(nil)
 
 // NewTransport wraps a base transport and sets a static set of headers on
 // each outgoing request. If the base transport is nil, it falls back to
@@ -200,8 +119,91 @@ func NewTransport(
 	for k, v := range headers {
 		h[http.CanonicalHeaderKey(k)] = v
 	}
-	return &headerTransport{
+	return &transport{
 		wrapped: t,
 		headers: h,
 	}
 }
+
+// Standard HTTP headers
+const (
+	Accept                        = "Accept"
+	AcceptCharset                 = "Accept-Charset"
+	AcceptDatetime                = "Accept-Datetime"
+	AcceptEncoding                = "Accept-Encoding"
+	AcceptLanguage                = "Accept-Language"
+	AcceptPatch                   = "Accept-Patch"
+	AcceptRanges                  = "Accept-Ranges"
+	AccessControlAllowCredentials = "Access-Control-Allow-Credentials"
+	AccessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	AccessControlAllowMethods     = "Access-Control-Allow-Methods"
+	AccessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	AccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+	AccessControlMaxAge           = "Access-Control-Max-Age"
+	AccessControlRequestHeaders   = "Access-Control-Request-Headers"
+	AccessControlRequestMethod    = "Access-Control-Request-Method"
+	Allow                         = "Allow"
+	Authorization                 = "Authorization"
+	CacheControl                  = "Cache-Control"
+	ContentDisposition            = "Content-Disposition"
+	ContentEncoding               = "Content-Encoding"
+	ContentLanguage               = "Content-Language"
+	ContentLength                 = "Content-Length"
+	ContentLocation               = "Content-Location"
+	ContentMD5                    = "Content-MD5"
+	ContentRange                  = "Content-Range"
+	ContentType                   = "Content-Type"
+	Cookie                        = "Cookie"
+	DoNotTrack                    = "DNT"
+	ETag                          = "ETag"
+	Expires                       = "Expires"
+	IfMatch                       = "If-Match"
+	IfModifiedSince               = "If-Modified-Since"
+	IfNoneMatch                   = "If-None-Match"
+	IfRange                       = "If-Range"
+	IfUnmodifiedSince             = "If-Unmodified-Since"
+	LastModified                  = "Last-Modified"
+	Link                          = "Link"
+	Location                      = "Location"
+	MaxForwards                   = "Max-Forwards"
+	Origin                        = "Origin"
+	P3P                           = "P3P"
+	Pragma                        = "Pragma"
+	ProxyAuthenticate             = "Proxy-Authenticate"
+	ProxyAuthorization            = "Proxy-Authorization"
+	Range                         = "Range"
+	Referer                       = "Referer"
+	Refresh                       = "Refresh"
+	RetryAfter                    = "Retry-After"
+	Server                        = "Server"
+	SetCookie                     = "Set-Cookie"
+	StrictTransportSecurity       = "Strict-Transport-Security"
+	TE                            = "TE"
+	TransferEncoding              = "Transfer-Encoding"
+	Upgrade                       = "Upgrade"
+	UserAgent                     = "User-Agent"
+	Vary                          = "Vary"
+	Via                           = "Via"
+	Warning                       = "Warning"
+	WWWAuthenticate               = "WWW-Authenticate"
+)
+
+// Non-standard HTTP headers
+const (
+	XFrameOptions          = "X-Frame-Options"
+	XXSSProtection         = "X-XSS-Protection"
+	ContentSecurityPolicy  = "Content-Security-Policy"
+	XContentSecurityPolicy = "X-Content-Security-Policy"
+	XWebKitCSP             = "X-WebKit-CSP"
+	XContentTypeOptions    = "X-Content-Type-Options"
+	XPoweredBy             = "X-Powered-By"
+	XUACompatible          = "X-UA-Compatible"
+	XForwardedProto        = "X-Forwarded-Proto"
+	XHTTPMethodOverride    = "X-HTTP-Method-Override"
+	XForwardedFor          = "X-Forwarded-For"
+	XRealIP                = "X-Real-IP"
+	XCSRFToken             = "X-CSRF-Token"
+	XRatelimitLimit        = "X-Ratelimit-Limit"
+	XRatelimitRemaining    = "X-Ratelimit-Remaining"
+	XRatelimitReset        = "X-Ratelimit-Reset"
+)
