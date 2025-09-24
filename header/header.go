@@ -121,7 +121,7 @@ func Directives(value string) iter.Seq[Directive] {
 
 func Throttle(h http.Header, now func() time.Time) time.Duration {
 	if v := h.Get(RetryAfter); v != "" {
-		if d, err := strconv.ParseUint(v, 10, 64); err == nil {
+		if d, err := strconv.ParseInt(v, 10, 64); err == nil && d > 0 {
 			return time.Duration(d) * time.Second
 		}
 		if t, err := http.ParseTime(v); err == nil {
@@ -130,18 +130,27 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 			}
 		}
 	}
+	if h.Get(XRatelimitRemaining) == "0" {
+		if v := h.Get(XRatelimitReset); v != "" {
+			if t, err := strconv.ParseInt(v, 10, 64); err == nil && t > 0 {
+				if d := time.Unix(t, 0).Sub(now()); d > 0 {
+					return d
+				}
+			}
+		}
+	}
 	return 0
 }
 
 func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	if v := h.Get(CacheControl); v != "" {
-		for d := range Directives(v) {
-			switch d.Key {
+		for kv := range Directives(v) {
+			switch kv.Key {
 			case "no-cache", "no-store":
 				return 0
 			case "max-age":
-				if s, err := strconv.ParseUint(d.Value, 10, 64); err == nil {
-					return time.Duration(s) * time.Second
+				if d, err := strconv.ParseInt(kv.Value, 10, 64); err == nil {
+					return time.Duration(d) * time.Second
 				}
 			}
 		}
