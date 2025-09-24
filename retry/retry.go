@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/deep-rent/nexus/backoff"
@@ -33,6 +32,12 @@ func (a Attempt) Transient() bool {
 }
 
 type Policy func(a Attempt) bool
+
+func DefaultPolicy() Policy {
+	return func(a Attempt) bool {
+		return a.Idempotent() && (a.Temporary() || a.Transient())
+	}
+}
 
 type config struct {
 	policy      Policy
@@ -172,12 +177,6 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-func DefaultPolicy() Policy {
-	return func(a Attempt) bool {
-		return a.Idempotent() && (a.Temporary() || a.Transient())
-	}
-}
-
 func MaxAttempts(n int, next Policy) Policy {
 	if n <= 0 {
 		return next
@@ -188,14 +187,18 @@ func MaxAttempts(n int, next Policy) Policy {
 }
 
 func Idempotent(method string) bool {
-	return slices.Contains([]string{
+	switch method {
+	case
 		http.MethodGet,
 		http.MethodHead,
 		http.MethodOptions,
 		http.MethodTrace,
 		http.MethodPut,
-		http.MethodDelete,
-	}, method)
+		http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func Transient(err error) bool {
