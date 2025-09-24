@@ -18,7 +18,7 @@ import (
 
 const (
 	DefaultTimeout     = 30 * time.Second
-	DefaultMinInterval = 30 * time.Minute
+	DefaultMinInterval = 15 * time.Minute
 	DefaultMaxInterval = 24 * time.Hour
 )
 
