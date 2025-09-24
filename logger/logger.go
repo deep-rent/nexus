@@ -22,6 +22,15 @@ const (
 	FormatJSON
 )
 
+func (f Format) String() string {
+	switch f {
+	case FormatJSON:
+		return "json"
+	default:
+		return "text"
+	}
+}
+
 func New(opts ...Option) *slog.Logger {
 	c := config{
 		Level:     DefaultLevel,
