@@ -25,29 +25,18 @@ const (
 
 type Mapper[T any] func(body []byte) (T, error)
 
-type Controller[T any] struct {
-	url      string
-	mapper   Mapper[T]
-	client   *http.Client
-	lifetime *Lifetime
-	backoff  backoff.Strategy
-	log      *slog.Logger
+type Controller[T any] interface {
+	scheduler.Tick
 
-	mu           sync.RWMutex
-	resource     T
-	populated    bool
-	eTag         string
-	lastModified string
-
-	readyOnce sync.Once
-	readyChan chan struct{}
+	Get() (T, bool)
+	Ready() <-chan struct{}
 }
 
 func NewController[T any](
 	url string,
 	mapper Mapper[T],
 	opts ...Option,
-) *Controller[T] {
+) Controller[T] {
 	c := config{
 		client:      nil,
 		timeout:     DefaultTimeout,
@@ -83,7 +72,7 @@ func NewController[T any](
 		}
 	}
 
-	return &Controller[T]{
+	return &controller[T]{
 		url:    url,
 		mapper: mapper,
 		client: client,
@@ -98,25 +87,38 @@ func NewController[T any](
 	}
 }
 
-func (c *Controller[T]) URL() string {
-	return c.url
+type controller[T any] struct {
+	url       string
+	mapper    Mapper[T]
+	client    *http.Client
+	lifetime  *Lifetime
+	backoff   backoff.Strategy
+	log       *slog.Logger
+	readyOnce sync.Once
+	readyChan chan struct{}
+
+	mu           sync.RWMutex
+	resource     T
+	ok           bool
+	eTag         string
+	lastModified string
 }
 
-func (c *Controller[T]) Get() (T, bool) {
+func (c *controller[T]) Get() (T, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.resource, c.populated
+	return c.resource, c.ok
 }
 
-func (c *Controller[T]) Ready() <-chan struct{} {
+func (c *controller[T]) Ready() <-chan struct{} {
 	return c.readyChan
 }
 
-func (c *Controller[T]) ready() {
+func (c *controller[T]) ready() {
 	c.readyOnce.Do(func() { close(c.readyChan) })
 }
 
-func (c *Controller[T]) Run(ctx context.Context) time.Duration {
+func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	c.log.Debug("Fetching resource")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
@@ -166,7 +168,7 @@ func (c *Controller[T]) Run(ctx context.Context) time.Duration {
 		c.resource = resource
 		c.eTag = res.Header.Get("ETag")
 		c.lastModified = res.Header.Get("Last-Modified")
-		c.populated = true
+		c.ok = true
 		c.mu.Unlock()
 
 		c.backoff.Done()
@@ -199,9 +201,8 @@ func (l *Lifetime) Get(header http.Header) time.Duration {
 		}
 	}
 	if v := header.Get("Expires"); v != "" {
-		if t, err := http.ParseTime(v); err == nil {
-			ttl := l.clock().Sub(t)
-			if ttl > 0 {
+		if exp, err := http.ParseTime(v); err == nil {
+			if ttl := exp.Sub(l.clock()); ttl > 0 {
 				return min(max(ttl, l.minInterval), l.maxInterval)
 			}
 		}
@@ -209,7 +210,7 @@ func (l *Lifetime) Get(header http.Header) time.Duration {
 	return l.minInterval
 }
 
-var _ scheduler.Tick = (*Controller[any])(nil)
+var _ Controller[any] = (*controller[any])(nil)
 
 type config struct {
 	client      *http.Client
