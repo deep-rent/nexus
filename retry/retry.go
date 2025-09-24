@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/backoff"
+	"github.com/deep-rent/nexus/header"
 )
 
 type Attempt struct {
@@ -37,6 +38,7 @@ type config struct {
 	policy      Policy
 	maxAttempts int
 	backoff     backoff.Strategy
+	clock       func() time.Time
 }
 
 type Option func(*config)
@@ -63,10 +65,19 @@ func WithBackoff(strategy backoff.Strategy) Option {
 	}
 }
 
+func WithClock(now func() time.Time) Option {
+	return func(c *config) {
+		if now != nil {
+			c.clock = now
+		}
+	}
+}
+
 type transport struct {
 	next    http.RoundTripper
 	policy  Policy
 	backoff backoff.Strategy
+	clock   func() time.Time
 }
 
 func NewTransport(
@@ -85,6 +96,7 @@ func NewTransport(
 		next:    next,
 		policy:  MaxAttempts(c.maxAttempts, c.policy),
 		backoff: c.backoff,
+		clock:   c.clock,
 	}
 }
 
@@ -135,6 +147,15 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		delay := t.backoff.Next()
+
+		if res != nil {
+			if d, ok := header.ParseRetryAfter(res.Header, t.clock); ok {
+				// Use the longer of the two delays to respect both the server
+				// and our own backoff policy.
+				delay = max(delay, d)
+			}
+		}
+
 		if delay <= 0 {
 			continue // Retry without delay
 		}
