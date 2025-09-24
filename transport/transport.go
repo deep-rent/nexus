@@ -47,14 +47,6 @@ func WithHeaders(
 	}
 }
 
-// WithHeader is a shorthand for WithHeaders with a single header.
-func WithHeader(
-	t http.RoundTripper,
-	k, v string,
-) http.RoundTripper {
-	return WithHeaders(t, map[string]string{k: v})
-}
-
 type loggerTransport struct {
 	wrapped http.RoundTripper
 	log     *slog.Logger
@@ -75,6 +67,8 @@ func (t *loggerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.log.Info("Received response", "status", sc, "duration", duration)
 	return res, nil
 }
+
+var _ http.RoundTripper = (*loggerTransport)(nil)
 
 // WithLogger wraps a base transport and logs the start and end of each
 // request, along with its duration. If the base transport is nil, it falls
