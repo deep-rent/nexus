@@ -1,7 +1,10 @@
 package retry
 
 import (
+	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"time"
@@ -9,11 +12,31 @@ import (
 	"github.com/deep-rent/nexus/backoff"
 )
 
-type Policy func(resp *http.Response, err error, attempt int) bool
+type Attempt struct {
+	Req *http.Request
+	Res *http.Response
+	Err error
+	Idx int
+}
+
+func (a Attempt) Idempotent() bool {
+	return Idempotent(a.Req.Method)
+}
+
+func (a Attempt) Temporary() bool {
+	return a.Res != nil && Temporary(a.Res.StatusCode)
+}
+
+func (a Attempt) Transient() bool {
+	return Transient(a.Err)
+}
+
+type Policy func(a Attempt) bool
 
 type config struct {
-	policy  Policy
-	backoff backoff.Strategy
+	policy      Policy
+	maxAttempts int
+	backoff     backoff.Strategy
 }
 
 type Option func(*config)
@@ -26,6 +49,12 @@ func WithPolicy(policy Policy) Option {
 	}
 }
 
+func WithMaxAttempts(n int) Option {
+	return func(c *config) {
+		c.maxAttempts = n
+	}
+}
+
 func WithBackoff(strategy backoff.Strategy) Option {
 	return func(c *config) {
 		if strategy != nil {
@@ -34,7 +63,7 @@ func WithBackoff(strategy backoff.Strategy) Option {
 	}
 }
 
-type roundTripper struct {
+type transport struct {
 	next    http.RoundTripper
 	policy  Policy
 	backoff backoff.Strategy
@@ -45,29 +74,28 @@ func NewTransport(
 	opts ...Option,
 ) http.RoundTripper {
 	c := config{
-		policy: func(_ *http.Response, err error, _ int) bool {
-			return err != nil
-		},
-		backoff: backoff.Constant(0),
+		policy:      DefaultPolicy(),
+		maxAttempts: 0,
+		backoff:     backoff.Constant(0),
 	}
 	for _, opt := range opts {
 		opt(&c)
 	}
-	return &roundTripper{
+	return &transport{
 		next:    next,
-		policy:  c.policy,
+		policy:  MaxAttempts(c.maxAttempts, c.policy),
 		backoff: c.backoff,
 	}
 }
 
-func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var (
 		res     *http.Response
 		err     error
 		attempt int
 	)
 
-	defer rt.backoff.Done()
+	defer t.backoff.Done()
 
 	rewindable := req.GetBody != nil
 	for {
@@ -83,7 +111,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 
-		res, err = rt.next.RoundTrip(req)
+		res, err = t.next.RoundTrip(req)
 
 		// If the request body is not rewindable, we cannot retry
 		if req.Body != nil && !rewindable {
@@ -91,7 +119,12 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		// Ask the policy if we should retry
-		if !rt.policy(res, err, attempt) {
+		if !t.policy(Attempt{
+			Req: req,
+			Res: res,
+			Err: err,
+			Idx: attempt,
+		}) {
 			break // Success or policy decided to stop
 		}
 
@@ -101,7 +134,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 			res.Body.Close()
 		}
 
-		delay := rt.backoff.Next()
+		delay := t.backoff.Next()
 		if delay <= 0 {
 			continue // Retry without delay
 		}
@@ -118,31 +151,60 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-func Limit(limit int, next Policy) Policy {
-	return func(res *http.Response, err error, attempt int) bool {
-		return attempt < limit && next(res, err, attempt)
+func DefaultPolicy() Policy {
+	return func(a Attempt) bool {
+		return a.Idempotent() && (a.Temporary() || a.Transient())
 	}
 }
 
-func OnStatus(codes ...int) Policy {
-	return func(res *http.Response, err error, _ int) bool {
-		return res != nil && err == nil && slices.Contains(codes, res.StatusCode)
+func MaxAttempts(n int, next Policy) Policy {
+	if n <= 0 {
+		return next
+	}
+	return func(a Attempt) bool {
+		return a.Idx < n && next(a)
 	}
 }
 
-func OnErrors(filter func(error) bool) Policy {
-	return func(_ *http.Response, err error, _ int) bool {
-		return err != nil && filter(err)
-	}
+func Idempotent(method string) bool {
+	return slices.Contains([]string{
+		http.MethodGet,
+		http.MethodHead,
+		http.MethodOptions,
+		http.MethodTrace,
+		http.MethodPut,
+		http.MethodDelete,
+	}, method)
 }
 
-func Any(policies ...Policy) Policy {
-	return func(res *http.Response, err error, attempt int) bool {
-		for _, policy := range policies {
-			if policy(res, err, attempt) {
-				return true
-			}
+func Transient(err error) bool {
+	if err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	var e net.Error
+	if errors.As(err, &e) {
+		if e.Timeout() {
+			return true
 		}
+	}
+
+	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF)
+}
+
+func Temporary(code int) bool {
+	switch code {
+	case
+		http.StatusRequestTimeout,      // 408
+		http.StatusTooManyRequests,     // 429
+		http.StatusInternalServerError, // 500
+		http.StatusBadGateway,          // 502
+		http.StatusServiceUnavailable,  // 503
+		http.StatusGatewayTimeout:      // 504
+		return true
+	default:
 		return false
 	}
 }
