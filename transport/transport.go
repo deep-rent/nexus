@@ -1,9 +1,13 @@
 package transport
 
-import "net/http"
+import (
+	"log/slog"
+	"net/http"
+	"time"
+)
 
 type headerTransport struct {
-	base    http.RoundTripper
+	wrapped http.RoundTripper
 	headers map[string]string
 }
 
@@ -12,7 +16,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for k, v := range t.headers {
 		clone.Header.Set(k, v)
 	}
-	return t.base.RoundTrip(clone)
+	return t.wrapped.RoundTrip(clone)
 }
 
 var _ http.RoundTripper = (*headerTransport)(nil)
@@ -24,21 +28,60 @@ var _ http.RoundTripper = (*headerTransport)(nil)
 // the provided map. The resulting transport clones the request before
 // delegating to the base transport, so the original request is not changed.
 func WithHeaders(
-	base http.RoundTripper,
+	t http.RoundTripper,
 	headers map[string]string,
 ) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
+	if t == nil {
+		t = http.DefaultTransport
 	}
 	if len(headers) == 0 {
-		return base
+		return t
 	}
 	h := make(map[string]string, len(headers))
 	for k, v := range headers {
 		h[http.CanonicalHeaderKey(k)] = v
 	}
 	return &headerTransport{
-		base:    base,
+		wrapped: t,
 		headers: h,
+	}
+}
+
+type loggerTransport struct {
+	wrapped http.RoundTripper
+	log     *slog.Logger
+}
+
+func (t *loggerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	start := time.Now()
+	t.log.Info("Sending request", "method", req.Method, "url", req.URL)
+
+	res, err := t.wrapped.RoundTrip(req)
+	duration := time.Since(start)
+	if err != nil {
+		t.log.Error("Request failed", "error", err, "duration", duration)
+		return nil, err
+	}
+
+	sc := res.StatusCode
+	t.log.Info("Received response", "status", sc, "duration", duration)
+	return res, nil
+}
+
+// WithLogger wraps a base transport and logs the start and end of each
+// request, along with its duration. If the base transport is nil, it falls
+// back to http.DefaultTransport. If the provided logger is nil, it falls back
+// to slog.Default(). The resulting transport does not modify the request or
+// response in any way.
+func WithLogger(t http.RoundTripper, log *slog.Logger) http.RoundTripper {
+	if t == nil {
+		t = http.DefaultTransport
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	return &loggerTransport{
+		wrapped: t,
+		log:     log,
 	}
 }
