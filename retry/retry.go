@@ -13,18 +13,18 @@ import (
 )
 
 type Attempt struct {
-	Req *http.Request
-	Res *http.Response
-	Err error
-	Idx int
+	Request  *http.Request
+	Response *http.Response
+	Err      error
+	Number   int
 }
 
 func (a Attempt) Idempotent() bool {
-	return Idempotent(a.Req.Method)
+	return Idempotent(a.Request.Method)
 }
 
 func (a Attempt) Temporary() bool {
-	return a.Res != nil && Temporary(a.Res.StatusCode)
+	return a.Response != nil && Temporary(a.Response.StatusCode)
 }
 
 func (a Attempt) Transient() bool {
@@ -39,11 +39,20 @@ func DefaultPolicy() Policy {
 	}
 }
 
+func LimitAttempts(n int, next Policy) Policy {
+	if n <= 0 {
+		return next
+	}
+	return func(a Attempt) bool {
+		return a.Number < n && next(a)
+	}
+}
+
 type config struct {
-	policy      Policy
-	maxAttempts int
-	backoff     backoff.Strategy
-	clock       func() time.Time
+	policy  Policy
+	limit   int
+	backoff backoff.Strategy
+	clock   func() time.Time
 }
 
 type Option func(*config)
@@ -56,9 +65,9 @@ func WithPolicy(policy Policy) Option {
 	}
 }
 
-func WithMaxAttempts(n int) Option {
+func WithAttemptLimit(n int) Option {
 	return func(c *config) {
-		c.maxAttempts = n
+		c.limit = n
 	}
 }
 
@@ -90,16 +99,16 @@ func NewTransport(
 	opts ...Option,
 ) http.RoundTripper {
 	c := config{
-		policy:      DefaultPolicy(),
-		maxAttempts: 0,
-		backoff:     backoff.Constant(0),
+		policy:  DefaultPolicy(),
+		limit:   0,
+		backoff: backoff.Constant(0),
 	}
 	for _, opt := range opts {
 		opt(&c)
 	}
 	return &transport{
 		next:    next,
-		policy:  MaxAttempts(c.maxAttempts, c.policy),
+		policy:  LimitAttempts(c.limit, c.policy),
 		backoff: c.backoff,
 		clock:   c.clock,
 	}
@@ -137,10 +146,10 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		// Ask the policy if we should retry
 		if !t.policy(Attempt{
-			Req: req,
-			Res: res,
-			Err: err,
-			Idx: attempt,
+			Request:  req,
+			Response: res,
+			Err:      err,
+			Number:   attempt,
 		}) {
 			break // Success or policy decided to stop
 		}
@@ -175,15 +184,6 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return res, err
-}
-
-func MaxAttempts(n int, next Policy) Policy {
-	if n <= 0 {
-		return next
-	}
-	return func(a Attempt) bool {
-		return a.Idx < n && next(a)
-	}
 }
 
 func Idempotent(method string) bool {
