@@ -149,9 +149,9 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		delay := t.backoff.Next()
 
 		if res != nil {
-			if d, ok := header.ParseRetryAfter(res.Header, t.clock); ok {
+			if d := header.Throttle(res.Header, t.clock); d > 0 {
 				// Use the longer of the two delays to respect both the server
-				// and our own backoff policy.
+				// and our own backoff policy
 				delay = max(delay, d)
 			}
 		}

@@ -1,6 +1,7 @@
 package header
 
 import (
+	"iter"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,57 +70,71 @@ const (
 	WWWAuthenticate               = "WWW-Authenticate"
 )
 
-func ParseRetryAfter(
-	h http.Header,
-	clock func() time.Time,
-) (time.Duration, bool) {
-	s := h.Get(RetryAfter)
-	if s == "" {
-		return 0, false
-	}
-	if d, err := strconv.ParseUint(s, 10, 64); err == nil {
-		return time.Duration(d) * time.Second, true
-	}
-	if t, err := http.ParseTime(s); err == nil {
-		return max(0, t.Sub(clock())), true
-	}
-	return 0, false
+type Directive struct {
+	Key   string
+	Value string
 }
 
-func ParseExpires(
-	h http.Header,
-	clock func() time.Time,
-) (time.Duration, bool) {
-	s := h.Get(Expires)
-	if s == "" {
-		return 0, false
+func (d Directive) String() string {
+	if d.Value == "" {
+		return d.Key
 	}
-	t, err := http.ParseTime(s)
-	if err != nil {
-		return 0, false
-	}
-	return t.Sub(clock()), true
+	return d.Key + "=" + d.Value
 }
 
-func ParseCacheControlMaxAge(
-	h http.Header,
-) (time.Duration, bool) {
-	s := h.Get(CacheControl)
-	if s == "" {
-		return 0, false
-	}
-	for directive := range strings.SplitSeq(s, ",") {
-		k, v, found := strings.Cut(strings.TrimSpace(directive), "=")
-		if !found {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(k), "max-age") {
-			if d, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64); err == nil {
-				return time.Duration(d) * time.Second, true
+func Directives(value string) iter.Seq[Directive] {
+	return func(yield func(Directive) bool) {
+		for part := range strings.SplitSeq(value, ",") {
+			k, v, found := strings.Cut(strings.TrimSpace(part), "=")
+			k = strings.ToLower(strings.TrimSpace(k))
+			if found {
+				v = strings.TrimSpace(v)
+			}
+			if !yield(Directive{
+				Key:   k,
+				Value: v,
+			}) {
+				return
 			}
 		}
 	}
-	return 0, false
+}
+
+func Throttle(h http.Header, now func() time.Time) time.Duration {
+	if v := h.Get(RetryAfter); v != "" {
+		if d, err := strconv.ParseUint(v, 10, 64); err == nil {
+			return time.Duration(d) * time.Second
+		}
+		if t, err := http.ParseTime(v); err == nil {
+			if d := t.Sub(now()); d > 0 {
+				return d
+			}
+		}
+	}
+	return 0
+}
+
+func Lifetime(h http.Header, now func() time.Time) time.Duration {
+	if v := h.Get(CacheControl); v != "" {
+		for d := range Directives(v) {
+			switch d.Key {
+			case "no-cache", "no-store":
+				return 0
+			case "max-age":
+				if s, err := strconv.ParseUint(d.Value, 10, 64); err == nil {
+					return time.Duration(s) * time.Second
+				}
+			}
+		}
+	}
+	if v := h.Get(Expires); v != "" {
+		if t, err := http.ParseTime(v); err == nil {
+			if d := t.Sub(now()); d > 0 {
+				return d
+			}
+		}
+	}
+	return 0
 }
 
 type headerTransport struct {

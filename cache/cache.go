@@ -71,29 +71,29 @@ func NewController[T any](
 	}
 
 	return &controller[T]{
-		url:    url,
-		mapper: mapper,
-		client: client,
-		lifetime: &Lifetime{
-			minInterval: c.minInterval,
-			maxInterval: c.maxInterval,
-			clock:       c.clock,
-		},
-		backoff:   c.backoff,
-		log:       c.log,
-		readyChan: make(chan struct{}),
+		url:         url,
+		mapper:      mapper,
+		client:      client,
+		minInterval: c.minInterval,
+		maxInterval: c.maxInterval,
+		clock:       c.clock,
+		backoff:     c.backoff,
+		log:         c.log,
+		readyChan:   make(chan struct{}),
 	}
 }
 
 type controller[T any] struct {
-	url       string
-	mapper    Mapper[T]
-	client    *http.Client
-	lifetime  *Lifetime
-	backoff   backoff.Strategy
-	log       *slog.Logger
-	readyOnce sync.Once
-	readyChan chan struct{}
+	url         string
+	mapper      Mapper[T]
+	client      *http.Client
+	minInterval time.Duration
+	maxInterval time.Duration
+	clock       func() time.Time
+	backoff     backoff.Strategy
+	log         *slog.Logger
+	readyOnce   sync.Once
+	readyChan   chan struct{}
 
 	mu           sync.RWMutex
 	resource     T
@@ -148,7 +148,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		c.log.Debug("ETag match, resource unchanged", "etag", c.etag)
 		c.backoff.Done()
 		c.ready()
-		return c.lifetime.Get(res.Header)
+		return c.delay(res.Header)
 
 	case http.StatusOK:
 		body, err := io.ReadAll(res.Body)
@@ -173,7 +173,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		c.backoff.Done()
 		c.log.Info("Resource updated successfully")
 		c.ready()
-		return c.lifetime.Get(res.Header)
+		return c.delay(res.Header)
 
 	default:
 		c.log.Warn("Unsuccessful HTTP status", "code", res.StatusCode)
@@ -181,20 +181,15 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	}
 }
 
-type Lifetime struct {
-	minInterval time.Duration
-	maxInterval time.Duration
-	clock       func() time.Time
-}
-
-func (l *Lifetime) Get(h http.Header) time.Duration {
-	if d, ok := header.ParseCacheControlMaxAge(h); ok {
-		return min(max(d, l.minInterval), l.maxInterval)
+func (c *controller[T]) delay(h http.Header) time.Duration {
+	d := header.Lifetime(h, c.clock)
+	if d > c.maxInterval {
+		return c.maxInterval
 	}
-	if d, ok := header.ParseExpires(h, l.clock); ok {
-		return min(max(d, l.minInterval), l.maxInterval)
+	if d < c.minInterval {
+		return c.minInterval
 	}
-	return l.minInterval
+	return d
 }
 
 var _ Controller[any] = (*controller[any])(nil)
@@ -257,10 +252,10 @@ func WithMaxInterval(d time.Duration) Option {
 	}
 }
 
-func WithClock(fn func() time.Time) Option {
+func WithClock(now func() time.Time) Option {
 	return func(c *config) {
-		if fn != nil {
-			c.clock = fn
+		if now != nil {
+			c.clock = now
 		}
 	}
 }
