@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -190,23 +188,11 @@ type Lifetime struct {
 }
 
 func (l *Lifetime) Get(h http.Header) time.Duration {
-	if v := h.Get(header.CacheControl); v != "" {
-		for directive := range strings.SplitSeq(v, ",") {
-			directive = strings.TrimSpace(directive)
-			if s, ok := strings.CutPrefix(directive, "max-age="); ok {
-				if exp, err := strconv.Atoi(s); err == nil && exp > 0 {
-					ttl := time.Duration(exp) * time.Second
-					return min(max(ttl, l.minInterval), l.maxInterval)
-				}
-			}
-		}
+	if d, ok := header.ParseCacheControlMaxAge(h); ok {
+		return min(max(d, l.minInterval), l.maxInterval)
 	}
-	if v := h.Get(header.Expires); v != "" {
-		if exp, err := http.ParseTime(v); err == nil {
-			if ttl := exp.Sub(l.clock()); ttl > 0 {
-				return min(max(ttl, l.minInterval), l.maxInterval)
-			}
-		}
+	if d, ok := header.ParseExpires(h, l.clock); ok {
+		return min(max(d, l.minInterval), l.maxInterval)
 	}
 	return l.minInterval
 }
