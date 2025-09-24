@@ -8,11 +8,17 @@ import (
 	"time"
 )
 
+// Directive represents a single key-value pair from a header value,
+// such as "max-age=3600" in a Cache-Control header.
 type Directive struct {
-	Key   string
+	// Key is the directive's key, always converted to lower-case.
+	Key string
+	// Value is the directive's value. It is empty if the directive is a flag.
 	Value string
 }
 
+// String formats the directive back into its standard string representation.
+// If the value is empty, it returns only the key (e.g., "no-cache").
 func (d Directive) String() string {
 	if d.Value == "" {
 		return d.Key
@@ -20,6 +26,11 @@ func (d Directive) String() string {
 	return d.Key + "=" + d.Value
 }
 
+// Directives parses a comma-separated header value into an iterator of
+// Directive structs.
+//
+// For example, parsing "no-cache, max-age=3600" would yield two Directives:
+// {Key: "no-cache", Value: ""} and {Key: "max-age", Value: "3600"}.
 func Directives(value string) iter.Seq[Directive] {
 	return func(yield func(Directive) bool) {
 		for part := range strings.SplitSeq(value, ",") {
@@ -38,6 +49,10 @@ func Directives(value string) iter.Seq[Directive] {
 	}
 }
 
+// Throttle determines the required delay before the next request based on
+// rate-limiting headers in the response. It accepts a clock function to
+// calculate relative times. If no throttling is indicated, it returns a
+// duration of 0.
 func Throttle(h http.Header, now func() time.Time) time.Duration {
 	if v := h.Get(RetryAfter); v != "" {
 		if d, err := strconv.ParseInt(v, 10, 64); err == nil && d > 0 {
@@ -61,7 +76,12 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 	return 0
 }
 
+// Lifetime determines the cache lifetime of a response based on caching
+// headers. It accepts a clock function to calculate relative times. It returns
+// a duration of 0 if the response is not cacheable or does not carry any
+// caching information.
 func Lifetime(h http.Header, now func() time.Time) time.Duration {
+	// Cache-Control takes precedence over Expires
 	if v := h.Get(CacheControl); v != "" {
 		for kv := range Directives(v) {
 			switch kv.Key {
