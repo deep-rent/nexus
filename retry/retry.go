@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -84,23 +85,24 @@ type transport struct {
 	next    http.RoundTripper
 	policy  Policy
 	backoff backoff.Strategy
+	logger  *slog.Logger
 	clock   func() time.Time
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var (
-		res     *http.Response
-		err     error
-		attempt int
+		res   *http.Response
+		err   error
+		count int
 	)
 
 	defer t.backoff.Done()
 	rewindable := req.GetBody != nil
 	for {
-		attempt++
+		count++
 
 		// If this is a retry and the body is rewindable, obtain a new reader
-		if attempt > 1 && rewindable {
+		if count > 1 && rewindable {
 			var e error
 			req.Body, e = req.GetBody()
 			if e != nil {
@@ -120,7 +122,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			Request:  req,
 			Response: res,
 			Error:    err,
-			Count:    attempt,
+			Count:    count,
 		}) {
 			break // Success or policy decided to stop
 		}
@@ -132,13 +134,29 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		delay := t.backoff.Next()
-
 		if res != nil {
 			if d := header.Throttle(res.Header, t.clock); d != 0 {
 				// Use the longer of the two delays to respect both the server
 				// and our own backoff policy
 				delay = max(delay, d)
 			}
+		}
+
+		if ctx := req.Context(); t.logger.Enabled(ctx, slog.LevelDebug) {
+			attrs := []any{
+				slog.Int("attempt", count),
+				slog.Duration("delay", delay),
+				slog.String("method", req.Method),
+				slog.String("url", req.URL.String()),
+			}
+			if err != nil {
+				attrs = append(attrs, slog.Any("error", err))
+			}
+			if res != nil {
+				attrs = append(attrs, slog.Int("status", res.StatusCode))
+			}
+
+			t.logger.DebugContext(ctx, "Request attempt failed, retrying", attrs...)
 		}
 
 		if delay <= 0 {
@@ -167,6 +185,7 @@ func NewTransport(
 		policy:  DefaultPolicy(),
 		limit:   0,
 		backoff: backoff.Constant(0),
+		logger:  slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(&c)
@@ -183,6 +202,7 @@ type config struct {
 	policy  Policy
 	limit   int
 	backoff backoff.Strategy
+	logger  *slog.Logger
 	clock   func() time.Time
 }
 
@@ -206,6 +226,14 @@ func WithBackoff(strategy backoff.Strategy) Option {
 	return func(c *config) {
 		if strategy != nil {
 			c.backoff = strategy
+		}
+	}
+}
+
+func WithLogger(log *slog.Logger) Option {
+	return func(c *config) {
+		if log != nil {
+			c.logger = log
 		}
 	}
 }
