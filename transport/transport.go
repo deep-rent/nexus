@@ -47,6 +47,14 @@ func WithHeaders(
 	}
 }
 
+// WithHeader is a shorthand for WithHeaders with a single header.
+func WithHeader(
+	t http.RoundTripper,
+	k, v string,
+) http.RoundTripper {
+	return WithHeaders(t, map[string]string{k: v})
+}
+
 type loggerTransport struct {
 	wrapped http.RoundTripper
 	log     *slog.Logger
