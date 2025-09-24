@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 const (
@@ -118,46 +116,5 @@ func ParseFormat(s string) (format Format, err error) {
 	default:
 		err = fmt.Errorf("invalid log format %q", s)
 		return
-	}
-}
-
-type loggerTransport struct {
-	wrapped http.RoundTripper
-	log     *slog.Logger
-}
-
-func (t *loggerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	start := time.Now()
-	t.log.Info("Sending request", "method", req.Method, "url", req.URL)
-
-	res, err := t.wrapped.RoundTrip(req)
-	duration := time.Since(start)
-	if err != nil {
-		t.log.Error("Request failed", "error", err, "duration", duration)
-		return nil, err
-	}
-
-	sc := res.StatusCode
-	t.log.Info("Received response", "status", sc, "duration", duration)
-	return res, nil
-}
-
-var _ http.RoundTripper = (*loggerTransport)(nil)
-
-// NewTransport wraps a base transport and logs the start and end of each
-// request, along with its duration. If the base transport is nil, it falls
-// back to http.DefaultTransport. If the provided logger is nil, it falls back
-// to slog.Default(). The resulting transport does not modify the request or
-// response in any way.
-func NewTransport(t http.RoundTripper, log *slog.Logger) http.RoundTripper {
-	if t == nil {
-		t = http.DefaultTransport
-	}
-	if log == nil {
-		log = slog.Default()
-	}
-	return &loggerTransport{
-		wrapped: t,
-		log:     log,
 	}
 }
