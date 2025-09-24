@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/backoff"
+	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/scheduler"
-	"github.com/deep-rent/nexus/transport"
 )
 
 const (
@@ -68,7 +68,7 @@ func NewController[T any](
 		}
 		client = &http.Client{
 			Timeout:   c.timeout,
-			Transport: transport.WithHeaders(t, c.headers),
+			Transport: header.NewTransport(t, c.headers),
 		}
 	}
 
