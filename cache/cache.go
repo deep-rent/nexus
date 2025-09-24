@@ -100,7 +100,7 @@ type controller[T any] struct {
 	mu           sync.RWMutex
 	resource     T
 	ok           bool
-	eTag         string
+	etag         string
 	lastModified string
 }
 
@@ -127,11 +127,11 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	}
 
 	c.mu.RLock()
-	if c.eTag != "" {
-		req.Header.Set("If-None-Match", c.eTag)
+	if c.etag != "" {
+		req.Header.Set(header.IfNoneMatch, c.etag)
 	}
 	if c.lastModified != "" {
-		req.Header.Set("If-Modified-Since", c.lastModified)
+		req.Header.Set(header.IfModifiedSince, c.lastModified)
 	}
 	c.mu.RUnlock()
 
@@ -145,8 +145,9 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	defer res.Body.Close()
 
 	switch res.StatusCode {
+
 	case http.StatusNotModified:
-		c.log.Debug("ETag match, resource unchanged", "etag", c.eTag)
+		c.log.Debug("ETag match, resource unchanged", "etag", c.etag)
 		c.backoff.Done()
 		c.ready()
 		return c.lifetime.Get(res.Header)
@@ -166,8 +167,8 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 
 		c.mu.Lock()
 		c.resource = resource
-		c.eTag = res.Header.Get("ETag")
-		c.lastModified = res.Header.Get("Last-Modified")
+		c.etag = res.Header.Get(header.ETag)
+		c.lastModified = res.Header.Get(header.LastModified)
 		c.ok = true
 		c.mu.Unlock()
 
@@ -177,7 +178,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		return c.lifetime.Get(res.Header)
 
 	default:
-		c.log.Warn("Unsuccessful HTTP status", "status", res.Status)
+		c.log.Warn("Unsuccessful HTTP status", "code", res.StatusCode)
 		return c.backoff.Next()
 	}
 }
@@ -188,8 +189,8 @@ type Lifetime struct {
 	clock       func() time.Time
 }
 
-func (l *Lifetime) Get(header http.Header) time.Duration {
-	if v := header.Get("Cache-Control"); v != "" {
+func (l *Lifetime) Get(h http.Header) time.Duration {
+	if v := h.Get(header.CacheControl); v != "" {
 		for directive := range strings.SplitSeq(v, ",") {
 			directive = strings.TrimSpace(directive)
 			if s, ok := strings.CutPrefix(directive, "max-age="); ok {
@@ -200,7 +201,7 @@ func (l *Lifetime) Get(header http.Header) time.Duration {
 			}
 		}
 	}
-	if v := header.Get("Expires"); v != "" {
+	if v := h.Get(header.Expires); v != "" {
 		if exp, err := http.ParseTime(v); err == nil {
 			if ttl := exp.Sub(l.clock()); ttl > 0 {
 				return min(max(ttl, l.minInterval), l.maxInterval)
