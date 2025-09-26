@@ -26,7 +26,7 @@ func (a rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	h := a.hash.New()
 	h.Write(msg)
 	digest := h.Sum(nil)
-	return rsa.VerifyPKCS1v15(key, a.hash, digest, sig) != nil
+	return rsa.VerifyPKCS1v15(key, a.hash, digest, sig) == nil
 }
 
 var _ Scheme[*rsa.PublicKey] = rs{}
@@ -48,7 +48,7 @@ func (a ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	digest := h.Sum(nil)
 	return rsa.VerifyPSS(key, a.hash, digest, sig, &rsa.PSSOptions{
 		SaltLength: rsa.PSSSaltLengthEqualsHash,
-	}) != nil
+	}) == nil
 }
 
 var _ Scheme[*rsa.PublicKey] = ps{}
