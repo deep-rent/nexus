@@ -1,7 +1,7 @@
-// Package logger provides a convenience wrapper around Go's standard slog
-// package, allowing for easy configuration of a slog.Logger using the
+// Package log provides a convenience wrapper around Go's standard slog
+// API, allowing for easy configuration of a slog.Logger instance using the
 // functional options pattern.
-package logger
+package log
 
 import (
 	"fmt"
