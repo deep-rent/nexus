@@ -1,9 +1,21 @@
 package util
 
+import "fmt"
+
 // Zero returns the zero value of type T.
 func Zero[T any]() T {
 	var zero T
 	return zero
+}
+
+// Conv attempts to cast the given value to type T.
+func Conv[T any](v any) (T, error) {
+	vt, ok := v.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("expected %T, got %T", zero, v)
+	}
+	return vt, nil
 }
 
 func Keys[K comparable, V any](m map[K]V) []K {
