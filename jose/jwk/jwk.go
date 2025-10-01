@@ -1,232 +1,288 @@
 package jwk
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rsa"
-	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"iter"
+	"maps"
 	"math/big"
+	"slices"
 
 	"github.com/cloudflare/circl/sign/ed448"
 	"github.com/deep-rent/nexus/jose/jwa"
 )
 
-type Key interface {
+// Ref represents a reference to a Key. It
+type Ref interface {
+	// Algorithm returns the algorithm ("alg") the key must be used with.
+	// This parameter is optional in the specification, but mandatory here.
 	Algorithm() string
-	ID() string
-	Thumbprint() string
+	// KeyID returns the unique id ("kid") for the key.
+	// This parameter is optional in the specification, but mandatory here.
+	KeyID() string
+}
+
+// Key represents a public JSON Web Key (JWK) used for signature verification.
+type Key interface {
+	Ref
+
+	// Verify checks a signature against a message using the key material
+	// and the associated algorithm.
 	Verify(msg, sig []byte) bool
 }
 
-type key struct {
-	verifier jwa.Verifier
-	kid      string
-	x5t      string
+var ErrIneligibleKey = errors.New("ineligible for signature verification")
+
+func Parse(in []byte) (Key, error) {
+	var raw raw
+	if err := json.Unmarshal(in, &raw); err != nil {
+		return nil, fmt.Errorf("invalid json format: %w", err)
+	}
+	if raw.Kty == "" {
+		return nil, errors.New("missing required parameter 'kty' (key type)")
+	}
+	if raw.Use != "sig" && !slices.Contains(raw.Ops, "verify") {
+		return nil, ErrIneligibleKey
+	}
+	if raw.Kid == "" {
+		return nil, errors.New("missing required parameter 'kid' (key id)")
+	}
+	if raw.Alg == "" {
+		return nil, errors.New("missing required parameter 'alg' (algorithm)")
+	}
+	load := loaders[raw.Alg]
+	if load == nil {
+		return nil, fmt.Errorf("unknown algorithm %q", raw.Alg)
+	}
+	key, err := load(&raw)
+	if err != nil {
+		return nil, fmt.Errorf("load %s material: %w", raw.Kty, err)
+	}
+	return key, nil
 }
 
-func (k *key) Algorithm() string  { return k.verifier.Algorithm() }
-func (k *key) ID() string         { return k.kid }
-func (k *key) Thumbprint() string { return k.x5t }
-func (k *key) Verify(msg, sig []byte) bool {
-	return k.verifier.Verify(msg, sig)
+type key[T crypto.PublicKey] struct {
+	alg jwa.Algorithm[T]
+	kid string
+	mat T
 }
 
-var _ Key = &key{}
+func (k *key[T]) Algorithm() string           { return k.alg.String() }
+func (k *key[T]) KeyID() string               { return k.kid }
+func (k *key[T]) Verify(msg, sig []byte) bool { return k.alg.Verify(k.mat, msg, sig) }
 
+// Set represents a JSON Web Key Set (JWKS).
+// A Set consists of zero or more Keys, each uniquely identified by a key id.
 type Set interface {
-	Lookup(h map[string]any) Key
+	// Keys returns an iterator over all keys in the set.
+	Keys() iter.Seq[Key]
+	// Len returns the number of keys in this set.
+	Len() int
+	// Find looks up a key by its reference.
+	// It returns nil if no matching key is found. Both, the key id and
+	// the algorithm must match.
+	Find(ref Ref) Key
 }
 
-type probe map[string]json.RawMessage
+type set map[string]Key
 
-func (p probe) Req(k string) (string, error) {
-	v, ok := p[k]
-	if !ok {
-		return "", fmt.Errorf("missing %s", k)
+func (s set) Keys() iter.Seq[Key] { return maps.Values(s) }
+func (s set) Len() int            { return len(s) }
+
+func (s set) Find(ref Ref) Key {
+	if ref == nil || ref.KeyID() == "" {
+		return nil
 	}
-	var s string
-	if err := json.Unmarshal(v, &s); err != nil {
-		return "", fmt.Errorf("invalid %s: %w", k, err)
+	k := s[ref.KeyID()]
+	if k == nil || k.Algorithm() != ref.Algorithm() {
+		return nil
 	}
-	return s, nil
+	return k
 }
 
-func (p probe) Opt(k string) (string, error) {
-	v, ok := p[k]
-	if !ok {
-		return "", nil
-	}
-	var s string
-	if err := json.Unmarshal(v, &s); err != nil {
-		return "", fmt.Errorf("invalid %s: %w", k, err)
-	}
-	return s, nil
-}
+type emptySet struct{}
 
-func (p probe) Base64(k string) ([]byte, error) {
-	s, err := p.Req(k)
-	if err != nil {
-		return nil, err
-	}
-	b, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		return nil, fmt.Errorf("decode %s: %w", k, err)
-	}
-	return b, nil
-}
+func (e emptySet) Keys() iter.Seq[Key] { return func(func(Key) bool) {} }
+func (e emptySet) Len() int            { return 0 }
+func (e emptySet) Find(ref Ref) Key    { return nil }
 
-func (p probe) BigInt(k string) (*big.Int, error) {
-	b, err := p.Base64(k)
-	if err != nil {
-		return nil, err
-	}
-	return new(big.Int).SetBytes(b), nil
-}
+var empty Set = emptySet{}
 
-func (p probe) Parse() (Key, error) {
-	use, err := p.Opt("use")
-	if err != nil {
-		return nil, err
+// Parse parses a Set from the provided JSON input.
+// If the input is severely malformed, an empty set along with an error is
+// returned. If some keys are invalid, duplicated, or unsupported, they are
+// skipped and the returned error describes the individual issues.
+func ParseSet(in []byte) (Set, error) {
+	var raw struct {
+		Keys []jsontext.Value `json:"keys"`
 	}
-	if use != "sig" {
-		return nil, errors.New("unsupported key use") // non-fatal
+	if err := json.Unmarshal(in, &raw); err != nil {
+		return empty, fmt.Errorf("invalid format: %w", err)
 	}
-	kty, err := p.Req("kty")
-	if err != nil {
-		return nil, err
-	}
-	alg, err := p.Opt("alg")
-	if err != nil || alg == "" {
-		return nil, errors.New("algorithm not defined") // non-fatal
-	}
-	kid, err := p.Opt("kid")
-	if err != nil {
-		return nil, err
-	}
-	x5t, err := p.Opt("x5t#S256")
-	if err != nil {
-		return nil, err
-	}
-	if kid == "" && x5t == "" {
-		return nil, errors.New("unidentified key") // non-fatal
-	}
-
-	parse, ok := parsers[kty]
-	if !ok {
-		return nil, fmt.Errorf("unsupported key type: %s", kty) // non-fatal
-	}
-
-	v, err := parse(p, alg)
-	if err != nil {
-		return nil, err
-	}
-	return &key{verifier: v, kid: kid, x5t: x5t}, nil
-}
-
-type parser func(p probe, alg string) (jwa.Verifier, error)
-
-var parsers = map[string]parser{
-	"RSA": func(p probe, alg string) (jwa.Verifier, error) {
-		n, err := p.BigInt("n")
+	s := make(set, len(raw.Keys))
+	var errs []error
+	for i, v := range raw.Keys {
+		k, err := Parse(v)
 		if err != nil {
-			return nil, err
-		}
-		b, err := p.Base64("e")
-		if err != nil {
-			return nil, err
-		}
-		var e int
-		for _, i := range b {
-			e = (e << 8) | int(i)
-		}
-		var scheme jwa.Scheme[*rsa.PublicKey]
-		switch alg {
-		case "RS256":
-			scheme = jwa.RS256
-		case "RS384":
-			scheme = jwa.RS384
-		case "RS512":
-			scheme = jwa.RS512
-		case "PS256":
-			scheme = jwa.PS256
-		case "PS384":
-			scheme = jwa.PS384
-		case "PS512":
-			scheme = jwa.PS512
-		default:
-			return nil, fmt.Errorf("unsupported RSA algorithm: %s", alg) // non-fatal
-		}
-		key := &rsa.PublicKey{N: n, E: e}
-		return jwa.NewVerifier(scheme, key), nil
-	},
-	"EC": func(p probe, alg string) (jwa.Verifier, error) {
-		crv, err := p.Req("crv")
-		if err != nil {
-			return nil, err
-		}
-
-		var c elliptic.Curve
-		var scheme jwa.Scheme[*ecdsa.PublicKey]
-		switch crv {
-		case "P-256":
-			c, scheme = elliptic.P256(), jwa.ES256
-		case "P-384":
-			c, scheme = elliptic.P384(), jwa.ES384
-		case "P-521":
-			c, scheme = elliptic.P521(), jwa.ES512
-		default:
-			return nil, fmt.Errorf("unsupported EC curve: %s", crv) // non-fatal
-		}
-		if alg != scheme.Name() {
-			return nil, fmt.Errorf("algorithm %s does not match curve %s", alg, crv)
-		}
-		x, err := p.BigInt("x")
-		if err != nil {
-			return nil, err
-		}
-		y, err := p.BigInt("y")
-		if err != nil {
-			return nil, err
-		}
-		key := &ecdsa.PublicKey{Curve: c, X: x, Y: y}
-		return jwa.NewVerifier(scheme, key), nil
-	},
-	"OKP": func(p probe, alg string) (jwa.Verifier, error) {
-		crv, err := p.Req("crv")
-		if err != nil {
-			return nil, err
-		}
-		x, err := p.Base64("x")
-		if err != nil {
-			return nil, err
-		}
-		switch crv {
-		case "Ed25519":
-			if len(x) != ed25519.PublicKeySize {
-				return nil, fmt.Errorf("wrong %s key size (%d)", crv, len(x))
+			// Skip unusable keys silently.
+			if errors.Is(err, ErrIneligibleKey) {
+				continue
 			}
-			scheme := jwa.Ed25519
-			if alg != scheme.Name() {
-				return nil, fmt.Errorf("algorithm %s does not match curve %s", alg, crv)
-			}
-			key := ed25519.PublicKey(x)
-			return jwa.NewVerifier(scheme, key), nil
-		case "Ed448":
-			if len(x) != ed448.PublicKeySize {
-				return nil, fmt.Errorf("wrong %s key size (%d)", crv, len(x))
-			}
-			scheme := jwa.Ed448
-			if alg != scheme.Name() {
-				return nil, fmt.Errorf("algorithm %s does not match curve %s", alg, crv)
-			}
-			key := ed448.PublicKey(x)
-			return jwa.NewVerifier(scheme, key), nil
-		default:
-			return nil, fmt.Errorf("unsupported OKP curve: %s", crv) // non-fatal
+			err = fmt.Errorf("key at index %d: %w", i, err)
+			errs = append(errs, err)
+			continue
 		}
-	},
+		kid := k.KeyID()
+		if s[kid] != nil {
+			err = fmt.Errorf("key at index %d: duplicate key id %q", i, kid)
+			errs = append(errs, err)
+			continue
+		}
+		s[kid] = k
+	}
+	return s, errors.Join(errs...)
+}
+
+type raw struct {
+	Kty string         `json:"kty"`
+	Use string         `json:"use"`
+	Ops []string       `json:"key_ops"`
+	Alg string         `json:"alg"`
+	Kid string         `json:"kid"`
+	Mat jsontext.Value `json:",unknown"`
+}
+
+func (r *raw) Material(v any) error {
+	if err := json.Unmarshal(r.Mat, v); err != nil {
+		return fmt.Errorf("unmarshal %s key material: %w", r.Kty, err)
+	}
+	return nil
+}
+
+type loader func(r *raw) (Key, error)
+
+var loaders map[string]loader
+
+func init() {
+	loaders = make(map[string]loader, 10)
+
+	addLoader(jwa.RS256, decodeRSA)
+	addLoader(jwa.RS384, decodeRSA)
+	addLoader(jwa.RS512, decodeRSA)
+	addLoader(jwa.PS256, decodeRSA)
+	addLoader(jwa.PS384, decodeRSA)
+	addLoader(jwa.PS512, decodeRSA)
+	addLoader(jwa.ES256, decodeECDSA(elliptic.P256()))
+	addLoader(jwa.ES384, decodeECDSA(elliptic.P384()))
+	addLoader(jwa.ES512, decodeECDSA(elliptic.P521()))
+	addLoader(jwa.EdDSA, decodeEdDSA)
+}
+
+func addLoader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
+	loaders[alg.String()] = func(r *raw) (Key, error) {
+		mat, err := dec(r)
+		if err != nil {
+			return nil, err
+		}
+		kid := r.Kid
+		return &key[T]{
+			alg: alg,
+			kid: kid,
+			mat: mat,
+		}, nil
+	}
+}
+
+type decoder[T crypto.PublicKey] func(*raw) (T, error)
+
+func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
+	if raw.Kty != "RSA" {
+		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+	}
+	var mat struct {
+		N []byte `json:"n,format:base64url"`
+		E []byte `json:"e,format:base64url"`
+	}
+	if err := raw.Material(&mat); err != nil {
+		return nil, err
+	}
+	if len(mat.N) == 0 {
+		return nil, errors.New("missing RSA modulus")
+	}
+	if len(mat.E) == 0 {
+		return nil, errors.New("missing RSA public exponent")
+	}
+	// Exponents > 2^31-1 are extremely rare and not recommended.
+	if len(mat.E) > 4 {
+		return nil, errors.New("RSA public exponent exceeds 32 bits")
+	}
+	n := new(big.Int).SetBytes(mat.N)
+	e := 0
+	// The conversion to a big-endian unsigned integer is safe because of the
+	// length check above.
+	for _, b := range mat.E {
+		e = (e << 8) | int(b)
+	}
+	return &rsa.PublicKey{N: n, E: e}, nil
+}
+
+func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
+	return func(raw *raw) (*ecdsa.PublicKey, error) {
+		if raw.Kty != "EC" {
+			return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+		}
+		var mat struct {
+			Crv string `json:"crv"`
+			X   []byte `json:"x,format:base64url"`
+			Y   []byte `json:"y,format:base64url"`
+		}
+		if err := raw.Material(&mat); err != nil {
+			return nil, err
+		}
+		if mat.Crv != crv.Params().Name {
+			return nil, fmt.Errorf("incompatible curve %q", mat.Crv)
+		}
+		if len(mat.X) == 0 {
+			return nil, errors.New("missing EC x coordinate")
+		}
+		if len(mat.Y) == 0 {
+			return nil, errors.New("missing EC y coordinate")
+		}
+		x := new(big.Int).SetBytes(mat.X)
+		y := new(big.Int).SetBytes(mat.Y)
+		return &ecdsa.PublicKey{Curve: crv, X: x, Y: y}, nil
+	}
+}
+
+func decodeEdDSA(raw *raw) ([]byte, error) {
+	if raw.Kty != "OKP" {
+		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+	}
+	var mat struct {
+		Crv string `json:"crv"`
+		X   []byte `json:"x,format:base64url"`
+	}
+	if err := raw.Material(&mat); err != nil {
+		return nil, err
+	}
+	var n int
+	switch mat.Crv {
+	case "Ed448":
+		n = ed448.PublicKeySize
+	case "Ed25519":
+		n = ed25519.PublicKeySize
+	default:
+		return nil, fmt.Errorf("unsupported OKP curve %q", mat.Crv)
+	}
+	if m := len(mat.X); m != n {
+		return nil, fmt.Errorf("got length %d for %s curve, want %d", m, mat.Crv, n)
+	}
+	return mat.X, nil
 }
