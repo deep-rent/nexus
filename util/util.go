@@ -21,3 +21,14 @@ func Vals[K comparable, V any](m map[K]V) []V {
 	}
 	return vals
 }
+
+// Concat takes a slice and a variable number of values, and returns a new slice
+// containing all the elements without modifying the original.
+func Concat[T any](src []T, add ...T) []T {
+	n := len(src)
+	k := len(add)
+	res := make([]T, n+k)
+	copy(res, src)
+	copy(res[n:], add)
+	return res
+}
