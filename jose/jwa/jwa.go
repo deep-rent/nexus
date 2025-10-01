@@ -1,3 +1,7 @@
+// Package jwa provides implementations for JSON Web Algorithms (JWA)
+// as defined in RFC 7518. It focuses on the verification of signatures
+// from asymmetric algorithms, whose public keys can be distributed
+// via a JWKS (JSON Web Key Set) endpoint.
 package jwa
 
 import (
