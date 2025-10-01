@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
+	"fmt"
 	"hash"
 	"math/big"
 	"sync"
@@ -12,165 +13,186 @@ import (
 	"github.com/cloudflare/circl/sign/ed448"
 )
 
-type Scheme[K crypto.PublicKey] interface {
-	Name() string
-	Type() string
-	Verify(key K, msg, sig []byte) bool
+// Algorithm represents an asymmetric JSON Web Algorithm (JWA) used for
+// verifying signatures. The type parameter T specifies the type of public key
+// that the algorithm works with.
+type Algorithm[T crypto.PublicKey] interface {
+	// fmt.Stringer provides the standard JWA name for the algorithm.
+	fmt.Stringer
+
+	// Verify checks a signature against a message using the provided public key.
+	// It returns true if the signature is valid, and false otherwise.
+	// None of the parameters may be nil.
+	Verify(key T, msg, sig []byte) bool
 }
 
-type rsScheme struct {
+// rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
+type rs struct {
 	name string
-	hash crypto.Hash
-	pool sync.Pool
+	pool *hashPool
 }
 
-func newRSScheme(name string, hash crypto.Hash) Scheme[*rsa.PublicKey] {
-	return &rsScheme{
+// newRS creates a new Algorithm for RSASSA-PKCS1-v1_5 signatures
+// with the given JWA name and hash function.
+func newRS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
+	return &rs{
 		name: name,
-		hash: hash,
-		pool: sync.Pool{
-			New: func() any {
-				return hash.New()
-			},
-		},
+		pool: newHashPool(hash),
 	}
 }
 
-func (s *rsScheme) Name() string { return s.name }
-func (s *rsScheme) Type() string { return "RSA" }
-
-func (s *rsScheme) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
-	h := s.pool.Get().(hash.Hash)
-	defer func() {
-		h.Reset()
-		s.pool.Put(h)
-	}()
+func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
+	h := a.pool.Get()
+	defer func() { a.pool.Put(h) }()
 	h.Write(msg)
 	digest := h.Sum(nil)
-	return rsa.VerifyPKCS1v15(key, s.hash, digest, sig) == nil
+	return rsa.VerifyPKCS1v15(key, a.pool.Hash, digest, sig) == nil
 }
 
-var RS256 = newRSScheme("RS256", crypto.SHA256)
-var RS384 = newRSScheme("RS384", crypto.SHA384)
-var RS512 = newRSScheme("RS512", crypto.SHA512)
+func (a *rs) String() string {
+	return a.name
+}
 
-type psScheme struct {
+// RS256 represents the RSASSA-PKCS1-v1_5 signature algorithm using SHA-256.
+var RS256 = newRS("RS256", crypto.SHA256)
+
+// RS384 represents the RSASSA-PKCS1-v1_5 signature algorithm using SHA-384.
+var RS384 = newRS("RS384", crypto.SHA384)
+
+// RS512 represents the RSASSA-PKCS1-v1_5 signature algorithm using SHA-512.
+var RS512 = newRS("RS512", crypto.SHA512)
+
+// ps implements the RSASSA-PSS family of algorithms (PSxxx).
+type ps struct {
 	name string
-	hash crypto.Hash
-	pool sync.Pool
+	pool *hashPool
 }
 
-func (s *psScheme) Name() string { return s.name }
-func (s *psScheme) Type() string { return "RSA" }
-
-func (s *psScheme) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
-	h := s.pool.Get().(hash.Hash)
-	defer func() {
-		h.Reset()
-		s.pool.Put(h)
-	}()
-	h.Write(msg)
-	digest := h.Sum(nil)
-	return rsa.VerifyPSS(key, s.hash, digest, sig, &rsa.PSSOptions{
-		SaltLength: rsa.PSSSaltLengthEqualsHash,
-	}) == nil
-}
-
-func newPSScheme(name string, hash crypto.Hash) Scheme[*rsa.PublicKey] {
-	return &psScheme{
+// newPS creates a new Algorithm for RSASSA-PSS signatures
+// with the given JWA name and hash function.
+func newPS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
+	return &ps{
 		name: name,
-		hash: hash,
-		pool: sync.Pool{
-			New: func() any {
-				return hash.New()
-			},
-		},
+		pool: newHashPool(hash),
 	}
 }
 
-var PS256 = newPSScheme("PS256", crypto.SHA256)
-var PS384 = newPSScheme("PS384", crypto.SHA384)
-var PS512 = newPSScheme("PS512", crypto.SHA512)
-
-type esScheme struct {
-	name string
-	pool sync.Pool
+func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
+	h := a.pool.Get()
+	defer func() { a.pool.Put(h) }()
+	h.Write(msg)
+	digest := h.Sum(nil)
+	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}
+	return rsa.VerifyPSS(key, a.pool.Hash, digest, sig, opts) == nil
 }
 
-func (s *esScheme) Name() string { return s.name }
-func (s *esScheme) Type() string { return "EC" }
+func (a *ps) String() string {
+	return a.name
+}
 
-func (a *esScheme) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
+// PS256 represents the RSASSA-PSS signature algorithm using SHA-256.
+var PS256 = newPS("PS256", crypto.SHA256)
+
+// PS384 represents the RSASSA-PSS signature algorithm using SHA-384.
+var PS384 = newPS("PS384", crypto.SHA384)
+
+// PS512 represents the RSASSA-PSS signature algorithm using SHA-512.
+var PS512 = newPS("PS512", crypto.SHA512)
+
+// es implements the ECDSA family of algorithms (ESxxx).
+type es struct {
+	name string
+	pool *hashPool
+}
+
+// newES creates a new Algorithm for ECDSA signatures
+// with the given JWA name and hash function.
+func newES(name string, hash crypto.Hash) Algorithm[*ecdsa.PublicKey] {
+	return &es{
+		name: name,
+		pool: newHashPool(hash),
+	}
+}
+
+func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	n := (key.Curve.Params().BitSize + 7) / 8
-
 	if len(sig) != 2*n {
 		return false
 	}
-
-	r := new(big.Int).SetBytes(sig[:n])
-	s := new(big.Int).SetBytes(sig[n:])
-
-	h := a.pool.Get().(hash.Hash)
-	defer func() {
-		h.Reset()
-		a.pool.Put(h)
-	}()
+	h := a.pool.Get()
+	defer func() { a.pool.Put(h) }()
 	h.Write(msg)
 	digest := h.Sum(nil)
-	return ecdsa.Verify(key, digest, r, s)
+	return ecdsa.Verify(
+		key,
+		digest,
+		new(big.Int).SetBytes(sig[:n]),
+		new(big.Int).SetBytes(sig[n:]),
+	)
 }
 
-func newESScheme(name string, hash crypto.Hash) Scheme[*ecdsa.PublicKey] {
-	return &esScheme{
-		name: name,
-		pool: sync.Pool{
-			New: func() any {
-				return hash.New()
-			},
-		}}
+func (a *es) String() string {
+	return a.name
 }
 
-var ES256 = newESScheme("ES256", crypto.SHA256)
-var ES384 = newESScheme("ES384", crypto.SHA384)
-var ES512 = newESScheme("ES512", crypto.SHA512)
+// ES256 represents the ECDSA signature algorithm using P-256 and SHA-256.
+var ES256 = newES("ES256", crypto.SHA256)
 
-type ed25519Scheme struct{}
+// ES384 represents the ECDSA signature algorithm using P-384 and SHA-384.
+var ES384 = newES("ES384", crypto.SHA384)
 
-func (s ed25519Scheme) Name() string { return "EdDSA" }
-func (s ed25519Scheme) Type() string { return "OKP" }
+// ES512 represents the ECDSA signature algorithm using P-521 and SHA-512.
+var ES512 = newES("ES512", crypto.SHA512)
 
-func (s ed25519Scheme) Verify(key ed25519.PublicKey, msg, sig []byte) bool {
-	return ed25519.Verify(key, msg, sig)
+// ed implements the EdDSA family of algorithms.
+type ed struct{}
+
+func (a *ed) Verify(key []byte, msg, sig []byte) bool {
+	switch len(key) {
+	case ed448.PublicKeySize:
+		return ed448.Verify(ed448.PublicKey(key), msg, sig, "")
+	case ed25519.PublicKeySize:
+		return ed25519.Verify(ed25519.PublicKey(key), msg, sig)
+	default:
+		return false
+	}
 }
 
-var Ed25519 Scheme[ed25519.PublicKey] = ed25519Scheme{}
-
-type ed448Scheme struct{}
-
-func (s ed448Scheme) Name() string { return "EdDSA" }
-func (s ed448Scheme) Type() string { return "OKP" }
-
-func (s ed448Scheme) Verify(key ed448.PublicKey, msg, sig []byte) bool {
-	return ed448.Verify(key, msg, sig, "")
+func (a *ed) String() string {
+	return "EdDSA"
 }
 
-var Ed448 Scheme[ed448.PublicKey] = ed448Scheme{}
+// EdDSA represents the EdDSA signature algorithm. It supports both Ed25519
+// and Ed448 curves. The curve is determined by the size of the public key.
+var EdDSA Algorithm[[]byte] = &ed{}
 
-type Verifier interface {
-	Algorithm() string
-	Verify(msg, sig []byte) bool
+// hashPool manages a pool of hash.Hash objects to reduce allocations.
+type hashPool struct {
+	Hash crypto.Hash
+	pool *sync.Pool
 }
 
-type verifier[K crypto.PublicKey] struct {
-	Scheme Scheme[K]
-	Key    K
+// newHashPool creates a new hashPool for the given hash function.
+func newHashPool(hash crypto.Hash) *hashPool {
+	pool := &sync.Pool{
+		New: func() any {
+			return hash.New()
+		},
+	}
+	return &hashPool{
+		Hash: hash,
+		pool: pool,
+	}
 }
 
-func (v verifier[K]) Algorithm() string { return v.Scheme.Name() }
-func (v verifier[K]) Verify(msg, sig []byte) bool {
-	return v.Scheme.Verify(v.Key, msg, sig)
+// Get retrieves a hash.Hash from the pool.
+func (p *hashPool) Get() hash.Hash {
+	h := p.pool.Get()
+	return h.(hash.Hash)
 }
 
-func NewVerifier[K crypto.PublicKey](scheme Scheme[K], key K) Verifier {
-	return verifier[K]{Scheme: scheme, Key: key}
+// Put returns a hash.Hash to the pool after resetting it.
+func (p *hashPool) Put(h hash.Hash) {
+	h.Reset()
+	p.pool.Put(h)
 }
