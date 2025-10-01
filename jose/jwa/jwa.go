@@ -157,7 +157,8 @@ type ed struct{}
 func (a *ed) Verify(key []byte, msg, sig []byte) bool {
 	switch len(key) {
 	case ed448.PublicKeySize:
-		// Per RFC 8037, the context for Ed448ph is empty.
+		// Per RFC 8037, the JWS "EdDSA" algorithm corresponds to the "pure" EdDSA
+		// variant, which uses an empty string for the context parameter.
 		return ed448.Verify(ed448.PublicKey(key), msg, sig, "")
 	case ed25519.PublicKeySize:
 		return ed25519.Verify(ed25519.PublicKey(key), msg, sig)
