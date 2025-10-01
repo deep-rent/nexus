@@ -1,6 +1,14 @@
 // Package log provides a convenience wrapper around Go's standard slog
 // API, allowing for easy configuration of a slog.Logger instance using the
 // functional options pattern.
+//
+// The following example demonstrates how to create a logger at debug level
+// printing JSON-formatted logs to the standard output:
+//
+//	logger := log.New(
+//		log.WithLevel("debug"),
+//		log.WithFormat("json"),
+//	)
 package log
 
 import (
