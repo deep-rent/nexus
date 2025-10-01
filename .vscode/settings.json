@@ -29,6 +29,9 @@
     "fmt",
     "--stdin"
   ],
+  "go.toolsEnvVars": {
+    "GOEXPERIMENT": "jsonv2"
+  },
   "go.toolsManagement.autoUpdate": true,
   "search.exclude": {
     "**/.husky/_": true,
