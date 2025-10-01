@@ -1,6 +1,18 @@
+// Package jwk provides functionality to parse and manage JSON Web Keys (JWK)
+// and JSON Web Key Sets (JWKS), as defined in RFC 7517. It is specifically
+// designed for the purpose of verifying JWT signatures.
+//
+// Keys that are not intended for signature verification (based on their "use"
+// or "key_ops" parameters) are considered ineligible and will be ignored
+// during parsing of a JWKS.
+//
+// This implementation deliberately deviates from the RFC for robustness and
+// simplicity: the "alg" (algorithm) and "kid" (key id) parameters, both
+// optional in the standard, are treated mandatory for all eligible keys.
 package jwk
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -14,18 +26,21 @@ import (
 	"maps"
 	"math/big"
 	"slices"
+	"time"
 
 	"github.com/cloudflare/circl/sign/ed448"
+	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/scheduler"
 )
 
-// Ref represents a reference to a Key. It
+// Ref represents a reference to a Key, containing the minimum information
+// needed to look one up in a Set. It effectively abstracts the JWS header
+// fields ("alg" and "kid") used to select a key for signature verification.
 type Ref interface {
 	// Algorithm returns the algorithm ("alg") the key must be used with.
-	// This parameter is optional in the specification, but mandatory here.
 	Algorithm() string
 	// KeyID returns the unique id ("kid") for the key.
-	// This parameter is optional in the specification, but mandatory here.
 	KeyID() string
 }
 
@@ -33,23 +48,62 @@ type Ref interface {
 type Key interface {
 	Ref
 
-	// Verify checks a signature against a message using the key material
-	// and the associated algorithm.
+	// Verify checks a signature against a message using the key's material
+	// and its associated algorithm. It returns true if the signature is valid.
+	// It returns false if the signature is invalid or if any of the parameters
+	// are nil.
 	Verify(msg, sig []byte) bool
 }
 
+// New creates a new Key programmatically from its constituent parts. The type
+// parameter T must match the public key type expected by the provided
+// algorithm (e.g., *rsa.PublicKey for jwa.RS256).
+func New[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, mat T) Key {
+	return &key[T]{alg: alg, kid: kid, mat: mat}
+}
+
+// key is a concrete implementation of the Key interface, generic over the
+// public key type.
+type key[T crypto.PublicKey] struct {
+	alg jwa.Algorithm[T]
+	kid string
+	mat T // The actual cryptographic public key material.
+}
+
+func (k *key[T]) Algorithm() string { return k.alg.String() }
+func (k *key[T]) KeyID() string     { return k.kid }
+
+func (k *key[T]) Verify(msg, sig []byte) bool {
+	if msg == nil || sig == nil {
+		return false
+	}
+	return k.alg.Verify(k.mat, msg, sig)
+}
+
+// ErrIneligibleKey indicates that a key may be syntactically valid but should
+// not be used for signature verification according to its "use" or "key_ops"
+// parameters.
 var ErrIneligibleKey = errors.New("ineligible for signature verification")
 
+// Parse parses a single Key from the provided JSON input.
+//
+// It first checks if the key is eligible for signature verification. If not,
+// it returns ErrIneligibleKey. Otherwise, it proceeds to validate the presence
+// of required parameters ("kty", "kid", "alg"), the supported algorithm, and
+// the integrity of the key material itself.
 func Parse(in []byte) (Key, error) {
 	var raw raw
 	if err := json.Unmarshal(in, &raw); err != nil {
 		return nil, fmt.Errorf("invalid json format: %w", err)
 	}
-	if raw.Kty == "" {
-		return nil, errors.New("missing required parameter 'kty' (key type)")
-	}
+	// Per RFC 7517, a key's purpose is determined by the union of "use" and
+	// "key_ops". We perform this check first for efficiency, as we only care
+	// about signature verification keys.
 	if raw.Use != "sig" && !slices.Contains(raw.Ops, "verify") {
 		return nil, ErrIneligibleKey
+	}
+	if raw.Kty == "" {
+		return nil, errors.New("missing required parameter 'kty' (key type)")
 	}
 	if raw.Kid == "" {
 		return nil, errors.New("missing required parameter 'kid' (key id)")
@@ -68,29 +122,34 @@ func Parse(in []byte) (Key, error) {
 	return key, nil
 }
 
-type key[T crypto.PublicKey] struct {
-	alg jwa.Algorithm[T]
-	kid string
-	mat T
-}
-
-func (k *key[T]) Algorithm() string           { return k.alg.String() }
-func (k *key[T]) KeyID() string               { return k.kid }
-func (k *key[T]) Verify(msg, sig []byte) bool { return k.alg.Verify(k.mat, msg, sig) }
-
-// Set represents a JSON Web Key Set (JWKS).
-// A Set consists of zero or more Keys, each uniquely identified by a key id.
+// Set stores an immutable collection of Keys, typically parsed from a JWKS.
+// It provides efficient lookups of keys for signature verification.
 type Set interface {
 	// Keys returns an iterator over all keys in the set.
 	Keys() iter.Seq[Key]
 	// Len returns the number of keys in this set.
 	Len() int
-	// Find looks up a key by its reference.
-	// It returns nil if no matching key is found. Both, the key id and
-	// the algorithm must match.
+	// Find looks up a key using the specified reference. A key is returned only
+	// if both its key id and algorithm match the reference exactly.
+	// Otherwise, it returns nil.
 	Find(ref Ref) Key
 }
 
+// NewSet creates a Set programmatically from the provided slice of Keys. Any
+// nil keys in the input are filtered out. If multiple keys share the same
+// key id, the last one in the slice wins.
+func NewSet(keys ...Key) Set {
+	s := make(set, len(keys))
+	for _, k := range keys {
+		if k != nil {
+			s[k.KeyID()] = k
+		}
+	}
+	return s
+}
+
+// set is the concrete implementation of the Set interface.
+// It uses a map for efficient O(1) average time complexity lookups.
 type set map[string]Key
 
 func (s set) Keys() iter.Seq[Key] { return maps.Values(s) }
@@ -113,12 +172,17 @@ func (e emptySet) Keys() iter.Seq[Key] { return func(func(Key) bool) {} }
 func (e emptySet) Len() int            { return 0 }
 func (e emptySet) Find(ref Ref) Key    { return nil }
 
+// empty is a singleton instance of an empty Set.
 var empty Set = emptySet{}
 
-// Parse parses a Set from the provided JSON input.
-// If the input is severely malformed, an empty set along with an error is
-// returned. If some keys are invalid, duplicated, or unsupported, they are
-// skipped and the returned error describes the individual issues.
+// ParseSet parses a Set from a JWKS JSON input.
+//
+// If the top-level JSON structure is malformed, it returns an empty set and
+// a fatal error. Otherwise, it iterates through the "keys" array, parsing
+// each key individually. Keys that are invalid, unsupported, or carry a
+// duplicate key id, result in non-fatal errors. Ineligible keys (e.g., those
+// meant for encryption) are silently skipped. If any non-fatal errors occurred,
+// a joined error is returned alongside the set of successfully parsed keys.
 func ParseSet(in []byte) (Set, error) {
 	var raw struct {
 		Keys []jsontext.Value `json:"keys"`
@@ -131,7 +195,6 @@ func ParseSet(in []byte) (Set, error) {
 	for i, v := range raw.Keys {
 		k, err := Parse(v)
 		if err != nil {
-			// Skip unusable keys silently.
 			if errors.Is(err, ErrIneligibleKey) {
 				continue
 			}
@@ -150,15 +213,66 @@ func ParseSet(in []byte) (Set, error) {
 	return s, errors.Join(errs...)
 }
 
+// CacheSet extends the Set interface with scheduler.Tick, creating a component
+// that can be deployed to a scheduler for automatic refreshing of a remote
+// JWKS view in the background.
+type CacheSet interface {
+	Set
+	scheduler.Tick
+}
+
+// cacheSet is the concrete implementation of the CacheSet interface.
+type cacheSet struct {
+	ctrl cache.Controller[Set]
+}
+
+// get safely retrieves the current Set from the cache controller. If the
+// cache has not been populated yet (e.g., due to an initial network failure),
+// it returns a static empty set to ensure that delegated operations like Find
+// do not panic. This makes the Set resilient to transient startup issues.
+func (s *cacheSet) get() Set {
+	if set, ok := s.ctrl.Get(); ok {
+		return set
+	}
+	return empty
+}
+
+func (s *cacheSet) Keys() iter.Seq[Key] { return s.get().Keys() }
+func (s *cacheSet) Len() int            { return s.get().Len() }
+func (s *cacheSet) Find(ref Ref) Key    { return s.get().Find(ref) }
+
+func (s *cacheSet) Run(ctx context.Context) time.Duration {
+	return s.ctrl.Run(ctx)
+}
+
+// mapper adapts the ParseSet function to the cache.Mapper interface.
+var mapper cache.Mapper[Set] = func(in []byte) (Set, error) {
+	return ParseSet(in)
+}
+
+// NewCacheSet creates a CacheSet that stays in sync with a remote JWKS
+// endpoint. It must be deployed to a scheduler.Scheduler to begin the
+// background fetching and refreshing process.
+//
+// The provided cache.Options can configure behaviors like refresh interval,
+// request timeouts, and error handling.
+func NewCacheSet(url string, opts ...cache.Option) CacheSet {
+	ctrl := cache.NewController(url, mapper, opts...)
+	return &cacheSet{ctrl}
+}
+
+// raw holds the JWK parameters.
 type raw struct {
 	Kty string         `json:"kty"`
 	Use string         `json:"use"`
 	Ops []string       `json:"key_ops"`
 	Alg string         `json:"alg"`
 	Kid string         `json:"kid"`
-	Mat jsontext.Value `json:",unknown"`
+	Mat jsontext.Value `json:",unknown"` // Capture all other fields.
 }
 
+// Material allows deferred, type-safe unmarshaling of the key material itself
+// into the provided struct pointer.
 func (r *raw) Material(v any) error {
 	if err := json.Unmarshal(r.Mat, v); err != nil {
 		return fmt.Errorf("unmarshal %s key material: %w", r.Kty, err)
@@ -166,13 +280,16 @@ func (r *raw) Material(v any) error {
 	return nil
 }
 
+// loader defines a function that decodes the key material from a raw JWK
+// and constructs a concrete Key.
 type loader func(r *raw) (Key, error)
 
+// loaders maps a JWA algorithm name to the function responsible for parsing
+// its key material.
 var loaders map[string]loader
 
 func init() {
 	loaders = make(map[string]loader, 10)
-
 	addLoader(jwa.RS256, decodeRSA)
 	addLoader(jwa.RS384, decodeRSA)
 	addLoader(jwa.RS512, decodeRSA)
@@ -185,23 +302,21 @@ func init() {
 	addLoader(jwa.EdDSA, decodeEdDSA)
 }
 
+// addLoader helps populate the loaders map in a type-safe manner.
 func addLoader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
 	loaders[alg.String()] = func(r *raw) (Key, error) {
 		mat, err := dec(r)
 		if err != nil {
 			return nil, err
 		}
-		kid := r.Kid
-		return &key[T]{
-			alg: alg,
-			kid: kid,
-			mat: mat,
-		}, nil
+		return New(alg, r.Kid, mat), nil
 	}
 }
 
+// decoder decodes the key material for a specific key type T.
 type decoder[T crypto.PublicKey] func(*raw) (T, error)
 
+// decodeRSA parses the material for an RSA public key.
 func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 	if raw.Kty != "RSA" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
@@ -233,6 +348,7 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
+// decodeECDSA creates a decoder for the specified elliptic curve.
 func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 	return func(raw *raw) (*ecdsa.PublicKey, error) {
 		if raw.Kty != "EC" {
@@ -261,6 +377,7 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 	}
 }
 
+// decodeEdDSA parses the material for an EdDSA public key.
 func decodeEdDSA(raw *raw) ([]byte, error) {
 	if raw.Kty != "OKP" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
@@ -282,7 +399,8 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported OKP curve %q", mat.Crv)
 	}
 	if m := len(mat.X); m != n {
-		return nil, fmt.Errorf("got length %d for %s curve, want %d", m, mat.Crv, n)
+		return nil, fmt.Errorf("illegal key size for %s curve: got %d, want %d",
+			mat.Crv, m, n)
 	}
 	return mat.X, nil
 }
