@@ -86,6 +86,7 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	defer func() { a.pool.Put(h) }()
 	h.Write(msg)
 	digest := h.Sum(nil)
+	// The salt length is set to match the hash size.
 	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}
 	return rsa.VerifyPSS(key, a.pool.Hash, digest, sig, opts) == nil
 }
@@ -119,6 +120,8 @@ func newES(name string, hash crypto.Hash) Algorithm[*ecdsa.PublicKey] {
 }
 
 func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
+	// The signature is the concatenation of two integers of the same size
+	// as the curve's order.
 	n := (key.Curve.Params().BitSize + 7) / 8
 	if len(sig) != 2*n {
 		return false
@@ -127,12 +130,12 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	defer func() { a.pool.Put(h) }()
 	h.Write(msg)
 	digest := h.Sum(nil)
-	return ecdsa.Verify(
-		key,
-		digest,
-		new(big.Int).SetBytes(sig[:n]),
-		new(big.Int).SetBytes(sig[n:]),
-	)
+
+	// Split the signature into R and S.
+	r := new(big.Int).SetBytes(sig[:n])
+	s := new(big.Int).SetBytes(sig[n:])
+
+	return ecdsa.Verify(key, digest, r, s)
 }
 
 func (a *es) String() string {
@@ -154,6 +157,7 @@ type ed struct{}
 func (a *ed) Verify(key []byte, msg, sig []byte) bool {
 	switch len(key) {
 	case ed448.PublicKeySize:
+		// Per RFC 8037, the context for Ed448ph is empty.
 		return ed448.Verify(ed448.PublicKey(key), msg, sig, "")
 	case ed25519.PublicKeySize:
 		return ed25519.Verify(ed25519.PublicKey(key), msg, sig)
