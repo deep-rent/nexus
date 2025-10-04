@@ -34,10 +34,10 @@ import (
 	"github.com/deep-rent/nexus/scheduler"
 )
 
-// Ref represents a reference to a Key, containing the minimum information
+// Hint represents a reference to a Key, containing the minimum information
 // needed to look one up in a Set. It effectively abstracts the JWS header
 // fields ("alg" and "kid") used to select a key for signature verification.
-type Ref interface {
+type Hint interface {
 	// Algorithm returns the algorithm ("alg") the key must be used with.
 	Algorithm() string
 	// KeyID returns the unique id ("kid") for the key.
@@ -46,7 +46,7 @@ type Ref interface {
 
 // Key represents a public JSON Web Key (JWK) used for signature verification.
 type Key interface {
-	Ref
+	Hint
 
 	// Verify checks a signature against a message using the key's material
 	// and its associated algorithm. It returns true if the signature is valid.
@@ -129,10 +129,10 @@ type Set interface {
 	Keys() iter.Seq[Key]
 	// Len returns the number of keys in this set.
 	Len() int
-	// Find looks up a key using the specified reference. A key is returned only
-	// if both its key id and algorithm match the reference exactly.
+	// Find looks up a key using the specified hint. A key is returned only
+	// if both its key id and algorithm match the hint exactly.
 	// Otherwise, it returns nil.
-	Find(ref Ref) Key
+	Find(hint Hint) Key
 }
 
 // NewSet creates a Set programmatically from the provided slice of Keys. Any
@@ -155,12 +155,12 @@ type set map[string]Key
 func (s set) Keys() iter.Seq[Key] { return maps.Values(s) }
 func (s set) Len() int            { return len(s) }
 
-func (s set) Find(ref Ref) Key {
-	if ref == nil || ref.KeyID() == "" {
+func (s set) Find(hint Hint) Key {
+	if hint == nil || hint.KeyID() == "" {
 		return nil
 	}
-	k := s[ref.KeyID()]
-	if k == nil || k.Algorithm() != ref.Algorithm() {
+	k := s[hint.KeyID()]
+	if k == nil || k.Algorithm() != hint.Algorithm() {
 		return nil
 	}
 	return k
@@ -170,7 +170,7 @@ type emptySet struct{}
 
 func (e emptySet) Keys() iter.Seq[Key] { return func(func(Key) bool) {} }
 func (e emptySet) Len() int            { return 0 }
-func (e emptySet) Find(ref Ref) Key    { return nil }
+func (e emptySet) Find(Hint) Key       { return nil }
 
 // empty is a singleton instance of an empty Set.
 var empty Set = emptySet{}
@@ -239,7 +239,7 @@ func (s *cacheSet) get() Set {
 
 func (s *cacheSet) Keys() iter.Seq[Key] { return s.get().Keys() }
 func (s *cacheSet) Len() int            { return s.get().Len() }
-func (s *cacheSet) Find(ref Ref) Key    { return s.get().Find(ref) }
+func (s *cacheSet) Find(hint Hint) Key  { return s.get().Find(hint) }
 
 func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
