@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"maps"
 	"math/big"
 	"slices"
 	"time"
@@ -36,12 +35,22 @@ import (
 
 // Hint represents a reference to a Key, containing the minimum information
 // needed to look one up in a Set. It effectively abstracts the JWS header
-// fields ("alg" and "kid") used to select a key for signature verification.
+// fields used to select a key for signature verification.
 type Hint interface {
-	// Algorithm returns the algorithm ("alg") the key must be used with.
+	// Algorithm returns the JWA algorithm name that the key is intended for.
+	// This must match the "alg" parameter in the JWS header.
 	Algorithm() string
-	// KeyID returns the unique id ("kid") for the key.
+	// KeyID returns the unique identifier for the key, or an empty string.
+	// This must match the "kid" parameter in the JWS header. One of "kid" or
+	// "x5t#S256" must be present. If both are present, "kid" takes precedence
+	// during lookups.
 	KeyID() string
+	// Thumbprint returns the base64url-encoded SHA-256 digest of the DER-encoded
+	// X.509 certificate associated with the key, or an empty string.
+	// This must match the "x5t#S256" parameter in the JWS header. One of "kid" or
+	// "x5t#S256" must be present. If both are present, "kid" takes precedence
+	// during lookups.
+	Thumbprint() string
 }
 
 // Key represents a public JSON Web Key (JWK) used for signature verification.
@@ -50,16 +59,19 @@ type Key interface {
 
 	// Verify checks a signature against a message using the key's material
 	// and its associated algorithm. It returns true if the signature is valid.
-	// It returns false if the signature is invalid or if any of the parameters
-	// are nil.
+	// It returns false if the signature is invalid.
 	Verify(msg, sig []byte) bool
 }
 
-// New creates a new Key programmatically from its constituent parts. The type
-// parameter T must match the public key type expected by the provided
+// newKey creates a new Key programmatically from its constituent parts. The
+// type parameter T must match the public key type expected by the provided
 // algorithm (e.g., *rsa.PublicKey for jwa.RS256).
-func New[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, mat T) Key {
-	return &key[T]{alg: alg, kid: kid, mat: mat}
+func newKey[T crypto.PublicKey](
+	alg jwa.Algorithm[T],
+	kid string,
+	x5t string,
+	mat T) Key {
+	return &key[T]{alg: alg, kid: kid, x5t: x5t, mat: mat}
 }
 
 // key is a concrete implementation of the Key interface, generic over the
@@ -67,18 +79,14 @@ func New[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, mat T) Key {
 type key[T crypto.PublicKey] struct {
 	alg jwa.Algorithm[T]
 	kid string
+	x5t string
 	mat T // The actual cryptographic public key material.
 }
 
-func (k *key[T]) Algorithm() string { return k.alg.String() }
-func (k *key[T]) KeyID() string     { return k.kid }
-
-func (k *key[T]) Verify(msg, sig []byte) bool {
-	if msg == nil || sig == nil {
-		return false
-	}
-	return k.alg.Verify(k.mat, msg, sig)
-}
+func (k *key[T]) Algorithm() string           { return k.alg.String() }
+func (k *key[T]) KeyID() string               { return k.kid }
+func (k *key[T]) Thumbprint() string          { return k.x5t }
+func (k *key[T]) Verify(msg, sig []byte) bool { return k.alg.Verify(k.mat, msg, sig) }
 
 // ErrIneligibleKey indicates that a key may be syntactically valid but should
 // not be used for signature verification according to its "use" or "key_ops"
@@ -89,8 +97,8 @@ var ErrIneligibleKey = errors.New("ineligible for signature verification")
 //
 // It first checks if the key is eligible for signature verification. If not,
 // it returns ErrIneligibleKey. Otherwise, it proceeds to validate the presence
-// of required parameters ("kty", "kid", "alg"), the supported algorithm, and
-// the integrity of the key material itself.
+// of required parameters ("kty" and "alg"), whether the algorithm is supported,
+// and the integrity of the key material itself.
 func Parse(in []byte) (Key, error) {
 	var raw raw
 	if err := json.Unmarshal(in, &raw); err != nil {
@@ -103,13 +111,10 @@ func Parse(in []byte) (Key, error) {
 		return nil, ErrIneligibleKey
 	}
 	if raw.Kty == "" {
-		return nil, errors.New("missing required parameter 'kty' (key type)")
-	}
-	if raw.Kid == "" {
-		return nil, errors.New("missing required parameter 'kid' (key id)")
+		return nil, errors.New("undefined key type")
 	}
 	if raw.Alg == "" {
-		return nil, errors.New("missing required parameter 'alg' (algorithm)")
+		return nil, errors.New("algorithm not specified")
 	}
 	load := loaders[raw.Alg]
 	if load == nil {
@@ -117,7 +122,7 @@ func Parse(in []byte) (Key, error) {
 	}
 	key, err := load(&raw)
 	if err != nil {
-		return nil, fmt.Errorf("load %s material: %w", raw.Kty, err)
+		return nil, fmt.Errorf("load %s key material: %w", raw.Kty, err)
 	}
 	return key, nil
 }
@@ -125,7 +130,7 @@ func Parse(in []byte) (Key, error) {
 // Set stores an immutable collection of Keys, typically parsed from a JWKS.
 // It provides efficient lookups of keys for signature verification.
 type Set interface {
-	// Keys returns an iterator over all keys in the set.
+	// Keys returns an iterator over all keys in this set.
 	Keys() iter.Seq[Key]
 	// Len returns the number of keys in this set.
 	Len() int
@@ -135,32 +140,30 @@ type Set interface {
 	Find(hint Hint) Key
 }
 
-// NewSet creates a Set programmatically from the provided slice of Keys. Any
-// nil keys in the input are filtered out. If multiple keys share the same
-// key id, the last one in the slice wins.
-func NewSet(keys ...Key) Set {
-	s := make(set, len(keys))
-	for _, k := range keys {
-		if k != nil {
-			s[k.KeyID()] = k
-		}
-	}
-	return s
+// set is the concrete implementation of the Set interface.
+// It uses maps for efficient O(1) average time complexity lookups.
+type set struct {
+	keys []Key
+	kid  map[string]int // Maps key id to index in keys array.
+	x5t  map[string]int // Maps thumbprint to index in keys array.
 }
 
-// set is the concrete implementation of the Set interface.
-// It uses a map for efficient O(1) average time complexity lookups.
-type set map[string]Key
+func (s *set) Keys() iter.Seq[Key] { return slices.Values(s.keys) }
+func (s *set) Len() int            { return len(s.keys) }
 
-func (s set) Keys() iter.Seq[Key] { return maps.Values(s) }
-func (s set) Len() int            { return len(s) }
-
-func (s set) Find(hint Hint) Key {
-	if hint == nil || hint.KeyID() == "" {
+func (s *set) Find(hint Hint) Key {
+	if hint == nil {
 		return nil
 	}
-	k := s[hint.KeyID()]
-	if k == nil || k.Algorithm() != hint.Algorithm() {
+	var k Key
+	if i, ok := s.kid[hint.KeyID()]; ok {
+		k = s.keys[i]
+	} else if i, ok := s.x5t[hint.Thumbprint()]; ok {
+		k = s.keys[i]
+	} else {
+		return nil
+	}
+	if k.Algorithm() != hint.Algorithm() {
 		return nil
 	}
 	return k
@@ -190,7 +193,11 @@ func ParseSet(in []byte) (Set, error) {
 	if err := json.Unmarshal(in, &raw); err != nil {
 		return empty, fmt.Errorf("invalid format: %w", err)
 	}
-	s := make(set, len(raw.Keys))
+	s := &set{
+		keys: make([]Key, len(raw.Keys)),
+		kid:  make(map[string]int, len(raw.Keys)),
+		x5t:  make(map[string]int, len(raw.Keys)),
+	}
 	var errs []error
 	for i, v := range raw.Keys {
 		k, err := Parse(v)
@@ -202,13 +209,38 @@ func ParseSet(in []byte) (Set, error) {
 			errs = append(errs, err)
 			continue
 		}
+		idx := -1
 		kid := k.KeyID()
-		if s[kid] != nil {
-			err = fmt.Errorf("key at index %d: duplicate key id %q", i, kid)
-			errs = append(errs, err)
+		if kid != "" {
+			if _, ok := s.kid[kid]; ok {
+				errs = append(errs, fmt.Errorf(
+					"key at index %d: duplicate key id %q", i, kid,
+				))
+				continue
+			}
+			idx = len(s.keys)
+			s.kid[kid] = idx
+			s.keys = append(s.keys, k)
+		}
+		x5t := k.Thumbprint()
+		if x5t != "" {
+			if _, ok := s.x5t[x5t]; ok {
+				errs = append(errs, fmt.Errorf(
+					"key at index %d: duplicate thumbprint %q", i, x5t,
+				))
+				continue
+			}
+			idx = len(s.keys)
+			s.x5t[x5t] = idx
+			s.keys = append(s.keys, k)
+		}
+		if idx == -1 {
+			errs = append(errs, fmt.Errorf(
+				"key at index %d: missing both key id and thumbprint", i,
+			))
 			continue
 		}
-		s[kid] = k
+		s.keys[i] = k
 	}
 	return s, errors.Join(errs...)
 }
@@ -268,6 +300,7 @@ type raw struct {
 	Ops []string       `json:"key_ops"`
 	Alg string         `json:"alg"`
 	Kid string         `json:"kid"`
+	X5t string         `json:"x5t#S256"`
 	Mat jsontext.Value `json:",unknown"` // Capture all other fields.
 }
 
@@ -309,7 +342,7 @@ func addLoader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
 		if err != nil {
 			return nil, err
 		}
-		return New(alg, r.Kid, mat), nil
+		return newKey(alg, r.Kid, r.X5t, mat), nil
 	}
 }
 
@@ -329,14 +362,14 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 		return nil, err
 	}
 	if len(mat.N) == 0 {
-		return nil, errors.New("missing RSA modulus")
+		return nil, errors.New("missing modulus")
 	}
 	if len(mat.E) == 0 {
-		return nil, errors.New("missing RSA public exponent")
+		return nil, errors.New("missing public exponent")
 	}
 	// Exponents > 2^31-1 are extremely rare and not recommended.
 	if len(mat.E) > 4 {
-		return nil, errors.New("RSA public exponent exceeds 32 bits")
+		return nil, errors.New("public exponent exceeds 32 bits")
 	}
 	n := new(big.Int).SetBytes(mat.N)
 	e := 0
@@ -366,10 +399,10 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 			return nil, fmt.Errorf("incompatible curve %q", mat.Crv)
 		}
 		if len(mat.X) == 0 {
-			return nil, errors.New("missing EC x coordinate")
+			return nil, errors.New("missing x coordinate")
 		}
 		if len(mat.Y) == 0 {
-			return nil, errors.New("missing EC y coordinate")
+			return nil, errors.New("missing y coordinate")
 		}
 		x := new(big.Int).SetBytes(mat.X)
 		y := new(big.Int).SetBytes(mat.Y)
@@ -396,11 +429,12 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 	case "Ed25519":
 		n = ed25519.PublicKeySize
 	default:
-		return nil, fmt.Errorf("unsupported OKP curve %q", mat.Crv)
+		return nil, fmt.Errorf("unsupported curve %q", mat.Crv)
 	}
 	if m := len(mat.X); m != n {
-		return nil, fmt.Errorf("illegal key size for %s curve: got %d, want %d",
-			mat.Crv, m, n)
+		return nil, fmt.Errorf(
+			"illegal key size for %s curve: got %d, want %d", mat.Crv, m, n,
+		)
 	}
 	return mat.X, nil
 }
