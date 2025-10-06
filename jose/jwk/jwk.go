@@ -1,14 +1,25 @@
 // Package jwk provides functionality to parse and manage JSON Web Keys (JWK)
 // and JSON Web Key Sets (JWKS), as defined in RFC 7517. It is specifically
-// designed for the purpose of verifying JWT signatures.
+// designed for the purpose of verifying JWT signatures. Hence, only public
+// keys can be represented.
 //
-// Keys that are not intended for signature verification (based on their "use"
-// or "key_ops" parameters) are considered ineligible and will be ignored
-// during parsing of a JWKS.
+// Keys that are not intended for signature verification are considered
+// ineligible and will be ignored during parsing of a JWKS. A key is eligible
+// if it meets at least one of the following criteria:
+//
+//   - The "use" (Public Key Use) parameter is set to "sig".
+//   - The "key_ops" (Key Operations) parameter includes "verify".
 //
 // This implementation deliberately deviates from the RFC for robustness and
-// simplicity: the "alg" (algorithm) and "kid" (key id) parameters, both
-// optional in the standard, are treated mandatory for all eligible keys.
+// simplicity:
+//
+//  1. The "alg" (Algorithm) parameter, optional in the standard, is treated as
+//     mandatory for all eligible keys. Enforcing this is a best practice that
+//     mitigates algorithm confusion attacks.
+//  2. For key selection, either "kid" (Key ID) or "x5t#S256" (SHA-256
+//     Thumbprint) must be defined. The "x5t" (SHA-1 Thumbprint) parameter is
+//     explicitly ignored as it is considered outdated. No other mechanism of
+//     key selection is supported.
 package jwk
 
 import (
@@ -40,13 +51,13 @@ type Hint interface {
 	// Algorithm returns the JWA algorithm name that the key is intended for.
 	// This must match the "alg" parameter in the JWS header.
 	Algorithm() string
-	// KeyID returns the unique identifier for the key, or an empty string.
-	// This must match the "kid" parameter in the JWS header. One of "kid" or
-	// "x5t#S256" must be present. If both are present, "kid" takes precedence
-	// during lookups.
+	// KeyID returns the unique identifier for the key, or an empty string if
+	// absent. This must match the "kid" parameter in the JWS header.
+	// One of "kid" or "x5t#S256" must be present. If both are present, "kid"
+	// takes precedence during lookups.
 	KeyID() string
 	// Thumbprint returns the base64url-encoded SHA-256 digest of the DER-encoded
-	// X.509 certificate associated with the key, or an empty string.
+	// X.509 certificate associated with the key, or an empty string if absent.
 	// This must match the "x5t#S256" parameter in the JWS header. One of "kid" or
 	// "x5t#S256" must be present. If both are present, "kid" takes precedence
 	// during lookups.
@@ -182,10 +193,10 @@ var empty Set = emptySet{}
 //
 // If the top-level JSON structure is malformed, it returns an empty set and
 // a fatal error. Otherwise, it iterates through the "keys" array, parsing
-// each key individually. Keys that are invalid, unsupported, or carry a
-// duplicate key id, result in non-fatal errors. Ineligible keys (e.g., those
-// meant for encryption) are silently skipped. If any non-fatal errors occurred,
-// a joined error is returned alongside the set of successfully parsed keys.
+// each key individually. Keys that are invalid, unsupported, or occur multiple
+// times, result in non-fatal errors. Ineligible keys (e.g., those meant for
+// encryption) are silently skipped. If any non-fatal errors occurred, a joined
+// error is returned alongside the set of successfully parsed keys.
 func ParseSet(in []byte) (Set, error) {
 	var raw struct {
 		Keys []jsontext.Value `json:"keys"`
