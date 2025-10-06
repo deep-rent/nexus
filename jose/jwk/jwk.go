@@ -98,10 +98,13 @@ type key[T crypto.PublicKey] struct {
 	mat T // The actual cryptographic public key material.
 }
 
-func (k *key[T]) Algorithm() string           { return k.alg.String() }
-func (k *key[T]) KeyID() string               { return k.kid }
-func (k *key[T]) Thumbprint() string          { return k.x5t }
-func (k *key[T]) Verify(msg, sig []byte) bool { return k.alg.Verify(k.mat, msg, sig) }
+func (k *key[T]) Algorithm() string  { return k.alg.String() }
+func (k *key[T]) KeyID() string      { return k.kid }
+func (k *key[T]) Thumbprint() string { return k.x5t }
+
+func (k *key[T]) Verify(msg, sig []byte) bool {
+	return k.alg.Verify(k.mat, msg, sig)
+}
 
 // ErrIneligibleKey indicates that a key may be syntactically valid but should
 // not be used for signature verification according to its "use" or "key_ops"
@@ -303,7 +306,12 @@ func (s *cacheSet) Run(ctx context.Context) time.Duration {
 
 // mapper adapts the ParseSet function to the cache.Mapper interface.
 var mapper cache.Mapper[Set] = func(in []byte) (Set, error) {
-	return ParseSet(in)
+	set, _ := ParseSet(in)
+	if set.Len() == 0 {
+		return nil, errors.New("no valid keys found")
+	}
+	// Don't complain unless there are no keys available at all.
+	return set, nil
 }
 
 // NewCacheSet creates a CacheSet that stays in sync with a remote JWKS
@@ -311,7 +319,8 @@ var mapper cache.Mapper[Set] = func(in []byte) (Set, error) {
 // background fetching and refreshing process.
 //
 // The provided cache.Options can configure behaviors like refresh interval,
-// request timeouts, and error handling.
+// request timeouts, and error handling. Parsing of retrieved key sets is
+// extremely lenient: it will only fail of no valid keys are found at all.
 func NewCacheSet(url string, opts ...cache.Option) CacheSet {
 	ctrl := cache.NewController(url, mapper, opts...)
 	return &cacheSet{ctrl}
