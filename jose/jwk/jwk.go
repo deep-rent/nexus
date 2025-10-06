@@ -3,12 +3,16 @@
 // designed for the purpose of verifying JWT signatures. Hence, only public
 // keys can be represented.
 //
+// # Key Eligibility
+//
 // Keys that are not intended for signature verification are considered
-// ineligible and will be ignored during parsing of a JWKS. A key is eligible
+// ineligible and will be skipped during parsing of a JWKS. A key is eligible
 // if it meets at least one of the following criteria:
 //
 //   - The "use" (Public Key Use) parameter is set to "sig".
 //   - The "key_ops" (Key Operations) parameter includes "verify".
+//
+// # Key Selection
 //
 // This implementation deliberately deviates from the RFC for robustness and
 // simplicity:
