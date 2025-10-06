@@ -44,7 +44,8 @@ func Unmarshal(v any, opts ...Option) error {
 }
 
 // Expand substitutes environment variables in a string with the format ${KEY}.
-// If a variable is not found, it returns an error.
+// It supports escaping the '$' character with '$$'. If a variable is not
+// found, it returns an error.
 func Expand(s string, opts ...Option) (string, error) {
 	cfg := config{
 		Lookup: os.LookupEnv,
@@ -55,30 +56,50 @@ func Expand(s string, opts ...Option) (string, error) {
 
 	var b strings.Builder
 	b.Grow(len(s))
+
 	i := 0
 	for i < len(s) {
-		// Find the start of a potential variable.
-		start := strings.Index(s[i:], "${")
+		// Find the next dollar sign.
+		start := strings.IndexByte(s[i:], '$')
 		if start == -1 {
 			b.WriteString(s[i:])
 			break
 		}
-		// Append the text before the variable.
+
+		// Append the text before the dollar sign.
 		b.WriteString(s[i : i+start])
-		// Find the closing brace.
-		end := strings.Index(s[i+start+2:], "}")
-		if end == -1 {
-			return "", errors.New("env: syntax error: unmatched '${' in string")
+
+		// Move our main index to the location of the dollar sign.
+		i += start
+
+		// Check what follows the dollar sign.
+		switch {
+		case i+1 < len(s) && s[i+1] == '$':
+			// Case 1: Escaped dollar sign ($$).
+			b.WriteByte('$')
+			i += 2 // Skip both signs.
+
+		case i+1 < len(s) && s[i+1] == '{':
+			// Case 2: Variable expansion (${KEY}).
+			end := strings.IndexByte(s[i+2:], '}')
+			if end == -1 {
+				return "", errors.New("env: syntax error: unmatched '${' in string")
+			}
+			// Extract the variable name.
+			key := cfg.Prefix + s[i+2:i+2+end]
+			val, ok := cfg.Lookup(key)
+			if !ok {
+				return "", fmt.Errorf("env: variable %q is not set", key)
+			}
+			b.WriteString(val)
+			// Move the index past the processed variable `${KEY}`.
+			i += 2 + end + 1
+
+		default:
+			// Case 3: Lone dollar sign. Treat it literally.
+			b.WriteByte('$')
+			i++
 		}
-		// Extract the variable name.
-		key := cfg.Prefix + s[i+start+2:i+start+2+end]
-		val, ok := cfg.Lookup(key)
-		if !ok {
-			return "", fmt.Errorf("env: variable %q is not set", key)
-		}
-		b.WriteString(val)
-		// Move the index past the processed variable `${KEY}`.
-		i += start + 2 + end + 1
 	}
 
 	return b.String(), nil
