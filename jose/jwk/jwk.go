@@ -151,6 +151,15 @@ type Set interface {
 	Find(hint Hint) Key
 }
 
+// newSet creates a new, empty Set with the specified initial capacity.
+func newSet(n int) *set {
+	return &set{
+		keys: make([]Key, n),
+		kid:  make(map[string]int, n),
+		x5t:  make(map[string]int, n),
+	}
+}
+
 // set is the concrete implementation of the Set interface.
 // It uses maps for efficient O(1) average time complexity lookups.
 type set struct {
@@ -204,11 +213,11 @@ func ParseSet(in []byte) (Set, error) {
 	if err := json.Unmarshal(in, &raw); err != nil {
 		return empty, fmt.Errorf("invalid format: %w", err)
 	}
-	s := &set{
-		keys: make([]Key, len(raw.Keys)),
-		kid:  make(map[string]int, len(raw.Keys)),
-		x5t:  make(map[string]int, len(raw.Keys)),
+	n := len(raw.Keys)
+	if n == 0 {
+		return empty, nil
 	}
+	s := newSet(n)
 	var errs []error
 	for i, v := range raw.Keys {
 		k, err := Parse(v)
