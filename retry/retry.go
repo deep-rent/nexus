@@ -86,7 +86,7 @@ type transport struct {
 	policy  Policy
 	backoff backoff.Strategy
 	logger  *slog.Logger
-	clock   func() time.Time
+	now     func() time.Time
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -135,7 +135,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		delay := t.backoff.Next()
 		if res != nil {
-			if d := header.Throttle(res.Header, t.clock); d != 0 {
+			if d := header.Throttle(res.Header, t.now); d != 0 {
 				// Use the longer of the two delays to respect both the server
 				// and our own backoff policy
 				delay = max(delay, d)
@@ -194,7 +194,7 @@ func NewTransport(
 		next:    next,
 		policy:  c.policy.LimitAttempts(c.limit),
 		backoff: c.backoff,
-		clock:   c.clock,
+		now:     c.now,
 	}
 }
 
@@ -203,7 +203,7 @@ type config struct {
 	limit   int
 	backoff backoff.Strategy
 	logger  *slog.Logger
-	clock   func() time.Time
+	now     func() time.Time
 }
 
 type Option func(*config)
@@ -241,7 +241,7 @@ func WithLogger(log *slog.Logger) Option {
 func WithClock(now func() time.Time) Option {
 	return func(c *config) {
 		if now != nil {
-			c.clock = now
+			c.now = now
 		}
 	}
 }

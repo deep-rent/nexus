@@ -87,7 +87,7 @@ type controller[T any] struct {
 	client      *http.Client
 	minInterval time.Duration
 	maxInterval time.Duration
-	clock       func() time.Time
+	now         func() time.Time
 	backoff     backoff.Strategy
 	logger      *slog.Logger
 	readyOnce   sync.Once
@@ -177,7 +177,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 }
 
 func (c *controller[T]) delay(h http.Header) time.Duration {
-	d := header.Lifetime(h, c.clock)
+	d := header.Lifetime(h, c.now)
 	if d > c.maxInterval {
 		return c.maxInterval
 	}
