@@ -28,7 +28,7 @@ func Recover(logger *slog.Logger) Pipe {
 				if err := recover(); err != nil {
 					method, url := r.Method, r.URL.String()
 					logger.Error(
-						"panic caught by middleware",
+						"Panic caught by middleware",
 						"method", method,
 						"url", url,
 						"error", err,
