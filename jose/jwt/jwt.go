@@ -168,7 +168,7 @@ const dot = byte('.')
 // Parse decodes a JWT from its compact serialization format into a Token
 // without verifying the signature. The type parameter T specifies the target
 // struct for the token's claims. If the token is malformed or the payload does
-// not unmarshal into T, an error is returned.
+// not unmarshal into T (using encoding/json/v2), an error is returned.
 func Parse[T any](in []byte) (Token[T], error) {
 	i := bytes.IndexByte(in, dot)
 	j := bytes.LastIndexByte(in, dot)
