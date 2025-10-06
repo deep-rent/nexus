@@ -43,6 +43,47 @@ func Unmarshal(v any, opts ...Option) error {
 	return nil
 }
 
+// Expand substitutes environment variables in a string with the format ${KEY}.
+// If a variable is not found, it returns an error.
+func Expand(s string, opts ...Option) (string, error) {
+	cfg := config{
+		Lookup: os.LookupEnv,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		// Find the start of a potential variable.
+		start := strings.Index(s[i:], "${")
+		if start == -1 {
+			b.WriteString(s[i:])
+			break
+		}
+		// Append the text before the variable.
+		b.WriteString(s[i : i+start])
+		// Find the closing brace.
+		end := strings.Index(s[i+start+2:], "}")
+		if end == -1 {
+			return "", errors.New("env: syntax error: unmatched '${' in string")
+		}
+		// Extract the variable name.
+		key := cfg.Prefix + s[i+start+2:i+start+2+end]
+		val, ok := cfg.Lookup(key)
+		if !ok {
+			return "", fmt.Errorf("env: variable %q is not set", key)
+		}
+		b.WriteString(val)
+		// Move the index past the processed variable `${KEY}`.
+		i += start + 2 + end + 1
+	}
+
+	return b.String(), nil
+}
+
 type flags struct {
 	Name     string
 	Split    string
