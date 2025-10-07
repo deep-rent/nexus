@@ -1,5 +1,6 @@
 // Package middleware provides utilities for chaining and composing HTTP
-// middleware handlers.
+// middleware handlers, besides some common middleware implementations like
+// panic recovery and logging.
 package middleware
 
 import (
@@ -108,4 +109,23 @@ func GetRequestID(ctx context.Context) string {
 // context that carries the ID.
 func SetRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, keyRequestID, id)
+}
+
+// Log creates a middleware Pipe that logs details about each incoming request
+// at the debug level. It includes the request ID, method, URL, remote address,
+// and user agent in the log entry.
+func Log(logger *slog.Logger) Pipe {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Debug(
+				"Incoming request",
+				slog.String("id", GetRequestID(r.Context())),
+				slog.String("method", r.Method),
+				slog.String("url", r.URL.String()),
+				slog.String("remote", r.RemoteAddr),
+				slog.String("agent", r.UserAgent()),
+			)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
