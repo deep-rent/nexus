@@ -1,3 +1,7 @@
+// Package retry provides an http.RoundTripper middleware for automatically
+// retrying failed HTTP requests. It allows fine-grained control over retry
+// logic using a customizable Policy and a backoff.Strategy for delays
+// between attempts.
 package retry
 
 import (
@@ -13,6 +17,9 @@ import (
 	"github.com/deep-rent/nexus/header"
 )
 
+// Attempt holds the context for a single HTTP request attempt. It captures the
+// request, response, error, and the attempt count, providing all necessary
+// information for a Policy to make a retry decision.
 type Attempt struct {
 	Request  *http.Request
 	Response *http.Response
@@ -20,6 +27,9 @@ type Attempt struct {
 	Count    int
 }
 
+// Idempotent reports whether the request can be safely retried without
+// unintended side effects. It considers standard HTTP methods that are
+// idempotent according to RFC 7231.
 func (a Attempt) Idempotent() bool {
 	switch a.Request.Method {
 	case
@@ -35,6 +45,9 @@ func (a Attempt) Idempotent() bool {
 	}
 }
 
+// Temporary reports whether the response indicates a server-side temporary
+// failure. This is determined by specific HTTP status codes that suggest the
+// request might succeed if retried.
 func (a Attempt) Temporary() bool {
 	if a.Response != nil {
 		switch a.Response.StatusCode {
@@ -51,6 +64,10 @@ func (a Attempt) Temporary() bool {
 	return false
 }
 
+// Transient reports whether the error is a network-level issue that might be
+// resolved on a subsequent attempt. This includes network timeouts and
+// unexpected EOF errors. It explicitly returns false for context cancellations,
+// which should not be retried.
 func (a Attempt) Transient() bool {
 	if a.Error == nil ||
 		errors.Is(a.Error, context.Canceled) ||
@@ -64,8 +81,14 @@ func (a Attempt) Transient() bool {
 	return errors.As(a.Error, &err) && err.Timeout()
 }
 
+// Policy is a function that decides whether a failed request attempt should
+// be retried. It receives the Attempt details and returns true to schedule a
+// retry, or false to stop.
 type Policy func(a Attempt) bool
 
+// LimitAttempts returns a new Policy that wraps the original and adds a
+// maximum attempt limit. Retries will only be considered if the attempt count
+// is less than n AND the wrapped policy also returns true.
 func (p Policy) LimitAttempts(n int) Policy {
 	if n <= 0 {
 		return p
@@ -75,6 +98,9 @@ func (p Policy) LimitAttempts(n int) Policy {
 	}
 }
 
+// DefaultPolicy provides a safe and sensible default retry strategy. It enters
+// the retry loop only for idempotent requests that have resulted in a
+// temporary server error or a transient network error such as a timeout.
 func DefaultPolicy() Policy {
 	return func(a Attempt) bool {
 		return a.Idempotent() && (a.Temporary() || a.Transient())
@@ -124,7 +150,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			Error:    err,
 			Count:    count,
 		}) {
-			break // Success or policy decided to stop
+			break // Success or policy decided to exit
 		}
 
 		// If retrying, drain and close the previous response body
@@ -177,6 +203,9 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 var _ http.RoundTripper = (*transport)(nil)
 
+// NewTransport creates and returns a new retrying http.RoundTripper. It wraps
+// an existing transport and retries requests based on the configured policy
+// and backoff strategy.
 func NewTransport(
 	next http.RoundTripper,
 	opts ...Option,
@@ -206,8 +235,11 @@ type config struct {
 	now     func() time.Time
 }
 
+// Option is a function that configures the retry transport.
 type Option func(*config)
 
+// WithPolicy sets the retry policy used by the transport. If not provided,
+// DefaultPolicy is used. A nil value is ignored.
 func WithPolicy(policy Policy) Option {
 	return func(c *config) {
 		if policy != nil {
@@ -216,12 +248,17 @@ func WithPolicy(policy Policy) Option {
 	}
 }
 
+// WithAttemptLimit sets the maximum number of attempts for a request. A value
+// of 0 or less means no limit is enforced besides the policy itself.
 func WithAttemptLimit(n int) Option {
 	return func(c *config) {
 		c.limit = n
 	}
 }
 
+// WithBackoff sets the backoff strategy for calculating the delay between
+// retries. If not provided, there is no delay between attempts. A nil value is
+// ignored. A nil value is ignored.
 func WithBackoff(strategy backoff.Strategy) Option {
 	return func(c *config) {
 		if strategy != nil {
@@ -230,6 +267,8 @@ func WithBackoff(strategy backoff.Strategy) Option {
 	}
 }
 
+// WithLogger sets the logger for debug messages. If not provided,
+// slog.Default() is used. A nil value is ignored.
 func WithLogger(log *slog.Logger) Option {
 	return func(c *config) {
 		if log != nil {
@@ -238,6 +277,8 @@ func WithLogger(log *slog.Logger) Option {
 	}
 }
 
+// WithClock provides a custom time source, primarily for testing. If not
+// provided, time.Now is used. A nil value is ignored.
 func WithClock(now func() time.Time) Option {
 	return func(c *config) {
 		if now != nil {
