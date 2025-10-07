@@ -1,19 +1,29 @@
 // Package env provides functionality for unmarshaling environment variables
-// into Go structs. It allows for flexible configuration through struct field
-// tags, supporting default values, required fields, and custom parsing for
-// various types.
+// into Go structs.
+//
+// By default, all exported fields in a struct are mapped to environment
+// variables. The variable name is derived by converting the field's name to
+// uppercase SNAKE_CASE (e.g., a field named APIKey maps to API_KEY).
+// This behavior can be customized or disabled on a per-field basis using
+// struct tags.
 //
 // # Basic Usage
 //
-// Define a struct and use tags on its fields to specify the environment
-// variable names and any parsing options. Then, call the Unmarshal function
-// with a pointer to an instance of the struct.
+// Define a struct to hold your configuration. Only exported fields will be
+// considered.
 //
 //	type Config struct {
-//		Host     string        `env:"HOST,required"`
-//		Port     int           `env:"PORT,default:8080"`
-//		Timeout  time.Duration `env:"TIMEOUT,default:5s"`
-//		Features []string      `env:"FEATURES,split:,"`
+//		// This field maps to the HOST variable and is required.
+//		Host string `env:",required"`
+//
+//		// This field maps to the PORT variable and defaults to 8080.
+//		Port int `env:",default:8080"`
+//
+//		// This field maps to the DEBUG variable. No tag is needed.
+//		Debug bool
+//
+//		// This field is ignored.
+//		InternalCounter int `env:"-"`
 //	}
 //
 //	func main() {
@@ -21,7 +31,7 @@
 //		if err := env.Unmarshal(&cfg); err != nil {
 //			log.Fatalf("failed to unmarshal config: %v", err)
 //		}
-//		// ... use cfg
+//		// Use the configuration to bootstrap your application...
 //	}
 //
 // # Struct Tag Options
@@ -30,20 +40,20 @@
 // The tag is a comma-separated string of options.
 //
 // The first value is the name of the environment variable. If it is omitted,
-// the field's name is converted to upper SNAKE_CASE.
-// Example: `env:"DB_HOST"`
+// the field's name is used as the base for the variable name.
+// Example: `env:"DATABASE_URL"`
 //
 // The subsequent parts of the tag are options, which can be in a key:value
 // format or be boolean flags.
 //
 //   - default:<value>
 //     Sets a default value to be used if the environment variable is not set.
-//     Example: Port int `env:"PORT,default:8080"`
+//     Example: Port int `env:",default:8080"`
 //
 //   - required
 //     Marks the variable as required. Unmarshal will return an error if the
 //     variable is not set and no default is provided.
-//     Example: APIKey string `env:"API_KEY,required"`
+//     Example: APIKey string `env:",required"`
 //
 //   - inline
 //     When used on an anonymous struct field, it flattens the struct, treating
@@ -53,20 +63,20 @@
 //   - split:separator
 //     For slice types, this specifies the delimiter to split the environment
 //     variable string. The default separator is a comma.
-//     Example: Hosts []string `env:"HOSTS,split:';'"`
+//     Example: Hosts []string `env:",split:';'"`
 //
 //   - format:<value>
 //     Provides a format specifier for special types. For time.Time it can
 //     be a layout string (e.g., "2006-01-02") or one of the predefined
 //     constants "unix", "dateTime", "date", or "time". Defaults to the RFC
 //     3339 format. For []byte, it can be "hex", "base32", or "base64".
-//     Example: StartDate time.Time `env:"START_DATE,format:date"`
+//     Example: StartDate time.Time `env:",format:date"`
 //
 //   - unit:<value>
 //     Specifies the unit for time.Time or time.Duration when parsing from an
 //     integer. For time.Duration: "ns", "us" (or "μs"), "ms", "s", "m", "h".
 //     For time.Time (with format:unix): "s", "ms", "us" (or "μs").
-//     Example: CacheTTL time.Duration `env:"CACHE_TTL,unit:m,default:5"`
+//     Example: CacheTTL time.Duration `env:",unit:m,default:5"`
 package env
 
 import (
@@ -126,11 +136,13 @@ func WithLookup(lookup Lookup) Option {
 }
 
 // Unmarshal populates the fields of a struct with values from environment
-// variables. The given value must be a non-nil pointer.
+// variables. The given value v must be a non-nil pointer to a struct.
 //
-// Fields are mapped to environment variables using env struct tags. If a field
-// is unexported or is tagged with "-", it is ignored. The behavior can be
-// adjusted through functional options.
+// By default, Unmarshal processes all exported fields. A field's environment
+// variable name is derived from its name, converted to uppercase SNAKE_CASE.
+// To ignore a field, tag it with `env:"-"`. Unexported fields are always
+// excluded. If a variable is not set, the field remains unchanged unless a
+// default value is specified in the struct tag, or it is marked as required.
 func Unmarshal(v any, opts ...Option) error {
 	if err := unmarshal(v, opts...); err != nil {
 		return fmt.Errorf("env: %w", err)
@@ -319,10 +331,13 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 		return setTime(rv, v, opts)
 	case typeDuration:
 		return setDuration(rv, v, opts)
+	default:
+		return setKind(rv, v, opts)
 	}
-	return setPrimitive(rv, v, opts)
 }
 
+// setTime parses and sets a time.Time value based on the provided format and
+// unit options.
 func setTime(rv reflect.Value, v string, opts flags) error {
 	var t time.Time
 	var err error
@@ -361,6 +376,8 @@ func setTime(rv reflect.Value, v string, opts flags) error {
 	return nil
 }
 
+// setDuration parses and sets a time.Duration value based on the provided unit
+// option.
 func setDuration(rv reflect.Value, v string, opts flags) error {
 	var d time.Duration
 	var err error
@@ -395,7 +412,8 @@ func setDuration(rv reflect.Value, v string, opts flags) error {
 	return nil
 }
 
-func setPrimitive(rv reflect.Value, v string, opts flags) error {
+// setKind sets a primite value based on its kind.
+func setKind(rv reflect.Value, v string, opts flags) error {
 	switch rv.Kind() {
 	case reflect.String:
 		rv.SetString(v)
@@ -431,6 +449,8 @@ func setPrimitive(rv reflect.Value, v string, opts flags) error {
 	return nil
 }
 
+// setSlice parses and sets a slice value. It supports []byte with special
+// encoding formats, as well as other slice types by splitting the input string.
 func setSlice(rv reflect.Value, v string, opts flags) error {
 	if rv.Type().Elem().Kind() == reflect.Uint8 {
 		var b []byte
