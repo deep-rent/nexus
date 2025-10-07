@@ -13,55 +13,9 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 )
 
-// Default CORS configuration values.
-const (
-	Wildcard                = "*"
-	DefaultAllowCredentials = true
-	DefaultMaxAge           = 12 * time.Hour
-)
-
-// Config defines configuration options for the CORS middleware.
-type Config struct {
-	// AllowedOrigins specifies the list of origins that are allowed to access
-	// the resource. If empty or contains Wildcard (*), all origins are allowed.
-	AllowedOrigins []string
-	// AllowedMethods specifies the list of HTTP methods the client is allowed
-	// to use. Defaults to DELETE, GET, HEAD, OPTIONS, PATCH, POST and PUT.
-	AllowedMethods []string
-	// AllowedHeaders specifies the list of non-standard headers the client is
-	// allowed to send. An empty list defaults to the browser's safelist.
-	AllowedHeaders []string
-	// ExposedHeaders specifies the list of headers in the response that can be
-	// exposed to the client's browser.
-	ExposedHeaders []string
-	// AllowCredentials indicates whether the response can be exposed to the
-	// browser when the credentials flag is true.
-	AllowCredentials bool
-	// MaxAge indicates how long the results of a preflight request can be
-	// cached by the browser.
-	MaxAge time.Duration
-}
-
-// DefaultConfig returns a new Config with sensible, permissive defaults
-// suitable for many common use cases.
-func DefaultConfig() Config {
-	defaultAllowedOrigins := []string{Wildcard}
-	defaultAllowedMethods := []string{
-		http.MethodDelete,
-		http.MethodGet,
-		http.MethodHead,
-		http.MethodOptions,
-		http.MethodPatch,
-		http.MethodPost,
-		http.MethodPut,
-	}
-	return Config{
-		AllowedOrigins:   defaultAllowedOrigins,
-		AllowedMethods:   defaultAllowedMethods,
-		AllowCredentials: DefaultAllowCredentials,
-		MaxAge:           DefaultMaxAge,
-	}
-}
+// Wildcard is a special value that can be passed in configuration to allow
+// requests from any origin.
+const Wildcard = "*"
 
 // config stores the pre-computed configuration for internal use.
 type config struct {
@@ -73,26 +27,82 @@ type config struct {
 	MaxAge           string
 }
 
-// compile processes the user-facing Config into an optimized internal format.
-func compile(cfg Config) config {
-	c := config{
-		AllowedOrigins:   nil,
-		AllowCredentials: cfg.AllowCredentials,
-		AllowedMethods:   strings.Join(cfg.AllowedMethods, ", "),
-		AllowedHeaders:   strings.Join(cfg.AllowedHeaders, ", "),
-		ExposedHeaders:   strings.Join(cfg.ExposedHeaders, ", "),
-	}
-	if cfg.MaxAge > 0 {
-		c.MaxAge = strconv.FormatInt(int64(cfg.MaxAge.Seconds()), 10)
-	}
-	if len(cfg.AllowedOrigins) != 0 ||
-		slices.Contains(cfg.AllowedOrigins, Wildcard) {
-		c.AllowedOrigins = make(map[string]struct{}, len(cfg.AllowedOrigins))
-		for _, origin := range cfg.AllowedOrigins {
-			c.AllowedOrigins[origin] = struct{}{}
+// Option is a function that configures the CORS middleware.
+type Option func(*config)
+
+// WithAllowedOrigins sets the allowed origins for CORS requests. If no origins
+// are provided, this option has no effect. Otherwise this option overrides any
+// previously set values. By default, the middleware allows requests from any
+// origin. The same behavior can be achieved by leaving the list empty or by
+// including the special Wildcard "*".
+func WithAllowedOrigins(origins ...string) Option {
+	return func(c *config) {
+		if len(origins) != 0 && !slices.Contains(origins, Wildcard) {
+			c.AllowedOrigins = make(map[string]struct{}, len(origins))
+			for _, origin := range origins {
+				c.AllowedOrigins[origin] = struct{}{}
+			}
 		}
 	}
-	return c
+}
+
+// WithAllowedMethods sets the allowed HTTP methods for CORS requests.
+// If no methods are provided, this option has no effect. Otherwise this option
+// overrides any previously set values. By default, the middleware omits the
+// corresponding header. Recommended methods include "GET", "HEAD", "POST",
+// "PUT", "PATCH", "DELETE", and "OPTIONS".
+func WithAllowedMethods(methods ...string) Option {
+	return func(c *config) {
+		if len(methods) != 0 {
+			c.AllowedMethods = strings.Join(methods, ", ")
+		}
+	}
+}
+
+// WithAllowedHeaders sets the allowed HTTP headers for CORS requests. By
+// default, only CORS-safelisted headers are allowed. Any additional headers
+// the client needs to send (e.g., "Authorization", "Content-Type") must be
+// explicitly listed here.
+func WithAllowedHeaders(headers ...string) Option {
+	return func(c *config) {
+		if len(headers) != 0 {
+			c.AllowedHeaders = strings.Join(headers, ", ")
+		}
+	}
+}
+
+// WithExposedHeaders sets the HTTP headers that are safe to expose to the
+// API of a CORS API specification. If no headers are provided, this option has
+// no effect. Otherwise this option overrides any previously set values. By
+// default, the middleware omits the corresponding header.
+func WithExposedHeaders(headers ...string) Option {
+	return func(c *config) {
+		if len(headers) != 0 {
+			c.ExposedHeaders = strings.Join(headers, ", ")
+		}
+	}
+}
+
+// WithAllowCredentials indicates whether the response to the request can be
+// exposed when the credentials flag is true. When used as part of a response to
+// a preflight request, it indicates that the actual request can include user
+// credentials. This option defaults to false.
+func WithAllowCredentials(allow bool) Option {
+	return func(c *config) {
+		c.AllowCredentials = allow
+	}
+}
+
+// WithMaxAge indicates how long the results of a preflight request can be
+// cached. This option defaults to 0, which means no max age is set. Reasonable
+// values range from a few minutes to a full day, depending on how often the
+// CORS policy changes.
+func WithMaxAge(d time.Duration) Option {
+	return func(c *config) {
+		if d > 0 {
+			c.MaxAge = strconv.FormatInt(int64(d.Seconds()), 10)
+		}
+	}
 }
 
 // New creates a middleware Pipe that handles CORS based on the provided
@@ -102,58 +112,59 @@ func compile(cfg Config) config {
 // Content) status, preventing them from reaching downstream handlers. For all
 // other (actual) requests, it adds the necessary CORS headers to the response
 // before passing the request on to the next handler in the chain.
-func New(cfg Config) middleware.Pipe {
-	c := compile(cfg)
+func New(opts ...Option) middleware.Pipe {
+	cfg := config{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get(header.Origin)
-			if origin == "" {
+			// Pass through non-CORS requests and non-preflight OPTIONS requests.
+			if origin == "" || (isPreflight(r) &&
+				r.Header.Get(header.AccessControlRequestMethod) == "") {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if c.AllowedOrigins != nil {
-				if _, ok := c.AllowedOrigins[origin]; !ok {
+			// Validate origin if not in wildcard mode.
+			if cfg.AllowedOrigins != nil {
+				if _, ok := cfg.AllowedOrigins[origin]; !ok {
 					next.ServeHTTP(w, r)
 					return
 				}
 			}
 			h := w.Header()
 			h.Add(header.Vary, header.Origin)
-			if c.AllowCredentials {
-				h.Set(header.AccessControlAllowOrigin, origin)
-				h.Set(header.AccessControlAllowCredentials, "true")
-			} else if c.AllowedOrigins == nil {
-				h.Set(header.AccessControlAllowOrigin, Wildcard)
-			} else {
-				h.Set(header.AccessControlAllowOrigin, origin)
+
+			if !cfg.AllowCredentials && cfg.AllowedOrigins == nil {
+				origin = Wildcard
 			}
-			if IsPreflight(r) {
-				if c.AllowedMethods != "" {
-					h.Set(header.AccessControlAllowMethods, c.AllowedMethods)
+			h.Set(header.AccessControlAllowOrigin, origin)
+			if cfg.AllowCredentials {
+				h.Set(header.AccessControlAllowCredentials, "true")
+			}
+			if isPreflight(r) {
+				if cfg.AllowedMethods != "" {
+					h.Set(header.AccessControlAllowMethods, cfg.AllowedMethods)
 				}
-				if c.AllowedHeaders != "" {
-					h.Set(header.AccessControlAllowHeaders, c.AllowedHeaders)
+				if cfg.AllowedHeaders != "" {
+					h.Set(header.AccessControlAllowHeaders, cfg.AllowedHeaders)
 				}
-				if c.MaxAge != "" {
-					h.Set(header.AccessControlMaxAge, c.MaxAge)
+				if cfg.MaxAge != "" {
+					h.Set(header.AccessControlMaxAge, cfg.MaxAge)
 				}
 				w.WriteHeader(http.StatusNoContent)
 				return
-			} else {
-				if c.ExposedHeaders != "" {
-					h.Set(header.AccessControlExposeHeaders, c.ExposedHeaders)
-				}
-				next.ServeHTTP(w, r)
-				return
 			}
+			if cfg.ExposedHeaders != "" {
+				h.Set(header.AccessControlExposeHeaders, cfg.ExposedHeaders)
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// IsPreflight checks if the request is a CORS preflight request.
-// This is a useful utility for middleware that may need to detect but not
-// fully handle a preflight request, such as in a proxy scenario.
-func IsPreflight(r *http.Request) bool {
-	return r.Method == http.MethodOptions &&
-		r.Header.Get(header.AccessControlRequestMethod) != ""
+// isPreflight checks if the request is a CORS preflight request.
+func isPreflight(r *http.Request) bool {
+	return r.Method == http.MethodOptions
 }
