@@ -80,7 +80,7 @@ func WithContext(ctx context.Context) Option {
 // Run provides a managed execution environment for a Runnable.
 // It launches the Runnable in a separate goroutine and blocks until it
 // either completes on its own, an OS interrupt signal is caught, or the parent
-// context (if specified via WithContext) is cancelled.
+// context (if specified via WithContext) is canceled.
 //
 // Upon receiving a signal, it cancels the context passed to the Runnable
 // and waits for the specified shutdown timeout. The Runnable is expected
