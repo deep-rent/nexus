@@ -19,12 +19,12 @@ const Wildcard = "*"
 
 // config stores the pre-computed configuration for internal use.
 type config struct {
-	AllowedOrigins   map[string]struct{}
-	AllowedMethods   string
-	AllowedHeaders   string
-	ExposedHeaders   string
-	AllowCredentials bool
-	MaxAge           string
+	allowedOrigins   map[string]struct{}
+	allowedMethods   string
+	allowedHeaders   string
+	exposedHeaders   string
+	allowCredentials bool
+	maxAge           string
 }
 
 // Option is a function that configures the CORS middleware.
@@ -38,9 +38,9 @@ type Option func(*config)
 func WithAllowedOrigins(origins ...string) Option {
 	return func(c *config) {
 		if len(origins) != 0 && !slices.Contains(origins, Wildcard) {
-			c.AllowedOrigins = make(map[string]struct{}, len(origins))
+			c.allowedOrigins = make(map[string]struct{}, len(origins))
 			for _, origin := range origins {
-				c.AllowedOrigins[origin] = struct{}{}
+				c.allowedOrigins[origin] = struct{}{}
 			}
 		}
 	}
@@ -54,7 +54,7 @@ func WithAllowedOrigins(origins ...string) Option {
 func WithAllowedMethods(methods ...string) Option {
 	return func(c *config) {
 		if len(methods) != 0 {
-			c.AllowedMethods = strings.Join(methods, ", ")
+			c.allowedMethods = strings.Join(methods, ", ")
 		}
 	}
 }
@@ -66,7 +66,7 @@ func WithAllowedMethods(methods ...string) Option {
 func WithAllowedHeaders(headers ...string) Option {
 	return func(c *config) {
 		if len(headers) != 0 {
-			c.AllowedHeaders = strings.Join(headers, ", ")
+			c.allowedHeaders = strings.Join(headers, ", ")
 		}
 	}
 }
@@ -78,7 +78,7 @@ func WithAllowedHeaders(headers ...string) Option {
 func WithExposedHeaders(headers ...string) Option {
 	return func(c *config) {
 		if len(headers) != 0 {
-			c.ExposedHeaders = strings.Join(headers, ", ")
+			c.exposedHeaders = strings.Join(headers, ", ")
 		}
 	}
 }
@@ -89,7 +89,7 @@ func WithExposedHeaders(headers ...string) Option {
 // credentials. This option defaults to false.
 func WithAllowCredentials(allow bool) Option {
 	return func(c *config) {
-		c.AllowCredentials = allow
+		c.allowCredentials = allow
 	}
 }
 
@@ -100,7 +100,7 @@ func WithAllowCredentials(allow bool) Option {
 func WithMaxAge(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
-			c.MaxAge = strconv.FormatInt(int64(d.Seconds()), 10)
+			c.maxAge = strconv.FormatInt(int64(d.Seconds()), 10)
 		}
 	}
 }
@@ -141,40 +141,40 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	// Validate origin if not in wildcard mode.
-	if cfg.AllowedOrigins != nil {
-		if _, ok := cfg.AllowedOrigins[origin]; !ok {
+	if cfg.allowedOrigins != nil {
+		if _, ok := cfg.allowedOrigins[origin]; !ok {
 			return true // Let non-matching origins pass through without CORS headers.
 		}
 	}
 
 	h := w.Header()
 	h.Add(header.Vary, header.Origin)
-	if !cfg.AllowCredentials && cfg.AllowedOrigins == nil {
+	if !cfg.allowCredentials && cfg.allowedOrigins == nil {
 		origin = Wildcard
 	}
 	h.Set(header.AccessControlAllowOrigin, origin)
-	if cfg.AllowCredentials {
+	if cfg.allowCredentials {
 		h.Set(header.AccessControlAllowCredentials, "true")
 	}
 
 	// Handle preflight requests.
 	if preflight {
-		if cfg.AllowedMethods != "" {
-			h.Set(header.AccessControlAllowMethods, cfg.AllowedMethods)
+		if cfg.allowedMethods != "" {
+			h.Set(header.AccessControlAllowMethods, cfg.allowedMethods)
 		}
-		if cfg.AllowedHeaders != "" {
-			h.Set(header.AccessControlAllowHeaders, cfg.AllowedHeaders)
+		if cfg.allowedHeaders != "" {
+			h.Set(header.AccessControlAllowHeaders, cfg.allowedHeaders)
 		}
-		if cfg.MaxAge != "" {
-			h.Set(header.AccessControlMaxAge, cfg.MaxAge)
+		if cfg.maxAge != "" {
+			h.Set(header.AccessControlMaxAge, cfg.maxAge)
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return false // Terminate request chain.
 	}
 
 	// Handle actual requests.
-	if cfg.ExposedHeaders != "" {
-		h.Set(header.AccessControlExposeHeaders, cfg.ExposedHeaders)
+	if cfg.exposedHeaders != "" {
+		h.Set(header.AccessControlExposeHeaders, cfg.exposedHeaders)
 	}
 	return true
 }
