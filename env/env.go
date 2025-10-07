@@ -374,29 +374,80 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 	return nil
 }
 
-// parse parses the `env` tag string.
+// parse parses the `env` tag string. It supports quoted values for options
+// to allow commas within them, e.g., `default:'a,b,c'`.
 func parse(s string) (opts flags, err error) {
 	opts.Split = ","
+
+	// The first part is always the variable name.
 	name, rest, _ := strings.Cut(s, ",")
 	opts.Name = name
+
+	// Scan through the remaining options.
 	for rest != "" {
+		// Trim leading space from the rest of the string.
+		rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
+		if rest == "" {
+			break
+		}
+
+		// Find the end of the current option part by finding the next
+		// comma that is not inside quotes.
+		end := -1
+		inQuote := false
+		var quote rune
+		for i, r := range rest {
+			if r == quote {
+				inQuote = false
+				quote = 0
+			} else if !inQuote && (r == '\'' || r == '"') {
+				inQuote = true
+				quote = r
+			} else if !inQuote && r == ',' {
+				end = i
+				break
+			}
+		}
+
 		var part string
-		part, rest, _ = strings.Cut(rest, ",")
-		part = strings.TrimSpace(part)
-		if v, ok := strings.CutPrefix(part, "split:"); ok {
-			opts.Split = v
-		} else if v, ok := strings.CutPrefix(part, "unit:"); ok {
-			opts.Unit = v
-		} else if v, ok := strings.CutPrefix(part, "format:"); ok {
-			opts.Format = v
-		} else if v, ok := strings.CutPrefix(part, "default:"); ok {
-			opts.Default = v
-		} else if part == "inline" {
-			opts.Inline = true
-		} else if part == "required" {
-			opts.Required = true
-		} else if part != "" {
-			return opts, fmt.Errorf("unknown tag option: %q", part)
+		if end == -1 {
+			// This is the last option part.
+			part = rest
+			rest = ""
+		} else {
+			part = rest[:end]
+			rest = rest[end+1:]
+		}
+
+		// Now, parse the individual part (e.g., "default:'foo,bar'").
+		key, val, found := strings.Cut(part, ":")
+		key = strings.TrimSpace(key)
+		if !found {
+			// This is a boolean flag like "inline" or "required".
+			switch key {
+			case "inline":
+				opts.Inline = true
+			case "required":
+				opts.Required = true
+			case "":
+				// An empty part can result from trailing or double commas. Ignore it.
+			default:
+				return opts, fmt.Errorf("unknown tag option: %q", key)
+			}
+			continue
+		}
+		val = unquote(val)
+		switch key {
+		case "split":
+			opts.Split = val
+		case "unit":
+			opts.Unit = val
+		case "format":
+			opts.Format = val
+		case "default":
+			opts.Default = val
+		default:
+			return opts, fmt.Errorf("unknown tag option: %q", key)
 		}
 	}
 	return opts, nil
@@ -420,6 +471,23 @@ func isUnmarshalable(v reflect.Value) bool {
 	// A value can only satisfy an interface if it's addressable,
 	// so we check if a pointer to the value's type implements it.
 	return v.CanAddr() && reflect.PointerTo(v.Type()).Implements(typeUnmarshaler)
+}
+
+// unquote removes a single layer of surrounding single or double quotes from a
+// string. If the string is not quoted, it is returned unchanged.
+func unquote(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+	// Check for double quotes.
+	if s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	// Check for single quotes.
+	if s[0] == '\'' && s[len(s)-1] == '\'' {
+		return s[1 : len(s)-1]
+	}
+	return s
 }
 
 // toSnake converts a camelCase string to an uppercase SNAKE_CASE string.
