@@ -314,14 +314,14 @@ var mapper cache.Mapper[Set] = func(in []byte) (Set, error) {
 	return set, nil
 }
 
-// NewCacheSet creates a CacheSet that stays in sync with a remote JWKS
+// Remote creates a CacheSet that stays in sync with a remote JWKS
 // endpoint. It must be deployed to a scheduler.Scheduler to begin the
 // background fetching and refreshing process.
 //
 // The provided cache.Options can configure behaviors like refresh interval,
 // request timeouts, and error handling. Parsing of retrieved key sets is
 // extremely lenient: it will only fail of no valid keys are found at all.
-func NewCacheSet(url string, opts ...cache.Option) CacheSet {
+func Remote(url string, opts ...cache.Option) CacheSet {
 	ctrl := cache.NewController(url, mapper, opts...)
 	return &cacheSet{ctrl}
 }
