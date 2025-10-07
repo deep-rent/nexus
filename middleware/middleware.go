@@ -1,3 +1,5 @@
+// Package middleware provides utilities for chaining and composing HTTP
+// middleware handlers.
 package middleware
 
 import (
@@ -6,8 +8,15 @@ import (
 	"runtime/debug"
 )
 
+// Pipe defines the structure for a middleware function. It takes an
+// http.Handler as input and returns a new http.Handler, allowing for the
+// composition of middleware.
 type Pipe func(http.Handler) http.Handler
 
+// Chain combines multiple middleware Pipes into a single http.Handler. The
+// pipes are applied in the order they are provided, with the first pipe
+// becoming the outermost layer and the last pipe the innermost, directly
+// wrapping the final handler.
 func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 	for i := len(pipes) - 1; i >= 0; i-- {
 		if pipe := pipes[i]; pipe != nil {
