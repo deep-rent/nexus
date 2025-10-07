@@ -1,3 +1,113 @@
+// Package di provides a type-safe, concurrent dependency injection
+// container for Go applications.
+//
+// The core concepts are:
+//   - Injector: The main container that holds all service bindings.
+//   - Slot: A unique, typed key used to register and retrieve services.
+//   - Provider: A factory function that creates an instance of a service.
+//   - Resolver: A strategy that defines the lifecycle of a service.
+//
+// # Usage Manual: A Chemical Analogy
+//
+// Let's explore how to use this container by modeling a simple chemical
+// reaction: forming a Salt. This example shows how to use a single interface
+// (Ion) for dependencies that fulfill different roles (Cation and Anion).
+//
+// Step 1: Define a Reusable Abstraction (The Ion Role)
+//
+// Instead of separate Cation and Anion interfaces, we can define a single,
+// reusable Ion interface. Our Salt struct will now depend on two instances
+// of this same interface type.
+//
+//	// Ion represents any particle with a symbol and a charge.
+//	type Ion interface {
+//	  Symbol() string
+//	  Charge() int
+//	}
+//
+//	// Salt is our final product, which depends on two Ions.
+//	type Salt struct {
+//	  cation Ion
+//	  anion  Ion
+//	}
+//
+//	func (s Salt) Formula() string {
+//	  return s.cation.Symbol() + s.anion.Symbol()
+//	}
+//
+// Step 2: Create Slots for Roles (The Unique Labels)
+//
+// The key insight here is that slots distinguish dependencies by their role,
+// not just their type. Even though both slots below are for the Ion type,
+// they are unique keys. This allows us to inject the right ion into the right
+// place. The tags ("ion", "cation", etc.) are optional but help with debugging
+// in case something goes wrong.
+//
+//	var (
+//	  SlotCation = di.NewSlot[Ion]("ion", "cation")
+//	  SlotAnion  = di.NewSlot[Ion]("ion", "anion")
+//	  SlotSalt   = di.NewSlot[Salt]("compound", "salt")
+//	)
+//
+// Step 3: Write Providers (The Recipes)
+//
+// Providers now return the generic Ion interface. The Salt provider can
+// then request two different Ions by using their distinct role-based slots.
+//
+//	// ProvideSodium provides a concrete Ion to fulfill the Cation role.
+//	func ProvideSodium(*di.Injector) (Ion, error) {
+//	  type Sodium struct{}
+//	  func (na Sodium) Symbol() string { return "Na" }
+//	  func (na Sodium) Charge() int    { return 1 }
+//	  return Sodium{}, nil
+//	}
+//
+//	// ProvideChloride provides a concrete Ion to fulfill the Anion role.
+//	func ProvideChloride(*di.Injector) (Ion, error) {
+//	  type Chloride struct{}
+//	  func (cl Chloride) Symbol() string { return "Cl" }
+//	  func (cl Chloride) Charge() int    { return -1 }
+//	  return Chloride{}, nil
+//	}
+//
+//	// ProvideSalt requests dependencies by their role-specific slots.
+//	func ProvideSalt(in *di.Injector) (Salt, error) {
+//	  // Request the Ion fulfilling the "Cation" role.
+//	  cation := di.Required[Ion](in, SlotCation)
+//	  // Request the Ion fulfilling the "Anion" role.
+//	  anion := di.Required[Ion](in, SlotAnion)
+//	  return Salt{cation: cation, anion: anion}, nil
+//	}
+//
+// Step 4: Assemble the Solution (Configure the Injector)
+//
+// Now, create an Injector and bind the concrete providers to their
+// respective role slots. We are telling the container that Sodium will act
+// as our Cation and Chloride will act as our Anion.
+//
+//	// 1. Create the injector.
+//	solution := di.NewInjector()
+//
+//	// 2. Bind concrete providers to their roles. We use Transient scope to
+//	// obtain fresh ions each time we form a new salt molecule.
+//	di.Bind(solution, SlotCation, ProvideSodium, di.Transient())
+//	di.Bind(solution, SlotAnion, ProvideChloride, di.Transient())
+//
+//	// 3. Bind the provider for the final product. A salt molecule is very
+//	// stable, so we treat it as a singleton.
+//	di.Bind(solution, SlotSalt, ProvideSalt, di.Singleton())
+//
+// Step 5: Trigger the Reaction (Resolve the Final Product)
+//
+// When we ask for the Salt, the injector provides the previously registered
+// atoms (dependencies) to the Salt provider to form the final molecule. As
+// expected, we obtain ordinary table salt (NaCl).
+//
+//	// This call triggers the entire dependency chain.
+//	salt := di.Required[Salt](solution, SlotSalt)
+//
+//	fmt.Printf("Successfully formed: %s\n", salt.Formula())
+//	// Output: Successfully formed: NaCl
 package di
 
 import (
@@ -48,11 +158,13 @@ func Tag(slot any) string {
 
 // Provider defines the function signature for a service factory.
 //
-// When a service is first requested, its provider is called with an
-// instance of the *Injector, which it can then use to resolve any
-// of its own dependencies (e.g., by calling Use or Req). The result
-// will be stored as a singleton and returned on all subsequent requests
-// for the same Slot.
+// When a service is requested, its provider is called with an instance of the
+// Injector, which it can then use to resolve any of its own dependencies (e.g.,
+// by calling Use). How often the provider is called depends on the number of
+// injection sites and the resolution strategy used when binding the provider to
+// a slot. By convention, provider functions should be named "Provide<Type>".
+// The associated call to di.Bind should then be done in a function named
+// "Bind<Type>".
 type Provider[T any] func(in *Injector) (T, error)
 
 // binding holds the provider and its associated resolution strategy.
@@ -205,6 +317,8 @@ func Required[T any](in *Injector, slot Slot[T]) T {
 }
 
 // Resolve is a non-generic method to resolve a dependency from a slot.
+// In most cases, the type-safe Use, Optional, or Required functions should be
+// preferred.
 func (in *Injector) Resolve(slot any) (any, error) {
 	return in.resolve(slot, make(map[any]bool))
 }
@@ -232,9 +346,9 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	return b.resolver.Resolve(in, b.provider, slot)
 }
 
-// Resolver defines a strategy for resolving service instances.
+// Resolver defines a strategy for managing a service's lifecycle.
 type Resolver interface {
-	// Resolve provides an instance of the service within a scope.
+	// Resolve provides an instance of the service.
 	Resolve(in *Injector, provider any, slot any) (any, error)
 }
 
