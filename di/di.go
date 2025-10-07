@@ -316,6 +316,24 @@ func Required[T any](in *Injector, slot Slot[T]) T {
 	return v
 }
 
+// Override registers a provider for a slot, replacing any existing binding.
+// This is primarily useful in testing environments to replace production
+// services with mocks.
+func Override[T any](
+	in *Injector,
+	slot Slot[T],
+	provider Provider[T],
+	resolver Resolver,
+) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+
+	in.bindings[slot] = &binding{
+		provider: provider,
+		resolver: resolver,
+	}
+}
+
 // Resolve is a non-generic method to resolve a dependency from a slot.
 // In most cases, the type-safe Use, Optional, or Required functions should be
 // preferred.
