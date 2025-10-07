@@ -1,7 +1,10 @@
+// Package cors provides a configurable CORS (Cross-Origin Resource Sharing)
+// middleware handler.
 package cors
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -10,36 +13,57 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 )
 
-const Wildcard = "*"
-const DefaultAllowCredentials = true
-const DefaultMaxAge = 12 * time.Hour
+// Default CORS configuration values.
+const (
+	Wildcard                = "*"
+	DefaultAllowCredentials = true
+	DefaultMaxAge           = 12 * time.Hour
+)
 
+// Config defines configuration options for the CORS middleware.
 type Config struct {
-	AllowedOrigins   []string
-	AllowedMethods   []string
-	AllowedHeaders   []string
-	ExposedHeaders   []string
+	// AllowedOrigins specifies the list of origins that are allowed to access
+	// the resource. If empty or contains Wildcard (*), all origins are allowed.
+	AllowedOrigins []string
+	// AllowedMethods specifies the list of HTTP methods the client is allowed
+	// to use. Defaults to DELETE, GET, HEAD, OPTIONS, PATCH, POST and PUT.
+	AllowedMethods []string
+	// AllowedHeaders specifies the list of non-standard headers the client is
+	// allowed to send. An empty list defaults to the browser's safelist.
+	AllowedHeaders []string
+	// ExposedHeaders specifies the list of headers in the response that can be
+	// exposed to the client's browser.
+	ExposedHeaders []string
+	// AllowCredentials indicates whether the response can be exposed to the
+	// browser when the credentials flag is true.
 	AllowCredentials bool
-	MaxAge           time.Duration
+	// MaxAge indicates how long the results of a preflight request can be
+	// cached by the browser.
+	MaxAge time.Duration
 }
 
+// DefaultConfig returns a new Config with sensible, permissive defaults
+// suitable for many common use cases.
 func DefaultConfig() Config {
+	defaultAllowedOrigins := []string{Wildcard}
+	defaultAllowedMethods := []string{
+		http.MethodDelete,
+		http.MethodGet,
+		http.MethodHead,
+		http.MethodOptions,
+		http.MethodPatch,
+		http.MethodPost,
+		http.MethodPut,
+	}
 	return Config{
-		AllowedOrigins: []string{Wildcard},
-		AllowedMethods: []string{
-			http.MethodDelete,
-			http.MethodGet,
-			http.MethodHead,
-			http.MethodOptions,
-			http.MethodPatch,
-			http.MethodPost,
-			http.MethodPut,
-		},
+		AllowedOrigins:   defaultAllowedOrigins,
+		AllowedMethods:   defaultAllowedMethods,
 		AllowCredentials: DefaultAllowCredentials,
 		MaxAge:           DefaultMaxAge,
 	}
 }
 
+// config stores the pre-computed configuration for internal use.
 type config struct {
 	AllowedOrigins   map[string]struct{}
 	AllowedMethods   string
@@ -49,6 +73,7 @@ type config struct {
 	MaxAge           string
 }
 
+// compile processes the user-facing Config into an optimized internal format.
 func compile(cfg Config) config {
 	c := config{
 		AllowedOrigins:   nil,
@@ -60,7 +85,8 @@ func compile(cfg Config) config {
 	if cfg.MaxAge > 0 {
 		c.MaxAge = strconv.FormatInt(int64(cfg.MaxAge.Seconds()), 10)
 	}
-	if len(cfg.AllowedOrigins) > 1 || cfg.AllowedOrigins[0] != Wildcard {
+	if len(cfg.AllowedOrigins) != 0 ||
+		slices.Contains(cfg.AllowedOrigins, Wildcard) {
 		c.AllowedOrigins = make(map[string]struct{}, len(cfg.AllowedOrigins))
 		for _, origin := range cfg.AllowedOrigins {
 			c.AllowedOrigins[origin] = struct{}{}
@@ -69,6 +95,13 @@ func compile(cfg Config) config {
 	return c
 }
 
+// New creates a middleware Pipe that handles CORS based on the provided
+// configuration.
+//
+// It intercepts and terminates preflight (OPTIONS) requests with a 204 (No
+// Content) status, preventing them from reaching downstream handlers. For all
+// other (actual) requests, it adds the necessary CORS headers to the response
+// before passing the request on to the next handler in the chain.
 func New(cfg Config) middleware.Pipe {
 	c := compile(cfg)
 	return func(next http.Handler) http.Handler {
