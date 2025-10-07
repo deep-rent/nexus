@@ -1,6 +1,7 @@
-// Package app provides a reusable framework for the lifecycle management of
-// command-line applications. It handles graceful shutdown by listening for
-// OS interrupt signals and propagating cancellation through a context.
+// Package app provides a structured framework for managing the lifecycle of
+// command-line applications. It simplifies graceful shutdown by handling OS
+// interrupt signals (SIGINT, SIGTERM) and propagating a cancellation
+// signal through a context.
 package app
 
 import (
