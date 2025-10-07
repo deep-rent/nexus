@@ -75,7 +75,9 @@ func Skip(pipe Pipe, condition Skipper) Pipe {
 	}
 }
 
-const keyRequestID = "requestID"
+type contextKey string // Prevents collisions with other packages.
+
+const keyRequestID = contextKey("requestID")
 
 // RequestID creates a middleware Pipe that generates a unique 128-bit ID for
 // each request, adding it to the 'X-Request-ID' response header and the
