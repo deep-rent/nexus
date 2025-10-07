@@ -297,23 +297,24 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		if key == "" {
 			key = toSnake(ft.Name)
 		}
-		key = prefix + key
 
 		// Check for true embedded structs.
 		if ft.Type.Kind() == reflect.Struct &&
 			!isUnmarshalable(fv) &&
 			ft.Type != typeTime {
+			nested := prefix
 			if opts.Prefix != nil {
-				key = *opts.Prefix
+				nested += *opts.Prefix
 			} else {
-				key += "_"
+				nested += key + "_"
 			}
-			if err := process(fv, prefix+key, lookup); err != nil {
+			if err := process(fv, nested, lookup); err != nil {
 				return err
 			}
 			continue
 		}
 
+		key = prefix + key
 		val, ok := lookup(key)
 		if !ok {
 			if opts.Default != "" {
