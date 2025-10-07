@@ -223,6 +223,7 @@ const (
 	XRatelimitRemaining    = "X-Ratelimit-Remaining"
 	XRatelimitReset        = "X-Ratelimit-Reset"
 	XRealIP                = "X-Real-IP"
+	XRequestID             = "X-Request-ID"
 	XUACompatible          = "X-UA-Compatible"
 	XWebKitCSP             = "X-WebKit-CSP"
 	XXSSProtection         = "X-XSS-Protection"

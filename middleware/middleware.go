@@ -3,9 +3,14 @@
 package middleware
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+
+	"github.com/deep-rent/nexus/header"
 )
 
 // Pipe defines the structure for a middleware function. It takes an
@@ -52,7 +57,8 @@ func Recover(logger *slog.Logger) Pipe {
 	}
 }
 
-// Skipper is a function that returns true if the middleware should be skipped.
+// Skipper is a function that returns true if the middleware should be skipped
+// for the given request.
 type Skipper func(r *http.Request) bool
 
 // Skip returns a new middleware Pipe that conditionally skips the specified
@@ -67,4 +73,37 @@ func Skip(pipe Pipe, condition Skipper) Pipe {
 			pipe(next).ServeHTTP(w, r)
 		})
 	}
+}
+
+const keyRequestID = "requestID"
+
+// RequestID creates a middleware Pipe that generates a unique 128-bit ID for
+// each request, adding it to the 'X-Request-ID' response header and the
+// request's context.
+func RequestID() Pipe {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b := make([]byte, 16)
+			if _, err := rand.Read(b); err != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			id := hex.EncodeToString(b)
+			w.Header().Set(header.XRequestID, id)
+			next.ServeHTTP(w, r.WithContext(SetRequestID(r.Context(), id)))
+		})
+	}
+}
+
+// GetRequestID retrieves the request ID from a given context. It returns an
+// empty string if the ID is not found.
+func GetRequestID(ctx context.Context) string {
+	id, _ := ctx.Value(keyRequestID).(string)
+	return id
+}
+
+// SetRequestID sets the request ID in the provided context, returning a new
+// context that carries the ID.
+func SetRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, keyRequestID, id)
 }
