@@ -51,3 +51,20 @@ func Recover(logger *slog.Logger) Pipe {
 		})
 	}
 }
+
+// Skipper is a function that returns true if the middleware should be skipped.
+type Skipper func(r *http.Request) bool
+
+// Skip returns a new middleware Pipe that conditionally skips the specified
+// pipe if the condition is satisfied.
+func Skip(pipe Pipe, condition Skipper) Pipe {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if condition(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			pipe(next).ServeHTTP(w, r)
+		})
+	}
+}
