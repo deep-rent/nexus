@@ -26,6 +26,7 @@ type Runnable func(ctx context.Context) error
 type config struct {
 	logger  *slog.Logger
 	timeout time.Duration
+	signals []os.Signal
 }
 
 // Option is a function that configures the application runner.
@@ -54,6 +55,16 @@ func WithShutdownTimeout(d time.Duration) Option {
 	}
 }
 
+// WithSignals allows customization of which OS signals trigger a shutdown.
+// If not used, it defaults to SIGTERM and SIGINT.
+func WithSignals(signals ...os.Signal) Option {
+	return func(c *config) {
+		if len(signals) > 0 {
+			c.signals = signals
+		}
+	}
+}
+
 // Run provides a managed execution environment for a Runnable.
 // It launches the Runnable in a separate goroutine and blocks until it
 // either completes on its own or an OS interrupt signal is caught.
@@ -67,6 +78,7 @@ func Run(fn Runnable, opts ...Option) error {
 	cfg := config{
 		logger:  slog.Default(),
 		timeout: DefaultShutdownTimeout,
+		signals: []os.Signal{syscall.SIGTERM, syscall.SIGINT},
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -75,7 +87,7 @@ func Run(fn Runnable, opts ...Option) error {
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigCh, cfg.signals...)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- fn(ctx) }()
