@@ -12,6 +12,10 @@ import (
 	"github.com/deep-rent/nexus/signal"
 )
 
+// DefaultShutdownTimeout is the default duration to wait for the application to
+// gracefully shut down after receiving a termination signal.
+const DefaultShutdownTimeout = 10 * time.Second
+
 type config struct {
 	logger  *slog.Logger
 	timeout time.Duration
@@ -43,7 +47,7 @@ func WithShutdownTimeout(d time.Duration) Option {
 func Run(main func(ctx context.Context) error, opts ...Option) error {
 	cfg := config{
 		logger:  slog.Default(),
-		timeout: 10 * time.Second,
+		timeout: DefaultShutdownTimeout,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
