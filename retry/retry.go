@@ -258,7 +258,7 @@ func WithAttemptLimit(n int) Option {
 
 // WithBackoff sets the backoff strategy for calculating the delay between
 // retries. If not provided, there is no delay between attempts. A nil value is
-// ignored. A nil value is ignored.
+// ignored.
 func WithBackoff(strategy backoff.Strategy) Option {
 	return func(c *config) {
 		if strategy != nil {
