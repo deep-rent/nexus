@@ -10,7 +10,9 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 )
 
-const OriginWildcard = "*"
+const Wildcard = "*"
+const DefaultAllowCredentials = true
+const DefaultMaxAge = 12 * time.Hour
 
 type Config struct {
 	AllowedOrigins   []string
@@ -23,17 +25,18 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		AllowedOrigins: []string{OriginWildcard},
+		AllowedOrigins: []string{Wildcard},
 		AllowedMethods: []string{
-			http.MethodGet,
-			http.MethodPost,
-			http.MethodPut,
 			http.MethodDelete,
+			http.MethodGet,
 			http.MethodHead,
 			http.MethodOptions,
+			http.MethodPatch,
+			http.MethodPost,
+			http.MethodPut,
 		},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
+		AllowCredentials: DefaultAllowCredentials,
+		MaxAge:           DefaultMaxAge,
 	}
 }
 
@@ -57,7 +60,7 @@ func compile(cfg Config) config {
 	if cfg.MaxAge > 0 {
 		c.MaxAge = strconv.FormatInt(int64(cfg.MaxAge.Seconds()), 10)
 	}
-	if len(cfg.AllowedOrigins) != 1 || cfg.AllowedOrigins[0] != OriginWildcard {
+	if len(cfg.AllowedOrigins) > 1 || cfg.AllowedOrigins[0] != Wildcard {
 		c.AllowedOrigins = make(map[string]struct{}, len(cfg.AllowedOrigins))
 		for _, origin := range cfg.AllowedOrigins {
 			c.AllowedOrigins[origin] = struct{}{}
@@ -66,7 +69,7 @@ func compile(cfg Config) config {
 	return c
 }
 
-func Middleware(cfg Config) middleware.Pipe {
+func New(cfg Config) middleware.Pipe {
 	c := compile(cfg)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,40 +85,42 @@ func Middleware(cfg Config) middleware.Pipe {
 				}
 			}
 			h := w.Header()
+			h.Add(header.Vary, header.Origin)
 			if c.AllowCredentials {
 				h.Set(header.AccessControlAllowOrigin, origin)
+				h.Set(header.AccessControlAllowCredentials, "true")
 			} else if c.AllowedOrigins == nil {
-				h.Set(header.AccessControlAllowOrigin, OriginWildcard)
+				h.Set(header.AccessControlAllowOrigin, Wildcard)
 			} else {
 				h.Set(header.AccessControlAllowOrigin, origin)
 			}
-			h.Add(header.Vary, header.Origin)
-			if Preflight(r) {
-				h.Set(header.AccessControlAllowMethods, c.AllowedMethods)
+			if IsPreflight(r) {
+				if c.AllowedMethods != "" {
+					h.Set(header.AccessControlAllowMethods, c.AllowedMethods)
+				}
 				if c.AllowedHeaders != "" {
 					h.Set(header.AccessControlAllowHeaders, c.AllowedHeaders)
-				}
-				if c.AllowCredentials {
-					h.Set(header.AccessControlAllowCredentials, "true")
 				}
 				if c.MaxAge != "" {
 					h.Set(header.AccessControlMaxAge, c.MaxAge)
 				}
 				w.WriteHeader(http.StatusNoContent)
+				return
 			} else {
 				if c.ExposedHeaders != "" {
 					h.Set(header.AccessControlExposeHeaders, c.ExposedHeaders)
 				}
-				if c.AllowCredentials {
-					h.Set(header.AccessControlAllowCredentials, "true")
-				}
 				next.ServeHTTP(w, r)
+				return
 			}
 		})
 	}
 }
 
-func Preflight(r *http.Request) bool {
+// IsPreflight checks if the request is a CORS preflight request.
+// This is a useful utility for middleware that may need to detect but not
+// fully handle a preflight request, such as in a proxy scenario.
+func IsPreflight(r *http.Request) bool {
 	return r.Method == http.MethodOptions &&
 		r.Header.Get(header.AccessControlRequestMethod) != ""
 }
