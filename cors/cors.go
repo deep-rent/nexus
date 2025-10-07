@@ -119,52 +119,62 @@ func New(opts ...Option) middleware.Pipe {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get(header.Origin)
-			// Pass through non-CORS requests and non-preflight OPTIONS requests.
-			if origin == "" || (isPreflight(r) &&
-				r.Header.Get(header.AccessControlRequestMethod) == "") {
+			if proceed := handle(&cfg, w, r); proceed {
 				next.ServeHTTP(w, r)
-				return
 			}
-			// Validate origin if not in wildcard mode.
-			if cfg.AllowedOrigins != nil {
-				if _, ok := cfg.AllowedOrigins[origin]; !ok {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-			h := w.Header()
-			h.Add(header.Vary, header.Origin)
-
-			if !cfg.AllowCredentials && cfg.AllowedOrigins == nil {
-				origin = Wildcard
-			}
-			h.Set(header.AccessControlAllowOrigin, origin)
-			if cfg.AllowCredentials {
-				h.Set(header.AccessControlAllowCredentials, "true")
-			}
-			if isPreflight(r) {
-				if cfg.AllowedMethods != "" {
-					h.Set(header.AccessControlAllowMethods, cfg.AllowedMethods)
-				}
-				if cfg.AllowedHeaders != "" {
-					h.Set(header.AccessControlAllowHeaders, cfg.AllowedHeaders)
-				}
-				if cfg.MaxAge != "" {
-					h.Set(header.AccessControlMaxAge, cfg.MaxAge)
-				}
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			if cfg.ExposedHeaders != "" {
-				h.Set(header.AccessControlExposeHeaders, cfg.ExposedHeaders)
-			}
-			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// isPreflight checks if the request is a CORS preflight request.
-func isPreflight(r *http.Request) bool {
-	return r.Method == http.MethodOptions
+// handle processes CORS headers and returns true if the request should
+// be passed to the next handler. It returns false if the request has been
+// fully handled, such as in a preflight request.
+func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get(header.Origin)
+	// Pass through non-CORS requests.
+	if origin == "" {
+		return true
+	}
+	preflight := r.Method == http.MethodOptions
+	// Pass through invalid preflight requests.
+	if preflight && r.Header.Get(header.AccessControlRequestMethod) == "" {
+		return true
+	}
+	// Validate origin if not in wildcard mode.
+	if cfg.AllowedOrigins != nil {
+		if _, ok := cfg.AllowedOrigins[origin]; !ok {
+			return true // Let non-matching origins pass through without CORS headers.
+		}
+	}
+
+	h := w.Header()
+	h.Add(header.Vary, header.Origin)
+	if !cfg.AllowCredentials && cfg.AllowedOrigins == nil {
+		origin = Wildcard
+	}
+	h.Set(header.AccessControlAllowOrigin, origin)
+	if cfg.AllowCredentials {
+		h.Set(header.AccessControlAllowCredentials, "true")
+	}
+
+	// Handle preflight requests.
+	if preflight {
+		if cfg.AllowedMethods != "" {
+			h.Set(header.AccessControlAllowMethods, cfg.AllowedMethods)
+		}
+		if cfg.AllowedHeaders != "" {
+			h.Set(header.AccessControlAllowHeaders, cfg.AllowedHeaders)
+		}
+		if cfg.MaxAge != "" {
+			h.Set(header.AccessControlMaxAge, cfg.MaxAge)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return false // Terminate request chain.
+	}
+
+	// Handle actual requests.
+	if cfg.ExposedHeaders != "" {
+		h.Set(header.AccessControlExposeHeaders, cfg.ExposedHeaders)
+	}
+	return true
 }
