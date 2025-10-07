@@ -27,7 +27,7 @@ type config struct {
 	logger  *slog.Logger
 	timeout time.Duration
 	signals []os.Signal
-	context context.Context
+	ctx     context.Context
 }
 
 // Option is a function that configures the application runner.
@@ -72,7 +72,7 @@ func WithSignals(signals ...os.Signal) Option {
 func WithContext(ctx context.Context) Option {
 	return func(c *config) {
 		if ctx != nil {
-			c.context = ctx
+			c.ctx = ctx
 		}
 	}
 }
@@ -92,12 +92,12 @@ func Run(fn Runnable, opts ...Option) error {
 		logger:  slog.Default(),
 		timeout: DefaultTimeout,
 		signals: []os.Signal{syscall.SIGTERM, syscall.SIGINT},
-		context: context.Background(),
+		ctx:     context.Background(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	ctx, cancel := signal.NotifyContext(cfg.context, cfg.signals...)
+	ctx, cancel := signal.NotifyContext(cfg.ctx, cfg.signals...)
 	defer cancel()
 
 	errCh := make(chan error, 1)
