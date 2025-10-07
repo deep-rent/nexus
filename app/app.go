@@ -14,9 +14,9 @@ import (
 	"time"
 )
 
-// DefaultShutdownTimeout is the default duration to wait for the application to
+// DefaultTimeout is the default duration to wait for the application to
 // gracefully shut down after receiving a termination signal.
-const DefaultShutdownTimeout = 10 * time.Second
+const DefaultTimeout = 10 * time.Second
 
 // Runnable defines a function that can be executed by the application runner.
 // It receives a context that is canceled when a shutdown signal is received.
@@ -27,6 +27,7 @@ type config struct {
 	logger  *slog.Logger
 	timeout time.Duration
 	signals []os.Signal
+	context context.Context
 }
 
 // Option is a function that configures the application runner.
@@ -42,12 +43,11 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithShutdownTimeout sets a custom timeout for the graceful shutdown process.
+// WithTimeout sets a custom timeout for the graceful shutdown process.
 // If the application logic takes longer than this duration to return after a
-// shutdown signal is received, the runner will exit with an error. A
-// non-positive duration will be ignored, and the DefaultShutdownTimeout is
-// used instead.
-func WithShutdownTimeout(d time.Duration) Option {
+// shutdown signal is received, the runner will exit with an error. A negative
+// or zero duration will be ignored, and the DefaultTimeout is used instead.
+func WithTimeout(d time.Duration) Option {
 	return func(opts *config) {
 		if d > 0 {
 			opts.timeout = d
@@ -65,9 +65,22 @@ func WithSignals(signals ...os.Signal) Option {
 	}
 }
 
+// WithContext sets a parent context for the runner. The runner's main
+// context will be a child of this parent. Cancelling the parent context
+// triggers a graceful shutdown. If not set, context.Background() is used as
+// the default parent. A nil value will be ignored.
+func WithContext(ctx context.Context) Option {
+	return func(c *config) {
+		if ctx != nil {
+			c.context = ctx
+		}
+	}
+}
+
 // Run provides a managed execution environment for a Runnable.
 // It launches the Runnable in a separate goroutine and blocks until it
-// either completes on its own or an OS interrupt signal is caught.
+// either completes on its own, an OS interrupt signal is caught, or the parent
+// context (if specified via WithContext) is cancelled.
 //
 // Upon receiving a signal, it cancels the context passed to the Runnable
 // and waits for the specified shutdown timeout. The Runnable is expected
@@ -77,17 +90,15 @@ func WithSignals(signals ...os.Signal) Option {
 func Run(fn Runnable, opts ...Option) error {
 	cfg := config{
 		logger:  slog.Default(),
-		timeout: DefaultShutdownTimeout,
+		timeout: DefaultTimeout,
 		signals: []os.Signal{syscall.SIGTERM, syscall.SIGINT},
+		context: context.Background(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(cfg.context, cfg.signals...)
 	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, cfg.signals...)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- fn(ctx) }()
@@ -95,7 +106,6 @@ func Run(fn Runnable, opts ...Option) error {
 	cfg.logger.Info("Application started")
 
 	select {
-	// Listen for application errors.
 	case err := <-errCh:
 		if err != nil {
 			return fmt.Errorf("encountered an application error: %w", err)
@@ -103,22 +113,20 @@ func Run(fn Runnable, opts ...Option) error {
 		cfg.logger.Info("Application stopped")
 		return nil
 
-		// Listen for gracious termination signals.
-	case sig := <-sigCh:
-		cfg.logger.Info(
-			"Initiating graceful shutdown",
-			slog.String("signal", sig.String()),
-		)
-		cancel()
+	case <-ctx.Done():
+		cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
+
+		timer := time.NewTimer(cfg.timeout)
+		defer timer.Stop()
 
 		select {
 		case err := <-errCh:
 			if err != nil {
 				return fmt.Errorf("error occurred during shutdown: %w", err)
 			}
-			cfg.logger.Info("Shutdown completed")
+			cfg.logger.Info("Shutdown completed successfully")
 			return nil
-		case <-time.After(cfg.timeout):
+		case <-timer.C:
 			return fmt.Errorf("shutdown timed out after %v", cfg.timeout)
 		}
 	}
