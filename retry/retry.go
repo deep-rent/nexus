@@ -2,6 +2,40 @@
 // retrying failed HTTP requests. It allows fine-grained control over retry
 // logic using a customizable Policy and a backoff.Strategy for delays
 // between attempts.
+//
+// The core of the package is NewTransport, which wraps an existing
+// http.RoundTripper (like http.DefaultTransport) and intercepts requests to
+// apply the retry logic.
+//
+// Example:
+//
+//	func main() {
+//	  // Create a retry transport that wraps the default transport.
+//	  // It will retry up to 3 times with an exponential backoff of 1s to 1m.
+//	  transport := retry.NewTransport(
+//	    http.DefaultTransport,
+//	    retry.WithAttemptLimit(3),
+//	    retry.WithBackoff(backoff.New(
+//	      backoff.WithMinDelay(1*time.Second),
+//	      backoff.WithMaxDelay(1*time.Minute),
+//	    )),
+//	  )
+//
+//	  // Create an http.Client that uses our custom transport.
+//	  client := &http.Client{
+//	    Transport: transport,
+//	  }
+//
+//	  // Make a request using the client. If the request fails with a
+//	  // temporary or transient error, it will be automatically retried.
+//	  res, err := client.Get("http://example.com/some-flaky-endpoint")
+//	  if err != nil {
+//	    slog.Error("Request failed after all retries", "error", err)
+//	  }
+//	  defer res.Body.Close()
+//
+//	  slog.Info("Request succeeded with status", "status", res.Status)
+//	}
 package retry
 
 import (
