@@ -2,6 +2,12 @@
 // utility. It is designed to be a modern alternative to the standard library's
 // flag package, offering a more streamlined API for defining flags.
 //
+// The package is compliant with common command-line syntax conventions,
+// supporting both single-dash shorthand options (POSIX-style, e.g., -v) and
+// double-dash long-form options (GNU-style, e.g., --verbose). It also handles
+// grouped short options (e.g., -abc) and values attached to short options
+// (e.g., -p8080) for POSIX compliance.
+//
 // The core of the package is the Set, which manages a collection of defined
 // flags. A default Set is provided for convenience, accessible through
 // top-level functions like Add and Parse.
@@ -10,33 +16,29 @@
 //
 //	func main() {
 //	  var (
-//	    port    int
-//	    host    string
-//	    verbose bool
-//	    timeout time.Duration
+//	    port int
+//	    host string
+//	    verb bool
 //	  )
 //
 //	  // Add flags, binding them to local variables.
 //	  flag.Add(&port, "p", "port", "Port to listen on")
-//	  flag.Add(&host, "", "host", "Host address to bind to")
-//	  flag.Add(&verbose, "v", "verbose", "Enable verbose logging")
-//	  flag.Add(&timeout, "t", "timeout", "Server shutdown timeout")
+//	  flag.Add(&host, "h", "host", "Host address to bind to")
+//	  flag.Add(&verb, "v", "verbose", "Enable verbose logging")
 //
 //	  // Parse the command-line arguments.
 //	  flag.Parse()
 //
-//	  fmt.Printf("Starting server on %s:%d (verbose: %v, timeout: %s)\n",
-//	    host, port, verbose, timeout)
+//	  fmt.Printf("Starting server on %s:%d (verbose: %v)\n", host, port, verb)
 //	}
 //
 // The automatically generated help message for the example above would be:
 //
 //	Usage of my-app:
-//	  -p, --port <int>           Port to listen on
-//	      --host <string>        Host address to bind to
-//	  -v, --verbose <bool>       Enable verbose logging
-//	  -t, --timeout <duration>   Server shutdown timeout
-//	  -h, --help                 Display this help message and exit
+//	  -p, --port <int>       Port to listen on
+//	  -h, --host <string>    Host address to bind to
+//	  -v, --verbose <bool>   Enable verbose logging
+//	      --help             Display this help message and exit
 package flag
 
 import (
@@ -48,18 +50,18 @@ import (
 	"strings"
 )
 
-// definition holds the metadata for a single registered flag.
-type definition struct {
-	val   reflect.Value // Pointer to the variable where the value is stored.
-	short string        // POSIX-style short name (e.g., "v")
-	long  string        // GNU-style long name (e.g., "verbose")
+// flag holds the metadata for a single registered flag.
+type flag struct {
+	val   reflect.Value
+	short string
+	long  string
 	desc  string
 }
 
 // Set manages a collection of defined flags.
 type Set struct {
 	title string
-	flags []*definition
+	flags []*flag
 }
 
 // New creates a new, empty flag set. The title is used in the usage message.
@@ -67,13 +69,15 @@ func New(title string) *Set {
 	return &Set{title: title}
 }
 
-// Add registers a new flag with the set. It binds a command-line flag to the
+// Add registers a new flag with the set. It binds a command-line option to the
 // variable pointed to by v. The variable must be a pointer to one of the
 // supported types: string, int, uint, float, or bool and their sized variants.
-// The flag must have at least a short or long name. Short names are single
-// characters (e.g., "v"), while long names are more descriptive (e.g.,
-// "verbose"). Names are matched case-sensitively. The description provides a
-// brief explanation of the flag's purpose for use in the help message.
+//
+// The flag must have at least a non-empty short or long name. Short names are
+// single-letter abbreviations (e.g., "v"), while long-form names are more
+// descriptive (e.g., "verbose"). Names are matched case-sensitively. The
+// description provides a brief explanation of the flag's purpose for use in
+// the help message.
 func (s *Set) Add(v any, short, long, desc string) {
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Pointer {
@@ -85,7 +89,7 @@ func (s *Set) Add(v any, short, long, desc string) {
 	if len(short) > 1 {
 		panic("short name must be a single character")
 	}
-	m := &definition{
+	m := &flag{
 		val:   val.Elem(),
 		short: short,
 		long:  long,
@@ -95,10 +99,9 @@ func (s *Set) Add(v any, short, long, desc string) {
 }
 
 // Parse maps command-line arguments to flags. It must be called
-// after all flags have been added. If a help flag (-h or --help) is
-// encountered, it prints the usage message and exits. The args parameter
-// allows specifying a custom argument slice; if nil or empty, the system's
-// arguments (os.Args) are used.
+// after all flags have been added. If a --help flag is encountered, it prints
+// the usage message and exits. The args parameter allows passing a custom
+// argument slice; if nil or empty, the system's arguments (os.Args) are used.
 func (s *Set) Parse(args ...string) {
 	if len(args) == 0 {
 		args = os.Args[1:]
@@ -117,17 +120,20 @@ func (s *Set) parse(args []string) {
 		if arg == "--" {
 			return // End of flags.
 		}
-
+		if arg == "--help" {
+			s.Usage()
+			os.Exit(0)
+		}
 		if strings.HasPrefix(arg, "--") {
 			i += s.readLong(args, i)
 		} else {
-			i += s.readShort(args, i)
+			i += s.read(args, i)
 		}
 	}
 }
 
-// findShort queries a flag definition by its short name.
-func (s *Set) findShort(name string) *definition {
+// find queries a flag definition by its short name.
+func (s *Set) find(name string) *flag {
 	for _, f := range s.flags {
 		if f.short == name {
 			return f
@@ -137,7 +143,7 @@ func (s *Set) findShort(name string) *definition {
 }
 
 // findLong queries a flag definition by its long name.
-func (s *Set) findLong(name string) *definition {
+func (s *Set) findLong(name string) *flag {
 	for _, f := range s.flags {
 		if f.long == name {
 			return f
@@ -146,20 +152,15 @@ func (s *Set) findLong(name string) *definition {
 	return nil
 }
 
-// readShort handles short-form flags (e.g., -v, -abc, -p8080).
+// read handles short-form flags (e.g., -v, -abc, -p8080).
 // It returns the number of arguments consumed (1 or 2).
-func (s *Set) readShort(args []string, i int) int {
+func (s *Set) read(args []string, i int) int {
 	arg := args[i]
 	names := strings.TrimPrefix(arg, "-")
 
 	for j, char := range names {
 		name := string(char)
-		if name == "h" {
-			s.Usage()
-			os.Exit(0)
-		}
-
-		def := s.findShort(name)
+		def := s.find(name)
 		if def == nil {
 			s.errorf("Unknown flag '-%s' in group '%s'", name, arg)
 		}
@@ -237,7 +238,7 @@ func (s *Set) readLong(args []string, i int) int {
 }
 
 // setValue parses the string value and sets it on the destination variable.
-func (s *Set) setValue(def *definition, value string) error {
+func (s *Set) setValue(def *flag, value string) error {
 	val := def.val
 	switch kind := val.Kind(); kind {
 	case reflect.String:
@@ -273,10 +274,9 @@ func (s *Set) setValue(def *definition, value string) error {
 func (s *Set) Usage() {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Usage of %s:\n", s.title)
-	all := append(s.flags, &definition{
-		short: "h",
-		long:  "help",
-		desc:  "Display this help message and exit",
+	all := append(s.flags, &flag{
+		long: "help",
+		desc: "Display this help message and exit",
 	})
 	offset := 0
 	for _, f := range all {
@@ -295,7 +295,7 @@ func (s *Set) Usage() {
 
 // format creates the string representation of flag names.
 // Example: "-v, --verbose <bool>"
-func (s *Set) format(f *definition) string {
+func (s *Set) format(f *flag) string {
 	var parts []string
 	if f.short != "" {
 		parts = append(parts, "-"+f.short)
@@ -328,7 +328,7 @@ var std = New(filepath.Base(os.Args[0]))
 func Add(v any, short, long, desc string) { std.Add(v, short, long, desc) }
 
 // Parse parses command-line arguments using the default set.
-func Parse() { std.Parse() }
+func Parse(args ...string) { std.Parse(args...) }
 
 // Usage prints the help message for the default set.
 func Usage() { std.Usage() }
