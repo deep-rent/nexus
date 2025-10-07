@@ -118,10 +118,6 @@ import (
 	"sync"
 )
 
-// DefaultVersion is the default application version exposed by the Injector
-// if none is provided.
-const DefaultVersion = "development"
-
 // Slot is an abstract, typed symbol for an injectable service.
 // It is a unique pointer that acts as a map key within the Injector,
 // while the generic type T provides compile-time type safety.
@@ -175,21 +171,11 @@ type binding struct {
 
 // config holds configuration options for an Injector.
 type config struct {
-	version string
-	ctx     context.Context
+	ctx context.Context
 }
 
 // Option configures an Injector.
 type Option func(*config)
-
-// WithVersion sets the application version for the Injector.
-func WithVersion(version string) Option {
-	return func(cfg *config) {
-		if version = strings.TrimSpace(version); version != "" {
-			cfg.version = version
-		}
-	}
-}
 
 // WithContext sets the application context for the Injector.
 func WithContext(ctx context.Context) Option {
@@ -204,7 +190,6 @@ func WithContext(ctx context.Context) Option {
 // It holds all service bindings and manages their singleton instances.
 // An Injector is safe for concurrent use.
 type Injector struct {
-	version  string
 	ctx      context.Context
 	bindings map[any]*binding
 	mu       sync.RWMutex
@@ -213,26 +198,30 @@ type Injector struct {
 // NewInjector creates and returns a new, empty Injector with given options.
 func NewInjector(opts ...Option) *Injector {
 	cfg := config{
-		version: DefaultVersion,
-		ctx:     context.Background(),
+		ctx: context.Background(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
 	return &Injector{
-		version:  cfg.version,
 		ctx:      cfg.ctx,
 		bindings: make(map[any]*binding),
 	}
 }
 
-// Version returns the application version.
-func (in *Injector) Version() string {
-	return in.version
-}
-
-// Context returns the application context.
+// Context returns the injector's context.
+//
+// This context is passed in during the injector's creation via the WithContext
+// option. It serves two primary purposes:
+//
+// 1. It allows for the propagation of request-scoped values, deadlines, and
+// cancellation signals throughout the dependency graph. Providers can access
+// this context by resolving the injector and calling this method.
+//
+// 2. It is the key mechanism for enabling scoped dependencies. Resolvers like
+// Scoped() use this context to store a cache of instances that live for the
+// duration of the context's lifecycle (e.g., a single HTTP request).
 func (in *Injector) Context() context.Context {
 	return in.ctx
 }
@@ -420,4 +409,45 @@ func provide(in *Injector, provider any, slot any) (any, error) {
 // Transient returns a Resolver that creates a new instance on every call.
 func Transient() Resolver {
 	return transient{}
+}
+
+// scopedCacheKey is an unexported type to be used as a key for storing the
+// scoped instance cache in a context.Context.
+type scopedCacheKey struct{}
+
+// NewScope creates a new context that carries a cache for scoped dependencies.
+// This should be called at the beginning of an operation that defines a scope,
+// such as a new HTTP request.
+func NewScope(ctx context.Context) context.Context {
+	return context.WithValue(ctx, scopedCacheKey{}, &sync.Map{})
+}
+
+type scoped struct{}
+
+func (s scoped) Resolve(in *Injector, provider any, slot any) (any, error) {
+	val := in.Context().Value(scopedCacheKey{})
+	cache, ok := val.(*sync.Map)
+	if !ok || cache == nil {
+		return nil, fmt.Errorf(
+			"no scope cache found in context for scoped slot %s",
+			Tag(slot),
+		)
+	}
+	if instance, ok := cache.LoadOrStore(slot, nil); ok && instance != nil {
+		return instance, nil
+	}
+	instance, err := provide(in, provider, slot)
+	if err != nil {
+		cache.Delete(slot)
+		return nil, err
+	}
+	cache.Store(slot, instance)
+	return instance, nil
+}
+
+// Scoped returns a Resolver that ties the lifecycle of a service to the
+// Injector's context. A new instance is created once per scope.
+// A scope is created by using the NewScope function.
+func Scoped() Resolver {
+	return scoped{}
 }
