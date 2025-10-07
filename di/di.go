@@ -411,8 +411,6 @@ func Transient() Resolver {
 	return transient{}
 }
 
-// scopedCacheKey is an unexported type to be used as a key for storing the
-// scoped instance cache in a context.Context.
 type scopedCacheKey struct{}
 
 // NewScope creates a new context that carries a cache for scoped dependencies.
@@ -447,7 +445,6 @@ func (s scoped) Resolve(in *Injector, provider any, slot any) (any, error) {
 
 // Scoped returns a Resolver that ties the lifecycle of a service to the
 // Injector's context. A new instance is created once per scope.
-// A scope is created by using the NewScope function.
 func Scoped() Resolver {
 	return scoped{}
 }
