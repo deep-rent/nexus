@@ -10,6 +10,6 @@ import (
 // Shutdown sets up a channel to listen for gracious termination signals.
 func Shutdown() chan<- os.Signal {
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT)
 	return c
 }
