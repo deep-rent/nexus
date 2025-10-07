@@ -10,20 +10,18 @@
 // # Basic Usage
 //
 // Define a struct to hold your configuration. Only exported fields will be
-// considered.
+// considered. The code snippet below showcases various field types and
+// struct tag options.
 //
 //	type Config struct {
-//		// This field maps to the HOST variable and is required.
-//		Host string `env:",required"`
-//
-//		// This field maps to the PORT variable and defaults to 8080.
-//		Port int `env:",default:8080"`
-//
-//		// This field maps to the DEBUG variable. No tag is needed.
-//		Debug bool
-//
-//		// This field is ignored.
-//		InternalCounter int `env:"-"`
+//		Host     string        `env:",required"`
+//		Port     int           `env:",default:8080"`
+//		Timeout  time.Duration `env:",unit:s"`
+//		Debug    bool
+//		Proxy    ProxyConfig   `env:"prefix:'HTTP_PROXY_'"`
+//		Roles    []string      `env:",split:';'"`
+//		Internal int           `env:"-"`
+//		internal int
 //	}
 //
 //	func main() {
@@ -41,49 +39,64 @@
 //
 // The first value is the name of the environment variable. If it is omitted,
 // the field's name is used as the base for the variable name.
-// Example: `env:"DATABASE_URL"`
+//
+//	DatabaseURL string `env:"DATABASE_URL"`
 //
 // The subsequent parts of the tag are options, which can be in a key:value
 // format or be boolean flags.
 //
-//   - default:<value>
-//     Sets a default value to be used if the environment variable is not set.
-//     Example: Port int `env:",default:8080"`
+// Option "default"
 //
-//   - required
-//     Marks the variable as required. Unmarshal will return an error if the
-//     variable is not set and no default is provided.
-//     Example: APIKey string `env:",required"`
+// Sets a default value to be used if the environment variable is not set.
 //
-//   - prefix:<value>
-//     For nested struct fields, this overrides the default prefix. Without
-//     this option, the prefix is the field's name converted to SNAKE_CASE
-//     followed by an underscore. It can be set to an empty string to omit
-//     the prefix entirely.
-//     Example: DBConfig `env:",prefix:DB_"`
+//	Port int `env:",default:8080"`
 //
-//   - inline
-//     When applied to an anonymous struct field, it flattens the struct,
-//     effectively treating its fields as if they belonged to the parent struct.
-//     Example: Nested struct { /* ... */ } `env:",inline"`
+// Option "required"
 //
-//   - split:<value>
-//     For slice types, this specifies the delimiter to split the environment
-//     variable string. The default separator is a comma.
-//     Example: Hosts []string `env:",split:';'"`
+// Marks the variable as required. Unmarshal will return an error if the
+// variable is not set and no default is provided.
 //
-//   - format:<value>
-//     Provides a format specifier for special types. For time.Time it can
-//     be a layout string (e.g., "2006-01-02") or one of the predefined
-//     constants "unix", "dateTime", "date", or "time". Defaults to the RFC
-//     3339 format. For []byte, it can be "hex", "base32", or "base64".
-//     Example: StartDate time.Time `env:",format:date"`
+//	APIKey string `env:",required"`
 //
-//   - unit:<value>
-//     Specifies the unit for time.Time or time.Duration when parsing from an
-//     integer. For time.Duration: "ns", "us" (or "μs"), "ms", "s", "m", "h".
-//     For time.Time (with format:unix): "s", "ms", "us" (or "μs").
-//     Example: CacheTTL time.Duration `env:",unit:m,default:5"`
+// Option "prefix"
+//
+// For nested struct fields, this overrides the default prefix. By default,
+// the prefix is the field's name in SNAKE_CASE followed by an underscore.
+// It can be set to an empty string to omit the prefix entirely.
+//
+//	DBConfig `env:",prefix:DB_"`
+//
+// Option "inline"
+//
+// When applied to an anonymous struct field, it flattens the struct,
+// effectively treating its fields as if they belonged to the parent struct.
+//
+//	Nested `env:",inline"`
+//
+// Option "split"
+//
+// For slice types, this specifies the delimiter to split the environment
+// variable string. The default separator is a comma.
+//
+//	Hosts []string `env:",split:';'"`
+//
+// Option "format"
+//
+// Provides a format specifier for special types. For time.Time it can
+// be a Go-compliant layout string (e.g., "2006-01-02") or one of the predefined
+// constants "unix", "dateTime", "date", and "time". Defaults to the RFC
+// 3339 format. For []byte, it can be "hex", "base32", or "base64" to alter
+// the encoding format.
+//
+//	StartDate time.Time `env:",format:date"`
+//
+// Option "unit"
+//
+// Specifies the unit for time.Time or time.Duration when parsing from an
+// integer. For time.Duration: "ns", "us" (or "μs"), "ms", "s", "m", "h".
+// For time.Time (with format:unix): "s", "ms", "us" (or "μs").
+//
+//	CacheTTL time.Duration `env:",unit:m,default:5"`
 package env
 
 import (
