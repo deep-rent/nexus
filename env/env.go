@@ -55,12 +55,19 @@
 //     variable is not set and no default is provided.
 //     Example: APIKey string `env:",required"`
 //
+//   - prefix:<value>
+//     For nested struct fields, this overrides the default prefix. Without
+//     this option, the prefix is the field's name converted to SNAKE_CASE
+//     followed by an underscore. It can be set to an empty string to omit
+//     the prefix entirely.
+//     Example: DBConfig `env:",prefix:DB_"`
+//
 //   - inline
-//     When used on an anonymous struct field, it flattens the struct, treating
-//     its fields as if they were part of the parent struct.
+//     When applied to an anonymous struct field, it flattens the struct,
+//     effectively treating its fields as if they belonged to the parent struct.
 //     Example: Nested struct { /* ... */ } `env:",inline"`
 //
-//   - split:separator
+//   - split:<value>
 //     For slice types, this specifies the delimiter to split the environment
 //     variable string. The default separator is a comma.
 //     Example: Hosts []string `env:",split:';'"`
@@ -217,6 +224,7 @@ func Expand(s string, opts ...Option) (string, error) {
 
 type flags struct {
 	Name     string
+	Prefix   *string
 	Split    string
 	Unit     string
 	Format   string
@@ -291,10 +299,16 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		}
 		key = prefix + key
 
+		// Check for true embedded structs.
 		if ft.Type.Kind() == reflect.Struct &&
 			!isUnmarshalable(fv) &&
 			ft.Type != typeTime {
-			if err := process(fv, key+"_", lookup); err != nil {
+			if opts.Prefix != nil {
+				key = *opts.Prefix
+			} else {
+				key += "_"
+			}
+			if err := process(fv, prefix+key, lookup); err != nil {
 				return err
 			}
 			continue
@@ -556,12 +570,14 @@ func parse(s string) (opts flags, err error) {
 		}
 		val = unquote(val)
 		switch key {
+		case "format":
+			opts.Format = val
+		case "prefix":
+			opts.Prefix = &val
 		case "split":
 			opts.Split = val
 		case "unit":
 			opts.Unit = val
-		case "format":
-			opts.Format = val
 		case "default":
 			opts.Default = val
 		default:
