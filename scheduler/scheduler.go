@@ -1,3 +1,44 @@
+// Package scheduler provides a flexible framework for running recurring tasks
+// concurrently.
+//
+// The core of the package is the Scheduler interface, which manages the
+// lifecycle of scheduled jobs. The basic unit of work is a Task, which can be
+// adapted into a schedulable Tick. A Tick is a self-repeating job that
+// determines its own next run time by returning a duration after each
+// execution.
+//
+// Helpers like Every and After are provided to easily convert a simple Task
+// into a Tick with common scheduling patterns:
+//
+//   - Every(d, task): Creates a drift-free Tick that runs at a fixed
+//     cadence of duration d, accounting for the task's own execution time.
+//   - After(d, task): Creates a drifting Tick that waits for a fixed
+//     duration d after the previous run completes.
+//
+// A typical usage involves creating a scheduler, defining tasks, wrapping them
+// with a scheduling helper, and dispatching them.
+//
+// Example:
+//
+//	func main() {
+//	  // Create a scheduler tied to a parent context for lifecycle management.
+//	  s := scheduler.New(context.Background())
+//	  defer s.Shutdown() // Ensure graceful shutdown.
+//
+//	  // Define a simple task to be executed.
+//	  task := scheduler.TaskFn(func(context.Context) {
+//	    slog.Info("Tick!")
+//	  })
+//
+//	  // Create a drift-free Tick that runs the task every 2 seconds.
+//	  tick := scheduler.Every(2*time.Second, task)
+//
+//	  // Dispatch the tick to run in the background.
+//	  s.Dispatch(tick)
+//
+//	  // Allow the scheduler to run for a while.
+//	  time.Sleep(5 * time.Second)
+//	}
 package scheduler
 
 import (
