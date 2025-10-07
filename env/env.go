@@ -1,3 +1,72 @@
+// Package env provides functionality for unmarshaling environment variables
+// into Go structs. It allows for flexible configuration through struct field
+// tags, supporting default values, required fields, and custom parsing for
+// various types.
+//
+// # Basic Usage
+//
+// Define a struct and use tags on its fields to specify the environment
+// variable names and any parsing options. Then, call the Unmarshal function
+// with a pointer to an instance of the struct.
+//
+//	type Config struct {
+//		Host     string        `env:"HOST,required"`
+//		Port     int           `env:"PORT,default:8080"`
+//		Timeout  time.Duration `env:"TIMEOUT,default:5s"`
+//		Features []string      `env:"FEATURES,split:,"`
+//	}
+//
+//	func main() {
+//		var cfg Config
+//		if err := env.Unmarshal(&cfg); err != nil {
+//			log.Fatalf("failed to unmarshal config: %v", err)
+//		}
+//		// ... use cfg
+//	}
+//
+// # Struct Tag Options
+//
+// The behavior of the unmarshaler is controlled by the env struct field tag.
+// The tag is a comma-separated string of options.
+//
+// The first value is the name of the environment variable. If it is omitted,
+// the field's name is converted to upper SNAKE_CASE.
+// Example: `env:"DB_HOST"`
+//
+// The subsequent parts of the tag are options, which can be in a key:value
+// format or be boolean flags.
+//
+//   - default:<value>
+//     Sets a default value to be used if the environment variable is not set.
+//     Example: Port int `env:"PORT,default:8080"`
+//
+//   - required
+//     Marks the variable as required. Unmarshal will return an error if the
+//     variable is not set and no default is provided.
+//     Example: APIKey string `env:"API_KEY,required"`
+//
+//   - inline
+//     When used on an anonymous struct field, it flattens the struct, treating
+//     its fields as if they were part of the parent struct.
+//     Example: Nested struct { /* ... */ } `env:",inline"`
+//
+//   - split:separator
+//     For slice types, this specifies the delimiter to split the environment
+//     variable string. The default separator is a comma.
+//     Example: Hosts []string `env:"HOSTS,split:';'"`
+//
+//   - format:<value>
+//     Provides a format specifier for special types. For time.Time it can
+//     be a layout string (e.g., "2006-01-02") or one of the predefined
+//     constants "unix", "dateTime", "date", or "time". Defaults to the RFC
+//     3339 format. For []byte, it can be "hex", "base32", or "base64".
+//     Example: StartDate time.Time `env:"START_DATE,format:date"`
+//
+//   - unit:<value>
+//     Specifies the unit for time.Time or time.Duration when parsing from an
+//     integer. For time.Duration: "ns", "us" (or "μs"), "ms", "s", "m", "h".
+//     For time.Time (with format:unix): "s", "ms", "us" (or "μs").
+//     Example: CacheTTL time.Duration `env:"CACHE_TTL,unit:m,default:5"`
 package env
 
 import (
@@ -14,20 +83,40 @@ import (
 	"unicode"
 )
 
+// Lookup is a function that retrieves the value of an environment variable.
+// It follows the signature of os.LookupEnv, returning the value and a boolean
+// indicating whether the variable was present. This type allows for custom
+// lookup mechanisms, such as reading from sources other than the actual
+// environment, which is especially useful for testing.
 type Lookup func(key string) (string, bool)
 
+// Unmarshaler is an interface that can be implemented by types to provide their
+// own custom logic for parsing an environment variable string.
 type Unmarshaler interface {
+	// UnmarshalEnv unmarshals the string value of an environment variable.
+	// The value is the raw string from the environment or a default value.
+	// It returns an error if the value cannot be parsed.
 	UnmarshalEnv(value string) error
 }
 
+// Option is a function that configures the behavior of the Unmarshal and Expand
+// functions. It follows the functional options pattern.
 type Option func(*config)
 
+// WithPrefix returns an Option that adds a common prefix to all environment
+// variable keys looked up during unmarshaling. For example, WithPrefix("APP_")
+// would cause a field with the env tag "PORT" to look for the "APP_PORT"
+// variable.
 func WithPrefix(prefix string) Option {
 	return func(o *config) {
 		o.Prefix = prefix
 	}
 }
 
+// WithLookup returns an Option that sets a custom lookup function for
+// retrieving environment variable values. If not customized, os.LookupEnv will
+// be used by default. This is useful for testing or if you need to load
+// environment variables from alternative sources.
 func WithLookup(lookup Lookup) Option {
 	return func(o *config) {
 		if lookup != nil {
@@ -36,6 +125,12 @@ func WithLookup(lookup Lookup) Option {
 	}
 }
 
+// Unmarshal populates the fields of a struct with values from environment
+// variables. The given value must be a non-nil pointer.
+//
+// Fields are mapped to environment variables using env struct tags. If a field
+// is unexported or is tagged with "-", it is ignored. The behavior can be
+// adjusted through functional options.
 func Unmarshal(v any, opts ...Option) error {
 	if err := unmarshal(v, opts...); err != nil {
 		return fmt.Errorf("env: %w", err)
@@ -43,9 +138,12 @@ func Unmarshal(v any, opts ...Option) error {
 	return nil
 }
 
-// Expand substitutes environment variables in a string with the format ${KEY}.
-// It supports escaping the '$' character with '$$'. If a variable is not
-// found, it returns an error.
+// Expand substitutes environment variables in a string.
+//
+// It replaces references to environment variables in the format ${KEY} with
+// their corresponding values. A literal dollar sign can be escaped with $$.
+// If a referenced variable is not found in the environment, the function
+// returns an error. Its behavior can be adjusted through functional options.
 func Expand(s string, opts ...Option) (string, error) {
 	cfg := config{
 		Lookup: os.LookupEnv,
@@ -338,7 +436,7 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 		var b []byte
 		var err error
 		switch opts.Format {
-		case "", "string":
+		case "":
 			b = []byte(v)
 		case "hex":
 			b, err = hex.DecodeString(v)
