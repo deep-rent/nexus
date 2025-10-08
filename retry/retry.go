@@ -266,6 +266,7 @@ func NewTransport(
 		limit:   0,
 		backoff: backoff.Constant(0),
 		logger:  slog.Default(),
+		now:     time.Now,
 	}
 	for _, opt := range opts {
 		opt(&c)
@@ -274,8 +275,8 @@ func NewTransport(
 		next:    next,
 		policy:  c.policy.LimitAttempts(c.limit),
 		backoff: c.backoff,
-		now:     c.now,
 		logger:  c.logger,
+		now:     c.now,
 	}
 }
 
