@@ -4,15 +4,15 @@
 // structures. A common pattern is to embed the provided Reserved claims
 // struct and add extra fields for any other claims present in the token.
 //
-// # Defining Custom Claims
+// # Basic Verification
+//
+// Start by defining custom claims:
 //
 //	type Claims struct {
 //	  jwt.Reserved
 //	  Scope string         `json:"scp"`
 //	  Extra map[string]any `json:",unknown"`
 //	}
-//
-// # Basic Verification
 //
 // The top-level Verify function can be used for simple, one-off signature
 // verification without claim validation:
@@ -24,7 +24,7 @@
 // # Advanced Validation
 //
 // For advanced validation of claims like issuer, audience, and token age,
-// create a reusable [Verifier] with functional options:
+// create a reusable Verifier with functional options:
 //
 //	verifier := jwt.NewVerifier[Claims](
 //		keySet,

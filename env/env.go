@@ -13,6 +13,8 @@
 // considered. The code snippet below showcases various field types and
 // struct tag options.
 //
+// Example:
+//
 //	type Config struct {
 //		Host     string        `env:",required"`
 //		Port     int           `env:",default:8080"`

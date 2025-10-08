@@ -8,14 +8,15 @@
 // grouped short options (e.g., -abc) and values attached to short options
 // (e.g., -p8080) for POSIX compliance.
 //
+// # Usage
+//
 // The core of the package is the Set, which manages a collection of defined
 // flags. A default Set is provided for convenience, accessible through
-// top-level functions like Add and Parse.
+// top-level functions like Add and Parse. To use the package, define variables,
+// register them using Add, and then call Parse to process the command-line
+// arguments.
 //
-// # Example
-//
-// To use the package, define variables, register them using Add, and then call
-// Parse to process the command-line arguments.
+// Example:
 //
 //	func main() {
 //	  var (
@@ -34,6 +35,8 @@
 //
 //	  fmt.Printf("Starting server on %s:%d (verbose: %v)\n", host, port, verb)
 //	}
+//
+// # Help Message
 //
 // The automatically generated help message for the example above would be:
 //

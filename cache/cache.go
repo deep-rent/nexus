@@ -11,11 +11,11 @@
 // min/max range. The controller also handles conditional requests using ETag
 // and Last-Modified headers to reduce bandwidth and server load.
 //
-// # Usage
-//
 // A typical use case involves creating a scheduler, defining a Mapper function
 // to parse the HTTP response, creating and configuring a Controller, and then
 // dispatching it to run in the background.
+//
+// Example:
 //
 //	type Resource struct {
 //		// fields for the parsed data
