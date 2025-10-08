@@ -353,36 +353,38 @@ func TestAccepts(t *testing.T) {
 	}
 }
 
-func TestHeaderConstructors(t *testing.T) {
-	t.Run("New", func(t *testing.T) {
-		h := header.New("x-foo-bar", "baz")
-		assert.Equal(t, "X-Foo-Bar", h.Key)
-		assert.Equal(t, "baz", h.Value)
-		assert.Equal(t, "X-Foo-Bar: baz", h.String())
-	})
+func TestNew(t *testing.T) {
+	h := header.New("x-foo-bar", "baz")
+	assert.Equal(t, "X-Foo-Bar", h.Key)
+	assert.Equal(t, "baz", h.Value)
+	assert.Equal(t, "X-Foo-Bar: baz", h.String())
+}
 
+func TestUserAgent(t *testing.T) {
 	t.Run("UserAgent", func(t *testing.T) {
 		h := header.UserAgent("foobar", "1.0", "contact@example.com")
 		assert.Equal(t, "User-Agent", h.Key)
 		assert.Equal(t, "foobar/1.0 (contact@example.com)", h.Value)
 	})
 
-	t.Run("UserAgent no comment", func(t *testing.T) {
+	t.Run("UserAgent without comment", func(t *testing.T) {
 		h := header.UserAgent("foobar", "1.0", "")
 		assert.Equal(t, "User-Agent", h.Key)
 		assert.Equal(t, "foobar/1.0", h.Value)
 	})
 }
 
-type roundTripper struct{ trap *http.Request }
+type mockRoundTripper struct{ trap *http.Request }
 
-func (t *roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+func (t *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	t.trap = r
 	return &http.Response{
 		StatusCode: 200,
 		Body:       io.NopCloser(strings.NewReader("")),
 	}, nil
 }
+
+var _ http.RoundTripper = (*mockRoundTripper)(nil)
 
 func TestNewTransport(t *testing.T) {
 	t.Run("no headers returns original transport", func(t *testing.T) {
@@ -394,7 +396,7 @@ func TestNewTransport(t *testing.T) {
 	t.Run("adds headers to request", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "http://example.com", nil)
 		originalHeader := req.Header.Clone()
-		base := &roundTripper{}
+		base := &mockRoundTripper{}
 
 		headers := []header.Header{
 			header.New("X-Foo", "foo"),
