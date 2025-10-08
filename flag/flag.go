@@ -14,15 +14,15 @@
 //
 // # Usage
 //
-// To use the package, define variables to hold flag values, register them
-// with the flag set, and then parse the command-line arguments.
+// To use the package, define variables with their desired default values,
+// register them with the flag set, and then parse the command-line arguments.
 // Here's an example:
 //
 //	func main() {
 //	  var (
-//	    port int
-//	    host string
-//	    verb bool
+//	    port int    = 8080          // Default value
+//	    host string = "localhost"   // Default value
+//	    verb bool                  // Default is false
 //	  )
 //
 //	  // Add flags, binding them to local variables.
@@ -39,8 +39,8 @@
 // The automatically generated help message for the example above would be:
 //
 //	Usage of my-app:
-//	  -p, --port <int>       Port to listen on
-//	  -h, --host <string>    Host address to bind to
+//	  -p, --port <int>       Port to listen on (default: 8080)
+//	  -h, --host <string>    Host address to bind to (default: localhost)
 //	  -v, --verbose <bool>   Enable verbose logging
 //	      --help             Display this help message and exit
 package flag
@@ -58,6 +58,7 @@ import (
 // flag holds the metadata for a single registered flag.
 type flag struct {
 	val   reflect.Value
+	def   any // The default value.
 	short string
 	long  string
 	desc  string
@@ -75,8 +76,9 @@ func New(title string) *Set {
 }
 
 // Add registers a new flag with the set. It binds a command-line option to the
-// variable pointed to by v. The variable must be a pointer to one of the
-// supported types: string, int, uint, float, or bool and their sized variants.
+// variable pointed to by v. The variable's initial value is used as the
+// default, if present. The variable must be a pointer to one of the supported
+// types: string, int, uint, float, or bool and their sized variants.
 //
 // The flag must have at least a non-empty short or long name. Short names are
 // single-letter abbreviations (e.g., "v"), while long-form names are more
@@ -94,8 +96,10 @@ func (s *Set) Add(v any, short, long, desc string) {
 	if len(short) > 1 {
 		panic("short name must be a single character")
 	}
+	elem := val.Elem()
 	m := &flag{
-		val:   val.Elem(),
+		val:   elem,
+		def:   elem.Interface(), // Capture initial value as default.
 		short: short,
 		long:  long,
 		desc:  desc,
@@ -181,13 +185,13 @@ func (s *Set) findLong(name string) *flag {
 // It returns the number of arguments consumed and any error encountered.
 func (s *Set) read(args []string, i int) (int, error) {
 	arg := args[i]
-	names := strings.TrimPrefix(arg, "-")
+	keys := strings.TrimPrefix(arg, "-")
 
-	for j, char := range names {
-		name := string(char)
-		def := s.find(name)
+	for j, char := range keys {
+		key := string(char)
+		def := s.find(key)
 		if def == nil {
-			return 0, fmt.Errorf("unknown flag %q in group %q", name, arg)
+			return 0, fmt.Errorf("unknown flag %q in group %q", key, arg)
 		}
 
 		if def.val.Kind() == reflect.Bool {
@@ -195,68 +199,66 @@ func (s *Set) read(args []string, i int) (int, error) {
 			continue // Continue to next character in the group.
 		}
 
-		// If not a boolean, it requires a value.
 		// The value can be the rest of the string or the next argument.
-		value := names[j+1:]
-		if value != "" {
+		val := keys[j+1:]
+		if val != "" {
 			// Value is attached (e.g., -p8080)
-			if err := s.setValue(def, value); err != nil {
-				return 0, fmt.Errorf("invalid value for flag %q: %w", name, err)
+			if err := s.setValue(def, val); err != nil {
+				return 0, fmt.Errorf("invalid value for flag %q: %w", key, err)
 			}
-			return 1, nil // Consumed one argument, done with this group.
+			return 1, nil
 		}
 
-		// Value is the next argument (e.g., -p 8080)
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag %q requires a value", name)
+			return 0, fmt.Errorf("flag %q requires a value", key)
 		}
 		if err := s.setValue(def, args[i]); err != nil {
-			return 0, fmt.Errorf("invalid value for flag %q: %w", name, err)
+			return 0, fmt.Errorf("invalid value for flag %q: %w", key, err)
 		}
-		return 2, nil // Consumed two arguments.
+		return 2, nil
 	}
 
-	return 1, nil // Consumed one argument (for boolean groups).
+	return 1, nil
 }
 
 // readLong handles a long-form flag (e.g., --verbose, --port=8080).
 // It returns the number of arguments consumed and any error encountered.
 func (s *Set) readLong(args []string, i int) (int, error) {
 	arg := args[i]
-	name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+	key, val, found := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
 
-	def := s.findLong(name)
+	def := s.findLong(key)
 	if def == nil {
 		return 0, fmt.Errorf("unknown flag %q", arg)
 	}
 
 	if def.val.Kind() == reflect.Bool {
-		val := true
-		if hasValue {
+		b := true
+		if found {
 			var err error
-			val, err = strconv.ParseBool(value)
+			b, err = strconv.ParseBool(val)
 			if err != nil {
-				return 0, fmt.Errorf("expected boolean for flag %q, got %q", arg, value)
+				return 0, fmt.Errorf("expected boolean for flag %q, got %q", arg, val)
 			}
 		}
-		def.val.SetBool(val)
+		def.val.SetBool(b)
 		return 1, nil
 	}
 
-	if !hasValue {
+	if !found {
 		i++
 		if i >= len(args) {
 			return 0, fmt.Errorf("flag %q requires a value", arg)
 		}
-		value = args[i]
+		val = args[i]
 	}
 
-	if err := s.setValue(def, value); err != nil {
+	if err := s.setValue(def, val); err != nil {
 		return 0, fmt.Errorf("invalid value for flag %q: %w", arg, err)
 	}
 
-	if hasValue {
+	if found {
 		return 1, nil
 	}
 	return 2, nil
@@ -313,7 +315,11 @@ func (s *Set) Usage() {
 	for _, f := range all {
 		names := s.format(f)
 		space := strings.Repeat(" ", offset-len(names)+2)
-		fmt.Fprintf(&b, "  %s%s%s\n", names, space, f.desc)
+		desc := f.desc
+		if def := s.formatDefault(f); def != "" {
+			desc += " " + def
+		}
+		fmt.Fprintf(&b, "  %s%s%s\n", names, space, desc)
 	}
 	fmt.Fprint(os.Stdout, b.String())
 }
@@ -336,8 +342,23 @@ func (s *Set) format(f *flag) string {
 	if f.long == "" {
 		names = "  " + names
 	}
-	typeStr := fmt.Sprintf("<%s>", f.val.Kind().String())
-	return fmt.Sprintf("%-20s %s", names, typeStr)
+	typ := fmt.Sprintf("<%s>", f.val.Kind().String())
+	return fmt.Sprintf("%-20s %s", names, typ)
+}
+
+// formatDefault creates a string representation of the default value for a
+// flag, like "(default: 8080)". It returns an empty string if the default value
+// is the zero value for its type.
+func (s *Set) formatDefault(f *flag) string {
+	if f.def == nil {
+		return ""
+	}
+	val := reflect.ValueOf(f.def)
+	// Don't show zero-value defaults.
+	if val.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf("(default: %v)", f.def)
 }
 
 var std = New(filepath.Base(os.Args[0]))
