@@ -7,7 +7,7 @@
 // This behavior can be customized or disabled on a per-field basis using
 // struct tags.
 //
-// # Basic Usage
+// # Usage
 //
 // Define a struct to hold your configuration. Only exported fields will be
 // considered. The code snippet below showcases various field types and
@@ -32,7 +32,7 @@
 //		// Use the configuration to bootstrap your application...
 //	}
 //
-// # Struct Tag Options
+// # Options
 //
 // The behavior of the unmarshaler is controlled by the env struct field tag.
 // The tag is a comma-separated string of options.

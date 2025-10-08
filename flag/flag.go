@@ -12,7 +12,11 @@
 // flags. A default Set is provided for convenience, accessible through
 // top-level functions like Add and Parse.
 //
-// Usage:
+// # Usage
+//
+// To use the package, define variables to hold flag values, register them
+// with the flag set, and then parse the command-line arguments.
+// Here's an example:
 //
 //	func main() {
 //	  var (

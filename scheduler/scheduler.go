@@ -15,10 +15,10 @@
 //   - After(d, task): Creates a drifting Tick that waits for a fixed
 //     duration d after the previous run completes.
 //
+// # Usage
+//
 // A typical usage involves creating a scheduler, defining tasks, wrapping them
 // with a scheduling helper, and dispatching them.
-//
-// Example:
 //
 //	func main() {
 //	  // Create a scheduler tied to a parent context for lifecycle management.

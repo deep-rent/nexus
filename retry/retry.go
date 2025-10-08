@@ -7,7 +7,11 @@
 // http.RoundTripper (like http.DefaultTransport) and intercepts requests to
 // apply the retry logic.
 //
-// Example:
+// # Usage
+//
+// To use the package, create a retry transport with your desired settings
+// and wrap your existing HTTP transport. Then, use this transport in your
+// http.Client. Here's an example:
 //
 //	func main() {
 //	  // Create a retry transport that wraps the default transport.

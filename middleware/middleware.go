@@ -4,6 +4,9 @@
 //
 // # Usage
 //
+// To use the package, create middleware Pipes and chain them around your final
+// http.Handler using the Chain function. Here's an example:
+//
 //	logger := slog.Default()
 //	// Create the final handler.
 //	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

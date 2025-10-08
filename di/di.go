@@ -7,7 +7,7 @@
 //   - Provider: A factory function that creates an instance of a service.
 //   - Resolver: A strategy that defines the lifecycle of a service.
 //
-// # Usage Manual: A Chemical Analogy
+// # Usage
 //
 // Let's explore how to use this container by modeling a simple chemical
 // reaction: forming a Salt. This example shows how to use a single interface
