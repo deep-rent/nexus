@@ -247,3 +247,10 @@ const (
 	XWebKitCSP             = "X-WebKit-CSP"
 	XXSSProtection         = "X-XSS-Protection"
 )
+
+// Standard authentication schemes
+const (
+	SchemeBasic  = "Basic"
+	SchemeBearer = "Bearer"
+	SchemeDigest = "Digest"
+)
