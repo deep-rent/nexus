@@ -1,5 +1,27 @@
 // Package cors provides a configurable CORS (Cross-Origin Resource Sharing)
-// middleware handler.
+// middleware for http.Handlers.
+//
+// The New function creates the middleware pipe, which can be configured with
+// functional options (e.g., WithAllowedOrigins, WithAllowedMethods). The
+// middleware automatically handles preflight (OPTIONS) requests and injects the
+// appropriate CORS headers into responses for actual requests.
+//
+// Example:
+//
+//	// Configure CORS to allow requests from a specific origin with
+//	// restricted methods and additional headers.
+//	pipe := cors.New(
+//		cors.WithAllowedOrigins("https://example.com"),
+//		cors.WithAllowedMethods(http.MethodGet, http.MethodOptions),
+//		cors.WithAllowedHeaders("Authorization", "Content-Type"),
+//		cors.WithMaxAge(12*time.Hour),
+//	)
+//
+//	handler := http.HandlerFunc( ... )
+//	// Apply the CORS middleware as one of the first layers.
+//	chainedHandler := middleware.Chain(handler, pipe)
+//
+//	http.ListenAndServe(":8080", chainedHandler)
 package cors
 
 import (
@@ -12,9 +34,9 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 )
 
-// Wildcard is a special value that can be passed in configuration to allow
+// wildcard is a special value that can be passed in configuration to allow
 // requests from any origin.
-const Wildcard = "*"
+const wildcard = "*"
 
 // config stores the pre-computed configuration for internal use.
 type config struct {
@@ -29,14 +51,17 @@ type config struct {
 // Option is a function that configures the CORS middleware.
 type Option func(*config)
 
-// WithAllowedOrigins sets the allowed origins for CORS requests. If no origins
-// are provided, this option has no effect. Otherwise this option overrides any
-// previously set values. By default, the middleware allows requests from any
-// origin. The same behavior can be achieved by leaving the list empty or by
-// including the special Wildcard "*".
+// WithAllowedOrigins sets the allowed origins for CORS requests.
+//
+// By default, all origins are allowed. The same behavior can be achieved by
+// leaving the list empty or by manually including the special wildcard "*".
+// In other cases, this option restricts requests to a specific whitelist. If
+// credentials are enabled via WithAllowCredentials, browsers forbid a wildcard
+// origin, and this middleware will dynamically reflect the request's Origin
+// header if it is in the allowed list.
 func WithAllowedOrigins(origins ...string) Option {
 	return func(c *config) {
-		if len(origins) != 0 && !slices.Contains(origins, Wildcard) {
+		if len(origins) != 0 && !slices.Contains(origins, wildcard) {
 			c.allowedOrigins = make(map[string]struct{}, len(origins))
 			for _, origin := range origins {
 				c.allowedOrigins[origin] = struct{}{}
@@ -46,10 +71,11 @@ func WithAllowedOrigins(origins ...string) Option {
 }
 
 // WithAllowedMethods sets the allowed HTTP methods for CORS requests.
-// If no methods are provided, this option has no effect. Otherwise this option
-// overrides any previously set values. By default, the middleware omits the
-// corresponding header. Recommended methods include "GET", "HEAD", "POST",
-// "PUT", "PATCH", "DELETE", and "OPTIONS".
+//
+// If no methods are provided, this header is omitted by default, and only
+// simple methods (GET, POST, HEAD) are implicitly allowed by browsers for
+// non-preflighted requests. It is recommended to list all methods your API
+// supports, including OPTIONS.
 func WithAllowedMethods(methods ...string) Option {
 	return func(c *config) {
 		if len(methods) != 0 {
@@ -58,10 +84,11 @@ func WithAllowedMethods(methods ...string) Option {
 	}
 }
 
-// WithAllowedHeaders sets the allowed HTTP headers for CORS requests. By
-// default, only CORS-safelisted headers are allowed. Any additional headers
-// the client needs to send (e.g., "Authorization", "Content-Type") must be
-// explicitly listed here.
+// WithAllowedHeaders sets the allowed HTTP headers for CORS requests.
+//
+// This is necessary for any non-standard headers the client needs to send,
+// such as "Authorization" or custom "X-" headers. If not set, browsers will
+// only permit requests with CORS-safelisted request headers.
 func WithAllowedHeaders(headers ...string) Option {
 	return func(c *config) {
 		if len(headers) != 0 {
@@ -71,9 +98,11 @@ func WithAllowedHeaders(headers ...string) Option {
 }
 
 // WithExposedHeaders sets the HTTP headers that are safe to expose to the
-// API of a CORS API specification. If no headers are provided, this option has
-// no effect. Otherwise this option overrides any previously set values. By
-// default, the middleware omits the corresponding header.
+// API of a CORS API specification.
+//
+// By default, client-side scripts can only access a limited set of simple
+// response headers. This option lists additional headers (like a custom
+// "X-Pagination-Total" header) that should be made accessible to the script.
 func WithExposedHeaders(headers ...string) Option {
 	return func(c *config) {
 		if len(headers) != 0 {
@@ -83,9 +112,12 @@ func WithExposedHeaders(headers ...string) Option {
 }
 
 // WithAllowCredentials indicates whether the response to the request can be
-// exposed when the credentials flag is true. When used as part of a response to
-// a preflight request, it indicates that the actual request can include user
-// credentials. This option defaults to false.
+// exposed when the credentials flag is true.
+//
+// When used as part of a response to a preflight request, it indicates that the
+// actual request can include cookies and other user credentials. This option
+// defaults to false. Note that browsers require a specific origin (not a
+// wildcard) in the Access-Control-Allow-Origin header when this is enabled.
 func WithAllowCredentials(allow bool) Option {
 	return func(c *config) {
 		c.allowCredentials = allow
@@ -93,9 +125,10 @@ func WithAllowCredentials(allow bool) Option {
 }
 
 // WithMaxAge indicates how long the results of a preflight request can be
-// cached. This option defaults to 0, which means no max age is set. Reasonable
-// values range from a few minutes to a full day, depending on how often the
-// CORS policy changes.
+// cached by the browser, in seconds.
+//
+// A duration of 0 or less omits the header. Caching preflight responses can
+// significantly reduce latency for clients making multiple different requests.
 func WithMaxAge(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
@@ -105,12 +138,13 @@ func WithMaxAge(d time.Duration) Option {
 }
 
 // New creates a middleware Pipe that handles CORS based on the provided
-// configuration.
+// options.
 //
-// It intercepts and terminates preflight (OPTIONS) requests with a 204 (No
-// Content) status, preventing them from reaching downstream handlers. For all
-// other (actual) requests, it adds the necessary CORS headers to the response
-// before passing the request on to the next handler in the chain.
+// The middleware distinguishes between preflight and actual requests. Preflight
+// (OPTIONS) requests are intercepted and terminated with a 204 No Content
+// response. For actual requests, it adds the necessary CORS headers to the
+// response before passing control to the next handler. Non-CORS requests are
+// passed through without modification.
 func New(opts ...Option) middleware.Pipe {
 	cfg := config{}
 	for _, opt := range opts {
@@ -149,7 +183,7 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 	h := w.Header()
 	h.Add("Vary", "Origin")
 	if !cfg.allowCredentials && cfg.allowedOrigins == nil {
-		origin = Wildcard
+		origin = wildcard
 	}
 	h.Set("Access-Control-Allow-Origin", origin)
 	if cfg.allowCredentials {
