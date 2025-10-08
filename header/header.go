@@ -15,7 +15,6 @@ package header
 import (
 	"iter"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -136,59 +135,36 @@ func Credentials(r *http.Request) (scheme string, credentials string, ok bool) {
 	return
 }
 
-// Preference represents a single preference from an Accept-* style header,
-// combining a value with its quality factor (q-value).
-type Preference struct {
-	// Value is the raw value of the preference, e.g., "application/json".
-	Value string
-	// Q is the quality factor, ranging from 0.0 to 1.0. If not specified in
-	// the header, it defaults to 1.0.
-	Q float64
-}
-
 // Preferences parses a header value with quality factors (e.g., Accept,
-// Accept-Language) into an slice of Preference structs. The returned slice is
-// sorted in descending order of quality factor (from highest to lowest
-// preference). Values without an explicit q-factor are assigned a default
-// quality of 1.0. Malformed q-factors are also treated as 1.0.
-//
-// Example:
-//
-//	Input: "text/html, application/json;q=0.9, */*;q=0.8"
-//	Output:
-//	  []Preference{
-//	    {Value: "text/html", Q: 1.0},
-//	    {Value: "application/json", Q: 0.9},
-//	    {Value: "*/*", Q: 0.8},
-//	  }
-func Preferences(value string) []Preference {
-	var prefs []Preference
-	for part := range strings.SplitSeq(value, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		params := strings.Split(part, ";")
-		spec := Preference{
-			Value: strings.TrimSpace(params[0]),
-			Q:     1.0,
-		}
-		for i := 1; i < len(params); i++ {
-			p := strings.TrimSpace(params[i])
-			k, v, found := strings.Cut(p, "=")
-			if found && strings.TrimSpace(k) == "q" {
-				if q, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
-					spec.Q = q
+// Accept-Language) into an iterator quality factors (q-value) by key. The
+// values are yielded in the order they appear in the header, not sorted by
+// quality. Values without an explicit q-factor are assigned a default quality
+// of 1.0. Malformed q-factors are also treated as 1.0.
+func Preferences(value string) iter.Seq2[string, float64] {
+	return func(yield func(string, float64) bool) {
+		for part := range strings.SplitSeq(value, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			params := strings.Split(part, ";")
+			var q float64 = 1.0
+			for i := 1; i < len(params); i++ {
+				p := strings.TrimSpace(params[i])
+				k, v, found := strings.Cut(p, "=")
+				if found && strings.TrimSpace(k) == "q" {
+					v = strings.TrimSpace(v)
+					if r, err := strconv.ParseFloat(v, 64); err == nil {
+						q = r
+					}
+					break
 				}
-				break
+			}
+			if !yield(strings.TrimSpace(params[0]), q) {
+				return
 			}
 		}
-		prefs = append(prefs, spec)
 	}
-	sort.SliceStable(prefs, func(i, j int) bool {
-		return prefs[i].Q > prefs[j].Q
-	})
-	return prefs
 }
 
 // Header represents a single HTTP header key-value pair.
