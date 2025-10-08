@@ -24,144 +24,191 @@ func (r *reverse) UnmarshalEnv(v string) error {
 type TString struct {
 	V string
 }
+
 type TBool struct {
 	V bool
 }
+
 type TInt struct {
 	V int
 }
+
 type TInt8 struct {
 	V int8
 }
+
 type TInt16 struct {
 	V int16
 }
+
 type TInt32 struct {
 	V int32
 }
+
 type TInt64 struct {
 	V int64
 }
+
 type TUint struct {
 	V uint
 }
+
 type TUint8 struct {
 	V uint8
 }
+
 type TUint16 struct {
 	V uint16
 }
+
 type TUint32 struct {
 	V uint32
 }
+
 type TUint64 struct {
 	V uint64
 }
+
 type TFloat32 struct {
 	V float32
 }
+
 type TFloat64 struct {
 	V float64
 }
+
 type TURL struct {
 	V url.URL
 }
+
 type TURLPtr struct {
 	V *url.URL
 }
+
 type TReverse struct {
 	V reverse
 }
+
 type TReversePtr struct {
 	V *reverse
 }
+
 type TDefault struct {
 	V string `env:",default:foo"`
 }
+
 type TDefaultQuotes struct {
 	V string `env:",default:'foo,bar'"`
 }
+
 type TRequired struct {
 	V string `env:",required"`
 }
+
 type TIgnored struct {
 	V string `env:"-"`
 }
+
 type TUnexported struct {
 	v string
 }
+
 type TCustomName struct {
 	Foo string `env:"BAR"`
 }
+
 type TSnakeCase struct {
 	FooBar string
 }
+
 type TSliceString struct {
 	V []string
 }
+
 type TSliceInt struct {
 	V []int
 }
+
 type TSliceCustomSplit struct {
 	V []string `env:",split:';'"`
 }
+
 type TSliceByte struct {
 	V []byte
 }
+
 type TSliceByteHex struct {
 	V []byte `env:",format:hex"`
 }
+
 type TSliceByteBase64 struct {
 	V []byte `env:",format:base64"`
 }
+
 type TPtrString struct {
 	V *string
 }
+
 type TPtrPtrInt struct {
 	V **int
 }
+
 type TInner struct {
 	V string
 }
+
 type TNested struct {
 	Nested TInner
 }
+
 type TNestedCustomPrefix struct {
 	Foo TInner `env:",prefix:BAR_"`
 }
+
 type TNestedEmptyPrefix struct {
 	Foo TInner `env:",prefix:''"`
 }
+
 type TInline struct {
 	TInner `env:",inline"`
 }
+
 type TDuration struct {
 	V time.Duration
 }
+
 type TDurationUnit struct {
 	V time.Duration `env:",unit:s"`
 }
+
 type TTime struct {
 	V time.Time
 }
+
 type TTimeFormatDate struct {
 	V time.Time `env:",format:date"`
 }
+
 type TTimeFormatDateTime struct {
 	V time.Time `env:",format:dateTime"`
 }
+
 type TTimeFormatTime struct {
 	V time.Time `env:",format:time"`
 }
+
 type TTimeFormatUnix struct {
 	V time.Time `env:",format:unix"`
 }
+
 type TTimeFormatUnixUnit struct {
 	V time.Time `env:",format:unix,unit:ms"`
 }
+
 type TUnknownTag struct {
 	V string `env:",foo:bar"`
 }
+
 type TTrimOptions struct {
 	V string `env:", default:foo"`
 }
