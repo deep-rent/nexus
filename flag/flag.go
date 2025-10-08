@@ -12,11 +12,10 @@
 // flags. A default Set is provided for convenience, accessible through
 // top-level functions like Add and Parse.
 //
-// # Usage
+// # Example
 //
-// To use the package, define variables with their desired default values,
-// register them with the flag set, and then parse the command-line arguments.
-// Here's an example:
+// To use the package, define variables, register them using Add, and then call
+// Parse to process the command-line arguments.
 //
 //	func main() {
 //	  var (
@@ -292,12 +291,16 @@ func (s *Set) setValue(def *flag, value string) error {
 		}
 		val.SetFloat(f)
 	default:
-		return fmt.Errorf("unsupported flag type: %s", kind)
+		// return fmt.Errorf("unsupported flag type: %s", kind)
+		// Panicking here is reasonable, as Add should prevent unsupported types.
+		// This indicates a programming error within the package itself.
+		panic(fmt.Sprintf("unsupported flag type: %s", kind))
 	}
 	return nil
 }
 
-// Usage prints a formatted help message to os.Stdout.
+// Usage prints a formatted help message to os.Stdout, detailing all registered
+// flags, their types, descriptions, and default values.
 func (s *Set) Usage() {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Usage of %s:\n", s.title)
@@ -324,7 +327,7 @@ func (s *Set) Usage() {
 	fmt.Fprint(os.Stdout, b.String())
 }
 
-// format creates the string representation of flag names.
+// format builds the left-hand side of a help message line.
 // Example: "-v, --verbose <bool>"
 func (s *Set) format(f *flag) string {
 	var parts []string
@@ -346,21 +349,21 @@ func (s *Set) format(f *flag) string {
 	return fmt.Sprintf("%-20s %s", names, typ)
 }
 
-// formatDefault creates a string representation of the default value for a
-// flag, like "(default: 8080)". It returns an empty string if the default value
-// is the zero value for its type.
+// formatDefault creates the default value string, like "(default: 8080)".
+// It returns an empty string for zero-value defaults to keep the help concise.
 func (s *Set) formatDefault(f *flag) string {
 	if f.def == nil {
 		return ""
 	}
 	val := reflect.ValueOf(f.def)
-	// Don't show zero-value defaults.
+	// Don't show default for zero-values.
 	if val.IsZero() {
 		return ""
 	}
 	return fmt.Sprintf("(default: %v)", f.def)
 }
 
+// std is the default, package-level flag Set.
 var std = New(filepath.Base(os.Args[0]))
 
 // Add registers a flag with the default set.
