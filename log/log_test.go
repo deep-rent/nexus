@@ -140,7 +140,7 @@ func TestParseFormat(t *testing.T) {
 	}
 }
 
-func TestFormatString(t *testing.T) {
+func TestFormat_String(t *testing.T) {
 	type test struct {
 		in   log.Format
 		want string
