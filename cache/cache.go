@@ -21,36 +21,34 @@
 //		// fields for the parsed data
 //	}
 //
-//	func main() {
-//		// 1. Create a scheduler to manage the refresh ticks.
-//		s := scheduler.New(context.Background())
-//		defer s.Shutdown()
+//	// 1. Create a scheduler to manage the refresh ticks.
+//	s := scheduler.New(context.Background())
+//	defer s.Shutdown()
 //
-//		// 2. Define a mapper to parse the response body into your target type.
-//		var mapper cache.Mapper[Resource] = func(body []byte) (Resource, error) {
-//			var data Resource
-//			err := json.Unmarshal(body, &data)
-//			return data, err
-//		}
+//	// 2. Define a mapper to parse the response body into your target type.
+//	var mapper cache.Mapper[Resource] = func(body []byte) (Resource, error) {
+//		var data Resource
+//		err := json.Unmarshal(body, &data)
+//		return data, err
+//	}
 //
-//		// 3. Create and configure the cache controller.
-//		ctrl := cache.NewController(
-//			"https://api.example.com/resource",
-//			mapper,
-//			cache.WithMinInterval(5*time.Minute),
-//			cache.WithHeader("Authorization", "Bearer *****"),
-//		)
+//	// 3. Create and configure the cache controller.
+//	ctrl := cache.NewController(
+//		"https://api.example.com/resource",
+//		mapper,
+//		cache.WithMinInterval(5*time.Minute),
+//		cache.WithHeader("Authorization", "Bearer *****"),
+//	)
 //
-//		// 4. Dispatch the controller to start fetching in the background.
-//		s.Dispatch(ctrl)
+//	// 4. Dispatch the controller to start fetching in the background.
+//	s.Dispatch(ctrl)
 //
-//		// 5. You can wait for the first successful fetch.
-//		<-ctrl.Ready()
+//	// 5. You can wait for the first successful fetch.
+//	<-ctrl.Ready()
 //
-//		// 6. Get the cached data.
-//		if data, ok := ctrl.Get(); ok {
-//			fmt.Printf("Successfully fetched and cached data: %+v\n", data)
-//		}
+//	// 6. Get the cached data.
+//	if data, ok := ctrl.Get(); ok {
+//		fmt.Printf("Successfully fetched and cached data: %+v\n", data)
 //	}
 package cache
 

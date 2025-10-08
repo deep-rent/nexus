@@ -24,13 +24,11 @@
 //		internal int
 //	}
 //
-//	func main() {
-//		var cfg Config
-//		if err := env.Unmarshal(&cfg); err != nil {
-//			log.Fatalf("failed to unmarshal config: %v", err)
-//		}
-//		// Use the configuration to bootstrap your application...
+//	var cfg Config
+//	if err := env.Unmarshal(&cfg); err != nil {
+//		log.Fatalf("failed to unmarshal config: %v", err)
 //	}
+//	// Use the configuration to bootstrap your application...
 //
 // # Options
 //
