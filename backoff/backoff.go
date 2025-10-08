@@ -7,6 +7,8 @@
 // successful or abandoned, Done must be called to reset the strategy's internal
 // state.
 //
+// # Usage
+//
 // A default exponential backoff strategy with jitter can be created using the
 // New function. The behavior can be customized using various Option functions,
 // such as WithMinDelay, WithMaxDelay, WithGrowthFactor, and WithJitterAmount.

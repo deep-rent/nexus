@@ -5,9 +5,10 @@
 // handler setup and providing flexible options for setting the level, format,
 // and output from common types like strings.
 //
-// Example:
+// # Usage:
 //
-//	// Create a logger that outputs JSON at a debug level to standard error.
+// Create a logger that outputs JSON at a debug level to standard error:
+//
 //	logger := log.New(
 //		log.WithLevel("debug"),
 //		log.WithFormat("json"),

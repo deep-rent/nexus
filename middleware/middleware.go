@@ -1,6 +1,8 @@
 // Package middleware provides a standard approach for chaining and composing
 // HTTP middleware.
 //
+// # Usage
+//
 // The core type is Pipe, an adapter that wraps an http.Handler to add
 // functionality. The Chain function composes these pipes into a single handler.
 // The package also includes common middleware like Recover for panic handling,

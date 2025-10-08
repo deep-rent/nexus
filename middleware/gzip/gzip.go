@@ -3,6 +3,8 @@
 // header and compresses the payload for clients that support it (indicated by
 // the "Accept-Encoding" request header).
 //
+// # Usage
+//
 // The middleware is designed to be efficient. It pools gzip writers to reduce
 // memory allocations and gracefully skips compression for responses tha
 // already have a "Content-Encoding" header set.

@@ -7,6 +7,8 @@
 // determines its own next run time by returning a duration after each
 // execution.
 //
+// # Usage
+//
 // Helpers like Every and After are provided to easily convert a simple Task
 // into a Tick with common scheduling patterns:
 //

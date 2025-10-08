@@ -6,6 +6,8 @@
 // controlled by a Policy, and the delay between attempts is determined by a
 // backoff.Strategy.
 //
+// # Usage
+//
 // A new transport is created with NewTransport, configured with functional
 // options like WithAttemptLimit and WithBackoff.
 //

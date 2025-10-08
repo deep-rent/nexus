@@ -1,15 +1,38 @@
-// Package app provides a structured framework for managing the lifecycle of
-// command-line applications. It simplifies graceful shutdown by handling OS
-// interrupt signals (SIGINT, SIGTERM) and propagating a cancellation
-// signal through a context.
+// Package app provides a managed lifecycle for command-line applications,
+// ensuring graceful shutdown on OS signals.
 //
-// Example:
+// The Run function is the main entry point. It wraps your application logic,
+// listening for interrupt signals (like SIGINT/SIGTERM) and propagating a
+// cancellation signal via a context. This allows your application to perform
+// cleanup tasks before exiting.
 //
-//	app.Run(func(ctx context.Context) error {
-//	  // Insert your application logic here...
-//	  <-ctx.Done() // Monitor the context for a shutdown signal.
-//	  return nil
-//	})
+// # Usage
+//
+// A typical use case involves starting a server or a worker that needs to
+// shut down cleanly. The Run function handles the signal boilerplate, letting
+// you focus on your application's logic.
+//
+//	func main() {
+//		// Create a logger with a custom level.
+//		logger := log.New(log.WithLevel("debug"))
+//
+//		// Run the application, providing the main logic as a function.
+//		if err := app.Run(func(ctx context.Context) error {
+//			logger.Info("Application logic started")
+//
+//			// Simulate work by waiting for the context to be cancelled.
+//			<-ctx.Done()
+//
+//			// Perform cleanup tasks here.
+//			logger.Info("Performing cleanup before shutdown...")
+//			time.Sleep(500 * time.Millisecond) // Simulate cleanup delay.
+//
+//			return nil
+//		}, app.WithLogger(logger)); err != nil {
+//			logger.Error("Application exited with an error", "error", err)
+//			os.Exit(1)
+//		}
+//	}
 package app
 
 import (

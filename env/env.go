@@ -11,9 +11,7 @@
 //
 // Define a struct to hold your configuration. Only exported fields will be
 // considered. The code snippet below showcases various field types and
-// struct tag options.
-//
-// Example:
+// struct tag options:
 //
 //	type Config struct {
 //		Host     string        `env:",required"`

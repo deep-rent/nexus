@@ -1,6 +1,8 @@
 // Package cors provides a configurable CORS (Cross-Origin Resource Sharing)
 // middleware for http.Handlers.
 //
+// # Usage
+//
 // The New function creates the middleware pipe, which can be configured with
 // functional options (e.g., WithAllowedOrigins, WithAllowedMethods). The
 // middleware automatically handles preflight (OPTIONS) requests and injects the

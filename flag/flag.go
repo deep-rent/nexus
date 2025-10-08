@@ -14,9 +14,7 @@
 // flags. A default Set is provided for convenience, accessible through
 // top-level functions like Add and Parse. To use the package, define variables,
 // register them using Add, and then call Parse to process the command-line
-// arguments.
-//
-// Example:
+// arguments:
 //
 //	func main() {
 //	  var (
@@ -35,8 +33,6 @@
 //
 //	  fmt.Printf("Starting server on %s:%d (verbose: %v)\n", host, port, verb)
 //	}
-//
-// # Help Message
 //
 // The automatically generated help message for the example above would be:
 //
