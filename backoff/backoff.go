@@ -1,3 +1,17 @@
+// Package backoff provides customizable strategies for retrying operations with
+// increasing delays.
+//
+// The core of the package is the Strategy interface, which computes the next
+// backoff duration. Implementations are stateful; the Next method returns
+// progressively longer durations with each call. Once the retried operation is
+// successful or abandoned, Done must be called to reset the strategy's internal
+// state.
+//
+// A default exponential backoff strategy with jitter can be created using the
+// New function. The behavior can be customized using various Option functions,
+// such as WithMinDelay, WithMaxDelay, WithGrowthFactor, and WithJitterAmount.
+// Jitter is added by default to prevent multiple clients from retrying in sync
+// (the "thundering herd" problem), which can overwhelm a recovering service.
 package backoff
 
 import (
