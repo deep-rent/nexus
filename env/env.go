@@ -211,7 +211,7 @@ func Expand(s string, opts ...Option) (string, error) {
 			// Case 2: Variable expansion (${KEY}).
 			end := strings.IndexByte(s[i+2:], '}')
 			if end == -1 {
-				return "", errors.New("env: syntax error: unmatched '${' in string")
+				return "", errors.New("env: variable bracket not closed")
 			}
 			// Extract the variable name.
 			key := cfg.Prefix + s[i+2:i+2+end]
