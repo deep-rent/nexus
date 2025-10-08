@@ -162,6 +162,9 @@ type TTimeFormatUnixUnit struct {
 type TUnknownTag struct {
 	V string `env:",foo:bar"`
 }
+type TTrimOptions struct {
+	V string `env:", default:foo"`
+}
 
 func TestUnmarshal(t *testing.T) {
 	u, err := url.Parse("http://foo.com/bar")
@@ -450,9 +453,9 @@ func TestUnmarshal(t *testing.T) {
 		},
 		{
 			name: "time with format datetime",
-			vars: map[string]string{"V": "2025-10-08 22:13:00"},
+			vars: map[string]string{"V": "2025-09-14 06:45:00"},
 			in:   &TTimeFormatDateTime{},
-			want: &TTimeFormatDateTime{time.Date(2025, 10, 8, 22, 13, 0, 0, time.UTC)},
+			want: &TTimeFormatDateTime{time.Date(2025, 9, 14, 6, 45, 0, 0, time.UTC)},
 		},
 		{
 			name: "time with format time",
@@ -477,6 +480,12 @@ func TestUnmarshal(t *testing.T) {
 			vars: map[string]string{},
 			in:   &TString{"foo"},
 			want: &TString{"foo"},
+		},
+		{
+			name: "trim option keys",
+			vars: map[string]string{},
+			in:   &TTrimOptions{},
+			want: &TTrimOptions{"foo"},
 		},
 		{
 			name:    "parse error int",
