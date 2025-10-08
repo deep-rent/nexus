@@ -1,6 +1,17 @@
 // Package middleware provides utilities for chaining and composing HTTP
 // middleware handlers, besides some common middleware implementations like
 // panic recovery and logging.
+//
+// # Usage
+//
+//	logger := slog.Default()
+//	// Create the final handler.
+//	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//		w.Write([]byte("OK"))
+//	})
+//	// Chain the middleware around the final handler.
+//	h = Chain(h, Recover(logger), RequestID(), Log(logger))
+//	http.ListenAndServe(":8080", h)
 package middleware
 
 import (
