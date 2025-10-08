@@ -3,13 +3,13 @@
 //
 // The package includes helpers for common header-related tasks, such as:
 //   - Parsing comma-separated directives (e.g., "max-age=3600").
-//   - Parsing and sorting content negotiation headers with q-factors (e.g., Accept).
+//   - Parsing and sorting content negotiation headers with q-factors.
 //   - Extracting credentials from an Authorization header.
 //   - Calculating cache lifetime from Cache-Control and Expires headers.
 //   - Determining throttle delays from Retry-After and X-Ratelimit-* headers.
 //
 // It also provides a convenient http.RoundTripper implementation for
-// automatically adding a static set of headers to all outgoing requests.
+// automatically attaching a static set of headers to all outgoing requests.
 package header
 
 import (
@@ -207,6 +207,23 @@ func (h Header) String() string {
 func New(key, value string) Header {
 	return Header{
 		Key:   http.CanonicalHeaderKey(key),
+		Value: value,
+	}
+}
+
+// UserAgent constructs a User-Agent header with the specified name, version,
+// and an optional comment. The resulting value follows the format "name/version
+// (comment)". The first part is the product token, while the parenthesized
+// section provides supplementary information about the client. For external
+// calls, it is best practice to include maintainer contact details in the
+// comment (such as an URL or email address).
+func UserAgent(name, version, comment string) Header {
+	value := name + "/" + version
+	if comment != "" {
+		value += " (" + comment + ")"
+	}
+	return Header{
+		Key:   "User-Agent",
 		Value: value,
 	}
 }
