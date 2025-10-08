@@ -36,36 +36,36 @@ func NewController[T any](
 	mapper Mapper[T],
 	opts ...Option,
 ) Controller[T] {
-	c := config{
+	cfg := config{
 		client:      nil,
 		timeout:     DefaultTimeout,
-		headers:     make(map[string]string),
+		headers:     make([]header.Header, 0, 3),
 		minInterval: DefaultMinInterval,
 		maxInterval: DefaultMaxInterval,
 		logger:      slog.Default(),
 	}
 	for _, opt := range opts {
-		opt(&c)
+		opt(&cfg)
 	}
 
-	client := c.client
+	client := cfg.client
 	if client == nil {
 		d := &net.Dialer{
-			Timeout:   c.timeout / 3,
+			Timeout:   cfg.timeout / 3,
 			KeepAlive: 0,
 		}
 		var t http.RoundTripper = &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           d.DialContext,
-			TLSClientConfig:       c.tls,
-			TLSHandshakeTimeout:   c.timeout / 3,
-			ResponseHeaderTimeout: c.timeout * 9 / 10,
+			TLSClientConfig:       cfg.tls,
+			TLSHandshakeTimeout:   cfg.timeout / 3,
+			ResponseHeaderTimeout: cfg.timeout * 9 / 10,
 			ExpectContinueTimeout: 1 * time.Second,
 			DisableKeepAlives:     true,
 		}
-		t = retry.NewTransport(header.NewTransport(t, c.headers), c.retry...)
+		t = retry.NewTransport(header.NewTransport(t, cfg.headers...), cfg.retry...)
 		client = &http.Client{
-			Timeout:   c.timeout,
+			Timeout:   cfg.timeout,
 			Transport: t,
 		}
 	}
@@ -74,25 +74,24 @@ func NewController[T any](
 		url:         url,
 		mapper:      mapper,
 		client:      client,
-		minInterval: c.minInterval,
-		maxInterval: c.maxInterval,
-		logger:      c.logger,
+		minInterval: cfg.minInterval,
+		maxInterval: cfg.maxInterval,
+		logger:      cfg.logger,
 		readyChan:   make(chan struct{}),
 	}
 }
 
 type controller[T any] struct {
-	url         string
-	mapper      Mapper[T]
-	client      *http.Client
-	minInterval time.Duration
-	maxInterval time.Duration
-	now         func() time.Time
-	backoff     backoff.Strategy
-	logger      *slog.Logger
-	readyOnce   sync.Once
-	readyChan   chan struct{}
-
+	url          string
+	mapper       Mapper[T]
+	client       *http.Client
+	minInterval  time.Duration
+	maxInterval  time.Duration
+	now          func() time.Time
+	backoff      backoff.Strategy
+	logger       *slog.Logger
+	readyOnce    sync.Once
+	readyChan    chan struct{}
 	mu           sync.RWMutex
 	resource     T
 	ok           bool
@@ -192,7 +191,7 @@ var _ Controller[any] = (*controller[any])(nil)
 type config struct {
 	client      *http.Client
 	timeout     time.Duration
-	headers     map[string]string
+	headers     []header.Header
 	tls         *tls.Config
 	minInterval time.Duration
 	maxInterval time.Duration
@@ -220,7 +219,7 @@ func WithTimeout(d time.Duration) Option {
 
 func WithHeader(k, v string) Option {
 	return func(c *config) {
-		c.headers[k] = v
+		c.headers = append(c.headers, header.New(k, v))
 	}
 }
 
