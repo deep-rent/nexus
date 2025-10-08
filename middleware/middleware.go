@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"time"
 
 	"github.com/deep-rent/nexus/header"
 )
@@ -111,21 +112,39 @@ func SetRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, keyRequestID, id)
 }
 
-// Log creates a middleware Pipe that logs details about each incoming request
-// at the debug level. It includes the request ID, method, URL, remote address,
-// and user agent in the log entry.
+// responseWriterInterceptor is used to wrap the original http.ResponseWriter to
+// capture the status code.
+type responseWriterInterceptor struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+// WriteHeader captures the status code before calling the original WriteHeader.
+func (rwi *responseWriterInterceptor) WriteHeader(code int) {
+	rwi.statusCode = code
+	rwi.ResponseWriter.WriteHeader(code)
+}
+
+// Log creates a middleware Pipe that logs a summary of each HTTP request after
+// it has been handled. The log entry is generated at the debug level and
+// includes the request ID, method, URL, remote address, user agent, the final
+// HTTP status code, and the total processing duration.
 func Log(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rwi := &responseWriterInterceptor{w, http.StatusOK}
+			next.ServeHTTP(rwi, r)
 			logger.Debug(
-				"Incoming request",
+				"HTTP request handled",
 				slog.String("id", GetRequestID(r.Context())),
 				slog.String("method", r.Method),
 				slog.String("url", r.URL.String()),
 				slog.String("remote", r.RemoteAddr),
 				slog.String("agent", r.UserAgent()),
+				slog.Int("status", rwi.statusCode),
+				slog.Duration("duration", time.Since(start)),
 			)
-			next.ServeHTTP(w, r)
 		})
 	}
 }
