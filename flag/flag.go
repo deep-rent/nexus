@@ -42,6 +42,7 @@
 package flag
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,6 +99,10 @@ func (s *Set) Add(v any, short, long, desc string) {
 	s.flags = append(s.flags, m)
 }
 
+// errShowHelp is a sentinel error that acts as a signal to display a help
+// message and exit successfully rather than indicating a failure.
+var errShowHelp = errors.New("show help")
+
 // Parse maps command-line arguments to flags. It must be called
 // after all flags have been added. If a --help flag is encountered, it prints
 // the usage message and exits. The args parameter allows passing a custom
@@ -106,11 +111,19 @@ func (s *Set) Parse(args ...string) {
 	if len(args) == 0 {
 		args = os.Args[1:]
 	}
-	s.parse(args)
+	if err := s.parse(args); err != nil {
+		code := 0
+		if !errors.Is(err, errShowHelp) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			code = 1
+		}
+		s.Usage()
+		os.Exit(code)
+	}
 }
 
 // parse is the main loop that processes the argument slice.
-func (s *Set) parse(args []string) {
+func (s *Set) parse(args []string) error {
 	for i := 0; i < len(args); {
 		arg := args[i]
 		if len(arg) < 2 || arg[0] != '-' {
@@ -118,18 +131,26 @@ func (s *Set) parse(args []string) {
 			continue
 		}
 		if arg == "--" {
-			return // End of flags.
+			return nil // End of flags.
 		}
 		if arg == "--help" {
-			s.Usage()
-			os.Exit(0)
+			return errShowHelp
 		}
+		var (
+			skip int
+			err  error
+		)
 		if strings.HasPrefix(arg, "--") {
-			i += s.readLong(args, i)
+			skip, err = s.readLong(args, i)
 		} else {
-			i += s.read(args, i)
+			skip, err = s.read(args, i)
 		}
+		if err != nil {
+			return err
+		}
+		i += skip
 	}
+	return nil
 }
 
 // find queries a flag definition by its short name.
@@ -153,8 +174,8 @@ func (s *Set) findLong(name string) *flag {
 }
 
 // read handles short-form flags (e.g., -v, -abc, -p8080).
-// It returns the number of arguments consumed (1 or 2).
-func (s *Set) read(args []string, i int) int {
+// It returns the number of arguments consumed and any error encountered.
+func (s *Set) read(args []string, i int) (int, error) {
 	arg := args[i]
 	names := strings.TrimPrefix(arg, "-")
 
@@ -162,7 +183,7 @@ func (s *Set) read(args []string, i int) int {
 		name := string(char)
 		def := s.find(name)
 		if def == nil {
-			s.errorf("Unknown flag '-%s' in group '%s'", name, arg)
+			return 0, fmt.Errorf("unknown flag '-%s' in group '%s'", name, arg)
 		}
 
 		if def.val.Kind() == reflect.Bool {
@@ -176,34 +197,34 @@ func (s *Set) read(args []string, i int) int {
 		if value != "" {
 			// Value is attached (e.g., -p8080)
 			if err := s.setValue(def, value); err != nil {
-				s.errorf("Invalid value for flag '-%s': %v", name, err)
+				return 0, fmt.Errorf("invalid value for flag '-%s': %w", name, err)
 			}
-			return 1 // Consumed one argument, done with this group.
+			return 1, nil // Consumed one argument, done with this group.
 		}
 
 		// Value is the next argument (e.g., -p 8080)
 		i++
 		if i >= len(args) {
-			s.errorf("Flag '-%s' requires a value", name)
+			return 0, fmt.Errorf("flag '-%s' requires a value", name)
 		}
 		if err := s.setValue(def, args[i]); err != nil {
-			s.errorf("Invalid value for flag '-%s': %v", name, err)
+			return 0, fmt.Errorf("invalid value for flag '-%s': %w", name, err)
 		}
-		return 2 // Consumed two arguments.
+		return 2, nil // Consumed two arguments.
 	}
 
-	return 1 // Consumed one argument (for boolean groups).
+	return 1, nil // Consumed one argument (for boolean groups).
 }
 
 // readLong handles a long-form flag (e.g., --verbose, --port=8080).
-// It returns the number of arguments consumed (1 or 2).
-func (s *Set) readLong(args []string, i int) int {
+// It returns the number of arguments consumed and any error encountered.
+func (s *Set) readLong(args []string, i int) (int, error) {
 	arg := args[i]
 	name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
 
 	def := s.findLong(name)
 	if def == nil {
-		s.errorf("Unknown flag '%s'", arg)
+		return 0, fmt.Errorf("unknown flag '%s'", arg)
 	}
 
 	if def.val.Kind() == reflect.Bool {
@@ -212,29 +233,29 @@ func (s *Set) readLong(args []string, i int) int {
 			var err error
 			val, err = strconv.ParseBool(value)
 			if err != nil {
-				s.errorf("Expected true or false for flag '%s', got '%s'", arg, value)
+				return 0, fmt.Errorf("expected true or false for flag '%s', got '%s'", arg, value)
 			}
 		}
 		def.val.SetBool(val)
-		return 1
+		return 1, nil
 	}
 
 	if !hasValue {
 		i++
 		if i >= len(args) {
-			s.errorf("Flag '%s' requires a value", arg)
+			return 0, fmt.Errorf("flag '%s' requires a value", arg)
 		}
 		value = args[i]
 	}
 
 	if err := s.setValue(def, value); err != nil {
-		s.errorf("Invalid value for flag '%s': %v", arg, err)
+		return 0, fmt.Errorf("invalid value for flag '%s': %w", arg, err)
 	}
 
 	if hasValue {
-		return 1
+		return 1, nil
 	}
-	return 2
+	return 2, nil
 }
 
 // setValue parses the string value and sets it on the destination variable.
@@ -313,13 +334,6 @@ func (s *Set) format(f *flag) string {
 	}
 	typeStr := fmt.Sprintf("<%s>", f.val.Kind().String())
 	return fmt.Sprintf("%-20s %s", names, typeStr)
-}
-
-// errorf prints an error message and the usage help, then exits.
-func (s *Set) errorf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
-	s.Usage()
-	os.Exit(1)
 }
 
 var std = New(filepath.Base(os.Args[0]))
