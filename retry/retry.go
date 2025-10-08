@@ -9,9 +9,9 @@
 // A new transport is created with NewTransport, configured with functional
 // options like WithAttemptLimit and WithBackoff.
 //
-// Example of a retry transport that retries up to 3 times with exponential
-// backoff:
+// Example:
 //
+//	// Retry up to 3 times with exponential backoff starting at 1 second.
 //	transport := retry.NewTransport(
 //		http.DefaultTransport,
 //		retry.WithAttemptLimit(3),

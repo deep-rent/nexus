@@ -15,7 +15,7 @@
 //   - After(d, task): Creates a drifting Tick that waits for a fixed
 //     duration d after the previous run completes.
 //
-// Example of running a task every two seconds:
+// Example:
 //
 //	s := scheduler.New(context.Background())
 //	defer s.Shutdown()
