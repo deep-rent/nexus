@@ -226,6 +226,7 @@ const (
 	Via                           = "Via"
 	Warning                       = "Warning"
 	WWWAuthenticate               = "WWW-Authenticate"
+	Forwarded                     = "Forwarded"
 )
 
 // Non-standard HTTP headers
