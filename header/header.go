@@ -164,6 +164,17 @@ func NewTransport(
 	}
 }
 
+// Scheme represents an authentication scheme used in the Authorization
+// and WWW-Authenticate headers.
+type Scheme string
+
+// Standard authentication schemes
+const (
+	SchemeBasic  Scheme = "basic"
+	SchemeBearer Scheme = "bearer"
+	SchemeDigest Scheme = "digest"
+)
+
 // Standard HTTP headers
 const (
 	Accept                        = "Accept"
@@ -246,11 +257,4 @@ const (
 	XUACompatible          = "X-UA-Compatible"
 	XWebKitCSP             = "X-WebKit-CSP"
 	XXSSProtection         = "X-XSS-Protection"
-)
-
-// Standard authentication schemes
-const (
-	SchemeBasic  = "basic"
-	SchemeBearer = "bearer"
-	SchemeDigest = "digest"
 )
