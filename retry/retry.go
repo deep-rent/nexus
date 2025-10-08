@@ -275,6 +275,7 @@ func NewTransport(
 		policy:  c.policy.LimitAttempts(c.limit),
 		backoff: c.backoff,
 		now:     c.now,
+		logger:  c.logger,
 	}
 }
 
