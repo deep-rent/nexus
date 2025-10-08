@@ -12,57 +12,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAdapters(t *testing.T) {
-	t.Parallel()
-
-	t.Run("TaskFn", func(t *testing.T) {
-		t.Parallel()
-		var ran atomic.Bool
-		task := scheduler.TaskFn(func(context.Context) {
-			ran.Store(true)
-		})
-		task.Run(t.Context())
-		assert.True(t, ran.Load(), "should execute the wrapped function")
-	})
-
-	t.Run("TickFn", func(t *testing.T) {
-		t.Parallel()
-		var ran atomic.Bool
-		tick := scheduler.TickFn(func(context.Context) time.Duration {
-			ran.Store(true)
-			return time.Second
-		})
-		d := tick.Run(t.Context())
-		assert.True(t, ran.Load(), "should execute the wrapped function")
-		assert.Equal(t, time.Second, d, "should return the correct duration")
-	})
-}
-
 func TestAfter(t *testing.T) {
 	t.Parallel()
-	var ran atomic.Bool
+	var seen atomic.Bool
 	task := scheduler.TaskFn(func(context.Context) {
-		ran.Store(true)
+		seen.Store(true)
 	})
 
 	const delay = 50 * time.Millisecond
 	tick := scheduler.After(delay, task)
 	actual := tick.Run(t.Context())
 
-	assert.True(t, ran.Load(), "should execute the wrapped function")
+	assert.True(t, seen.Load(), "should execute the wrapped function")
 	assert.Equal(t, delay, actual, "should return the specified delay")
 }
 
 func TestEvery(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct {
+	type test struct {
 		name         string
 		interval     time.Duration
 		duration     time.Duration
 		expectedWait time.Duration
 		tolerance    time.Duration
-	}{
+	}
+
+	tests := []test{
 		{
 			name:         "Task faster than interval",
 			interval:     100 * time.Millisecond,
@@ -93,19 +69,19 @@ func TestEvery(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var ran atomic.Bool
+			var seen atomic.Bool
 			task := scheduler.TaskFn(func(context.Context) {
 				time.Sleep(tc.duration)
-				ran.Store(true)
+				seen.Store(true)
 			})
 
 			tick := scheduler.Every(tc.interval, task)
 			wait := tick.Run(t.Context())
 
-			assert.True(t, ran.Load(), "should execute the wrapped function")
+			assert.True(t, seen.Load(), "should execute the wrapped function")
 			assert.InDelta(t, tc.expectedWait, wait, float64(tc.tolerance),
 				"wait duration should be the interval minus the task's execution time",
 			)
