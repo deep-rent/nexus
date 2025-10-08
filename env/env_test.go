@@ -21,24 +21,60 @@ func (r *reverse) UnmarshalEnv(v string) error {
 	return nil
 }
 
-type TString struct{ V string }
-type TBool struct{ V bool }
-type TInt struct{ V int }
-type TInt8 struct{ V int8 }
-type TInt16 struct{ V int16 }
-type TInt32 struct{ V int32 }
-type TInt64 struct{ V int64 }
-type TUint struct{ V uint }
-type TUint8 struct{ V uint8 }
-type TUint16 struct{ V uint16 }
-type TUint32 struct{ V uint32 }
-type TUint64 struct{ V uint64 }
-type TFloat32 struct{ V float32 }
-type TFloat64 struct{ V float64 }
-type TURL struct{ V url.URL }
-type TURLPtr struct{ V *url.URL }
-type TReverse struct{ V reverse }
-type TReversePtr struct{ V *reverse }
+type TString struct {
+	V string
+}
+type TBool struct {
+	V bool
+}
+type TInt struct {
+	V int
+}
+type TInt8 struct {
+	V int8
+}
+type TInt16 struct {
+	V int16
+}
+type TInt32 struct {
+	V int32
+}
+type TInt64 struct {
+	V int64
+}
+type TUint struct {
+	V uint
+}
+type TUint8 struct {
+	V uint8
+}
+type TUint16 struct {
+	V uint16
+}
+type TUint32 struct {
+	V uint32
+}
+type TUint64 struct {
+	V uint64
+}
+type TFloat32 struct {
+	V float32
+}
+type TFloat64 struct {
+	V float64
+}
+type TURL struct {
+	V url.URL
+}
+type TURLPtr struct {
+	V *url.URL
+}
+type TReverse struct {
+	V reverse
+}
+type TReversePtr struct {
+	V *reverse
+}
 type TDefault struct {
 	V string `env:",default:foo"`
 }
@@ -51,27 +87,45 @@ type TRequired struct {
 type TIgnored struct {
 	V string `env:"-"`
 }
-type TUnexported struct{ v string }
+type TUnexported struct {
+	v string
+}
 type TCustomName struct {
 	Foo string `env:"BAR"`
 }
-type TSnakeCase struct{ FooBar string }
-type TSliceString struct{ V []string }
-type TSliceInt struct{ V []int }
+type TSnakeCase struct {
+	FooBar string
+}
+type TSliceString struct {
+	V []string
+}
+type TSliceInt struct {
+	V []int
+}
 type TSliceCustomSplit struct {
 	V []string `env:",split:';'"`
 }
-type TSliceByte struct{ V []byte }
+type TSliceByte struct {
+	V []byte
+}
 type TSliceByteHex struct {
 	V []byte `env:",format:hex"`
 }
 type TSliceByteBase64 struct {
 	V []byte `env:",format:base64"`
 }
-type TPtrString struct{ V *string }
-type TPtrPtrInt struct{ V **int }
-type TInner struct{ V string }
-type TNested struct{ Nested TInner }
+type TPtrString struct {
+	V *string
+}
+type TPtrPtrInt struct {
+	V **int
+}
+type TInner struct {
+	V string
+}
+type TNested struct {
+	Nested TInner
+}
 type TNestedCustomPrefix struct {
 	Foo TInner `env:",prefix:BAR_"`
 }
@@ -81,11 +135,15 @@ type TNestedEmptyPrefix struct {
 type TInline struct {
 	TInner `env:",inline"`
 }
-type TDuration struct{ V time.Duration }
+type TDuration struct {
+	V time.Duration
+}
 type TDurationUnit struct {
 	V time.Duration `env:",unit:s"`
 }
-type TTime struct{ V time.Time }
+type TTime struct {
+	V time.Time
+}
 type TTimeFormatDate struct {
 	V time.Time `env:",format:date"`
 }
@@ -98,7 +156,7 @@ type TTimeFormatTime struct {
 type TTimeFormatUnix struct {
 	V time.Time `env:",format:unix"`
 }
-type TTimeFormatUnixMS struct {
+type TTimeFormatUnixUnit struct {
 	V time.Time `env:",format:unix,unit:ms"`
 }
 type TUnknownTag struct {
@@ -109,14 +167,16 @@ func TestUnmarshal(t *testing.T) {
 	u, err := url.Parse("http://foo.com/bar")
 	require.NoError(t, err)
 
-	tests := []struct {
+	type test struct {
 		name    string
 		vars    map[string]string
 		opts    []env.Option
 		in      any
 		want    any
 		wantErr bool
-	}{
+	}
+
+	tests := []test{
 		{
 			name: "string",
 			vars: map[string]string{"V": "foo"},
@@ -409,8 +469,8 @@ func TestUnmarshal(t *testing.T) {
 		{
 			name: "time unix milliseconds",
 			vars: map[string]string{"V": "1760000000000"},
-			in:   &TTimeFormatUnixMS{},
-			want: &TTimeFormatUnixMS{time.UnixMilli(1760000000000)},
+			in:   &TTimeFormatUnixUnit{},
+			want: &TTimeFormatUnixUnit{time.UnixMilli(1760000000000)},
 		},
 		{
 			name: "not set keeps original value",
@@ -450,25 +510,25 @@ func TestUnmarshal(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := append(tt.opts, env.WithLookup(func(key string) (string, bool) {
-				v, ok := tt.vars[key]
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := append(tc.opts, env.WithLookup(func(k string) (string, bool) {
+				v, ok := tc.vars[k]
 				return v, ok
 			}))
 
-			if tt.name == "unmarshaler pointer" {
+			if tc.name == "unmarshaler pointer" {
 				p := new(reverse)
 				*p = "oof"
-				tt.want.(*TReversePtr).V = p
+				tc.want.(*TReversePtr).V = p
 			}
 
-			err := env.Unmarshal(tt.in, opts...)
-			if tt.wantErr {
+			err := env.Unmarshal(tc.in, opts...)
+			if tc.wantErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.want, tt.in)
+				assert.Equal(t, tc.want, tc.in)
 			}
 		})
 	}
@@ -491,4 +551,105 @@ func TestUnmarshalErrors(t *testing.T) {
 		err := env.Unmarshal(&i)
 		require.Error(t, err)
 	})
+}
+
+func TestExpand(t *testing.T) {
+	type test struct {
+		name    string
+		vars    map[string]string
+		opts    []env.Option
+		in      string
+		want    string
+		wantErr bool
+	}
+
+	tests := []test{
+		{
+			name: "no variables",
+			in:   "foo bar baz",
+			want: "foo bar baz",
+		},
+		{
+			name: "simple expansion",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "hello ${FOO}",
+			want: "hello bar",
+		},
+		{
+			name: "multiple expansions",
+			vars: map[string]string{"FOO": "bar", "BAZ": "qux"},
+			in:   "${FOO} ${BAZ}",
+			want: "bar qux",
+		},
+		{
+			name: "escaped dollar sign",
+			vars: map[string]string{},
+			in:   "this is not a var: $$FOO",
+			want: "this is not a var: $FOO",
+		},
+		{
+			name: "lone dollar sign",
+			vars: map[string]string{},
+			in:   "a lone $ sign",
+			want: "a lone $ sign",
+		},
+		{
+			name: "variable at start",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "${FOO} baz",
+			want: "bar baz",
+		},
+		{
+			name: "variable at end",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "baz ${FOO}",
+			want: "baz bar",
+		},
+		{
+			name: "with prefix",
+			vars: map[string]string{"APP_FOO": "bar"},
+			opts: []env.Option{env.WithPrefix("APP_")},
+			in:   "${FOO}",
+			want: "bar",
+		},
+		{
+			name:    "variable not set",
+			vars:    map[string]string{},
+			in:      "${FOO}",
+			wantErr: true,
+		},
+		{
+			name:    "unclosed bracket",
+			vars:    map[string]string{},
+			in:      "${FOO",
+			wantErr: true,
+		},
+		{
+			name: "empty string",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "complex string",
+			vars: map[string]string{"USER": "foo", "HOST": "bar", "PORT": "8080"},
+			in:   "user=${USER}, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
+			want: "user=foo, pass=$ECRET, dsn=foo@bar:8080",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := append(tc.opts, env.WithLookup(func(k string) (string, bool) {
+				v, ok := tc.vars[k]
+				return v, ok
+			}))
+			got, err := env.Expand(tc.in, opts...)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, got)
+			}
+		})
+	}
 }
