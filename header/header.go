@@ -250,7 +250,7 @@ const (
 
 // Standard authentication schemes
 const (
-	SchemeBasic  = "Basic"
-	SchemeBearer = "Bearer"
-	SchemeDigest = "Digest"
+	SchemeBasic  = "basic"
+	SchemeBearer = "bearer"
+	SchemeDigest = "digest"
 )
