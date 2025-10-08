@@ -103,6 +103,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -252,6 +253,7 @@ type config struct {
 var (
 	typeTime        = reflect.TypeOf(time.Time{})
 	typeDuration    = reflect.TypeOf(time.Duration(0))
+	typeURL         = reflect.TypeOf(url.URL{})
 	typeUnmarshaler = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
 )
 
@@ -311,8 +313,7 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		// Check for true embedded structs.
 		if ft.Type.Kind() == reflect.Struct &&
-			!isUnmarshalable(fv) &&
-			ft.Type != typeTime {
+			!isUnmarshalable(fv) && ft.Type != typeTime && ft.Type != typeURL {
 			nested := prefix
 			if opts.Prefix != nil {
 				nested += *opts.Prefix
@@ -357,6 +358,8 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 		return setTime(rv, v, opts)
 	case typeDuration:
 		return setDuration(rv, v, opts)
+	case typeURL:
+		return setURL(rv, v)
 	default:
 		return setKind(rv, v, opts)
 	}
@@ -435,6 +438,16 @@ func setDuration(rv reflect.Value, v string, opts flags) error {
 		return err
 	}
 	rv.SetInt(int64(d))
+	return nil
+}
+
+// setURL parses and sets a url.URL value.
+func setURL(rv reflect.Value, v string) error {
+	u, err := url.Parse(v)
+	if err != nil {
+		return err
+	}
+	rv.Set(reflect.ValueOf(*u))
 	return nil
 }
 
