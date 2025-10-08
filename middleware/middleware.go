@@ -10,7 +10,11 @@
 //		w.Write([]byte("OK"))
 //	})
 //	// Chain the middleware around the final handler.
-//	h = Chain(h, Recover(logger), RequestID(), Log(logger))
+//	h = middleware.Chain(h,
+//		middleware.Recover(logger),
+//		middleware.RequestID(),
+//		middleware.Log(logger),
+//	)
 //	http.ListenAndServe(":8080", h)
 package middleware
 
