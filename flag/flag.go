@@ -183,7 +183,7 @@ func (s *Set) read(args []string, i int) (int, error) {
 		name := string(char)
 		def := s.find(name)
 		if def == nil {
-			return 0, fmt.Errorf("unknown flag '-%s' in group '%s'", name, arg)
+			return 0, fmt.Errorf("unknown flag %q in group %q", name, arg)
 		}
 
 		if def.val.Kind() == reflect.Bool {
@@ -197,7 +197,7 @@ func (s *Set) read(args []string, i int) (int, error) {
 		if value != "" {
 			// Value is attached (e.g., -p8080)
 			if err := s.setValue(def, value); err != nil {
-				return 0, fmt.Errorf("invalid value for flag '-%s': %w", name, err)
+				return 0, fmt.Errorf("invalid value for flag %q: %w", name, err)
 			}
 			return 1, nil // Consumed one argument, done with this group.
 		}
@@ -205,10 +205,10 @@ func (s *Set) read(args []string, i int) (int, error) {
 		// Value is the next argument (e.g., -p 8080)
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag '-%s' requires a value", name)
+			return 0, fmt.Errorf("flag %q requires a value", name)
 		}
 		if err := s.setValue(def, args[i]); err != nil {
-			return 0, fmt.Errorf("invalid value for flag '-%s': %w", name, err)
+			return 0, fmt.Errorf("invalid value for flag %q: %w", name, err)
 		}
 		return 2, nil // Consumed two arguments.
 	}
@@ -224,7 +224,7 @@ func (s *Set) readLong(args []string, i int) (int, error) {
 
 	def := s.findLong(name)
 	if def == nil {
-		return 0, fmt.Errorf("unknown flag '%s'", arg)
+		return 0, fmt.Errorf("unknown flag %q", arg)
 	}
 
 	if def.val.Kind() == reflect.Bool {
@@ -233,7 +233,7 @@ func (s *Set) readLong(args []string, i int) (int, error) {
 			var err error
 			val, err = strconv.ParseBool(value)
 			if err != nil {
-				return 0, fmt.Errorf("expected true or false for flag '%s', got '%s'", arg, value)
+				return 0, fmt.Errorf("expected boolean for flag %q, got %q", arg, value)
 			}
 		}
 		def.val.SetBool(val)
@@ -243,13 +243,13 @@ func (s *Set) readLong(args []string, i int) (int, error) {
 	if !hasValue {
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag '%s' requires a value", arg)
+			return 0, fmt.Errorf("flag %q requires a value", arg)
 		}
 		value = args[i]
 	}
 
 	if err := s.setValue(def, value); err != nil {
-		return 0, fmt.Errorf("invalid value for flag '%s': %w", arg, err)
+		return 0, fmt.Errorf("invalid value for flag %q: %w", arg, err)
 	}
 
 	if hasValue {
