@@ -167,6 +167,18 @@ func Preferences(value string) iter.Seq2[string, float64] {
 	}
 }
 
+// Accepts checks if the given key is present in a header value with
+// quality factors (e.g., Accept, Accept-Encoding) and that its quality factor
+// is greater than zero. It returns true if the key is accepted, else false.
+func Accepts(value, key string) bool {
+	for k, q := range Preferences(value) {
+		if k == key {
+			return q > 0
+		}
+	}
+	return false
+}
+
 // Header represents a single HTTP header key-value pair.
 type Header struct {
 	Key   string // Key is the canonicalized header name.
