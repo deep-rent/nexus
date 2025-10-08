@@ -9,9 +9,6 @@
 //
 // Example:
 //
-// The New function creates the middleware pipe, which can then be added to a
-// standard middleware chain.
-//
 //	// Create the final handler.
 //	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 //		w.Header().Set("Content-Type", "text/plain")
@@ -120,6 +117,7 @@ func (w *interceptor) Flush() {
 	}
 }
 
+// Ensure interceptor implements the necessary contracts.
 var _ http.ResponseWriter = (*interceptor)(nil)
 var _ http.Hijacker = (*interceptor)(nil)
 var _ http.Flusher = (*interceptor)(nil)
@@ -184,8 +182,9 @@ type config struct {
 type Option func(*config)
 
 // WithCompressionLevel sets the compression level. It accepts values ranging
-// from 1 (fastest) to 9 (best). For other values, it will fall back to a
-// balanced default level.
+// from BestSpeed (1) to BestCompression (9). For other values, it will fall
+// back to DefaultCompression, a good balance between speed and
+// compression ratio.
 func WithCompressionLevel(level int) Option {
 	return func(c *config) {
 		if level >= BestSpeed && level <= BestCompression {
