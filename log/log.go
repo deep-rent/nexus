@@ -1,25 +1,22 @@
-// Package log provides a convenience wrapper around Go's standard slog
-// API, allowing for easy configuration of a slog.Logger instance using the
-// functional options pattern.
+// Package log provides a configurable constructor for the standard slog.Logger,
+// allowing for easy setup using the functional options pattern.
 //
-// # Usage
+// It simplifies the creation of a structured logger by abstracting away the
+// handler setup and providing flexible options for setting the level, format,
+// and output from common types like strings.
 //
-// The following example demonstrates how to create a logger at debug level
-// printing JSON-formatted logs to the standard output:
+// Example:
 //
+//	// Create a logger that outputs JSON at a debug level to standard error.
 //	logger := log.New(
 //		log.WithLevel("debug"),
 //		log.WithFormat("json"),
+//		log.WithWriter(os.Stderr),
+//		log.WithAddSource(true), // Include file and line number.
 //	)
 //
-// # Conventions
-//
-// Stick to the following rules to keep log output consistent:
-//
-//   - Format attribute keys in lower camelCase.
-//   - Prefer longer keys over abbreviations (e.g., "error" over "err").
-//   - Capitalize the first letter of every log message.
-//   - Do not end log messages with punctuation.
+//	slog.SetDefault(logger)
+//	slog.Debug("This is a debug message")
 package log
 
 import (
@@ -42,7 +39,7 @@ type Format uint8
 
 const (
 	FormatText Format = iota // Human-readable text format.
-	FormatJSON               // JSON format, suitable for structured logging.
+	FormatJSON               // JSON format suitable for machine parsing.
 )
 
 // String returns the lower-case string representation of the log format.
@@ -97,9 +94,10 @@ type config struct {
 // Option defines a function that modifies the logger configuration.
 type Option func(*config)
 
-// WithLevel returns an Option that sets the minimum log level.
-// It accepts either a slog.Level or a string recognized by ParseLevel.
-// If the provided value is invalid, the configured level remains unchanged.
+// WithLevel sets the minimum log level. It accepts either a slog.Level constant
+// (e.g., slog.LevelDebug) or a case-insensitive string (e.g., "debug") as
+// handled by ParseLevel. If an invalid string or type is provided, the option
+// is a no-op.
 func WithLevel(v any) Option {
 	return func(c *config) {
 		switch t := v.(type) {
@@ -114,9 +112,10 @@ func WithLevel(v any) Option {
 	}
 }
 
-// WithFormat returns an Option that sets the log output format.
-// It accepts either a Format or a string recognized by ParseFormat.
-// If the provided value is invalid, the configured format remains unchanged.
+// WithFormat sets the log output format. It accepts either a Format constant
+// (FormatText or FormatJSON) or a case-insensitive string ("text" or "json")
+// as handled by ParseFormat. If an invalid string or type is provided, the
+// option is a no-op.
 func WithFormat(v any) Option {
 	return func(c *config) {
 		switch t := v.(type) {
@@ -131,8 +130,11 @@ func WithFormat(v any) Option {
 	}
 }
 
-// WithAddSource returns an Option that configures the logger to include
-// the source code position (file and line number) in the log output.
+// WithAddSource configures the logger to include the source code position (file
+// and line number) in each log entry.
+//
+// Note that this has a performance cost and should be used judiciously, often
+// enabled only during development or at debug levels.
 func WithAddSource(add bool) Option {
 	return func(c *config) {
 		c.AddSource = add
@@ -149,10 +151,9 @@ func WithWriter(w io.Writer) Option {
 	}
 }
 
-// ParseLevel converts a string into a slog.Level.
-// It can handle any string produced by slog.Level.MarshalText, ignoring case.
-// It also accepts numeric offsets that would result in a different string on
-// output. For example, "error-8" would translate to "info".
+// ParseLevel converts a case-insensitive string into a slog.Level.
+// It accepts standard level names like "debug", "info", "warn", and "error".
+// It returns an error if the string is not a valid level.
 func ParseLevel(s string) (level slog.Level, err error) {
 	if e := level.UnmarshalText([]byte(s)); e != nil {
 		err = fmt.Errorf("invalid log level %q", s)
@@ -160,9 +161,8 @@ func ParseLevel(s string) (level slog.Level, err error) {
 	return
 }
 
-// ParseFormat converts a string into a Format.
-// It is case-insensitive and returns an error if the string is not
-// a valid format ("text" or "json").
+// ParseFormat converts a case-insensitive string into a Format.
+// Valid inputs are "text" and "json". It returns an error for any other value.
 func ParseFormat(s string) (format Format, err error) {
 	switch strings.ToLower(s) {
 	case "json":
