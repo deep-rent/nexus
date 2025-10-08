@@ -349,8 +349,19 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 }
 
 func setValue(rv reflect.Value, v string, opts flags) error {
-	if addr := rv.Addr(); addr.Type().Implements(typeUnmarshaler) {
-		return addr.Interface().(Unmarshaler).UnmarshalEnv(v)
+	// Case 1: The field's type directly implements Unmarshaler.
+	// This works for pointer types (e.g., *reverse) or value types with
+	// value receivers.
+	if rv.Type().Implements(typeUnmarshaler) {
+		if rv.Kind() == reflect.Pointer && rv.IsNil() {
+			rv.Set(reflect.New(rv.Type().Elem()))
+		}
+		return rv.Interface().(Unmarshaler).UnmarshalEnv(v)
+	}
+	// Case 2: A pointer to the field's type implements Unmarshaler.
+	// This works for value types with pointer receivers (e.g., reverse).
+	if rv.CanAddr() && rv.Addr().Type().Implements(typeUnmarshaler) {
+		return rv.Addr().Interface().(Unmarshaler).UnmarshalEnv(v)
 	}
 	rv = deref(rv)
 	switch rv.Type() {
