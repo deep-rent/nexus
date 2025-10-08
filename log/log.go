@@ -2,6 +2,8 @@
 // API, allowing for easy configuration of a slog.Logger instance using the
 // functional options pattern.
 //
+// # Usage
+//
 // The following example demonstrates how to create a logger at debug level
 // printing JSON-formatted logs to the standard output:
 //
@@ -9,6 +11,15 @@
 //		log.WithLevel("debug"),
 //		log.WithFormat("json"),
 //	)
+//
+// # Conventions
+//
+// Stick to the following rules to keep log output consistent:
+//
+//   - Format attribute keys in lower camelCase.
+//   - Prefer longer keys over abbreviations (e.g., "error" over "err").
+//   - Capitalize the first letter of every log message.
+//   - Do not end log messages with punctuation.
 package log
 
 import (
