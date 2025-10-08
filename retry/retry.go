@@ -1,45 +1,34 @@
-// Package retry provides an http.RoundTripper middleware for automatically
-// retrying failed HTTP requests. It allows fine-grained control over retry
-// logic using a customizable Policy and a backoff.Strategy for delays
-// between attempts.
+// Package retry is an http.RoundTripper middleware that provides automatic,
+// policy-driven retries for HTTP requests.
 //
-// The core of the package is NewTransport, which wraps an existing
-// http.RoundTripper (like http.DefaultTransport) and intercepts requests to
-// apply the retry logic.
+// It wraps an existing http.RoundTripper (such as http.DefaultTransport)
+// and intercepts requests to apply retry logic. The decision to retry is
+// controlled by a Policy, and the delay between attempts is determined by a
+// backoff.Strategy.
 //
-// # Usage
+// A new transport is created with NewTransport, configured with functional
+// options like WithAttemptLimit and WithBackoff.
 //
-// To use the package, create a retry transport with your desired settings
-// and wrap your existing HTTP transport. Then, use this transport in your
-// http.Client. Here's an example:
+// Example of a retry transport that retries up to 3 times with exponential
+// backoff:
 //
-//	func main() {
-//	  // Create a retry transport that wraps the default transport.
-//	  // It will retry up to 3 times with an exponential backoff of 1s to 1m.
-//	  transport := retry.NewTransport(
-//	    http.DefaultTransport,
-//	    retry.WithAttemptLimit(3),
-//	    retry.WithBackoff(backoff.New(
-//	      backoff.WithMinDelay(1*time.Second),
-//	      backoff.WithMaxDelay(1*time.Minute),
-//	    )),
-//	  )
+//	transport := retry.NewTransport(
+//		http.DefaultTransport,
+//		retry.WithAttemptLimit(3),
+//		retry.WithBackoff(backoff.New(
+//			backoff.WithMinDelay(1*time.Second),
+//		)),
+//	)
 //
-//	  // Create an http.Client that uses our custom transport.
-//	  client := &http.Client{
-//	    Transport: transport,
-//	  }
+//	client := &http.Client{Transport: transport}
 //
-//	  // Make a request using the client. If the request fails with a
-//	  // temporary or transient error, it will be automatically retried.
-//	  res, err := client.Get("http://example.com/some-flaky-endpoint")
-//	  if err != nil {
-//	    slog.Error("Request failed after all retries", "error", err)
-//	  }
-//	  defer res.Body.Close()
-//
-//	  slog.Info("Request succeeded with status", "status", res.Status)
+//	// This request will be retried automatically on temporary failures.
+//	res, err := client.Get("http://example.com/flaky")
+//	if err != nil {
+//		slog.Error("Request failed after all retries", "error", err)
+//		return
 //	}
+//	defer res.Body.Close()
 package retry
 
 import (
@@ -55,9 +44,8 @@ import (
 	"github.com/deep-rent/nexus/header"
 )
 
-// Attempt holds the context for a single HTTP request attempt. It captures the
-// request, response, error, and the attempt count, providing all necessary
-// information for a Policy to make a retry decision.
+// Attempt encapsulates the state of a single HTTP request attempt. It is passed
+// to a Policy to determine if a retry is warranted.
 type Attempt struct {
 	Request  *http.Request
 	Response *http.Response
@@ -102,10 +90,13 @@ func (a Attempt) Temporary() bool {
 	return false
 }
 
-// Transient reports whether the error is a network-level issue that might be
-// resolved on a subsequent attempt. This includes network timeouts and
-// unexpected EOF errors. It explicitly returns false for context cancellations,
-// which should not be retried.
+// Transient reports whether the error suggests a temporary network-level
+// issue that might be resolved on a subsequent attempt. It returns true for
+// network timeouts and unexpected EOF errors.
+//
+// It returns false for context cancellations (context.Canceled,
+// context.DeadlineExceeded), as these are intentional and should not be
+// retried.
 func (a Attempt) Transient() bool {
 	if a.Error == nil ||
 		errors.Is(a.Error, context.Canceled) ||
@@ -119,14 +110,18 @@ func (a Attempt) Transient() bool {
 	return errors.As(a.Error, &err) && err.Timeout()
 }
 
-// Policy is a function that decides whether a failed request attempt should
-// be retried. It receives the Attempt details and returns true to schedule a
-// retry, or false to stop.
+// Policy is the central decision-making function that determines whether a
+// request should be retried. It is invoked after each attempt with the
+// corresponding Attempt details. It returns true to schedule a retry or false
+// to stop and return the last response/error.
 type Policy func(a Attempt) bool
 
-// LimitAttempts returns a new Policy that wraps the original and adds a
-// maximum attempt limit. Retries will only be considered if the attempt count
-// is less than n AND the wrapped policy also returns true.
+// LimitAttempts decorates a Policy to enforce a maximum attempt limit.
+//
+// It short-circuits the decision, returning false if the attempt count has
+// reached the limit n. Otherwise, it delegates the decision to the wrapped
+// policy. A limit of n means a request will be attempted at most n times
+// (e.g., an initial attempt and n-1 retries). A limit of 1 disables retries.
 func (p Policy) LimitAttempts(n int) Policy {
 	if n <= 0 {
 		return p
@@ -153,6 +148,22 @@ type transport struct {
 	now     func() time.Time
 }
 
+// RoundTrip executes a single HTTP transaction, applying retry logic as
+// configured. It is the implementation of the http.RoundTripper interface.
+//
+// For a request to be retryable, its body must be rewindable. This is
+// achieved by setting the http.Request.GetBody field. If GetBody is nil,
+// the request is attempted only once, as its body stream cannot be read
+// a second time.
+//
+// RoundTrip is responsible for handling the response body. On a successful
+// attempt (or the final failed attempt), the response body is returned to the
+// caller, who is responsible for closing it. On intermediary failed attempts,
+// the response body is fully read and closed to ensure the underlying
+// connection can be reused.
+//
+// The retry loop is sensitive to the request's context. If the context is
+// cancelled, the retry loop terminates immediately.
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var (
 		res   *http.Response
@@ -286,8 +297,10 @@ func WithPolicy(policy Policy) Option {
 	}
 }
 
-// WithAttemptLimit sets the maximum number of attempts for a request. A value
-// of 0 or less means no limit is enforced besides the policy itself.
+// WithAttemptLimit sets the maximum number of attempts for a request, including
+// the initial one. A value of 3 means one initial attempt and up to two
+// retries. A value of 1 effectively disables retries. If the value is 0 or
+// less, no limit is enforced and retries are governed solely by the policy.
 func WithAttemptLimit(n int) Option {
 	return func(c *config) {
 		c.limit = n
