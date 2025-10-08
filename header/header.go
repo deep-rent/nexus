@@ -116,23 +116,21 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	return 0
 }
 
-// Credentials extracts the authentication scheme and credentials from the
-// Authorization header of an HTTP request. It returns the scheme in lower-case
-// (e.g., "basic", "bearer"), the credentials as-is, and a boolean indicating
-// whether the header was present and well-formed.
-func Credentials(r *http.Request) (scheme string, credentials string, ok bool) {
-	auth := r.Header.Get("Authorization")
+// Credentials extracts the credentials from the Authorization header of an
+// HTTP request for a specific authentication scheme (e.g., "Basic", "Bearer").
+// It returns the raw credentials as-is, or an empty string if the header is
+// not present, not well-formed, or does not match the specified scheme. The
+// scheme comparison is case-insensitive.
+func Credentials(h http.Header, scheme string) string {
+	auth := h.Get("Authorization")
 	if auth == "" {
-		return
+		return ""
 	}
-	parts := strings.SplitN(auth, " ", 2)
-	if len(parts) != 2 {
-		return
+	prefix, credentials, ok := strings.Cut(auth, " ")
+	if !ok || strings.ToLower(prefix) != scheme {
+		return ""
 	}
-	scheme = strings.ToLower(parts[0])
-	credentials = parts[1]
-	ok = true
-	return
+	return credentials
 }
 
 // Preferences parses a header value with quality factors (e.g., Accept,
