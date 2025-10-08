@@ -15,30 +15,20 @@
 //   - After(d, task): Creates a drifting Tick that waits for a fixed
 //     duration d after the previous run completes.
 //
-// # Usage
+// Example of running a task every two seconds:
 //
-// A typical usage involves creating a scheduler, defining tasks, wrapping them
-// with a scheduling helper, and dispatching them.
+//	s := scheduler.New(context.Background())
+//	defer s.Shutdown()
 //
-//	func main() {
-//	  // Create a scheduler tied to a parent context for lifecycle management.
-//	  s := scheduler.New(context.Background())
-//	  defer s.Shutdown() // Ensure graceful shutdown.
+//	task := scheduler.TaskFn(func(context.Context) {
+//	  slog.Info("Tick!")
+//	})
 //
-//	  // Define a simple task to be executed.
-//	  task := scheduler.TaskFn(func(context.Context) {
-//	    slog.Info("Tick!")
-//	  })
+//	tick := scheduler.Every(2*time.Second, task)
+//	s.Dispatch(tick)
 //
-//	  // Create a drift-free Tick that runs the task every 2 seconds.
-//	  tick := scheduler.Every(2*time.Second, task)
-//
-//	  // Dispatch the tick to run in the background.
-//	  s.Dispatch(tick)
-//
-//	  // Allow the scheduler to run for a while.
-//	  time.Sleep(5 * time.Second)
-//	}
+//	// Let the scheduler run for a while.
+//	time.Sleep(5 * time.Second)
 package scheduler
 
 import (
@@ -50,7 +40,11 @@ import (
 // Tick represents a unit of work that can be scheduled to run repeatedly.
 type Tick interface {
 	// Run executes the job and returns the duration to wait before the next
-	// execution. It accepts a context for cancellation and timeout control.
+	// execution. It accepts a context that is cancelled when the scheduler
+	// is shut down.
+	//
+	// If the returned duration is zero or negative, the next run is scheduled
+	// immediately.
 	Run(ctx context.Context) time.Duration
 }
 
@@ -85,6 +79,9 @@ func After(d time.Duration, task Task) Tick {
 // Every creates a drift-free Tick that runs at a fixed interval.
 // The wrapper measures the Task's execution time and subtracts it from the
 // specified interval, ensuring the task starts at a consistent cadence.
+//
+// If a task's execution time exceeds the interval, the next run will
+// start immediately.
 func Every(d time.Duration, task Task) Tick {
 	return TickFn(func(ctx context.Context) time.Duration {
 		start := time.Now()
@@ -94,17 +91,20 @@ func Every(d time.Duration, task Task) Tick {
 	})
 }
 
-// Scheduler manages the non-blocking execution of Ticks at timed intervals.
+// Scheduler manages the non-blocking execution of Ticks at their intervals.
 type Scheduler interface {
-	// Context returns the scheduler's parent context, which is cancelled when
-	// the scheduler is shut down.
+	// Context returns the scheduler's context. This context is cancelled when
+	// Shutdown is called. Users can select on this context's Done channel to
+	// coordinate with the scheduler's termination.
 	Context() context.Context
 	// Dispatch executes the given tick in a separate goroutine. The tick will
 	// run immediately and then repeat according to the duration it returns
 	// until the scheduler is shut down. Multiple ticks can be dispatched
 	// concurrently without blocking each other.
 	Dispatch(tick Tick)
-	// Shutdown gracefully stops the scheduler and all its pending ticks.
+	// Shutdown gracefully stops the scheduler. It cancels the scheduler's context
+	// and waits for all its pending tasks to complete. Shutdown blocks until all
+	// dispatched goroutines have finished.
 	Shutdown()
 }
 
@@ -151,9 +151,12 @@ func (s *scheduler) Shutdown() {
 
 var _ Scheduler = (*scheduler)(nil)
 
-// Once creates a synchronous Scheduler that runs a single Tick and exactly
-// once, in a blocking manner. This is useful for testing or scenarios where
-// scheduling is not required.
+// Once creates a synchronous Scheduler that runs each dispatched Tick exactly
+// once. Its Dispatch method is blocking and runs the Tick in the calling
+// goroutine.
+//
+// This implementation is useful for testing or for executing a task with the
+// same interface but without true background scheduling.
 func Once(ctx context.Context) Scheduler {
 	return &once{ctx: ctx}
 }
