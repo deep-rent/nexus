@@ -125,10 +125,10 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 
 	c.mu.RLock()
 	if c.etag != "" {
-		req.Header.Set(header.IfNoneMatch, c.etag)
+		req.Header.Set("If-None-Match", c.etag)
 	}
 	if c.lastModified != "" {
-		req.Header.Set(header.IfModifiedSince, c.lastModified)
+		req.Header.Set("If-Modified-Since", c.lastModified)
 	}
 	c.mu.RUnlock()
 
@@ -161,8 +161,8 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		}
 		c.mu.Lock()
 		c.resource = resource
-		c.etag = res.Header.Get(header.ETag)
-		c.lastModified = res.Header.Get(header.LastModified)
+		c.etag = res.Header.Get("ETag")
+		c.lastModified = res.Header.Get("Last-Modified")
 		c.ok = true
 		c.mu.Unlock()
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/middleware"
 )
 
@@ -130,14 +129,14 @@ func New(opts ...Option) middleware.Pipe {
 // be passed to the next handler. It returns false if the request has been
 // fully handled, such as in a preflight request.
 func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
-	origin := r.Header.Get(header.Origin)
+	origin := r.Header.Get("Origin")
 	// Pass through non-CORS requests.
 	if origin == "" {
 		return true
 	}
 	preflight := r.Method == http.MethodOptions
 	// Pass through invalid preflight requests.
-	if preflight && r.Header.Get(header.AccessControlRequestMethod) == "" {
+	if preflight && r.Header.Get("Access-Control-Request-Method") == "" {
 		return true
 	}
 	// Validate origin if not in wildcard mode.
@@ -148,25 +147,25 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	h := w.Header()
-	h.Add(header.Vary, header.Origin)
+	h.Add("Vary", "Origin")
 	if !cfg.allowCredentials && cfg.allowedOrigins == nil {
 		origin = Wildcard
 	}
-	h.Set(header.AccessControlAllowOrigin, origin)
+	h.Set("Access-Control-Allow-Origin", origin)
 	if cfg.allowCredentials {
-		h.Set(header.AccessControlAllowCredentials, "true")
+		h.Set("Access-Control-Allow-Credentials", "true")
 	}
 
 	// Handle preflight requests.
 	if preflight {
 		if cfg.allowedMethods != "" {
-			h.Set(header.AccessControlAllowMethods, cfg.allowedMethods)
+			h.Set("Access-Control-Allow-Methods", cfg.allowedMethods)
 		}
 		if cfg.allowedHeaders != "" {
-			h.Set(header.AccessControlAllowHeaders, cfg.allowedHeaders)
+			h.Set("Access-Control-Allow-Headers", cfg.allowedHeaders)
 		}
 		if cfg.maxAge != "" {
-			h.Set(header.AccessControlMaxAge, cfg.maxAge)
+			h.Set("Access-Control-Max-Age", cfg.maxAge)
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return false // Terminate request chain.
@@ -174,7 +173,7 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 
 	// Handle actual requests.
 	if cfg.exposedHeaders != "" {
-		h.Set(header.AccessControlExposeHeaders, cfg.exposedHeaders)
+		h.Set("Access-Control-Expose-Headers", cfg.exposedHeaders)
 	}
 	return true
 }

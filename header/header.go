@@ -55,7 +55,7 @@ func Directives(value string) iter.Seq[Directive] {
 // calculate relative times. If no throttling is indicated, it returns a
 // duration of 0.
 func Throttle(h http.Header, now func() time.Time) time.Duration {
-	if v := h.Get(RetryAfter); v != "" {
+	if v := h.Get("Retry-After"); v != "" {
 		if d, err := strconv.ParseInt(v, 10, 64); err == nil && d > 0 {
 			return time.Duration(d) * time.Second
 		}
@@ -65,8 +65,8 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 			}
 		}
 	}
-	if h.Get(XRatelimitRemaining) == "0" {
-		if v := h.Get(XRatelimitReset); v != "" {
+	if h.Get("X-Ratelimit-Remaining") == "0" {
+		if v := h.Get("X-Ratelimit-Reset"); v != "" {
 			if t, err := strconv.ParseInt(v, 10, 64); err == nil && t > 0 {
 				if d := time.Unix(t, 0).Sub(now()); d > 0 {
 					return d
@@ -83,7 +83,7 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 // caching information.
 func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	// Cache-Control takes precedence over Expires
-	if v := h.Get(CacheControl); v != "" {
+	if v := h.Get("Cache-Control"); v != "" {
 		for kv := range Directives(v) {
 			switch kv.Key {
 			case "no-cache", "no-store":
@@ -95,7 +95,7 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 			}
 		}
 	}
-	if v := h.Get(Expires); v != "" {
+	if v := h.Get("Expires"); v != "" {
 		if t, err := http.ParseTime(v); err == nil {
 			if d := t.Sub(now()); d > 0 {
 				return d
@@ -110,7 +110,7 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 // (e.g., "basic", "bearer"), the credentials as-is, and a boolean indicating
 // whether the header was present and well-formed.
 func Credentials(r *http.Request) (scheme string, credentials string, ok bool) {
-	auth := r.Header.Get(Authorization)
+	auth := r.Header.Get("Authorization")
 	if auth == "" {
 		return
 	}
@@ -219,88 +219,3 @@ func NewTransport(
 		headers: h,
 	}
 }
-
-// Standard HTTP headers
-const (
-	Accept                        = "Accept"
-	AcceptCharset                 = "Accept-Charset"
-	AcceptDatetime                = "Accept-Datetime"
-	AcceptEncoding                = "Accept-Encoding"
-	AcceptLanguage                = "Accept-Language"
-	AcceptPatch                   = "Accept-Patch"
-	AcceptRanges                  = "Accept-Ranges"
-	AccessControlAllowCredentials = "Access-Control-Allow-Credentials"
-	AccessControlAllowHeaders     = "Access-Control-Allow-Headers"
-	AccessControlAllowMethods     = "Access-Control-Allow-Methods"
-	AccessControlAllowOrigin      = "Access-Control-Allow-Origin"
-	AccessControlExposeHeaders    = "Access-Control-Expose-Headers"
-	AccessControlMaxAge           = "Access-Control-Max-Age"
-	AccessControlRequestHeaders   = "Access-Control-Request-Headers"
-	AccessControlRequestMethod    = "Access-Control-Request-Method"
-	Allow                         = "Allow"
-	Authorization                 = "Authorization"
-	CacheControl                  = "Cache-Control"
-	ContentDisposition            = "Content-Disposition"
-	ContentEncoding               = "Content-Encoding"
-	ContentLanguage               = "Content-Language"
-	ContentLength                 = "Content-Length"
-	ContentLocation               = "Content-Location"
-	ContentMD5                    = "Content-MD5"
-	ContentRange                  = "Content-Range"
-	ContentSecurityPolicy         = "Content-Security-Policy"
-	ContentType                   = "Content-Type"
-	Cookie                        = "Cookie"
-	DoNotTrack                    = "DNT"
-	ETag                          = "ETag"
-	Expires                       = "Expires"
-	IfMatch                       = "If-Match"
-	IfModifiedSince               = "If-Modified-Since"
-	IfNoneMatch                   = "If-None-Match"
-	IfRange                       = "If-Range"
-	IfUnmodifiedSince             = "If-Unmodified-Since"
-	LastModified                  = "Last-Modified"
-	Link                          = "Link"
-	Location                      = "Location"
-	MaxForwards                   = "Max-Forwards"
-	Origin                        = "Origin"
-	P3P                           = "P3P"
-	Pragma                        = "Pragma"
-	ProxyAuthenticate             = "Proxy-Authenticate"
-	ProxyAuthorization            = "Proxy-Authorization"
-	Range                         = "Range"
-	Referer                       = "Referer"
-	Refresh                       = "Refresh"
-	RetryAfter                    = "Retry-After"
-	Server                        = "Server"
-	SetCookie                     = "Set-Cookie"
-	StrictTransportSecurity       = "Strict-Transport-Security"
-	TE                            = "TE"
-	TransferEncoding              = "Transfer-Encoding"
-	Upgrade                       = "Upgrade"
-	UserAgent                     = "User-Agent"
-	Vary                          = "Vary"
-	Via                           = "Via"
-	Warning                       = "Warning"
-	WWWAuthenticate               = "WWW-Authenticate"
-	Forwarded                     = "Forwarded"
-)
-
-// Non-standard HTTP headers
-const (
-	XContentSecurityPolicy = "X-Content-Security-Policy"
-	XContentTypeOptions    = "X-Content-Type-Options"
-	XCSRFToken             = "X-CSRF-Token"
-	XForwardedFor          = "X-Forwarded-For"
-	XForwardedProto        = "X-Forwarded-Proto"
-	XFrameOptions          = "X-Frame-Options"
-	XHTTPMethodOverride    = "X-HTTP-Method-Override"
-	XPoweredBy             = "X-Powered-By"
-	XRatelimitLimit        = "X-Ratelimit-Limit"
-	XRatelimitRemaining    = "X-Ratelimit-Remaining"
-	XRatelimitReset        = "X-Ratelimit-Reset"
-	XRealIP                = "X-Real-IP"
-	XRequestID             = "X-Request-ID"
-	XUACompatible          = "X-UA-Compatible"
-	XWebKitCSP             = "X-WebKit-CSP"
-	XXSSProtection         = "X-XSS-Protection"
-)

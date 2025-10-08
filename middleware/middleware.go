@@ -29,8 +29,6 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
-
-	"github.com/deep-rent/nexus/header"
 )
 
 // Pipe defines the structure for a middleware function. It takes an
@@ -111,7 +109,7 @@ func RequestID() Pipe {
 				return
 			}
 			id := hex.EncodeToString(b)
-			w.Header().Set(header.XRequestID, id)
+			w.Header().Set("X-Request-ID", id)
 			next.ServeHTTP(w, r.WithContext(SetRequestID(r.Context(), id)))
 		})
 	}
