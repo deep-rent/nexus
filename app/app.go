@@ -2,6 +2,14 @@
 // command-line applications. It simplifies graceful shutdown by handling OS
 // interrupt signals (SIGINT, SIGTERM) and propagating a cancellation
 // signal through a context.
+//
+// Example:
+//
+//	app.Run(func(ctx context.Context) error {
+//	  // Insert your application logic here...
+//	  <-ctx.Done() // Monitor the context for a shutdown signal.
+//	  return nil
+//	})
 package app
 
 import (
