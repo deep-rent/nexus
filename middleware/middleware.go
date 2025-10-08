@@ -1,24 +1,27 @@
-// Package middleware provides utilities for chaining and composing HTTP
-// middleware handlers, besides some common middleware implementations like
-// panic recovery and logging.
+// Package middleware provides a standard approach for chaining and composing
+// HTTP middleware.
 //
-// # Usage
+// The core type is Pipe, an adapter that wraps an http.Handler to add
+// functionality. The Chain function composes these pipes into a single handler.
+// The package also includes common middleware like Recover for panic handling,
+// RequestID for tracing, and Log for request logging.
 //
-// To use the package, create middleware Pipes and chain them around your final
-// http.Handler using the Chain function. Here's an example:
+// Example:
 //
-//	logger := slog.Default()
-//	// Create the final handler.
-//	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 //		w.Write([]byte("OK"))
 //	})
-//	// Chain the middleware around the final handler.
-//	h = middleware.Chain(h,
+//
+//	// Chain middleware around the final handler.
+//	// Order matters: Recover must be first (outermost).
+//	logger := slog.Default()
+//	chainedHandler := middleware.Chain(handler,
 //		middleware.Recover(logger),
 //		middleware.RequestID(),
 //		middleware.Log(logger),
 //	)
-//	http.ListenAndServe(":8080", h)
+//
+//	http.ListenAndServe(":8080", chainedHandler)
 package middleware
 
 import (
@@ -31,15 +34,17 @@ import (
 	"time"
 )
 
-// Pipe defines the structure for a middleware function. It takes an
-// http.Handler as input and returns a new http.Handler, allowing for the
-// composition of middleware.
+// Pipe is a middleware function. It's an adapter that takes an http.Handler
+// and returns a new http.Handler, allowing functionality to be composed in
+// layers.
 type Pipe func(http.Handler) http.Handler
 
-// Chain combines multiple middleware Pipes into a single http.Handler. The
-// pipes are applied in the order they are provided, with the first pipe
-// becoming the outermost layer and the last pipe the innermost, directly
-// wrapping the final handler.
+// Chain combines a handler with multiple middleware Pipes. The pipes are
+// applied in reverse order, meaning the first pipe in the list is the outermost
+// and executes first.
+//
+// For example, Chain(h, A, B, C) results in a handler equivalent to A(B(C(h))).
+// Any nil pipes in the list are safely ignored.
 func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 	for i := len(pipes) - 1; i >= 0; i-- {
 		if pipe := pipes[i]; pipe != nil {
@@ -53,6 +58,8 @@ func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 // handlers. It uses the provided logger to report the exception with a stack
 // trace and returns an empty response with status code 500 to the client. The
 // log entry also pinpoints the request method and URL that caused the panic.
+// For maximum effectiveness, this should be the first (outermost) middleware
+// in the chain.
 func Recover(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +87,8 @@ func Recover(logger *slog.Logger) Pipe {
 type Skipper func(r *http.Request) bool
 
 // Skip returns a new middleware Pipe that conditionally skips the specified
-// pipe if the condition is satisfied.
+// pipe if the condition is satisfied. This is useful for excluding certain
+// routes, like health probes, from middleware processing.
 func Skip(pipe Pipe, condition Skipper) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,9 +105,13 @@ type contextKey string // Prevents collisions with other packages.
 
 const keyRequestID = contextKey("requestID")
 
-// RequestID creates a middleware Pipe that generates a unique 128-bit ID for
-// each request, adding it to the 'X-Request-ID' response header and the
-// request's context.
+// RequestID returns a middleware Pipe that injects a unique ID into each
+// request. It adds the ID to the response via the "X-Request-ID" header and to
+// the request's context for downstream use.
+//
+// Downstream handlers and other middleware can retrieve the ID using
+// GetRequestID. If a unique ID cannot be generated from the random source, this
+// middleware does nothing and passes the request to the next handler.
 func RequestID() Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,29 +140,32 @@ func SetRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, keyRequestID, id)
 }
 
-// responseWriterInterceptor is used to wrap the original http.ResponseWriter to
+// interceptor is used to wrap the original http.ResponseWriter to
 // capture the status code.
-type responseWriterInterceptor struct {
+type interceptor struct {
 	http.ResponseWriter
 	statusCode int
 }
 
 // WriteHeader captures the status code before calling the original WriteHeader.
-func (rwi *responseWriterInterceptor) WriteHeader(code int) {
-	rwi.statusCode = code
-	rwi.ResponseWriter.WriteHeader(code)
+func (i *interceptor) WriteHeader(code int) {
+	i.statusCode = code
+	i.ResponseWriter.WriteHeader(code)
 }
 
-// Log creates a middleware Pipe that logs a summary of each HTTP request after
-// it has been handled. The log entry is generated at the debug level and
-// includes the request ID, method, URL, remote address, user agent, the final
-// HTTP status code, and the total processing duration.
+// Log returns a middleware Pipe that logs a summary of each HTTP request. It
+// captures the final HTTP status code by wrapping the http.ResponseWriter.
+//
+// The log entry is generated at the debug level after the request has been
+// handled. It includes the method, URL, status code, duration, and other
+// common attributes. To include a request ID in the log, this middleware should
+// be placed after the RequestID middleware in the chain.
 func Log(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			rwi := &responseWriterInterceptor{w, http.StatusOK}
-			next.ServeHTTP(rwi, r)
+			incpt := &interceptor{w, http.StatusOK}
+			next.ServeHTTP(incpt, r)
 			logger.Debug(
 				"HTTP request handled",
 				slog.String("id", GetRequestID(r.Context())),
@@ -158,7 +173,7 @@ func Log(logger *slog.Logger) Pipe {
 				slog.String("url", r.URL.String()),
 				slog.String("remote", r.RemoteAddr),
 				slog.String("agent", r.UserAgent()),
-				slog.Int("status", rwi.statusCode),
+				slog.Int("status", incpt.statusCode),
 				slog.Duration("duration", time.Since(start)),
 			)
 		})
