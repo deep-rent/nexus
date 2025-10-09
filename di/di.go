@@ -144,9 +144,9 @@ func NewSlot[T any](keys ...string) Slot[T] {
 
 var slots = &sync.Map{}
 
-func Reset() {
-	slots = &sync.Map{}
-}
+// func Reset() {
+// 	slots = &sync.Map{}
+// }
 
 // Tag returns the pre-formatted debug string for a slot.
 // The tag is of the form "name@type", where "name" is the optional name
