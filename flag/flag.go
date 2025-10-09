@@ -171,17 +171,20 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 // rather than indicating a failure.
 var ErrShowHelp = errors.New("show help")
 
-// Parse maps command-line arguments to flags.
+// Parse maps command-line arguments to flags and returns only the positional
+// arguments (those that are not flags).
 //
-// It must be called after all flags have been added. If a --help flag i
+// It must be called after all flags have been added. If a --help flag is
 // encountered, it returns ErrShowHelp. Other errors indicate parsing issues.
 // The args parameter allows feeding in a custom argument slice; if a nil or
 // empty slice is given, the system's input arguments (os.Args) are parsed.
-func (s *Set) Parse(args []string) error {
+func (s *Set) Parse(args []string) ([]string, error) {
+	var pos []string
 	for i := 0; i < len(args); {
 		arg := args[i]
-		if len(arg) < 2 || arg[0] != '-' {
-			i++ // Not a flag, advance.
+		if len(arg) < 2 || arg[0] != '-' { // Positional argument
+			pos = append(pos, arg)
+			i++
 			continue
 		}
 		var (
@@ -189,22 +192,23 @@ func (s *Set) Parse(args []string) error {
 			err error
 		)
 		if strings.HasPrefix(arg, "--") {
-			if len(arg) == 2 {
-				return nil // End of flags.
+			if len(arg) == 2 { // End of flags marker "--"
+				pos = append(pos, args[i+1:]...)
+				return pos, nil
 			}
 			if arg == "--help" {
-				return ErrShowHelp
+				return nil, ErrShowHelp
 			}
 			k, err = s.readName(args, i)
 		} else {
 			k, err = s.readChar(args, i)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		i += k
 	}
-	return nil
+	return pos, nil
 }
 
 // readChar handles abbreviated flags (e.g., -v, -abc, -p8080).
@@ -401,17 +405,18 @@ func Summary(sum string) { std.Summary(sum) }
 // See Set.Add for details.
 func Add(v any, char rune, name, desc string) { std.Add(v, char, name, desc) }
 
-// Parse parses command-line arguments using the default set.
+// Parse parses command-line arguments from os.Args and returns the positional
+// arguments (those that are not flags).
 //
 // This function must be called after all flags have been added. If a --help
 // flag is encountered, it prints the usage message and exits. On error, it
 // prints the error message and exits with a non-zero status code.
 //
 // See Set.Parse for details.
-func Parse() {
-	err := std.Parse(os.Args[1:])
+func Parse() []string {
+	pos, err := std.Parse(os.Args[1:])
 	if err == nil {
-		return
+		return pos
 	}
 	code := 0
 	if !errors.Is(err, ErrShowHelp) {
@@ -420,6 +425,7 @@ func Parse() {
 	}
 	Usage()
 	os.Exit(code)
+	return nil
 }
 
 // Usage prints the help message for the default set.
