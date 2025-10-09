@@ -178,23 +178,19 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for {
 		count++
 
-		// If this is a retry and the body is rewindable, obtain a new reader
+		// If this is a retry and the body is rewindable, obtain a new reader.
 		if count > 1 && rewindable {
 			var e error
 			req.Body, e = req.GetBody()
 			if e != nil {
-				// Cannot rewind the body, so we must stop here
+				// Cannot rewind the body, so we must stop here.
 				return nil, e
 			}
 		}
 
 		res, err = t.next.RoundTrip(req)
-		// If the request body is not rewindable, we cannot retry
-		if req.Body != nil && !rewindable {
-			break
-		}
 
-		// Ask the policy if we should retry
+		// Ask the policy if we should retry.
 		if !t.policy(Attempt{
 			Request:  req,
 			Response: res,
@@ -204,7 +200,14 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			break // Success or policy decided to exit
 		}
 
-		// If retrying, drain and close the previous response body
+		// Check if the request body is rewindable. If not, we must stop here.
+		// This is checked after the policy to ensure the policy still gets notified
+		// of the attempt.
+		if req.Body != nil && !rewindable {
+			break
+		}
+
+		// If retrying, drain and close the previous response body.
 		if res != nil && res.Body != nil {
 			io.Copy(io.Discard, res.Body)
 			res.Body.Close()
@@ -214,7 +217,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if res != nil {
 			if d := header.Throttle(res.Header, t.now); d != 0 {
 				// Use the longer of the two delays to respect both the server
-				// and our own backoff policy
+				// and our own backoff policy.
 				delay = max(delay, d)
 			}
 		}
@@ -240,7 +243,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			continue // Retry without delay
 		}
 
-		// Wait for the delay, respecting context cancellation
+		// Wait for the delay, respecting context cancellation.
 		select {
 		case <-time.After(delay):
 			continue // Proceed to next attempt
