@@ -123,10 +123,19 @@ import (
 // while the generic type T provides compile-time type safety.
 type Slot[T any] *struct{}
 
-// NewSlot creates a new, unique Slot for a given type T. The optional
-// keys are used to create a descriptive name for debugging and error messages.
-// Multiple keys are joined with dots. This is useful to group related
-// services, e.g., by package or feature.
+// slots is a global, concurrent map that stores the debug tag for each slot.
+var slots = &sync.Map{}
+
+// func Reset() {
+// 	slots = &sync.Map{}
+// }
+
+// NewSlot creates a new, unique Slot for a given type T.
+//
+// The optional keys are used to create a descriptive name for debugging and
+// error messages. Multiple keys are joined with dots. This is useful to group
+// related services, e.g., by package or feature. The assigned tag can be
+// retrieved later using the Tag function.
 func NewSlot[T any](keys ...string) Slot[T] {
 	s := new(struct{})
 	t := reflect.TypeOf((*T)(nil)).Elem().String()
@@ -142,13 +151,8 @@ func NewSlot[T any](keys ...string) Slot[T] {
 	return s
 }
 
-var slots = &sync.Map{}
-
-// func Reset() {
-// 	slots = &sync.Map{}
-// }
-
 // Tag returns the pre-formatted debug string for a slot.
+//
 // The tag is of the form "name@type", where "name" is the optional name
 // assigned during slot creation, and "type" is the Go type of the slot. If no
 // name was provided, it returns just the type prefixed with "@". If the slot is
@@ -172,7 +176,7 @@ func Tag(slot any) string {
 // "Bind<Type>".
 type Provider[T any] func(in *Injector) (T, error)
 
-// binding holds the provider and its associated resolution strategy.
+// binding holds a provider and its associated resolution strategy.
 type binding struct {
 	provider any
 	resolver Resolver
@@ -186,7 +190,8 @@ type config struct {
 // Option configures an Injector.
 type Option func(*config)
 
-// WithContext sets the application context for the Injector.
+// WithContext sets the root context for the Injector. If ctx is nil, the
+// background context is used by default.
 func WithContext(ctx context.Context) Option {
 	return func(cfg *config) {
 		if ctx != nil {
@@ -196,8 +201,10 @@ func WithContext(ctx context.Context) Option {
 }
 
 // Injector is the main dependency injection container.
-// It holds all service bindings and manages their singleton instances.
-// An Injector is safe for concurrent use.
+// It holds all service bindings and manages their lifecycle. An Injector is
+// safe for concurrent reads (e.g., using Use, Required), but is not safe for
+// concurrent writes (e.g., using Bind, Override). Bindings should be configured
+// once at application startup.
 type Injector struct {
 	ctx      context.Context
 	bindings map[any]*binding
@@ -205,7 +212,8 @@ type Injector struct {
 	parent   *Injector
 }
 
-// NewInjector creates and returns a new, empty Injector with given options.
+// NewInjector creates and returns a new, empty Injector with the given options.
+// If no options are provided, it defaults to using context.Background().
 func NewInjector(opts ...Option) *Injector {
 	cfg := config{
 		ctx: context.Background(),
@@ -222,22 +230,23 @@ func NewInjector(opts ...Option) *Injector {
 
 // Context returns the injector's context.
 //
-// This context is passed in during the injector's creation via the WithContext
+// This context is provided during the injector's creation via the WithContext
 // option. It serves two primary purposes:
 //
-// 1. It allows for the propagation of request-scoped values, deadlines, and
-// cancellation signals throughout the dependency graph. Providers can access
-// this context by resolving the injector and calling this method.
+//  1. Propagation: It allows for the propagation of request-scoped values,
+//     deadlines, and cancellation signals throughout the dependency graph.
 //
-// 2. It is the key mechanism for enabling scoped dependencies. Resolvers like
-// Scoped() use this context to store a cache of instances that live for the
-// duration of the context's lifecycle (e.g., a single HTTP request).
+//  2. Scoping: It is the key mechanism for enabling scoped dependencies.
+//     Resolvers like Scoped() use this context to cache instances that live
+//     for the duration of the context's lifecycle (e.g., an HTTP request).
 func (in *Injector) Context() context.Context {
 	return in.ctx
 }
 
-// Bind registers a provider function for a specific service slot.
-// It panics the slot is already bound.
+// Bind registers a provider and its resolver for a specific service slot.
+// It is typically called during application initialization.
+//
+// Bind panics if the slot is already bound in the injector.
 func Bind[T any](
 	in *Injector,
 	slot Slot[T],
@@ -258,31 +267,41 @@ func Bind[T any](
 }
 
 // Use resolves a service from the Injector for a given slot. It is the primary
-// method for retrieving dependencies when an error is acceptable.
+// method for retrieving dependencies when an error is an expected outcome.
 //
-// On the first call, it invokes the registered provider and caches the result.
-// Subsequent calls return the cached instance. It returns an error if the
-// slot is not bound, the provider returns an error, or the provider panics.
+// It returns an error if the slot is not bound, if the provider returns an
+// error, or if a circular dependency is detected. If the provider returns a
+// nil value with no error, Use will return the zero value of T.
+//
+// Use will panic if the value returned by the provider is not assignable to T,
+// which indicates a programming error (e.g., a provider returning an
+// incompatible type).
 func Use[T any](in *Injector, slot Slot[T]) (T, error) {
 	v, err := in.Resolve(slot)
 	if err != nil {
 		var zero T
 		return zero, err
 	}
+	// If the provider returned a nil interface or pointer with no error.
 	if v == nil {
 		var zero T
 		return zero, nil
 	}
+	// This type assertion is critical. It ensures that the value returned
+	// from the non-generic resolver is of the correct type.
 	t, ok := v.(T)
 	if ok {
+		// This panic indicates a bug in a provider implementation, where it
+		// returned a concrete type that does not match the slot's type.
 		return t, nil
 	}
 	panic(fmt.Sprintf("provider returned %T for slot %s", v, Tag(slot)))
 }
 
-// Optional resolves a service and panics if a resolution error occurs,
-// but allows the provider to return a nil value without panicking.
-// It is useful for dependencies that are truly optional.
+// Optional resolves a service and panics if any resolution error occurs (e.g.,
+// an unbound slot or a provider error). However, unlike Required, it allows the
+// provider to return a nil value without panicking. It is useful for
+// dependencies that are truly optional.
 func Optional[T any](in *Injector, slot Slot[T]) T {
 	v, err := Use(in, slot)
 	if err != nil {
@@ -291,9 +310,12 @@ func Optional[T any](in *Injector, slot Slot[T]) T {
 	return v
 }
 
-// Required resolves a service and panics if an error occurs OR if the
-// resulting value is nil (unlike Optional). This should be used for critical
-// dependencies that must be resolved.
+// Required resolves a service and panics if an error occurs OR if the resolved
+// value is nil. This should be used for critical dependencies that must always
+// be present.
+//
+// It checks for nil-ness on interfaces, pointers, maps, slices, channels, and
+// functions.
 func Required[T any](in *Injector, slot Slot[T]) T {
 	v := Optional(in, slot)
 	val := reflect.ValueOf(v)
@@ -333,21 +355,28 @@ func Override[T any](
 	}
 }
 
+// visitingKey is the context key for the circular dependency detection map.
 type visitingKey struct{}
 
 // Resolve is a non-generic method to resolve a dependency from a slot.
-// In most cases, the type-safe Use, Optional, or Required functions should be
-// preferred.
+// In most cases, the type-safe functions (Use, Optional, Required) should be
+// preferred. Resolve is mostly useful for framework integrations that may need
+// to work with slots of an unknown type.
 func (in *Injector) Resolve(slot any) (any, error) {
+	// If this injector is a proxy, it means we are in a nested call to resolve().
+	// We must use the parent's resolution logic but with our current context,
+	// which carries the visiting map.
 	if in.parent != nil {
 		// The type assertion is safe because we control proxy creation.
 		visiting := in.ctx.Value(visitingKey{}).(map[any]bool)
 		return in.parent.resolve(slot, visiting)
 	}
+	// This is a top-level call, so create a fresh map.
 	return in.resolve(slot, make(map[any]bool))
 }
 
 // resolve is the internal, recursive implementation for dependency resolution.
+// The visiting map tracks the current resolution path to detect cycles.
 func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	if visiting[slot] {
 		return nil, fmt.Errorf(
@@ -365,15 +394,16 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 		return nil, fmt.Errorf("no provider bound for slot %s", Tag(slot))
 	}
 
-	// Pass the visiting map to the resolver.
+	// Delegate to the resolver (e.g., Singleton), passing the visiting map.
 	val, err := b.resolver.Resolve(in, b.provider, slot, visiting)
-	delete(visiting, slot) // Clean up the map on the way back up.
+	delete(visiting, slot) // Clean up the map on the way back up the call stack.
 	return val, err
 }
 
 // Resolver defines a strategy for managing a service's lifecycle.
 type Resolver interface {
-	// Resolve provides an instance of the service.
+	// Resolve provides an instance according to the strategy it implements.
+	// The visiting map tracks the current resolution path to detect cycles.
 	Resolve(
 		in *Injector,
 		provider any,
@@ -382,6 +412,7 @@ type Resolver interface {
 	) (any, error)
 }
 
+// singleton is a Resolver that caches the service instance.
 type singleton struct {
 	instance any
 	err      error
@@ -394,16 +425,19 @@ func (s *singleton) Resolve(
 	slot any,
 	visiting map[any]bool,
 ) (any, error) {
-	s.once.Do(func() { s.instance, s.err = provide(in, provider, slot, visiting) })
+	s.once.Do(func() {
+		s.instance, s.err = provide(in, provider, slot, visiting)
+	})
 	return s.instance, s.err
 }
 
-// Singleton returns a Resolver that creates an instance once and reuses it
-// thereafter.
+// Singleton returns a Resolver that creates an instance once per injector and
+// reuses it for all subsequent requests.
 func Singleton() Resolver {
 	return &singleton{}
 }
 
+// transient is a Resolver that always creates a new service instance.
 type transient struct{}
 
 func (transient) Resolve(
@@ -415,6 +449,9 @@ func (transient) Resolve(
 	return provide(in, provider, slot, visiting)
 }
 
+// provide is an internal helper that safely invokes a provider function.
+// It recovers from panics and creates a proxy injector to propagate the
+// circular dependency map.
 func provide(
 	in *Injector,
 	provider any,
@@ -422,10 +459,10 @@ func provide(
 	visiting map[any]bool,
 ) (instance any, err error) {
 	defer func() {
-		if rec := recover(); rec != nil {
+		if r := recover(); r != nil {
 			err = fmt.Errorf(
 				"panic during provider call for slot %s: %v",
-				Tag(slot), rec,
+				Tag(slot), r,
 			)
 			instance = nil
 		}
@@ -439,8 +476,11 @@ func provide(
 		ctx:    context.WithValue(in.ctx, visitingKey{}, visiting),
 	}
 
+	// Use reflection to call the provider.
 	val := reflect.ValueOf(provider)
 	out := val.Call([]reflect.Value{reflect.ValueOf(proxy)})
+
+	// The provider signature is func(...) (T, error).
 	if out[1].IsNil() {
 		instance = out[0].Interface()
 	} else {
@@ -450,20 +490,24 @@ func provide(
 	return
 }
 
-// Transient returns a Resolver that creates a new instance on every call.
+// Transient returns a Resolver that creates a new instance of the service
+// every time it is requested.
 func Transient() Resolver {
 	return transient{}
 }
 
+// scopedCacheKey is the context key for the scoped dependency cache.
 type scopedCacheKey struct{}
 
 // NewScope creates a new context that carries a cache for scoped dependencies.
 // This should be called at the beginning of an operation that defines a scope,
-// such as a new HTTP request.
+// such as a new HTTP request. The returned context should be passed to a new
+// or child injector via WithContext.
 func NewScope(ctx context.Context) context.Context {
 	return context.WithValue(ctx, scopedCacheKey{}, &sync.Map{})
 }
 
+// scoped is a Resolver that ties the service lifecycle to a context scope.
 type scoped struct{}
 
 func (s scoped) Resolve(
@@ -480,20 +524,29 @@ func (s scoped) Resolve(
 			Tag(slot),
 		)
 	}
-	if instance, ok := cache.LoadOrStore(slot, nil); ok && instance != nil {
+	// Check if an instance already exists in the scope's cache.
+	// The nil marker (`struct{}{}``) is used to handle the case where a provider
+	// legitimately returns nil, to prevent re-invocation.
+	if instance, loaded := cache.Load(slot); loaded {
 		return instance, nil
 	}
+
+	// If not found, create a new instance.
 	instance, err := provide(in, provider, slot, visiting)
 	if err != nil {
-		cache.Delete(slot)
+		// Do not cache the slot if the provider failed.
 		return nil, err
 	}
-	cache.Store(slot, instance)
-	return instance, nil
+
+	// Store the new instance in the cache.
+	actual, _ := cache.LoadOrStore(slot, instance)
+	return actual, nil
 }
 
-// Scoped returns a Resolver that ties the lifecycle of a service to the
-// Injector's context. A new instance is created once per scope.
+// Scoped returns a Resolver that ties the lifecycle of a service to a
+// context.Context. A new instance is created once per scope, defined by a
+// call to NewScope. It requires that the injector's context was created
+// via NewScope.
 func Scoped() Resolver {
 	return scoped{}
 }
