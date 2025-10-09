@@ -44,7 +44,6 @@
 // The automatically generated help message for the example above would be:
 //
 //	Usage: foobar [OPTION]...
-//	       foobar --help
 //
 //	A one-line summary of what the command does.
 //
@@ -63,6 +62,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 )
 
 // flag holds the metadata for a single registered flag.
@@ -195,7 +195,7 @@ func (s *Set) Parse(args []string) ([]string, error) {
 			k, err = s.parseChar(args, i)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("flag: %w", err)
+			return nil, err
 		}
 		i += k
 	}
@@ -325,41 +325,30 @@ func (s *Set) setValue(def *flag, value string) error {
 // their types, descriptions, and default values.
 func (s *Set) Usage() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Usage: %s [OPTION]...\n", s.cmd)
-	fmt.Fprintf(&b, "       %s --help\n\n", s.cmd)
+	fmt.Fprintf(&b, "Usage: %s [OPTION]...\n\n", s.cmd)
 	if s.sum != "" {
 		fmt.Fprintf(&b, "%s\n\n", s.sum)
 	}
 	fmt.Fprintf(&b, "Options:\n")
-	type line struct {
-		keys string
-		desc string
-	}
 
-	lines := make([]line, 0, len(s.flags)+1)
+	w := tabwriter.NewWriter(&b, 0, 0, 3, ' ', 0)
 	all := append(s.flags, &flag{
 		name: "help",
 		desc: "Display this help message and exit",
 	})
 
-	off := 0
 	for _, f := range all {
 		keys := s.format(f)
-		if len(keys) > off {
-			off = len(keys)
-		}
 		desc := f.desc
+		// Only show default value if it's not the zero value for its type.
 		if f.def != nil && !reflect.ValueOf(f.def).IsZero() {
 			desc += fmt.Sprintf(" (default: %v)", f.def)
 		}
-		lines = append(lines, line{keys, desc})
+		// Write tab-separated columns; tabwriter handles the spacing.
+		fmt.Fprintf(w, "  %s\t%s\n", keys, desc)
 	}
 
-	for _, line := range lines {
-		pad := strings.Repeat(" ", off-len(line.keys)+2)
-		fmt.Fprintf(&b, "  %s%s%s\n", line.keys, pad, line.desc)
-	}
-
+	w.Flush() // Finalize formatting.
 	return b.String()
 }
 
