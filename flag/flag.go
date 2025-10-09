@@ -383,12 +383,15 @@ func Add(v any, short, long, desc string) { std.Add(v, short, long, desc) }
 // prints the error message and exits with a non-zero status code.
 func Parse() {
 	err := std.Parse(os.Args[1:])
+	if err == nil {
+		return
+	}
 	code := 0
 	if !errors.Is(err, ErrShowHelp) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		code = 1
 	}
-	std.Usage()
+	Usage()
 	os.Exit(code)
 }
 
