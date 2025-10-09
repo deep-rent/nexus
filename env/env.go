@@ -112,6 +112,7 @@ import (
 	"unicode"
 
 	"github.com/deep-rent/nexus/util/camel"
+	"github.com/deep-rent/nexus/util/quote"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -565,14 +566,14 @@ func parse(s string) (opts flags, err error) {
 		// comma that is not inside quotes.
 		end := -1
 		inQuote := false
-		var quote rune
+		var q rune
 		for i, r := range rest {
-			if r == quote {
+			if r == q {
 				inQuote = false
-				quote = 0
+				q = 0
 			} else if !inQuote && (r == '\'' || r == '"') {
 				inQuote = true
-				quote = r
+				q = r
 			} else if !inQuote && r == ',' {
 				end = i
 				break
@@ -606,7 +607,7 @@ func parse(s string) (opts flags, err error) {
 			}
 			continue
 		}
-		val = unquote(val)
+		val = quote.Remove(val)
 		switch key {
 		case "format":
 			opts.Format = val
@@ -643,21 +644,4 @@ func isUnmarshalable(v reflect.Value) bool {
 	// A value can only satisfy an interface if it's addressable,
 	// so we check if a pointer to the value's type implements it.
 	return v.CanAddr() && reflect.PointerTo(v.Type()).Implements(typeUnmarshaler)
-}
-
-// unquote removes a single layer of surrounding single or double quotes from a
-// string. If the string is not quoted, it is returned unchanged.
-func unquote(s string) string {
-	if len(s) < 2 {
-		return s
-	}
-	// Check for double quotes.
-	if s[0] == '"' && s[len(s)-1] == '"' {
-		return s[1 : len(s)-1]
-	}
-	// Check for single quotes.
-	if s[0] == '\'' && s[len(s)-1] == '\'' {
-		return s[1 : len(s)-1]
-	}
-	return s
 }
