@@ -382,9 +382,7 @@ func (transient) Resolve(in *Injector, provider any, slot any) (any, error) {
 	return provide(in, provider, slot)
 }
 
-func provide(in *Injector, provider any, slot any) (any, error) {
-	var instance any
-	var err error
+func provide(in *Injector, provider any, slot any) (instance any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			err = fmt.Errorf(
@@ -403,7 +401,7 @@ func provide(in *Injector, provider any, slot any) (any, error) {
 		err = out[1].Interface().(error)
 	}
 
-	return instance, err
+	return
 }
 
 // Transient returns a Resolver that creates a new instance on every call.
