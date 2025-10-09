@@ -311,26 +311,35 @@ func (s *Set) Usage() string {
 		fmt.Fprintf(&b, "%s\n\n", s.sum)
 	}
 	fmt.Fprintf(&b, "Options:\n")
+	type line struct {
+		keys string
+		desc string
+	}
+
+	lines := make([]line, 0, len(s.flags)+1)
 	all := append(s.flags, &flag{
 		long: "help",
 		desc: "Display this help message and exit",
 	})
-	offset := 0
+
+	off := 0
 	for _, f := range all {
-		l := len(s.format(f))
-		if l > offset {
-			offset = l
+		keys := s.format(f)
+		if len(keys) > off {
+			off = len(keys)
 		}
-	}
-	for _, f := range all {
-		names := s.format(f)
-		space := strings.Repeat(" ", offset-len(names)+2)
 		desc := f.desc
-		if def := s.formatDefault(f); def != "" {
-			desc += " " + def
+		if f.def != nil && !reflect.ValueOf(f.def).IsZero() {
+			desc += fmt.Sprintf(" (default: %v)", f.def)
 		}
-		fmt.Fprintf(&b, "  %s%s%s\n", names, space, desc)
+		lines = append(lines, line{keys, desc})
 	}
+
+	for _, line := range lines {
+		pad := strings.Repeat(" ", off-len(line.keys)+2)
+		fmt.Fprintf(&b, "  %s%s%s\n", line.keys, pad, line.desc)
+	}
+
 	return b.String()
 }
 
@@ -350,20 +359,6 @@ func (s *Set) format(f *flag) string {
 		out += fmt.Sprintf(" [%s]", f.val.Kind())
 	}
 	return out
-}
-
-// formatDefault creates the default value string, like "(default: 8080)".
-// It returns an empty string for zero-value defaults to keep the help concise.
-func (s *Set) formatDefault(f *flag) string {
-	if f.def == nil {
-		return ""
-	}
-	val := reflect.ValueOf(f.def)
-	// Don't show default for zero-values.
-	if val.IsZero() {
-		return ""
-	}
-	return fmt.Sprintf("(default: %v)", f.def)
 }
 
 // std is the default, package-level flag Set.
