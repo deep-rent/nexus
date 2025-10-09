@@ -335,6 +335,54 @@ func TestSet_Parse(t *testing.T) {
 		err := s.Parse([]string{"--help"})
 		require.ErrorIs(t, err, flag.ErrHelp)
 	})
+
+	t.Run("interspersed flags and args", func(t *testing.T) {
+		s := flag.New("test")
+		var verbose bool
+		var foo, bar string
+		s.Add(&verbose, 'v', "verbose", "")
+		s.Arg(&foo, "FOO", "", true)
+		s.Arg(&bar, "BAR", "", true)
+
+		err := s.Parse([]string{"foo", "-v", "bar"})
+		require.NoError(t, err)
+
+		assert.True(t, verbose)
+		assert.Equal(t, "foo", foo)
+		assert.Equal(t, "bar", bar)
+	})
+
+	t.Run("empty string value for flag", func(t *testing.T) {
+		s := flag.New("test")
+		var str = "default"
+		s.Add(&str, 's', "str", "")
+
+		err := s.Parse([]string{"--str", ""})
+		require.NoError(t, err)
+		assert.Equal(t, "", str)
+	})
+
+	t.Run("hyphen as positional argument", func(t *testing.T) {
+		s := flag.New("test")
+		var a, b string
+		s.Arg(&a, "A", "", true)
+		s.Arg(&b, "B", "", true)
+
+		err := s.Parse([]string{"-", "foo"})
+		require.NoError(t, err)
+		assert.Equal(t, "-", a)
+		assert.Equal(t, "foo", b)
+	})
+
+	// t.Run("variadic integer args", func(t *testing.T) {
+	// 	s := flag.New("test")
+	// 	var nums []int
+	// 	s.Arg(&nums, "NUMS", "", false)
+
+	// 	err := s.Parse(strings.Fields("10 '-20' 30"))
+	// 	require.NoError(t, err)
+	// 	assert.Equal(t, []int{10, -20, 30}, nums)
+	// })
 }
 
 func TestSet_Usage(t *testing.T) {
@@ -376,6 +424,15 @@ func TestSet_Usage(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(`QUX\s+Qux description`), out)
 		assert.Contains(t, out, "Options:")
 		assert.Contains(t, out, "-b, --baz")
+	})
+
+	t.Run("usage with bool default true", func(t *testing.T) {
+		s := flag.New("test")
+		var enabled = true
+		s.Add(&enabled, 'e', "enabled", "Is enabled")
+
+		out := s.Usage()
+		assert.Contains(t, out, "(default: true)")
 	})
 }
 
@@ -426,6 +483,21 @@ func TestParse(t *testing.T) {
 		)
 		assert.Contains(t, stderr.String(),
 			"Error: unknown flag --unknown-flag", "should contain specific error",
+		)
+	})
+
+	t.Run("help exit", func(t *testing.T) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
+		cmd.Env = append(os.Environ(), "GO_ENABLE_HELPER_PROCESS=1")
+		cmd.Args = append(cmd.Args, "--", "--help")
+
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		err := cmd.Run()
+		require.NoError(t, err, "process should exit cleanly with code 0")
+
+		assert.Contains(t, stdout.String(),
+			"Usage:", "should print help message to stdout",
 		)
 	})
 }
