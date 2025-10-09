@@ -129,15 +129,24 @@ type Slot[T any] *struct{}
 // services, e.g., by package or feature.
 func NewSlot[T any](keys ...string) Slot[T] {
 	s := new(struct{})
-	tag := "@" + reflect.TypeOf((*T)(nil)).Elem().String()
-	if len(keys) != 0 {
-		tag = strings.Join(keys, ".") + tag
+	t := reflect.TypeOf((*T)(nil)).Elem().String()
+	var tag string
+	if len(keys) == 0 {
+		// Case 1: Unnamed slot, e.g., @string
+		tag = "@" + t
+	} else {
+		// Case 2: Named slot, e.g., a.b.c@int
+		tag = strings.Join(keys, ".") + "@" + t
 	}
 	slots.Store(s, tag)
 	return s
 }
 
 var slots = &sync.Map{}
+
+func Reset() {
+	slots = &sync.Map{}
+}
 
 // Tag returns the pre-formatted debug string for a slot.
 // The tag is of the form "name@type", where "name" is the optional name
@@ -193,6 +202,7 @@ type Injector struct {
 	ctx      context.Context
 	bindings map[any]*binding
 	mu       sync.RWMutex
+	parent   *Injector
 }
 
 // NewInjector creates and returns a new, empty Injector with given options.
@@ -323,10 +333,17 @@ func Override[T any](
 	}
 }
 
+type visitingKey struct{}
+
 // Resolve is a non-generic method to resolve a dependency from a slot.
 // In most cases, the type-safe Use, Optional, or Required functions should be
 // preferred.
 func (in *Injector) Resolve(slot any) (any, error) {
+	if in.parent != nil {
+		// The type assertion is safe because we control proxy creation.
+		visiting := in.ctx.Value(visitingKey{}).(map[any]bool)
+		return in.parent.resolve(slot, visiting)
+	}
 	return in.resolve(slot, make(map[any]bool))
 }
 
@@ -340,8 +357,6 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	}
 
 	visiting[slot] = true
-	defer delete(visiting, slot)
-
 	in.mu.RLock()
 	b, ok := in.bindings[slot]
 	in.mu.RUnlock()
@@ -350,13 +365,21 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 		return nil, fmt.Errorf("no provider bound for slot %s", Tag(slot))
 	}
 
-	return b.resolver.Resolve(in, b.provider, slot)
+	// Pass the visiting map to the resolver.
+	val, err := b.resolver.Resolve(in, b.provider, slot, visiting)
+	delete(visiting, slot) // Clean up the map on the way back up.
+	return val, err
 }
 
 // Resolver defines a strategy for managing a service's lifecycle.
 type Resolver interface {
 	// Resolve provides an instance of the service.
-	Resolve(in *Injector, provider any, slot any) (any, error)
+	Resolve(
+		in *Injector,
+		provider any,
+		slot any,
+		visiting map[any]bool,
+	) (any, error)
 }
 
 type singleton struct {
@@ -365,8 +388,13 @@ type singleton struct {
 	once     sync.Once
 }
 
-func (s *singleton) Resolve(in *Injector, provider any, slot any) (any, error) {
-	s.once.Do(func() { s.instance, s.err = provide(in, provider, slot) })
+func (s *singleton) Resolve(
+	in *Injector,
+	provider any,
+	slot any,
+	visiting map[any]bool,
+) (any, error) {
+	s.once.Do(func() { s.instance, s.err = provide(in, provider, slot, visiting) })
 	return s.instance, s.err
 }
 
@@ -378,11 +406,21 @@ func Singleton() Resolver {
 
 type transient struct{}
 
-func (transient) Resolve(in *Injector, provider any, slot any) (any, error) {
-	return provide(in, provider, slot)
+func (transient) Resolve(
+	in *Injector,
+	provider any,
+	slot any,
+	visiting map[any]bool,
+) (any, error) {
+	return provide(in, provider, slot, visiting)
 }
 
-func provide(in *Injector, provider any, slot any) (instance any, err error) {
+func provide(
+	in *Injector,
+	provider any,
+	slot any,
+	visiting map[any]bool,
+) (instance any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			err = fmt.Errorf(
@@ -393,8 +431,16 @@ func provide(in *Injector, provider any, slot any) (instance any, err error) {
 		}
 	}()
 
+	// Create a proxy injector for the provider call. This proxy carries the
+	// visiting map within its context. When the provider calls Use/Required,
+	// the proxy's Resolve method is called, which correctly propagates the map.
+	proxy := &Injector{
+		parent: in,
+		ctx:    context.WithValue(in.ctx, visitingKey{}, visiting),
+	}
+
 	val := reflect.ValueOf(provider)
-	out := val.Call([]reflect.Value{reflect.ValueOf(in)})
+	out := val.Call([]reflect.Value{reflect.ValueOf(proxy)})
 	if out[1].IsNil() {
 		instance = out[0].Interface()
 	} else {
@@ -420,7 +466,12 @@ func NewScope(ctx context.Context) context.Context {
 
 type scoped struct{}
 
-func (s scoped) Resolve(in *Injector, provider any, slot any) (any, error) {
+func (s scoped) Resolve(
+	in *Injector,
+	provider any,
+	slot any,
+	visiting map[any]bool,
+) (any, error) {
 	val := in.Context().Value(scopedCacheKey{})
 	cache, ok := val.(*sync.Map)
 	if !ok || cache == nil {
@@ -432,7 +483,7 @@ func (s scoped) Resolve(in *Injector, provider any, slot any) (any, error) {
 	if instance, ok := cache.LoadOrStore(slot, nil); ok && instance != nil {
 		return instance, nil
 	}
-	instance, err := provide(in, provider, slot)
+	instance, err := provide(in, provider, slot, visiting)
 	if err != nil {
 		cache.Delete(slot)
 		return nil, err
