@@ -131,6 +131,26 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 	}
 
 	e := rv.Elem()
+
+	switch e.Kind() {
+	case reflect.String,
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64,
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64,
+		reflect.Float32,
+		reflect.Float64,
+		reflect.Bool:
+	default:
+		panic(fmt.Sprintf("unsupported flag type: %s", e.Kind()))
+	}
+
 	f := &flag{
 		val:  e,
 		def:  e.Interface(), // Capture initial value as default.
