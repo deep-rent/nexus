@@ -22,6 +22,7 @@ UserInterfaceState.xcuserstate
 # Go
 .go-version
 /coverage.out
+/cover.out
 /dist/
 /vendor/
 
