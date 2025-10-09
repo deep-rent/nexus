@@ -1,13 +1,14 @@
 // Package flag provides a simple, reflection-based parser for command-line
-// arguments. It offers a streamlined API and support for POSIX/GNU conventions.
+// arguments. It offers a streamlined API with support for POSIX/GNU-style flags
+// and named positional arguments.
 //
 // # Features
 //
 //   - Supports POSIX-style short options (-v) and GNU-style long options
 //     (--verbose).
-//   - Parses grouped short options (-abc) and values attached to short options
+//   - Handles grouped short options (-abc) and values attached to short options
 //     (-p8080).
-//   - Handles space or equals sign separators for long option values
+//   - Recognizes space or equals sign separators for long option values
 //     (--port 8080, --port=8080).
 //   - Toggles boolean flags from their default value when present
 //     (--no-format, --disable).
@@ -77,42 +78,42 @@ import (
 	"text/tabwriter"
 )
 
-// flag holds metadata for a single registered flag.
+// flag holds metadata for a single registered command-line flag.
 type flag struct {
-	val  reflect.Value
-	def  any
-	char rune
-	name string
-	desc string
+	val  reflect.Value // The reflection value of the target variable.
+	def  any           // The default value, captured at registration.
+	char rune          // The shorthand form (e.g., 'v' for -v).
+	name string        // The long-form name (e.g., "verbose" for --verbose).
+	desc string        // The description shown in the help message.
 }
 
-// toggle safely toggles a boolean flag's value from its default.
+// toggle inverts a boolean flag's value from its default.
 func (f *flag) toggle() {
 	def, _ := f.def.(bool)
 	f.val.SetBool(!def)
 }
 
-// arg holds metadata for a named positional argument.
-type arg struct {
-	val      reflect.Value
-	name     string
-	desc     string
-	required bool
-	variadic bool
+// parg holds metadata for a single registered positional argument.
+type parg struct {
+	val      reflect.Value // The reflection value of the target variable.
+	name     string        // The placeholder name (e.g., "SOURCE").
+	required bool          // True if the argument must be provided.
+	variadic bool          // True if it accepts one or more values.
+	desc     string        // The description shown in the help message.
 }
 
 // Set manages a collection of defined flags for a command.
 type Set struct {
-	cmd   string
-	sum   string
-	flags []*flag
-	char  map[rune]*flag
-	name  map[string]*flag
-	args  []*arg
+	cmd   string           // The command name, used for the help message.
+	sum   string           // A one-line summary of the command's purpose.
+	flags []*flag          // A list of all registered flags.
+	char  map[rune]*flag   // A map from shorthand forms to flags.
+	name  map[string]*flag // A map from long-form names to flags.
+	pargs []*parg          // A list of all registered positional arguments.
 }
 
-// New creates a new, empty flag Set. The cmd name is used in the generated
-// usage message.
+// New creates a new, empty flag Set. The command name is used in the
+// generated usage message (e.g., "Usage: <cmd> [OPTION]...").
 func New(cmd string) *Set {
 	return &Set{
 		cmd:  cmd,
@@ -121,20 +122,26 @@ func New(cmd string) *Set {
 	}
 }
 
-// Summary sets a one-line synopsis for the command, which is displayed
-// in the usage message. If not set, no summary is shown.
+// Summary sets a one-line synopsis for the command, which is displayed in the
+// usage message below the main usage line. If not set or empty, no summary
+// will be shown.
 func (s *Set) Summary(sum string) { s.sum = sum }
 
 // Add registers a new flag with the set. It binds a command-line option to the
-// variable pointed to by v. The variable's initial value is captured as the
-// default. The destination v must be a pointer to a bool, float, int, string,
-// or uint, including their sized variants (e.g., int64).
+// variable pointed to by v. The variable's initial value is captured as its
+// default.
 //
-// The char parameter is the single-letter shorthand name (e.g., 'v' for -v). It
-// can be zero if no short name is desired. The name parameter is the long-form
-// name (e.g., "verbose" for --verbose) and can be empty if no long name is
-// desired. At least one name must be provided. Duplicate names cause the
-// method to panic.
+// The destination v must be a pointer to a bool, float, int, string, or uint,
+// including their sized variants (e.g., int64).
+//
+// The char parameter is the single-letter short name (e.g., 'v' for -v), and
+// can be 0 if no short name is desired. The name parameter is the long name
+// (e.g., "verbose" for --verbose) and can be empty if no long name is desired.
+// At least one name (char or name) must be provided.
+//
+// This method panics if the destination v is not a pointer to a supported type,
+// if a flag with the same name is registered twice, if both char and name
+// are empty, or if name contains only a single character.
 func (s *Set) Add(v any, char rune, name, desc string) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
@@ -179,13 +186,17 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 }
 
 // Arg registers a named positional argument. The destination v must be a
-// pointer to a supported scalar type or a pointer to a slice for a variadic
-// argument. The name is conventionally uppercase (e.g., "SOURCE"). A
-// description is required for the help message.
+// pointer to a supported primitive type or, for a variadic argument, a pointer
+// to a slice of a supported primitive type. The name is conventionally
+// uppercase (e.g., "FILE"). A description is required for the help message.
 //
 // Arguments are parsed in the order they are defined. Required arguments must
-// precede optional ones. A variadic argument must be the last one defined and
-// will consume all remaining command-line arguments.
+// precede optional ones. A variadic argument must be the final argument and
+// will consume all remaining command-line values. For a required variadic
+// argument, at least one value must be provided.
+//
+// This method panics if argument registration rules are violated (e.g.,
+// defining a required argument after an optional one).
 func (s *Set) Arg(v any, name, desc string, required bool) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
@@ -195,8 +206,8 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 	e := rv.Elem()
 	variadic := e.Kind() == reflect.Slice
 
-	if len(s.args) > 0 {
-		last := s.args[len(s.args)-1]
+	if len(s.pargs) > 0 {
+		last := s.pargs[len(s.pargs)-1]
 		if last.variadic {
 			panic("cannot add argument after a variadic argument")
 		}
@@ -216,17 +227,18 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 		}
 	}
 
-	a := &arg{
+	a := &parg{
 		val:      e,
 		name:     strings.ToUpper(name),
 		desc:     desc,
 		required: required,
 		variadic: variadic,
 	}
-	s.args = append(s.args, a)
+	s.pargs = append(s.pargs, a)
 }
 
-// isPrimitive reports whether k is a supported primitive kind for flags/args.
+// isPrimitive reports whether kind k is a supported primitive type for flags
+// and arguments.
 func isPrimitive(k reflect.Kind) bool {
 	switch k {
 	case
@@ -250,7 +262,8 @@ func isPrimitive(k reflect.Kind) bool {
 }
 
 // ErrHelp is a sentinel error returned by Parse when it encounters a help flag.
-// This signals to the caller that a help message should be displayed.
+// This signals to the caller that a help message should be displayed and the
+// program should exit successfully.
 var ErrHelp = errors.New("flag: show help")
 
 // Parse processes command-line arguments, mapping them to their corresponding
@@ -262,16 +275,16 @@ var ErrHelp = errors.New("flag: show help")
 // using the "--" terminator. If no named arguments are defined, any positional
 // arguments are treated as errors.
 func (s *Set) Parse(args []string) error {
-	var pos []string
+	var pargs []string
 	for i := 0; i < len(args); {
 		arg := args[i]
 		if len(arg) > 0 && arg[0] != '-' { // Positional argument
-			pos = append(pos, arg)
+			pargs = append(pargs, arg)
 			i++
 			continue
 		}
 		if len(arg) < 2 { // Handle "-" as a positional argument
-			pos = append(pos, arg)
+			pargs = append(pargs, arg)
 			i++
 			continue
 		}
@@ -282,7 +295,7 @@ func (s *Set) Parse(args []string) error {
 		)
 		if strings.HasPrefix(arg, "--") {
 			if len(arg) == 2 { // End of flags marker "--"
-				pos = append(pos, args[i+1:]...)
+				pargs = append(pargs, args[i+1:]...)
 				break // Stop flag parsing
 			}
 			if arg == "--help" {
@@ -298,53 +311,54 @@ func (s *Set) Parse(args []string) error {
 		i += k
 	}
 	// If named arguments are defined, consume the positional args.
-	if len(s.args) > 0 {
-		return s.parseArgs(pos)
+	if len(s.pargs) > 0 {
+		return s.consume(pargs)
 	}
 	// If no named arguments are defined, any positional args are an error.
-	if len(pos) > 0 {
-		return fmt.Errorf("unexpected positional arguments: %v", pos)
+	if len(pargs) > 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", pargs)
 	}
 	return nil
 }
 
-// parseArgs consumes the positional arguments based on configured rules.
-func (s *Set) parseArgs(pos []string) error {
-	for _, a := range s.args {
+// consume reads positional arguments based on configured rules.
+func (s *Set) consume(pargs []string) error {
+	for _, a := range s.pargs {
 		if a.variadic {
-			if a.required && len(pos) == 0 {
+			if a.required && len(pargs) == 0 {
 				return fmt.Errorf("missing required argument <%s>", a.name)
 			}
-			if err := s.setSlice(a.val, pos); err != nil {
+			if err := s.setSlice(a.val, pargs); err != nil {
 				return fmt.Errorf(
 					"invalid value for variadic argument %s: %w", a.name, err,
 				)
 			}
-			pos = nil // All arguments consumed.
+			pargs = nil // All arguments consumed.
 			break
 		}
 
-		if len(pos) == 0 {
+		if len(pargs) == 0 {
 			if a.required {
 				return fmt.Errorf("missing required argument <%s>", a.name)
 			}
 			break
 		}
-		if err := s.setValue(a.val, pos[0]); err != nil {
+		if err := s.setValue(a.val, pargs[0]); err != nil {
 			return fmt.Errorf("invalid value for argument %s: %w", a.name, err)
 		}
-		pos = pos[1:]
+		pargs = pargs[1:]
 	}
 
-	if len(pos) > 0 {
-		return fmt.Errorf("too many arguments: %v", pos)
+	if len(pargs) > 0 {
+		return fmt.Errorf("too many arguments: %v", pargs)
 	}
 
 	return nil // Success
 }
 
-// parseChar handles abbreviated flags (e.g., -v, -abc, -p8080).
-// It returns the number of arguments consumed and any error encountered.
+// parseChar handles abbreviated flags such as -v, -abc, or -p8080.
+// It returns the number of arguments consumed from the input slice and any
+// error that occurred along the way.
 func (s *Set) parseChar(args []string, i int) (int, error) {
 	arg := args[i]
 	grp := strings.TrimPrefix(arg, "-")
@@ -355,12 +369,13 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 			return 0, fmt.Errorf("unknown flag -%c", char)
 		}
 
+		// Value is a boolean flag.
 		if f.val.Kind() == reflect.Bool {
 			f.toggle()
 			continue
 		}
 
-		// The value can be the rest of the string or the next argument.
+		// Value is attached (e.g., -p8080). It's the rest of the group.
 		val := grp[j+1:]
 		if val != "" {
 			// Value is attached (e.g., -p8080)
@@ -370,6 +385,7 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 			return 1, nil
 		}
 
+		// Value is the next argument.
 		i++
 		if i >= len(args) {
 			return 0, fmt.Errorf("flag -%c requires a value", char)
@@ -383,20 +399,23 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 	return 1, nil
 }
 
-// parseName handles a named flag (e.g., --verbose, --port=8080).
-// It returns the number of arguments consumed and any error encountered.
+// parseChar handles long-form flags such as --verbose or --port=8080.
+// It returns the number of arguments consumed from the input slice and any
+// error that occurred along the way.
 func (s *Set) parseName(args []string, i int) (int, error) {
 	arg := args[i]
-	key, val, found := strings.Cut(arg[2:], "=")
+	key, val, hasValue := strings.Cut(arg[2:], "=")
 
 	f := s.name[key]
 	if f == nil {
 		return 0, fmt.Errorf("unknown flag --%s", key)
 	}
 
+	// Handle boolean flags, which don't require a value.
 	if f.val.Kind() == reflect.Bool {
 		f.toggle()
-		if found {
+		// Allow explicit override like --verbose=false.
+		if hasValue {
 			b, err := strconv.ParseBool(val)
 			if err != nil {
 				return 0, fmt.Errorf("expected boolean for flag --%s, got %q", key, val)
@@ -406,7 +425,7 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 		return 1, nil
 	}
 
-	if !found {
+	if !hasValue {
 		i++
 		if i >= len(args) {
 			return 0, fmt.Errorf("flag --%s requires a value", key)
@@ -418,7 +437,7 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 		return 0, fmt.Errorf("invalid value for flag --%s: %w", key, err)
 	}
 
-	if found {
+	if hasValue {
 		return 1, nil
 	}
 	return 2, nil
@@ -489,14 +508,16 @@ func (s *Set) setSlice(src reflect.Value, vals []string) error {
 	return nil
 }
 
-// Usage generates a formatted help message, detailing all registered flags,
-// their types, descriptions, and default values.
+// Usage generates a formatted help message detailing all registered flags and
+// arguments. The output includes the command summary, argument descriptions,
+// and a list of options with their descriptions and default values (if not
+// the zero value for their type).
 func (s *Set) Usage() string {
 	var b strings.Builder
 
 	// Build the main usage line, including named arguments.
 	var args []string
-	for _, a := range s.args {
+	for _, a := range s.pargs {
 		if a.variadic {
 			args = append(args, fmt.Sprintf("[%s]...", a.name))
 		} else if a.required {
@@ -519,9 +540,9 @@ func (s *Set) Usage() string {
 
 	w := tabwriter.NewWriter(&b, 0, 0, 3, ' ', 0)
 
-	if len(s.args) > 0 {
+	if len(s.pargs) > 0 {
 		fmt.Fprint(&b, "Arguments:\n")
-		for _, a := range s.args {
+		for _, a := range s.pargs {
 			fmt.Fprintf(w, "  %s\t%s\n", a.name, a.desc)
 		}
 		w.Flush() // Align both, the argument and the option columns
@@ -529,6 +550,8 @@ func (s *Set) Usage() string {
 	}
 
 	fmt.Fprintf(&b, "Options:\n")
+
+	// Add the implicit --help flag for documentation.
 	all := append(s.flags, &flag{
 		name: "help",
 		desc: "Display this help message and exit",
@@ -573,28 +596,28 @@ func (s *Set) Usage() string {
 // std is the default, package-level flag Set.
 var std = New(filepath.Base(os.Args[0]))
 
-// Summary sets a one-line description for the command on the default Set.
-// See Set.Summary for more details.
+// Summary sets the command summary on the default Set. See (*Set).Summary
+// for more details.
 func Summary(sum string) { std.Summary(sum) }
 
-// Add registers a flag with the default Set.
-// See Set.Add for more details.
+// Add registers a flag with the default Set. See (*Set).Add for more details.
 func Add(v any, char rune, name, desc string) {
 	std.Add(v, char, name, desc)
 }
 
-// Arg registers a named positional argument with the default Set.
-// See Set.Arg for more details.
+// Arg registers a positional argument with the default Set. See (*Set).Arg
+// for more details.
 func Arg(v any, name, desc string, required bool) {
 	std.Arg(v, name, desc, required)
 }
 
-// Parse processes command-line arguments from os.Args using the default Set.
-// It returns the unconsumed positional arguments (which is typically an empty
-// slice if named arguments are defined and parsing is successful).
+// Parse processes command-line arguments from os.Args[1:] based on the
+// default Set.
 //
-// On a parsing error or if the --help flag is used, this function prints a
-// message to the console and exits the program.
+// On a parsing error, it prints an error message and the usage help to
+// standard error, then exits the program with a non-zero status code. If the
+// --help flag is used, it prints the usage help to standard output and exits
+// with a zero status code.
 func Parse() {
 	err := std.Parse(os.Args[1:])
 	if err == nil {
@@ -614,5 +637,5 @@ func Parse() {
 }
 
 // Usage prints the help message for the default Set to standard output.
-// See Set.Usage for more details.
+// See (*Set).Usage for more details.
 func Usage() { fmt.Fprint(os.Stdout, std.Usage()) }
