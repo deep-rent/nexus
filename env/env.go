@@ -312,8 +312,7 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		}
 
 		// Check for true embedded structs.
-		if ft.Type.Kind() == reflect.Struct &&
-			!isUnmarshalable(fv) && ft.Type != typeTime && ft.Type != typeURL {
+		if isEmbedded(ft, fv) {
 			nested := prefix
 			if opts.Prefix != nil {
 				nested += *opts.Prefix
@@ -349,19 +348,9 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 }
 
 func setValue(rv reflect.Value, v string, opts flags) error {
-	// Case 1: The field's type directly implements Unmarshaler.
-	// This works for pointer types (e.g., *reverse) or value types with
-	// value receivers.
-	if rv.Type().Implements(typeUnmarshaler) {
-		if rv.Kind() == reflect.Pointer && rv.IsNil() {
-			rv.Set(reflect.New(rv.Type().Elem()))
-		}
-		return rv.Interface().(Unmarshaler).UnmarshalEnv(v)
-	}
-	// Case 2: A pointer to the field's type implements Unmarshaler.
-	// This works for value types with pointer receivers (e.g., reverse).
-	if rv.CanAddr() && rv.Addr().Type().Implements(typeUnmarshaler) {
-		return rv.Addr().Interface().(Unmarshaler).UnmarshalEnv(v)
+	if u, ok := asUnmarshaler(rv); ok {
+		// Use the custom unmarshaler if available.
+		return u.UnmarshalEnv(v)
 	}
 	rv = deref(rv)
 	switch rv.Type() {
@@ -648,29 +637,71 @@ func parse(s string) (opts flags, err error) {
 	return opts, nil
 }
 
-// isUnmarshalable checks if a type implements the Unmarshaler interface.
-func isUnmarshalable(v reflect.Value) bool {
-	// A value can only satisfy an interface if it's addressable,
-	// so we check if a pointer to the value's type implements it.
-	return v.CanAddr() && reflect.PointerTo(v.Type()).Implements(typeUnmarshaler)
-}
-
 // deref follows pointers until it reaches a non-pointer, allocating if nil.
 // If an un-settable nil pointer is encountered (e.g., a nil pointer inside
 // an unexported field of a struct), the function stops dereferencing and
 // returns the non-settable nil pointer to prevent a panic.
-func deref(v reflect.Value) reflect.Value {
+func deref(rv reflect.Value) reflect.Value {
 	// Loop through multi-level pointers to handle cases like **int.
-	for v.Kind() == reflect.Pointer {
-		if v.IsNil() {
-			if !v.CanSet() {
+	for rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			if !rv.CanSet() {
 				break
 			}
-			v.Set(reflect.New(v.Type().Elem()))
+			alloc(rv)
 		}
-		v = v.Elem()
+		rv = rv.Elem()
 	}
-	return v
+	return rv
+}
+
+// alloc allocates a new value for a nil pointer.
+func alloc(rv reflect.Value) {
+	rv.Set(reflect.New(rv.Type().Elem()))
+}
+
+// isEmbedded checks if a struct field is a true embedded struct that should
+// be processed recursively.
+func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
+	// A field is an embedded struct to be recursed into if:
+	// 1. It is a struct.
+	if f.Type.Kind() != reflect.Struct {
+		return false
+	}
+	// 2. It is not one of the special struct types we handle directly.
+	if f.Type == typeTime || f.Type == typeURL {
+		return false
+	}
+	// 3. It does NOT implement the Unmarshaler interface.
+	if _, ok := asUnmarshaler(rv); ok {
+		return false
+	}
+	// If all checks pass, it's a struct we should recurse into.
+	return true
+}
+
+// asUnmarshaler checks if the given reflect.Value implements the Unmarshaler
+// interface, either directly or via a pointer receiver. If it does, the
+// function returns the type-casted Unmarshaler and true. Otherwise, it returns
+// nil and false.
+func asUnmarshaler(rv reflect.Value) (Unmarshaler, bool) {
+	// Case 1: The field's type directly implements Unmarshaler.
+	// This works for pointer types (e.g., *reverse) or value types with
+	// value receivers.
+	if rv.Type().Implements(typeUnmarshaler) {
+		if rv.Kind() == reflect.Pointer && rv.IsNil() {
+			// If it's a nil pointer, we must allocate it to prevent a panic
+			// when calling the interface method on the nil receiver.
+			alloc(rv)
+		}
+		return rv.Interface().(Unmarshaler), true
+	}
+	// Case 2: A pointer to the field's type implements Unmarshaler.
+	// This works for value types with pointer receivers (e.g., reverse).
+	if rv.CanAddr() && rv.Addr().Type().Implements(typeUnmarshaler) {
+		return rv.Addr().Interface().(Unmarshaler), true
+	}
+	return nil, false
 }
 
 // unquote removes a single layer of surrounding single or double quotes from a
