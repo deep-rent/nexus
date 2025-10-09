@@ -10,6 +10,7 @@
 //     (-p8080).
 //   - Recognizes space or equals sign separators for long option values
 //     (--port 8080, --port=8080).
+//   - Allows repeatable flags that append to slice variables.
 //   - Toggles boolean flags from their default value when present
 //     (--no-format, --disable).
 //   - Generates an automatic help message for the --help flag.
@@ -78,13 +79,24 @@ import (
 	"text/tabwriter"
 )
 
-// flag holds metadata for a single registered command-line flag.
+// flag encapsulates metadata for a single registered command-line flag.
 type flag struct {
-	val  reflect.Value // The reflection value of the target variable.
-	def  any           // The default value, captured at registration.
-	char rune          // The shorthand form (e.g., 'v' for -v).
-	name string        // The long-form name (e.g., "verbose" for --verbose).
-	desc string        // The description shown in the help message.
+	val      reflect.Value // The reflection value of the target variable.
+	def      any           // The default value, captured at registration.
+	char     rune          // The shorthand form (e.g., 'v' for -v).
+	name     string        // The long-form name (e.g., "verbose" for --verbose).
+	desc     string        // The description shown in the help message.
+	repeated bool          // True if the flag accepts multiple values.
+}
+
+// set sets the flag's value from a string, handling both single and
+// repeated flags.
+func (f *flag) set(v string) error {
+	if f.repeated {
+		return addRepeated(f.val, v)
+	} else {
+		return setValue(f.val, v)
+	}
 }
 
 // toggle inverts a boolean flag's value from its default.
@@ -93,14 +105,17 @@ func (f *flag) toggle() {
 	f.val.SetBool(!def)
 }
 
-// parg holds metadata for a single registered positional argument.
+// parg encapsulates metadata for a single registered positional argument.
 type parg struct {
 	val      reflect.Value // The reflection value of the target variable.
 	name     string        // The placeholder name (e.g., "SOURCE").
+	desc     string        // The description shown in the help message.
 	required bool          // True if the argument must be provided.
 	variadic bool          // True if it accepts one or more values.
-	desc     string        // The description shown in the help message.
 }
+
+// set sets the argument's value from a string.
+func (a *parg) set(v string) error { return setValue(a.val, v) }
 
 // Set manages a collection of defined flags for a command.
 type Set struct {
@@ -132,7 +147,8 @@ func (s *Set) Summary(sum string) { s.sum = sum }
 // default.
 //
 // The destination v must be a pointer to a bool, float, int, string, uint, or
-// complex including their sized variants (e.g., int64).
+// complex including their sized variants (e.g., int64). If v is a slice, the
+// flag can be repeated multiple times to append values in order.
 //
 // The char parameter is the single-letter short name (e.g., 'v' for -v), and
 // can be 0 if no short name is desired. The name parameter is the long name
@@ -165,16 +181,24 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 	}
 
 	e := rv.Elem()
-	if kind := e.Kind(); !isPrimitive(kind) {
-		panic(fmt.Sprintf("unsupported flag type: %s", kind))
+	repeated := e.Kind() == reflect.Slice
+	if repeated {
+		if kind := e.Type().Elem().Kind(); !isPrimitive(kind) {
+			panic(fmt.Sprintf("unsupported repeatable flag type: []%s", kind))
+		}
+	} else {
+		if kind := e.Kind(); !isPrimitive(kind) {
+			panic(fmt.Sprintf("unsupported flag type: %s", kind))
+		}
 	}
 
 	f := &flag{
-		val:  e,
-		def:  e.Interface(), // Capture initial value as default.
-		char: char,
-		name: name,
-		desc: desc,
+		val:      e,
+		def:      e.Interface(), // Capture initial value as default.
+		char:     char,
+		name:     name,
+		desc:     desc,
+		repeated: repeated,
 	}
 	s.flags = append(s.flags, f)
 	if char != 0 {
@@ -203,9 +227,6 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 		panic("argument destination must be a pointer")
 	}
 
-	e := rv.Elem()
-	variadic := e.Kind() == reflect.Slice
-
 	if len(s.pargs) > 0 {
 		last := s.pargs[len(s.pargs)-1]
 		if last.variadic {
@@ -215,6 +236,9 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 			panic("required arguments must be defined before optional ones")
 		}
 	}
+
+	e := rv.Elem()
+	variadic := e.Kind() == reflect.Slice
 
 	if variadic {
 		if kind := e.Type().Elem().Kind(); !isPrimitive(kind) {
@@ -288,7 +312,7 @@ func (s *Set) Parse(args []string) error {
 	}
 	// If named arguments are defined, consume the positional args.
 	if len(s.pargs) > 0 {
-		return s.consume(pargs)
+		return s.parseArgs(pargs)
 	}
 	// If no named arguments are defined, any positional args are an error.
 	if len(pargs) > 0 {
@@ -297,8 +321,8 @@ func (s *Set) Parse(args []string) error {
 	return nil
 }
 
-// consume reads positional arguments based on configured rules.
-func (s *Set) consume(pargs []string) error {
+// parseArgs consumes positional arguments based on configured rules.
+func (s *Set) parseArgs(pargs []string) error {
 	for _, a := range s.pargs {
 		if a.variadic {
 			if a.required && len(pargs) == 0 {
@@ -319,7 +343,7 @@ func (s *Set) consume(pargs []string) error {
 			}
 			break
 		}
-		if err := parse(a.val, pargs[0]); err != nil {
+		if err := a.set(pargs[0]); err != nil {
 			return fmt.Errorf("invalid value for argument %s: %w", a.name, err)
 		}
 		pargs = pargs[1:]
@@ -345,8 +369,8 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 			return 0, fmt.Errorf("unknown flag -%c", char)
 		}
 
-		// Value is a boolean flag.
-		if f.val.Kind() == reflect.Bool {
+		// Handle non-slice booleans separately.
+		if f.val.Kind() == reflect.Bool && !f.repeated {
 			f.toggle()
 			continue
 		}
@@ -355,7 +379,7 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 		val := grp[j+1:]
 		if val != "" {
 			// Value is attached (e.g., -p8080)
-			if err := parse(f.val, val); err != nil {
+			if err := f.set(val); err != nil {
 				return 0, fmt.Errorf("invalid value for flag -%c: %w", char, err)
 			}
 			return 1, nil
@@ -366,7 +390,7 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 		if i >= len(args) {
 			return 0, fmt.Errorf("flag -%c requires a value", char)
 		}
-		if err := parse(f.val, args[i]); err != nil {
+		if err := f.set(args[i]); err != nil {
 			return 0, fmt.Errorf("invalid value for flag -%c: %w", char, err)
 		}
 		return 2, nil
@@ -375,45 +399,43 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 	return 1, nil
 }
 
-// parseChar handles long-form flags such as --verbose or --port=8080.
+// parseName handles long-form flags such as --verbose or --port=8080.
 // It returns the number of arguments consumed from the input slice and any
 // error that occurred along the way.
 func (s *Set) parseName(args []string, i int) (int, error) {
 	arg := args[i]
-	key, val, hasValue := strings.Cut(arg[2:], "=")
+	k, v, pair := strings.Cut(arg[2:], "=")
 
-	f := s.name[key]
+	f := s.name[k]
 	if f == nil {
-		return 0, fmt.Errorf("unknown flag --%s", key)
+		return 0, fmt.Errorf("unknown flag --%s", k)
 	}
 
 	// Handle boolean flags, which don't require a value.
-	if f.val.Kind() == reflect.Bool {
+	if f.val.Kind() == reflect.Bool && !f.repeated {
 		f.toggle()
 		// Allow explicit override like --verbose=false.
-		if hasValue {
-			b, err := strconv.ParseBool(val)
+		if pair {
+			b, err := strconv.ParseBool(v)
 			if err != nil {
-				return 0, fmt.Errorf("expected bool for flag --%s, got %q", key, val)
+				return 0, fmt.Errorf("expected bool for flag --%s, got %q", k, v)
 			}
-			f.val.SetBool(b) // Allow explicit override
+			f.val.SetBool(b)
 		}
 		return 1, nil
 	}
 
-	if !hasValue {
+	if !pair {
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag --%s requires a value", key)
+			return 0, fmt.Errorf("flag --%s requires a value", k)
 		}
-		val = args[i]
+		v = args[i]
 	}
-
-	if err := parse(f.val, val); err != nil {
-		return 0, fmt.Errorf("invalid value for flag --%s: %w", key, err)
+	if err := f.set(v); err != nil {
+		return 0, fmt.Errorf("invalid value for flag --%s: %w", k, err)
 	}
-
-	if hasValue {
+	if pair {
 		return 1, nil
 	}
 	return 2, nil
@@ -428,7 +450,7 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 //
 // Failure to satisfy these preconditions will result in a runtime panic or
 // an error.
-func parse(rv reflect.Value, v string) error {
+func setValue(rv reflect.Value, v string) error {
 	switch kind := rv.Kind(); kind {
 	case reflect.String:
 		rv.SetString(v)
@@ -487,18 +509,25 @@ func parse(rv reflect.Value, v string) error {
 	}
 }
 
-// setVariadic populates a slice from a slice of variadic string arguments.
+// addRepeated parses and appends a repeated flag value to a slice.
+func addRepeated(rv reflect.Value, v string) error {
+	item := reflect.New(rv.Type().Elem()).Elem()
+	if err := setValue(item, v); err != nil {
+		return err
+	}
+	rv.Set(reflect.Append(rv, item))
+	return nil
+}
+
+// setVariadic populates a slice with variadic argument values.
 func setVariadic(rv reflect.Value, vs []string) error {
-	typ := rv.Type()
-	dst := reflect.MakeSlice(typ, 0, len(vs))
+	// Clear the slice first, in case it had default values from registration.
+	rv.Set(reflect.MakeSlice(rv.Type(), 0, len(vs)))
 	for i, v := range vs {
-		e := reflect.New(typ.Elem()).Elem()
-		if err := parse(e, v); err != nil {
+		if err := addRepeated(rv, v); err != nil {
 			return fmt.Errorf("invalid variadic argument at index %d: %w", i, err)
 		}
-		dst = reflect.Append(dst, e)
 	}
-	rv.Set(dst)
 	return nil
 }
 
@@ -575,6 +604,9 @@ func (s *Set) Usage() string {
 		// }
 
 		desc := f.desc
+		if f.repeated {
+			desc += " (repeatable)"
+		}
 		// Only show default value if it's not the zero value for its type.
 		if f.def != nil && !reflect.ValueOf(f.def).IsZero() {
 			desc += fmt.Sprintf(" (default: %v)", f.def)
@@ -587,22 +619,23 @@ func (s *Set) Usage() string {
 	return b.String()
 }
 
-// std is the default, package-level flag Set.
-var std = New(filepath.Base(os.Args[0]))
+// commandLine is the default, package-level flag Set. The top-level functions
+// such as Add, Arg, Parse and so forth operate on this instance.
+var commandLine *Set
 
-// Summary sets the command summary on the default Set. See (*Set).Summary
-// for more details.
-func Summary(sum string) { std.Summary(sum) }
+func init() { Reset() }
 
-// Add registers a flag with the default Set. See (*Set).Add for more details.
+// Summary sets the command summary on the default Set.
+func Summary(sum string) { commandLine.Summary(sum) }
+
+// Add registers a flag with the default Set.
 func Add(v any, char rune, name, desc string) {
-	std.Add(v, char, name, desc)
+	commandLine.Add(v, char, name, desc)
 }
 
-// Arg registers a positional argument with the default Set. See (*Set).Arg
-// for more details.
+// Arg registers a positional argument with the default Set.
 func Arg(v any, name, desc string, required bool) {
-	std.Arg(v, name, desc, required)
+	commandLine.Arg(v, name, desc, required)
 }
 
 // Parse processes command-line arguments from os.Args[1:] based on the
@@ -613,7 +646,7 @@ func Arg(v any, name, desc string, required bool) {
 // --help flag is used, it prints the usage help to standard output and exits
 // with a zero status code.
 func Parse() {
-	err := std.Parse(os.Args[1:])
+	err := commandLine.Parse(os.Args[1:])
 	if err == nil {
 		return
 	}
@@ -626,13 +659,19 @@ func Parse() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 		w = os.Stderr
 	}
-	fmt.Fprint(w, std.Usage())
+	fmt.Fprint(w, commandLine.Usage())
 	os.Exit(code)
 }
 
 // Usage prints the help message for the default Set to standard output.
 // See (*Set).Usage for more details.
-func Usage() { fmt.Fprint(os.Stdout, std.Usage()) }
+func Usage() { fmt.Fprint(os.Stdout, commandLine.Usage()) }
+
+// Reset discards all flags and arguments that have been defined on the default
+// Set. This is intended for use in tests to ensure a clean state.
+func Reset() {
+	commandLine = New(filepath.Base(os.Args[0]))
+}
 
 // isPrimitive reports whether the specified kind is a primitive type.
 func isPrimitive(k reflect.Kind) bool {

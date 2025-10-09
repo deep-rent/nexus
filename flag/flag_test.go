@@ -18,7 +18,7 @@ func TestSet_Add(t *testing.T) {
 		name      string
 		v         any
 		char      rune
-		long      string
+		full      string
 		wantPanic bool
 	}
 	tests := []test{
@@ -26,7 +26,13 @@ func TestSet_Add(t *testing.T) {
 			name: "valid flag",
 			v:    new(string),
 			char: 's',
-			long: "string",
+			full: "string",
+		},
+		{
+			name: "valid repeated flag",
+			v:    new([]string),
+			char: 'r',
+			full: "repeated",
 		},
 		{
 			name:      "non-pointer",
@@ -42,7 +48,7 @@ func TestSet_Add(t *testing.T) {
 		{
 			name:      "single-letter name",
 			v:         new(string),
-			long:      "x",
+			full:      "x",
 			wantPanic: true,
 		},
 	}
@@ -52,11 +58,11 @@ func TestSet_Add(t *testing.T) {
 			s := flag.New("test")
 			if tc.wantPanic {
 				assert.Panics(t, func() {
-					s.Add(tc.v, tc.char, tc.long, "")
+					s.Add(tc.v, tc.char, tc.full, "")
 				})
 			} else {
 				assert.NotPanics(t, func() {
-					s.Add(tc.v, tc.char, tc.long, "")
+					s.Add(tc.v, tc.char, tc.full, "")
 				})
 			}
 		})
@@ -65,13 +71,25 @@ func TestSet_Add(t *testing.T) {
 	t.Run("duplicate short name", func(t *testing.T) {
 		s := flag.New("test")
 		s.Add(new(string), 'f', "foo", "")
-		assert.Panics(t, func() { s.Add(new(string), 'f', "bar", "") })
+		assert.Panics(t, func() {
+			s.Add(new(string), 'f', "bar", "")
+		})
 	})
 
 	t.Run("duplicate long name", func(t *testing.T) {
 		s := flag.New("test")
 		s.Add(new(string), 'f', "foo", "")
-		assert.Panics(t, func() { s.Add(new(string), 'b', "foo", "") })
+		assert.Panics(t, func() {
+			s.Add(new(string), 'b', "foo", "")
+		})
+	})
+
+	t.Run("unsupported repeated flag type", func(t *testing.T) {
+		s := flag.New("test")
+		type Unsupported struct{}
+		assert.Panics(t, func() {
+			s.Add(new([]Unsupported), 'u', "unsupported", "")
+		})
 	})
 }
 
@@ -196,6 +214,41 @@ func TestSet_Parse(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, b)
 		assert.Equal(t, "foo", str)
+	})
+
+	t.Run("repeated flags", func(t *testing.T) {
+		t.Run("multiple long and short flags", func(t *testing.T) {
+			s := flag.New("test")
+			var hosts []string
+			var ports []int
+			s.Add(&hosts, 'h', "host", "")
+			s.Add(&ports, 'p', "port", "")
+
+			err := s.Parse(strings.Fields("-h host1 --host host2 --port=80 -p8080"))
+			require.NoError(t, err)
+			assert.Equal(t, []string{"host1", "host2"}, hosts)
+			assert.Equal(t, []int{80, 8080}, ports)
+		})
+
+		t.Run("appends to default values", func(t *testing.T) {
+			s := flag.New("test")
+			var hosts = []string{"default.host.com"}
+			s.Add(&hosts, 'h', "host", "")
+
+			err := s.Parse(strings.Fields("-h another.host.com"))
+			require.NoError(t, err)
+			assert.Equal(t, []string{"default.host.com", "another.host.com"}, hosts)
+		})
+
+		t.Run("no values provided", func(t *testing.T) {
+			s := flag.New("test")
+			var hosts []string
+			s.Add(&hosts, 'h', "host", "")
+
+			err := s.Parse([]string{})
+			require.NoError(t, err)
+			assert.Nil(t, hosts)
+		})
 	})
 
 	t.Run("terminator", func(t *testing.T) {
@@ -482,6 +535,15 @@ func TestSet_Usage(t *testing.T) {
 		assert.Contains(t, out, "-b, --baz")
 	})
 
+	t.Run("repeated flag usage", func(t *testing.T) {
+		s := flag.New("test")
+		var hosts = []string{"default.host"}
+		s.Add(&hosts, 'h', "host", "Host to connect to")
+
+		out := s.Usage()
+		assert.Contains(t, out, "(repeatable)")
+	})
+
 	t.Run("usage with bool default true", func(t *testing.T) {
 		s := flag.New("test")
 		var enabled = true
@@ -507,12 +569,26 @@ func setupTestFlags() (*int, *string, *bool) {
 }
 
 func TestParse(t *testing.T) {
+	if sub := os.Getenv("GO_TEST_SUBPROCESS_NAME"); sub != "" {
+		switch sub {
+		case "error exit":
+			os.Args = []string{os.Args[0], "--unknown-flag"}
+			setupTestFlags()
+			flag.Parse()
+		case "usage exit":
+			os.Args = []string{os.Args[0], "--help"}
+			setupTestFlags()
+			flag.Parse()
+		}
+		return
+	}
+
 	t.Run("success", func(t *testing.T) {
+		defer flag.Reset()
 		port, host, verb := setupTestFlags()
 
-		args := os.Args
-		defer func() { os.Args = args }()
-
+		original := os.Args
+		defer func() { os.Args = original }()
 		os.Args = []string{"cmd", "-p", "9999", "--verbose", "--host=remote"}
 
 		flag.Parse()
@@ -523,53 +599,34 @@ func TestParse(t *testing.T) {
 	})
 
 	t.Run("error exit", func(t *testing.T) {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
-		cmd.Env = append(os.Environ(), "GO_ENABLE_HELPER_PROCESS=1")
-		cmd.Args = append(cmd.Args, "--", "--unknown-flag")
+		cmd := exec.Command(os.Args[0], "-test.run=^TestParse$")
+		cmd.Env = append(os.Environ(), "GO_TEST_SUBPROCESS_NAME=error exit")
 
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 
-		err, ok := cmd.Run().(*exec.ExitError)
-		require.True(t, ok, "should exit with correct error")
-		assert.Equal(t, 1, err.ExitCode(), "exit code should be 1")
+		err := cmd.Run()
+		exitErr, ok := err.(*exec.ExitError)
+		require.True(t, ok, "command should exit with an error")
+		assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-		assert.Contains(t, stderr.String(),
-			"Usage:", "should print help message to stderr",
-		)
-		assert.Contains(t, stderr.String(),
-			"Error: unknown flag --unknown-flag", "should contain specific error",
-		)
+		out := stderr.String()
+
+		assert.Contains(t, out, "Error:", "should contain specific error")
+		assert.Contains(t, out, "Usage:", "should print help message to stderr")
 	})
 
-	t.Run("help exit", func(t *testing.T) {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
-		cmd.Env = append(os.Environ(), "GO_ENABLE_HELPER_PROCESS=1")
-		cmd.Args = append(cmd.Args, "--", "--help")
+	t.Run("usage exit", func(t *testing.T) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestParse$")
+		cmd.Env = append(os.Environ(), "GO_TEST_SUBPROCESS_NAME=usage exit")
 
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
 		err := cmd.Run()
+
 		require.NoError(t, err, "process should exit cleanly with code 0")
 
-		assert.Contains(t, stdout.String(),
-			"Usage:", "should print help message to stdout",
-		)
+		out := stdout.String()
+		assert.Contains(t, out, "Usage:", "should print help message to stdout")
 	})
-}
-
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_ENABLE_HELPER_PROCESS") != "1" {
-		return
-	}
-	args := os.Args
-	for i, arg := range args {
-		if arg == "--" {
-			args = args[i+1:]
-			break
-		}
-	}
-	os.Args = append([]string{os.Args[0]}, args...)
-	setupTestFlags()
-	flag.Parse()
 }
