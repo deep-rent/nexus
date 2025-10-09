@@ -386,7 +386,7 @@ func setOther(rv reflect.Value, v string, opts flags) error {
 	case reflect.Bool:
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return fmt.Errorf("failed to parse bool %q: %w", v, err)
+			return fmt.Errorf("%q is not a bool", v)
 		}
 		rv.SetBool(b)
 		return nil
@@ -399,7 +399,7 @@ func setOther(rv reflect.Value, v string, opts flags) error {
 		b := rv.Type().Bits()
 		i, err := strconv.ParseInt(v, 10, b)
 		if err != nil {
-			return fmt.Errorf("failed to parse int %q (%d bits): %w", v, b, err)
+			return fmt.Errorf("%q is not an int%d", v, b)
 		}
 		rv.SetInt(i)
 		return nil
@@ -412,7 +412,7 @@ func setOther(rv reflect.Value, v string, opts flags) error {
 		b := rv.Type().Bits()
 		u, err := strconv.ParseUint(v, 10, b)
 		if err != nil {
-			return fmt.Errorf("failed to parse uint %q (%d bits): %w", v, b, err)
+			return fmt.Errorf("%q is not a uint%d", v, b)
 		}
 		rv.SetUint(u)
 		return nil
@@ -420,15 +420,15 @@ func setOther(rv reflect.Value, v string, opts flags) error {
 		b := rv.Type().Bits()
 		f, err := strconv.ParseFloat(v, b)
 		if err != nil {
-			return fmt.Errorf("failed to parse float %q (%d bits): %w", v, b, err)
+			return fmt.Errorf("%q is not a float%d", v, b)
 		}
 		rv.SetFloat(f)
 		return nil
 	case reflect.Complex64, reflect.Complex128:
 		b := rv.Type().Bits()
-		c, err := strconv.ParseComplex(v, b/2)
+		c, err := strconv.ParseComplex(v, b)
 		if err != nil {
-			return fmt.Errorf("failed to parse complex %q (%d bits): %w", v, b, err)
+			return fmt.Errorf("%q is not a complex%d", v, b)
 		}
 		rv.SetComplex(c)
 		return nil
