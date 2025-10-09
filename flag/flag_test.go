@@ -11,11 +11,11 @@ import (
 
 func TestAdd(t *testing.T) {
 	type test struct {
-		name        string
-		v           any
-		short       string
-		long        string
-		shouldPanic bool
+		name      string
+		v         any
+		short     string
+		long      string
+		wantPanic bool
 	}
 	tests := []test{
 		{
@@ -25,28 +25,28 @@ func TestAdd(t *testing.T) {
 			long:  "string",
 		},
 		{
-			name:        "not a pointer",
-			v:           "",
-			short:       "s",
-			shouldPanic: true,
+			name:      "not a pointer",
+			v:         "",
+			short:     "s",
+			wantPanic: true,
 		},
 		{
-			name:        "no name",
-			v:           new(string),
-			shouldPanic: true,
+			name:      "no name",
+			v:         new(string),
+			wantPanic: true,
 		},
 		{
-			name:        "long short name",
-			v:           new(string),
-			short:       "long",
-			shouldPanic: true,
+			name:      "long short name",
+			v:         new(string),
+			short:     "long",
+			wantPanic: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := flag.New("test")
-			if tc.shouldPanic {
+			if tc.wantPanic {
 				assert.Panics(t, func() {
 					s.Add(tc.v, tc.short, tc.long, "")
 				})
@@ -154,7 +154,7 @@ func TestParse(t *testing.T) {
 	})
 
 	t.Run("errors", func(t *testing.T) {
-		testCases := []struct {
+		tests := []struct {
 			name string
 			args string
 		}{
@@ -166,7 +166,7 @@ func TestParse(t *testing.T) {
 			{"invalid bool value", "--bool1=maybe"},
 		}
 
-		for _, tc := range testCases {
+		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				s, _ := setup()
 				err := s.Parse(strings.Fields(tc.args))
