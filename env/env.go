@@ -110,9 +110,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
-	"github.com/deep-rent/nexus/util/camel"
-	"github.com/deep-rent/nexus/util/quote"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -311,7 +308,7 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		key := opts.Name
 		if key == "" {
-			key = camel.SnakeUpper(ft.Name)
+			key = snake(ft.Name)
 		}
 
 		// Check for true embedded structs.
@@ -375,7 +372,70 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 	case typeURL:
 		return setURL(rv, v)
 	default:
-		return setKind(rv, v, opts)
+		return setOther(rv, v, opts)
+	}
+}
+
+// setOther handles all other supported primitive and slice types by delegating
+// to the appropriate parsing logic.
+func setOther(rv reflect.Value, v string, opts flags) error {
+	switch kind := rv.Kind(); kind {
+	case reflect.String:
+		rv.SetString(v)
+		return nil
+	case reflect.Bool:
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("failed to parse bool %q: %w", v, err)
+		}
+		rv.SetBool(b)
+		return nil
+	case
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64:
+		b := rv.Type().Bits()
+		i, err := strconv.ParseInt(v, 10, b)
+		if err != nil {
+			return fmt.Errorf("failed to parse int %q (%d bits): %w", v, b, err)
+		}
+		rv.SetInt(i)
+		return nil
+	case
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64:
+		b := rv.Type().Bits()
+		u, err := strconv.ParseUint(v, 10, b)
+		if err != nil {
+			return fmt.Errorf("failed to parse uint %q (%d bits): %w", v, b, err)
+		}
+		rv.SetUint(u)
+		return nil
+	case reflect.Float32, reflect.Float64:
+		b := rv.Type().Bits()
+		f, err := strconv.ParseFloat(v, b)
+		if err != nil {
+			return fmt.Errorf("failed to parse float %q (%d bits): %w", v, b, err)
+		}
+		rv.SetFloat(f)
+		return nil
+	case reflect.Complex64, reflect.Complex128:
+		b := rv.Type().Bits()
+		c, err := strconv.ParseComplex(v, b/2)
+		if err != nil {
+			return fmt.Errorf("failed to parse complex %q (%d bits): %w", v, b, err)
+		}
+		rv.SetComplex(c)
+		return nil
+	case reflect.Slice:
+		return setSlice(rv, v, opts)
+	default:
+		return fmt.Errorf("unsupported type: %s", kind)
 	}
 }
 
@@ -465,43 +525,6 @@ func setURL(rv reflect.Value, v string) error {
 	return nil
 }
 
-// setKind sets a primite value based on its kind.
-func setKind(rv reflect.Value, v string, opts flags) error {
-	switch rv.Kind() {
-	case reflect.String:
-		rv.SetString(v)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		i, err := strconv.ParseInt(v, 10, rv.Type().Bits())
-		if err != nil {
-			return err
-		}
-		rv.SetInt(i)
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		u, err := strconv.ParseUint(v, 10, rv.Type().Bits())
-		if err != nil {
-			return err
-		}
-		rv.SetUint(u)
-	case reflect.Float32, reflect.Float64:
-		f, err := strconv.ParseFloat(v, rv.Type().Bits())
-		if err != nil {
-			return err
-		}
-		rv.SetFloat(f)
-	case reflect.Bool:
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return err
-		}
-		rv.SetBool(b)
-	case reflect.Slice:
-		return setSlice(rv, v, opts)
-	default:
-		return fmt.Errorf("unsupported type: %v", rv.Type())
-	}
-	return nil
-}
-
 // setSlice parses and sets a slice value. It supports []byte with special
 // encoding formats, as well as other slice types by splitting the input string.
 func setSlice(rv reflect.Value, v string, opts flags) error {
@@ -535,8 +558,7 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 
 	slice := reflect.MakeSlice(rv.Type(), len(parts), len(parts))
 	for i, part := range parts {
-		elem := slice.Index(i)
-		if err := setValue(elem, part, opts); err != nil {
+		if err := setValue(slice.Index(i), part, opts); err != nil {
 			return fmt.Errorf("failed to parse slice element at index %d: %w", i, err)
 		}
 	}
@@ -607,7 +629,7 @@ func parse(s string) (opts flags, err error) {
 			}
 			continue
 		}
-		val = quote.Remove(val)
+		val = unquote(val)
 		switch key {
 		case "format":
 			opts.Format = val
@@ -626,22 +648,75 @@ func parse(s string) (opts flags, err error) {
 	return opts, nil
 }
 
-// deref follows pointers until it reaches a non-pointer, allocating if nil.
-func deref(rv reflect.Value) reflect.Value {
-	// Loop through multi-level pointers to handle cases like **int.
-	for rv.Kind() == reflect.Pointer {
-		if rv.IsNil() {
-			rt := rv.Type().Elem()
-			rv.Set(reflect.New(rt))
-		}
-		rv = rv.Elem()
-	}
-	return rv
-}
-
 // isUnmarshalable checks if a type implements the Unmarshaler interface.
 func isUnmarshalable(v reflect.Value) bool {
 	// A value can only satisfy an interface if it's addressable,
 	// so we check if a pointer to the value's type implements it.
 	return v.CanAddr() && reflect.PointerTo(v.Type()).Implements(typeUnmarshaler)
+}
+
+// deref follows pointers until it reaches a non-pointer, allocating if nil.
+// If an un-settable nil pointer is encountered (e.g., a nil pointer inside
+// an unexported field of a struct), the function stops dereferencing and
+// returns the non-settable nil pointer to prevent a panic.
+func deref(v reflect.Value) reflect.Value {
+	// Loop through multi-level pointers to handle cases like **int.
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			if !v.CanSet() {
+				break
+			}
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
+	return v
+}
+
+// unquote removes a single layer of surrounding single or double quotes from a
+// string. If the string is not quoted or is too short, it is returned
+// unchanged.
+func unquote(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+	// Check for a matching pair of quotes.
+	switch s[0] {
+	case '"':
+		if s[len(s)-1] == '"' {
+			return s[1 : len(s)-1]
+		}
+	case '\'':
+		if s[len(s)-1] == '\'' {
+			return s[1 : len(s)-1]
+		}
+	}
+	// Return the original string if no matching quotes are found.
+	return s
+}
+
+// snake converts a camelCase string to an uppercase SNAKE_CASE string.
+// For example: "myVariable" -> "MY_VARIABLE", "APIService" -> "API_SERVICE".
+func snake(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 5)
+	runes := []rune(s)
+	for i, r := range runes {
+		// Insert an underscore before a capital letter or digit.
+		if i != 0 {
+			q := runes[i-1]
+			if (unicode.IsLower(q) &&
+				// Case 1: Lowercase to uppercase/digit transition ("myVar", "myVar1").
+				(unicode.IsUpper(r) || unicode.IsDigit(r))) ||
+				(unicode.IsUpper(q) &&
+					// Case 2: Acronym to new word transition ("MYVar").
+					unicode.IsUpper(r) &&
+					i+1 < len(runes) &&
+					unicode.IsLower(runes[i+1])) {
+				b.WriteRune('_')
+			}
+		}
+		b.WriteRune(unicode.ToUpper(r))
+	}
+	return b.String()
 }

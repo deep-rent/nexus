@@ -131,8 +131,8 @@ func (s *Set) Summary(sum string) { s.sum = sum }
 // variable pointed to by v. The variable's initial value is captured as its
 // default.
 //
-// The destination v must be a pointer to a bool, float, int, string, or uint,
-// including their sized variants (e.g., int64).
+// The destination v must be a pointer to a bool, float, int, string, uint, or
+// complex including their sized variants (e.g., int64).
 //
 // The char parameter is the single-letter short name (e.g., 'v' for -v), and
 // can be 0 if no short name is desired. The name parameter is the long name
@@ -237,8 +237,7 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 	s.pargs = append(s.pargs, a)
 }
 
-// isPrimitive reports whether kind k is a supported primitive type for flags
-// and arguments.
+// isPrimitive reports whether the specified kind is a primitive type.
 func isPrimitive(k reflect.Kind) bool {
 	switch k {
 	case
@@ -255,7 +254,9 @@ func isPrimitive(k reflect.Kind) bool {
 		reflect.Uint32,
 		reflect.Uint64,
 		reflect.Float32,
-		reflect.Float64:
+		reflect.Float64,
+		reflect.Complex64,
+		reflect.Complex128:
 		return true
 	}
 	return false
@@ -328,7 +329,7 @@ func (s *Set) consume(pargs []string) error {
 			if a.required && len(pargs) == 0 {
 				return fmt.Errorf("missing required argument <%s>", a.name)
 			}
-			if err := s.setSlice(a.val, pargs); err != nil {
+			if err := setSlice(a.val, pargs); err != nil {
 				return fmt.Errorf(
 					"invalid value for variadic argument %s: %w", a.name, err,
 				)
@@ -343,7 +344,7 @@ func (s *Set) consume(pargs []string) error {
 			}
 			break
 		}
-		if err := s.setValue(a.val, pargs[0]); err != nil {
+		if err := parse(a.val, pargs[0]); err != nil {
 			return fmt.Errorf("invalid value for argument %s: %w", a.name, err)
 		}
 		pargs = pargs[1:]
@@ -379,7 +380,7 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 		val := grp[j+1:]
 		if val != "" {
 			// Value is attached (e.g., -p8080)
-			if err := s.setValue(f.val, val); err != nil {
+			if err := parse(f.val, val); err != nil {
 				return 0, fmt.Errorf("invalid value for flag -%c: %w", char, err)
 			}
 			return 1, nil
@@ -390,7 +391,7 @@ func (s *Set) parseChar(args []string, i int) (int, error) {
 		if i >= len(args) {
 			return 0, fmt.Errorf("flag -%c requires a value", char)
 		}
-		if err := s.setValue(f.val, args[i]); err != nil {
+		if err := parse(f.val, args[i]); err != nil {
 			return 0, fmt.Errorf("invalid value for flag -%c: %w", char, err)
 		}
 		return 2, nil
@@ -433,7 +434,7 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 		val = args[i]
 	}
 
-	if err := s.setValue(f.val, val); err != nil {
+	if err := parse(f.val, val); err != nil {
 		return 0, fmt.Errorf("invalid value for flag --%s: %w", key, err)
 	}
 
@@ -443,69 +444,87 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 	return 2, nil
 }
 
-// setValue parses the string value and sets it on the destination variable.
-func (s *Set) setValue(val reflect.Value, value string) error {
-	switch kind := val.Kind(); kind {
-	case reflect.String:
-		val.SetString(value)
-	case reflect.Bool:
-		b, err := strconv.ParseBool(value)
-		if err != nil {
-			return err
-		}
-		val.SetBool(b)
-	case
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		b := val.Type().Bits()
-		i, err := strconv.ParseInt(value, 10, b)
-		if err != nil {
-			return err
-		}
-		val.SetInt(i)
-	case
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64:
-		b := val.Type().Bits()
-		u, err := strconv.ParseUint(value, 10, b)
-		if err != nil {
-			return err
-		}
-		val.SetUint(u)
-	case reflect.Float32, reflect.Float64:
-		b := val.Type().Bits()
-		f, err := strconv.ParseFloat(value, b)
-		if err != nil {
-			return err
-		}
-		val.SetFloat(f)
-	default:
-		// Panicking here is reasonable, as Add and Arg should prevent unsupported
-		// types. This indicates a programming error within the package itself.
-		panic(fmt.Sprintf("unsupported destination type: %s", kind))
-	}
-	return nil
-}
-
 // setSlice populates a slice from a slice of string values.
-func (s *Set) setSlice(src reflect.Value, vals []string) error {
+func setSlice(src reflect.Value, vals []string) error {
 	typ := src.Type()
 	dst := reflect.MakeSlice(typ, 0, len(vals))
 	for _, v := range vals {
 		e := reflect.New(typ.Elem()).Elem()
-		if err := s.setValue(e, v); err != nil {
+		if err := parse(e, v); err != nil {
 			return err
 		}
 		dst = reflect.Append(dst, e)
 	}
 	src.Set(dst)
 	return nil
+}
+
+// Parse attempts to convert string v to the type expected by rv and sets it.
+//
+// Preconditions:
+// 1. rv must be a valid reflect.Value (rv.IsValid() == true).
+// 2. rv must be settable (rv.CanSet() == true).
+// 3. rv must have a Kind for which Is(rv.Kind()) returns true.
+//
+// Failure to satisfy these preconditions will result in a runtime panic or
+// an error.
+func parse(rv reflect.Value, v string) error {
+	switch kind := rv.Kind(); kind {
+	case reflect.String:
+		rv.SetString(v)
+		return nil
+	case reflect.Bool:
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("failed to parse bool %q: %w", v, err)
+		}
+		rv.SetBool(b)
+		return nil
+	case
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64:
+		b := rv.Type().Bits()
+		i, err := strconv.ParseInt(v, 10, b)
+		if err != nil {
+			return fmt.Errorf("failed to parse int %q (%d bits): %w", v, b, err)
+		}
+		rv.SetInt(i)
+		return nil
+	case
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64:
+		b := rv.Type().Bits()
+		u, err := strconv.ParseUint(v, 10, b)
+		if err != nil {
+			return fmt.Errorf("failed to parse uint %q (%d bits): %w", v, b, err)
+		}
+		rv.SetUint(u)
+		return nil
+	case reflect.Float32, reflect.Float64:
+		b := rv.Type().Bits()
+		f, err := strconv.ParseFloat(v, b)
+		if err != nil {
+			return fmt.Errorf("failed to parse float %q (%d bits): %w", v, b, err)
+		}
+		rv.SetFloat(f)
+		return nil
+	case reflect.Complex64, reflect.Complex128:
+		b := rv.Type().Bits()
+		c, err := strconv.ParseComplex(v, b/2)
+		if err != nil {
+			return fmt.Errorf("failed to parse complex %q (%d bits): %w", v, b, err)
+		}
+		rv.SetComplex(c)
+		return nil
+	default:
+		return fmt.Errorf("unsupported type: %s", kind)
+	}
 }
 
 // Usage generates a formatted help message detailing all registered flags and

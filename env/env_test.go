@@ -77,6 +77,14 @@ type TFloat64 struct {
 	V float64
 }
 
+type TComplex64 struct {
+	V complex64
+}
+
+type TComplex128 struct {
+	V complex128
+}
+
 type TURL struct {
 	V url.URL
 }
@@ -310,6 +318,18 @@ func TestUnmarshal(t *testing.T) {
 			vars: map[string]string{"V": "3.14"},
 			in:   &TFloat64{},
 			want: &TFloat64{3.14},
+		},
+		{
+			name: "complex64",
+			vars: map[string]string{"V": "5-2i"},
+			in:   &TComplex64{},
+			want: &TComplex64{complex(5, -2)},
+		},
+		{
+			name: "complex128",
+			vars: map[string]string{"V": "5-2i"},
+			in:   &TComplex64{},
+			want: &TComplex64{complex(5, -2)},
 		},
 		{
 			name: "url",
