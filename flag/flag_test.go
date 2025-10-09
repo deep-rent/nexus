@@ -16,32 +16,32 @@ func TestSet_Add(t *testing.T) {
 	type test struct {
 		name      string
 		v         any
-		short     string
-		long      string
+		abbr      rune
+		full      string
 		wantPanic bool
 	}
 	tests := []test{
 		{
-			name:  "valid flag",
-			v:     new(string),
-			short: "s",
-			long:  "string",
+			name: "valid flag",
+			v:    new(string),
+			abbr: 's',
+			full: "string",
 		},
 		{
-			name:      "not a pointer",
+			name:      "non-pointer",
 			v:         "",
-			short:     "s",
+			abbr:      's',
 			wantPanic: true,
 		},
 		{
-			name:      "no name",
+			name:      "unnamed",
 			v:         new(string),
 			wantPanic: true,
 		},
 		{
-			name:      "long short name",
+			name:      "single-letter name",
 			v:         new(string),
-			short:     "long",
+			full:      "x",
 			wantPanic: true,
 		},
 	}
@@ -51,15 +51,27 @@ func TestSet_Add(t *testing.T) {
 			s := flag.New("test")
 			if tc.wantPanic {
 				assert.Panics(t, func() {
-					s.Add(tc.v, tc.short, tc.long, "")
+					s.Add(tc.v, tc.abbr, tc.full, "")
 				})
 			} else {
 				assert.NotPanics(t, func() {
-					s.Add(tc.v, tc.short, tc.long, "")
+					s.Add(tc.v, tc.abbr, tc.full, "")
 				})
 			}
 		})
 	}
+
+	t.Run("duplicate short name", func(t *testing.T) {
+		s := flag.New("test")
+		s.Add(new(string), 'f', "foo", "")
+		assert.Panics(t, func() { s.Add(new(string), 'f', "bar", "") })
+	})
+
+	t.Run("duplicate long name", func(t *testing.T) {
+		s := flag.New("test")
+		s.Add(new(string), 'f', "foo", "")
+		assert.Panics(t, func() { s.Add(new(string), 'b', "foo", "") })
+	})
 }
 
 func TestSet_Parse(t *testing.T) {
@@ -75,12 +87,12 @@ func TestSet_Parse(t *testing.T) {
 	setup := func() (*flag.Set, *flags) {
 		s := flag.New("test")
 		f := &flags{Int: 99, Str: "default"}
-		s.Add(&f.Str, "s", "str", "")
-		s.Add(&f.Int, "i", "int", "")
-		s.Add(&f.Uint, "u", "uint", "")
-		s.Add(&f.Float64, "f", "float64", "")
-		s.Add(&f.Bool1, "b", "bool1", "")
-		s.Add(&f.Bool2, "d", "bool2", "")
+		s.Add(&f.Str, 's', "str", "")
+		s.Add(&f.Int, 'i', "int", "")
+		s.Add(&f.Uint, 'u', "uint", "")
+		s.Add(&f.Float64, 'f', "float64", "")
+		s.Add(&f.Bool1, 'b', "bool1", "")
+		s.Add(&f.Bool2, 'd', "bool2", "")
 		return s, f
 	}
 
@@ -156,6 +168,26 @@ func TestSet_Parse(t *testing.T) {
 		assert.Equal(t, want, *f)
 	})
 
+	t.Run("bool toggle short", func(t *testing.T) {
+		s := flag.New("test")
+		v := true
+		s.Add(&v, 'b', "", "")
+		args := "-b"
+		err := s.Parse(strings.Fields(args))
+		require.NoError(t, err)
+		assert.False(t, v, "bool flag should be toggled to false")
+	})
+
+	t.Run("bool toggle long", func(t *testing.T) {
+		s := flag.New("test")
+		v := true
+		s.Add(&v, 0, "bool", "")
+		args := "--bool"
+		err := s.Parse(strings.Fields(args))
+		require.NoError(t, err)
+		assert.False(t, v, "bool flag should be toggled to false")
+	})
+
 	t.Run("errors", func(t *testing.T) {
 		tests := []struct {
 			name string
@@ -194,9 +226,9 @@ func TestSet_Usage(t *testing.T) {
 		verb bool
 	)
 	s.Summary("A one-line summary of what the command does.")
-	s.Add(&port, "p", "port", "Port to listen on")
-	s.Add(&host, "h", "host", "Host address to bind to")
-	s.Add(&verb, "v", "verbose", "Enable verbose logging")
+	s.Add(&port, 'p', "port", "Port to listen on")
+	s.Add(&host, 'h', "host", "Host address to bind to")
+	s.Add(&verb, 'v', "verbose", "Enable verbose logging")
 
 	out := s.Usage()
 
@@ -224,9 +256,9 @@ func setupTestFlags() (*int, *string, *bool) {
 	h := "localhost"
 	v := false
 
-	flag.Add(&p, "p", "port", "Port to listen on")
-	flag.Add(&h, "h", "host", "Host address to bind to")
-	flag.Add(&v, "v", "verbose", "Enable verbose logging")
+	flag.Add(&p, 'p', "port", "Port to listen on")
+	flag.Add(&h, 'h', "host", "Host address to bind to")
+	flag.Add(&v, 'v', "verbose", "Enable verbose logging")
 
 	return &p, &h, &v
 }
@@ -264,7 +296,7 @@ func TestParse(t *testing.T) {
 			"Usage:", "should print help message",
 		)
 		assert.Contains(t, stderr.String(),
-			"Error: unknown flag \"--unknown-flag\"", "should contain specific error",
+			"Error: unknown flag --unknown-flag", "should contain specific error",
 		)
 	})
 }

@@ -8,6 +8,11 @@
 // grouped short options (e.g., -abc) and values attached to short options
 // (e.g., -p8080) for POSIX compliance.
 //
+// Values can be specified using either space or equals sign separators for
+// long-form options (e.g., --port 8080 or --port=8080). Boolean flags can be
+// toggled from their default value by simply specifying the flag (e.g., -v or
+// --verbose) without an explicit value.
+//
 // # Usage
 //
 // The core of the package is the Set, which manages a collection of defined
@@ -20,7 +25,7 @@
 //	  var (
 //	    port int    = 8080          // Default value
 //	    host string = "localhost"   // Default value
-//	    verb bool                  // Default is false
+//	    verb bool                   // Default is false
 //	  )
 //
 //	  flag.Summary("A one-line summary of what the command does.")
@@ -62,11 +67,11 @@ import (
 
 // flag holds the metadata for a single registered flag.
 type flag struct {
-	val   reflect.Value
-	def   any // The default value.
-	short string
-	long  string
-	desc  string
+	val  reflect.Value
+	def  any // The default value.
+	char rune
+	name string
+	desc string
 }
 
 // Set manages a collection of defined flags.
@@ -74,11 +79,17 @@ type Set struct {
 	cmd   string
 	sum   string
 	flags []*flag
+	char  map[rune]*flag
+	name  map[string]*flag
 }
 
 // New creates a new, empty flag set. The command is used in the usage message.
 func New(cmd string) *Set {
-	return &Set{cmd: cmd}
+	return &Set{
+		cmd:  cmd,
+		char: make(map[rune]*flag),
+		name: make(map[string]*flag),
+	}
 }
 
 // Summary sets a one-line description for the command, shown in the
@@ -90,31 +101,50 @@ func (s *Set) Summary(sum string) { s.sum = sum }
 // default, if present. The variable must be a pointer to one of the supported
 // types: string, int, uint, float, or bool and their sized variants.
 //
-// The flag must have at least a non-empty short or long name. Short names are
-// single-letter abbreviations (e.g., "v"), while long-form names are more
-// descriptive (e.g., "verbose"). Names are matched case-sensitively. The
-// description provides a brief explanation of the flag's purpose for use in
-// the help message.
-func (s *Set) Add(v any, short, long, desc string) {
-	val := reflect.ValueOf(v)
-	if val.Kind() != reflect.Pointer {
+// Th char parameter is the single-letter abbreviation for the flag (e.g., 'v'
+// for -v). It can be zero if no short name is desired. The name parameter is
+// the long-form name (e.g., "verbose" for --verbose). It can be empty if no
+// long name is desired. At least one of char or name must be provided. Both
+// names are matched case-sensitively. Duplicate names will cause a panic.
+// Additionally, a description should be specified to explain the flag's purpose
+// in the help message.
+func (s *Set) Add(v any, char rune, name, desc string) {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer {
 		panic("flag destination must be a pointer")
 	}
-	if short == "" && long == "" {
-		panic("flag must have at least a short or long name")
+	if char == 0 && len(name) == 0 {
+		panic("flag must be named")
 	}
-	if len(short) > 1 {
-		panic("short name must be a single character")
+	if len(name) == 1 {
+		panic("name must have at least two characters")
 	}
-	elem := val.Elem()
-	m := &flag{
-		val:   elem,
-		def:   elem.Interface(), // Capture initial value as default.
-		short: short,
-		long:  long,
-		desc:  desc,
+	if char != 0 {
+		if _, exists := s.char[char]; exists {
+			panic(fmt.Sprintf("duplicate flag -%c", char))
+		}
 	}
-	s.flags = append(s.flags, m)
+	if name != "" {
+		if _, exists := s.name[name]; exists {
+			panic(fmt.Sprintf("duplicate flag --%s", name))
+		}
+	}
+
+	e := rv.Elem()
+	f := &flag{
+		val:  e,
+		def:  e.Interface(), // Capture initial value as default.
+		char: char,
+		name: name,
+		desc: desc,
+	}
+	s.flags = append(s.flags, f)
+	if char != 0 {
+		s.char[char] = f
+	}
+	if name != "" {
+		s.name[name] = f
+	}
 }
 
 // ErrShowHelp acts as a signal to display a help message and exit successfully
@@ -128,94 +158,70 @@ var ErrShowHelp = errors.New("show help")
 // The args parameter allows feeding in a custom argument slice; if a nil or
 // empty slice is given, the system's input arguments (os.Args) are parsed.
 func (s *Set) Parse(args []string) error {
-	return s.parse(args)
-}
-
-// parse is the main loop that processes the argument slice.
-func (s *Set) parse(args []string) error {
 	for i := 0; i < len(args); {
 		arg := args[i]
 		if len(arg) < 2 || arg[0] != '-' {
 			i++ // Not a flag, advance.
 			continue
 		}
-		if arg == "--" {
-			return nil // End of flags.
-		}
-		if arg == "--help" {
-			return ErrShowHelp
-		}
 		var (
-			skip int
-			err  error
+			k   int
+			err error
 		)
 		if strings.HasPrefix(arg, "--") {
-			skip, err = s.readLong(args, i)
+			if len(arg) == 2 {
+				return nil // End of flags.
+			}
+			if arg == "--help" {
+				return ErrShowHelp
+			}
+			k, err = s.readName(args, i)
 		} else {
-			skip, err = s.read(args, i)
+			k, err = s.readChar(args, i)
 		}
 		if err != nil {
 			return err
 		}
-		i += skip
+		i += k
 	}
 	return nil
 }
 
-// find queries a flag definition by its short name.
-func (s *Set) find(name string) *flag {
-	for _, f := range s.flags {
-		if f.short == name {
-			return f
-		}
-	}
-	return nil
-}
-
-// findLong queries a flag definition by its long name.
-func (s *Set) findLong(name string) *flag {
-	for _, f := range s.flags {
-		if f.long == name {
-			return f
-		}
-	}
-	return nil
-}
-
-// read handles short-form flags (e.g., -v, -abc, -p8080).
+// readChar handles abbreviated flags (e.g., -v, -abc, -p8080).
 // It returns the number of arguments consumed and any error encountered.
-func (s *Set) read(args []string, i int) (int, error) {
+func (s *Set) readChar(args []string, i int) (int, error) {
 	arg := args[i]
-	keys := strings.TrimPrefix(arg, "-")
+	grp := strings.TrimPrefix(arg, "-")
 
-	for j, char := range keys {
-		key := string(char)
-		def := s.find(key)
-		if def == nil {
-			return 0, fmt.Errorf("unknown flag %q in group %q", key, arg)
+	for j, char := range grp {
+		f := s.char[char]
+		if f == nil {
+			return 0, fmt.Errorf("unknown flag -%c", char)
 		}
 
-		if def.val.Kind() == reflect.Bool {
-			def.val.SetBool(true)
-			continue // Continue to next character in the group.
+		if f.val.Kind() == reflect.Bool {
+			// Toggle boolean flags without an explicit value.
+			def, ok := f.def.(bool)
+			f.val.SetBool(ok && !def)
+			continue
 		}
 
 		// The value can be the rest of the string or the next argument.
-		val := keys[j+1:]
+		val := grp[j+1:]
 		if val != "" {
 			// Value is attached (e.g., -p8080)
-			if err := s.setValue(def, val); err != nil {
-				return 0, fmt.Errorf("invalid value for flag %q: %w", key, err)
+			if err := s.setValue(f, val); err != nil {
+				return 0, fmt.Errorf("invalid value for flag -%c: %w", char, err)
 			}
 			return 1, nil
 		}
 
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag %q requires a value", key)
+			return 0, fmt.Errorf("flag -%c requires a value", char)
 		}
-		if err := s.setValue(def, args[i]); err != nil {
-			return 0, fmt.Errorf("invalid value for flag %q: %w", key, err)
+		if err := s.setValue(f, args[i]); err != nil {
+			return 0, fmt.Errorf("invalid value for flag -%c: %w", char, err)
 		}
 		return 2, nil
 	}
@@ -223,40 +229,43 @@ func (s *Set) read(args []string, i int) (int, error) {
 	return 1, nil
 }
 
-// readLong handles a long-form flag (e.g., --verbose, --port=8080).
+// readName handles a named flag (e.g., --verbose, --port=8080).
 // It returns the number of arguments consumed and any error encountered.
-func (s *Set) readLong(args []string, i int) (int, error) {
+func (s *Set) readName(args []string, i int) (int, error) {
 	arg := args[i]
 	key, val, found := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
 
-	def := s.findLong(key)
-	if def == nil {
-		return 0, fmt.Errorf("unknown flag %q", arg)
+	f := s.name[key]
+	if f == nil {
+		return 0, fmt.Errorf("unknown flag %s", arg)
 	}
 
-	if def.val.Kind() == reflect.Bool {
-		b := true
+	if f.val.Kind() == reflect.Bool {
+		var b bool
 		if found {
 			var err error
 			b, err = strconv.ParseBool(val)
 			if err != nil {
-				return 0, fmt.Errorf("expected boolean for flag %q, got %q", arg, val)
+				return 0, fmt.Errorf("expected boolean for flag %s, got %q", arg, val)
 			}
+		} else {
+			b, _ = f.def.(bool)
+			b = !b
 		}
-		def.val.SetBool(b)
+		f.val.SetBool(b)
 		return 1, nil
 	}
 
 	if !found {
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag %q requires a value", arg)
+			return 0, fmt.Errorf("flag %s requires a value", arg)
 		}
 		val = args[i]
 	}
 
-	if err := s.setValue(def, val); err != nil {
-		return 0, fmt.Errorf("invalid value for flag %q: %w", arg, err)
+	if err := s.setValue(f, val); err != nil {
+		return 0, fmt.Errorf("invalid value for flag %s: %w", arg, err)
 	}
 
 	if found {
@@ -293,7 +302,6 @@ func (s *Set) setValue(def *flag, value string) error {
 		}
 		val.SetFloat(f)
 	default:
-		// return fmt.Errorf("unsupported flag type: %s", kind)
 		// Panicking here is reasonable, as Add should prevent unsupported types.
 		// This indicates a programming error within the package itself.
 		panic(fmt.Sprintf("unsupported flag type: %s", kind))
@@ -318,7 +326,7 @@ func (s *Set) Usage() string {
 
 	lines := make([]line, 0, len(s.flags)+1)
 	all := append(s.flags, &flag{
-		long: "help",
+		name: "help",
 		desc: "Display this help message and exit",
 	})
 
@@ -347,15 +355,15 @@ func (s *Set) Usage() string {
 // Example: "-v, --verbose <bool>"
 func (s *Set) format(f *flag) string {
 	var out string
-	if f.short != "" {
-		out = "-" + f.short + ", "
+	if f.char != 0 {
+		out = "-" + string(f.char) + ", "
 	} else {
 		out = "    "
 	}
-	if f.long != "" {
-		out += "--" + f.long
+	if f.name != "" {
+		out += "--" + f.name
 	}
-	if f.long != "help" && f.val.Kind() != reflect.Bool {
+	if f.name != "help" && f.val.Kind() != reflect.Bool {
 		out += fmt.Sprintf(" [%s]", f.val.Kind())
 	}
 	return out
@@ -369,13 +377,17 @@ var std = New(filepath.Base(os.Args[0]))
 func Summary(sum string) { std.Summary(sum) }
 
 // Add registers a flag with the default set.
-func Add(v any, short, long, desc string) { std.Add(v, short, long, desc) }
+//
+// See Set.Add for details.
+func Add(v any, char rune, name, desc string) { std.Add(v, char, name, desc) }
 
 // Parse parses command-line arguments using the default set.
 //
 // This function must be called after all flags have been added. If a --help
 // flag is encountered, it prints the usage message and exits. On error, it
 // prints the error message and exits with a non-zero status code.
+//
+// See Set.Parse for details.
 func Parse() {
 	err := std.Parse(os.Args[1:])
 	if err == nil {
@@ -391,4 +403,6 @@ func Parse() {
 }
 
 // Usage prints the help message for the default set.
+//
+// See Set.Usage for details.
 func Usage() { fmt.Fprint(os.Stdout, std.Usage()) }
