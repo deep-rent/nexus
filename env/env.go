@@ -110,6 +110,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/deep-rent/nexus/util/camel"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -308,7 +310,7 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		key := opts.Name
 		if key == "" {
-			key = toSnake(ft.Name)
+			key = camel.SnakeUpper(ft.Name)
 		}
 
 		// Check for true embedded structs.
@@ -658,28 +660,4 @@ func unquote(s string) string {
 		return s[1 : len(s)-1]
 	}
 	return s
-}
-
-// toSnake converts a camelCase string to an uppercase SNAKE_CASE string.
-func toSnake(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + 5)
-	runes := []rune(s)
-	for i, r := range runes {
-		// Insert an underscore before a capital letter or digit.
-		if i != 0 {
-			prev := runes[i-1]
-			// Case 1: Lowercase to uppercase/digit transition (e.g, "myVar").
-			if unicode.IsLower(prev) && unicode.IsUpper(r) || unicode.IsDigit(r) {
-				b.WriteRune('_')
-			}
-			// Case 2: Acronym to new word transition (e.g., "MYVar").
-			if unicode.IsUpper(prev) && unicode.IsUpper(r) &&
-				i+1 < len(runes) && unicode.IsLower(runes[i+1]) {
-				b.WriteRune('_')
-			}
-		}
-		b.WriteRune(unicode.ToUpper(r))
-	}
-	return b.String()
 }
