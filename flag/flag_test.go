@@ -153,29 +153,55 @@ func TestSet_Arg(t *testing.T) {
 
 func TestSet_Parse(t *testing.T) {
 	t.Run("short flags", func(t *testing.T) {
-		s := flag.New("test")
-		var str string
+		set := flag.New("test")
+		var s string
+		var b bool
 		var i int
-		s.Add(&str, 's', "str", "")
-		s.Add(&i, 'i', "int", "")
+		var u uint
+		var f float32
+		var c complex64
+		set.Add(&s, 's', "", "")
+		set.Add(&b, 'b', "", "")
+		set.Add(&i, 'i', "", "")
+		set.Add(&u, 'u', "", "")
+		set.Add(&f, 'f', "", "")
+		set.Add(&c, 'c', "", "")
 
-		err := s.Parse(strings.Fields("-s foo -i -123"))
+		err := set.Parse(strings.Fields("-s a -b -i 1 -u 2 -f 0.3 -c 4i"))
 		require.NoError(t, err)
-		assert.Equal(t, "foo", str)
-		assert.Equal(t, -123, i)
+		assert.Equal(t, "a", s)
+		assert.Equal(t, true, b)
+		assert.Equal(t, 1, i)
+		assert.Equal(t, uint(2), u)
+		assert.Equal(t, float32(0.3), f)
+		assert.Equal(t, complex64(4i), c)
 	})
 
 	t.Run("long flags", func(t *testing.T) {
-		s := flag.New("test")
-		var str string
+		set := flag.New("test")
+		var s string
+		var b bool
 		var i int
-		s.Add(&str, 's', "str", "")
-		s.Add(&i, 'i', "int", "")
+		var u uint
+		var f float32
+		var c complex64
+		set.Add(&s, 0, "string", "")
+		set.Add(&b, 0, "bool", "")
+		set.Add(&i, 0, "int", "")
+		set.Add(&u, 0, "uint", "")
+		set.Add(&f, 0, "float", "")
+		set.Add(&c, 0, "complex", "")
 
-		err := s.Parse(strings.Fields("--str foo --int -123"))
+		err := set.Parse(strings.Fields(
+			"--string a --bool --int 1 --uint 2 --float 0.3 --complex 4i",
+		))
 		require.NoError(t, err)
-		assert.Equal(t, "foo", str)
-		assert.Equal(t, -123, i)
+		assert.Equal(t, "a", s)
+		assert.Equal(t, true, b)
+		assert.Equal(t, 1, i)
+		assert.Equal(t, uint(2), u)
+		assert.Equal(t, float32(0.3), f)
+		assert.Equal(t, complex64(4i), c)
 	})
 
 	t.Run("long flags with equals sign", func(t *testing.T) {
