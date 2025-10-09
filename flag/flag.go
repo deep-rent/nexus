@@ -292,14 +292,22 @@ func (s *Set) setValue(def *flag, value string) error {
 	switch kind := val.Kind(); kind {
 	case reflect.String:
 		val.SetString(value)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64:
 		b := val.Type().Bits()
 		i, err := strconv.ParseInt(value, 10, b)
 		if err != nil {
 			return err
 		}
 		val.SetInt(i)
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64:
 		b := val.Type().Bits()
 		u, err := strconv.ParseUint(value, 10, b)
 		if err != nil {
