@@ -108,6 +108,20 @@ func TestSet_Arg(t *testing.T) {
 					s.Arg(new(string), "OTHER", "", false)
 				},
 			},
+			{
+				"unsupported type",
+				func(s *flag.Set) {
+					type Unsupported struct{}
+					s.Arg(new(Unsupported), "ANY", "", false)
+				},
+			},
+			{
+				"unsupported variadic type",
+				func(s *flag.Set) {
+					type Unsupported struct{}
+					s.Arg(new([]Unsupported), "VAR", "", false)
+				},
+			},
 		}
 
 		for _, tc := range tests {

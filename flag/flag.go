@@ -205,8 +205,15 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 		}
 	}
 
-	if kind := e.Kind(); !variadic && !isPrimitive(kind) {
-		panic(fmt.Sprintf("unsupported argument type: %s", kind))
+	if variadic {
+		if kind := e.Type().Elem().Kind(); !isPrimitive(kind) {
+			panic(fmt.Sprintf("unsupported variadic argument type: %s", kind))
+		}
+	} else {
+		// For non-slices, check the kind directly.
+		if kind := e.Kind(); !isPrimitive(kind) {
+			panic(fmt.Sprintf("unsupported argument type: %s", kind))
+		}
 	}
 
 	a := &arg{
