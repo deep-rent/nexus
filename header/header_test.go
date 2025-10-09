@@ -237,7 +237,7 @@ func TestCredentials(t *testing.T) {
 		{
 			name:   "case-insensitive scheme",
 			h:      http.Header{"Authorization": {"bearer bar"}},
-			scheme: "bearer",
+			scheme: "BEARER",
 			want:   "bar",
 		},
 		{
