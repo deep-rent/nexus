@@ -100,7 +100,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "-s foo -i -123 -u 456 -f 1.23 -b"
 		want := flags{Str: "foo", Int: -123, Uint: 456, Float64: 1.23, Bool1: true}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -109,7 +109,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "--str foo --int -123 --uint 456 --float64 1.23 --bool1"
 		want := flags{Str: "foo", Int: -123, Uint: 456, Float64: 1.23, Bool1: true}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -118,7 +118,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "--str=foo --int=-123 --uint=456 --float64=1.23 --bool1=true"
 		want := flags{Str: "foo", Int: -123, Uint: 456, Float64: 1.23, Bool1: true}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -127,7 +127,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "-bd"
 		want := flags{Int: 99, Str: "default", Bool1: true, Bool2: true}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -136,7 +136,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "-bsfoo"
 		want := flags{Int: 99, Str: "foo", Bool1: true}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -145,7 +145,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "-i-123"
 		want := flags{Int: -123, Str: "default"}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -154,7 +154,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := ""
 		want := flags{Int: 99, Str: "default"}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -163,7 +163,7 @@ func TestSet_Parse(t *testing.T) {
 		s, f := setup()
 		args := "-i 1 -- -i 2"
 		want := flags{Int: 1, Str: "default"}
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.Equal(t, want, *f)
 	})
@@ -173,7 +173,7 @@ func TestSet_Parse(t *testing.T) {
 		v := true
 		s.Add(&v, 'b', "", "")
 		args := "-b"
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.False(t, v, "bool flag should be toggled to false")
 	})
@@ -183,7 +183,7 @@ func TestSet_Parse(t *testing.T) {
 		v := true
 		s.Add(&v, 0, "bool", "")
 		args := "--bool"
-		err := s.Parse(strings.Fields(args))
+		_, err := s.Parse(strings.Fields(args))
 		require.NoError(t, err)
 		assert.False(t, v, "bool flag should be toggled to false")
 	})
@@ -204,7 +204,7 @@ func TestSet_Parse(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				s, _ := setup()
-				err := s.Parse(strings.Fields(tc.args))
+				_, err := s.Parse(strings.Fields(tc.args))
 				require.Error(t, err)
 			})
 		}
@@ -212,9 +212,9 @@ func TestSet_Parse(t *testing.T) {
 
 	t.Run("help flag", func(t *testing.T) {
 		s := flag.New("test")
-		err := s.Parse([]string{"--help"})
+		_, err := s.Parse([]string{"--help"})
 		require.Error(t, err)
-		assert.ErrorIs(t, err, flag.ErrShowHelp)
+		assert.ErrorIs(t, err, flag.ErrHelp)
 	})
 }
 
