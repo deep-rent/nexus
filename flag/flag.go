@@ -23,6 +23,8 @@
 //	    verb bool                  // Default is false
 //	  )
 //
+//	  flag.Summary("A one-line summary of what the command does.")
+//
 //	  // Add flags, binding them to local variables.
 //	  flag.Add(&port, "p", "port", "Port to listen on")
 //	  flag.Add(&host, "h", "host", "Host address to bind to")
@@ -36,11 +38,16 @@
 //
 // The automatically generated help message for the example above would be:
 //
-//	Usage of my-app:
-//	  -p, --port <int>       Port to listen on (default: 8080)
-//	  -h, --host <string>    Host address to bind to (default: localhost)
-//	  -v, --verbose <bool>   Enable verbose logging
-//	      --help             Display this help message and exit
+//	Usage: foobar [OPTION]...
+//	       foobar --help
+//
+//	A one-line summary of what the command does.
+//
+//	Options:
+//	  -p, --port [int]     Port to listen on (default: 8080)
+//	  -h, --host [string]  Host address to bind to (default: localhost)
+//	  -v, --verbose        Enable verbose logging
+//	      --help           Display this help message and exit
 package flag
 
 import (
@@ -65,6 +72,7 @@ type flag struct {
 // Set manages a collection of defined flags.
 type Set struct {
 	cmd   string
+	sum   string
 	flags []*flag
 }
 
@@ -72,6 +80,10 @@ type Set struct {
 func New(cmd string) *Set {
 	return &Set{cmd: cmd}
 }
+
+// Summary sets a one-line description for the command, shown in the
+// usage message. If not set, no summary is displayed.
+func (s *Set) Summary(sum string) { s.sum = sum }
 
 // Add registers a new flag with the set. It binds a command-line option to the
 // variable pointed to by v. The variable's initial value is used as the
@@ -293,7 +305,11 @@ func (s *Set) setValue(def *flag, value string) error {
 // their types, descriptions, and default values.
 func (s *Set) Usage() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Usage: %s [OPTION]...\n\n", s.cmd)
+	fmt.Fprintf(&b, "Usage: %s [OPTION]...\n", s.cmd)
+	fmt.Fprintf(&b, "       %s --help\n\n", s.cmd)
+	if s.sum != "" {
+		fmt.Fprintf(&b, "%s\n\n", s.sum)
+	}
 	fmt.Fprintf(&b, "Options:\n")
 	all := append(s.flags, &flag{
 		long: "help",
@@ -321,23 +337,19 @@ func (s *Set) Usage() string {
 // format builds the left-hand side of a help message line.
 // Example: "-v, --verbose <bool>"
 func (s *Set) format(f *flag) string {
-	var parts []string
+	var out string
 	if f.short != "" {
-		parts = append(parts, "-"+f.short)
+		out = "-" + f.short + ", "
+	} else {
+		out = "    "
 	}
 	if f.long != "" {
-		parts = append(parts, "--"+f.long)
+		out += "--" + f.long
 	}
-	names := strings.Join(parts, ", ")
-	if f.long == "help" {
-		return names
+	if f.long != "help" && f.val.Kind() != reflect.Bool {
+		out += fmt.Sprintf(" [%s]", f.val.Kind())
 	}
-	// Pad short-only flags for alignment.
-	if f.long == "" {
-		names = "  " + names
-	}
-	typ := fmt.Sprintf("<%s>", f.val.Kind().String())
-	return fmt.Sprintf("%-20s %s", names, typ)
+	return out
 }
 
 // formatDefault creates the default value string, like "(default: 8080)".
@@ -356,6 +368,10 @@ func (s *Set) formatDefault(f *flag) string {
 
 // std is the default, package-level flag Set.
 var std = New(filepath.Base(os.Args[0]))
+
+// Summary sets a one-line description for the command, shown in the
+// usage message of the default set. If not set, no summary is displayed.
+func Summary(sum string) { std.Summary(sum) }
 
 // Add registers a flag with the default set.
 func Add(v any, short, long, desc string) { std.Add(v, short, long, desc) }
