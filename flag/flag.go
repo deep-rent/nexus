@@ -64,13 +64,13 @@ type flag struct {
 
 // Set manages a collection of defined flags.
 type Set struct {
-	title string
+	cmd   string
 	flags []*flag
 }
 
-// New creates a new, empty flag set. The title is used in the usage message.
-func New(title string) *Set {
-	return &Set{title: title}
+// New creates a new, empty flag set. The command is used in the usage message.
+func New(cmd string) *Set {
+	return &Set{cmd: cmd}
 }
 
 // Add registers a new flag with the set. It binds a command-line option to the
@@ -115,10 +115,7 @@ var ErrShowHelp = errors.New("show help")
 // encountered, it returns ErrShowHelp. Other errors indicate parsing issues.
 // The args parameter allows feeding in a custom argument slice; if a nil or
 // empty slice is given, the system's input arguments (os.Args) are parsed.
-func (s *Set) Parse(args ...string) error {
-	if len(args) == 0 {
-		args = os.Args[1:]
-	}
+func (s *Set) Parse(args []string) error {
 	return s.parse(args)
 }
 
@@ -292,11 +289,12 @@ func (s *Set) setValue(def *flag, value string) error {
 	return nil
 }
 
-// Usage prints a formatted help message to os.Stdout, detailing all registered
-// flags, their types, descriptions, and default values.
-func (s *Set) Usage() {
+// Usage generates a formatted help message, detailing all registered flags,
+// their types, descriptions, and default values.
+func (s *Set) Usage() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Usage of %s:\n", s.title)
+	fmt.Fprintf(&b, "Usage: %s [OPTION]...\n\n", s.cmd)
+	fmt.Fprintf(&b, "Options:\n")
 	all := append(s.flags, &flag{
 		long: "help",
 		desc: "Display this help message and exit",
@@ -317,7 +315,7 @@ func (s *Set) Usage() {
 		}
 		fmt.Fprintf(&b, "  %s%s%s\n", names, space, desc)
 	}
-	fmt.Fprint(os.Stdout, b.String())
+	return b.String()
 }
 
 // format builds the left-hand side of a help message line.
@@ -368,7 +366,7 @@ func Add(v any, short, long, desc string) { std.Add(v, short, long, desc) }
 // flag is encountered, it prints the usage message and exits. On error, it
 // prints the error message and exits with a non-zero status code.
 func Parse() {
-	err := std.Parse()
+	err := std.Parse(os.Args[1:])
 	code := 0
 	if !errors.Is(err, ErrShowHelp) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -379,4 +377,4 @@ func Parse() {
 }
 
 // Usage prints the help message for the default set.
-func Usage() { std.Usage() }
+func Usage() { fmt.Fprint(os.Stdout, std.Usage()) }
