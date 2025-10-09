@@ -134,18 +134,9 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 
 	switch e.Kind() {
 	case reflect.String,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Float32,
-		reflect.Float64,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64,
 		reflect.Bool:
 	default:
 		panic(fmt.Sprintf("unsupported flag type: %s", e.Kind()))
@@ -199,9 +190,9 @@ func (s *Set) Parse(args []string) ([]string, error) {
 			if arg == "--help" {
 				return nil, ErrHelp
 			}
-			k, err = s.readName(args, i)
+			k, err = s.parseName(args, i)
 		} else {
-			k, err = s.readChar(args, i)
+			k, err = s.parseChar(args, i)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("flag: %w", err)
@@ -211,9 +202,9 @@ func (s *Set) Parse(args []string) ([]string, error) {
 	return pos, nil
 }
 
-// readChar handles abbreviated flags (e.g., -v, -abc, -p8080).
+// parseChar handles abbreviated flags (e.g., -v, -abc, -p8080).
 // It returns the number of arguments consumed and any error encountered.
-func (s *Set) readChar(args []string, i int) (int, error) {
+func (s *Set) parseChar(args []string, i int) (int, error) {
 	arg := args[i]
 	grp := strings.TrimPrefix(arg, "-")
 
@@ -253,28 +244,25 @@ func (s *Set) readChar(args []string, i int) (int, error) {
 	return 1, nil
 }
 
-// readName handles a named flag (e.g., --verbose, --port=8080).
+// parseName handles a named flag (e.g., --verbose, --port=8080).
 // It returns the number of arguments consumed and any error encountered.
-func (s *Set) readName(args []string, i int) (int, error) {
+func (s *Set) parseName(args []string, i int) (int, error) {
 	arg := args[i]
-	key, val, found := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+	key, val, found := strings.Cut(arg[2:], "=")
 
 	f := s.name[key]
 	if f == nil {
-		return 0, fmt.Errorf("unknown flag %s", arg)
+		return 0, fmt.Errorf("unknown flag --%s", key)
 	}
 
 	if f.val.Kind() == reflect.Bool {
-		var b bool
+		b := !f.def.(bool) // Toggle the default value
 		if found {
 			var err error
 			b, err = strconv.ParseBool(val)
 			if err != nil {
-				return 0, fmt.Errorf("expected boolean for flag %s, got %q", arg, val)
+				return 0, fmt.Errorf("expected boolean for flag --%s, got %q", key, val)
 			}
-		} else {
-			b, _ = f.def.(bool)
-			b = !b
 		}
 		f.val.SetBool(b)
 		return 1, nil
@@ -283,13 +271,13 @@ func (s *Set) readName(args []string, i int) (int, error) {
 	if !found {
 		i++
 		if i >= len(args) {
-			return 0, fmt.Errorf("flag %s requires a value", arg)
+			return 0, fmt.Errorf("flag --%s requires a value", key)
 		}
 		val = args[i]
 	}
 
 	if err := s.setValue(f, val); err != nil {
-		return 0, fmt.Errorf("invalid value for flag %s: %w", arg, err)
+		return 0, fmt.Errorf("invalid value for flag --%s: %w", key, err)
 	}
 
 	if found {
