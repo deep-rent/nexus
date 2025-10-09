@@ -290,7 +290,9 @@ func TestTransport(t *testing.T) {
 				{res: newResponse(http.StatusServiceUnavailable, "fail")},
 			},
 		}
-		transport := retry.NewTransport(mock, retry.WithBackoff(backoff.Constant(100*time.Millisecond)))
+		transport := retry.NewTransport(mock, retry.WithBackoff(
+			backoff.Constant(100*time.Millisecond),
+		))
 		ctx, cancel := context.WithCancel(context.Background())
 		req, _ := http.NewRequestWithContext(ctx, "GET", "/", nil)
 
