@@ -2,6 +2,7 @@ package env_test
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,14 +11,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type reverse string
+type upperUnmarshaller string
 
-func (r *reverse) UnmarshalEnv(v string) error {
-	runes := []rune(v)
-	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-		runes[i], runes[j] = runes[j], runes[i]
+func (u *upperUnmarshaller) UnmarshalEnv(v string) error {
+	*u = upperUnmarshaller(strings.ToUpper(v))
+	return nil
+}
+
+type errorUnmarshaler struct{}
+
+func (e *errorUnmarshaler) UnmarshalEnv(v string) error {
+	return assert.AnError
+}
+
+type checkUnmarshaler string
+
+func (c checkUnmarshaler) UnmarshalEnv(v string) error {
+	if v == "invalid" {
+		return assert.AnError
 	}
-	*r = reverse(string(runes))
 	return nil
 }
 
@@ -93,12 +105,12 @@ type TURLPtr struct {
 	V *url.URL
 }
 
-type TReverse struct {
-	V reverse
+type TUpper struct {
+	V upperUnmarshaller
 }
 
-type TReversePtr struct {
-	V *reverse
+type TUpperPtr struct {
+	V *upperUnmarshaller
 }
 
 type TDefault struct {
@@ -109,8 +121,16 @@ type TDefaultQuotes struct {
 	V string `env:",default:'foo,bar'"`
 }
 
+type TDefaultSliceSplit struct {
+	V []string `env:",split:';',default:'a;b'"`
+}
+
 type TRequired struct {
 	V string `env:",required"`
+}
+
+type TRequiredWithDefault struct {
+	V int `env:",required,default:42"`
 }
 
 type TIgnored struct {
@@ -352,14 +372,29 @@ func TestUnmarshal(t *testing.T) {
 		{
 			name: "unmarshaler",
 			vars: map[string]string{"V": "foo"},
-			in:   &TReverse{},
-			want: &TReverse{"oof"},
+			in:   &TUpper{},
+			want: &TUpper{"FOO"},
 		},
 		{
 			name: "unmarshaler pointer",
 			vars: map[string]string{"V": "foo"},
-			in:   &TReversePtr{},
-			want: &TReversePtr{V: new(reverse)},
+			in:   &TUpperPtr{},
+			want: &TUpperPtr{V: func() *upperUnmarshaller {
+				p := upperUnmarshaller("FOO")
+				return &p
+			}()},
+		},
+		{
+			name:    "value-receiver unmarshaler error",
+			vars:    map[string]string{"V": "invalid"},
+			in:      &struct{ V checkUnmarshaler }{},
+			wantErr: true,
+		},
+		{
+			name:    "unmarshaler error",
+			vars:    map[string]string{"V": "foo"},
+			in:      &struct{ V errorUnmarshaler }{},
+			wantErr: true,
 		},
 		{
 			name: "default",
@@ -374,6 +409,12 @@ func TestUnmarshal(t *testing.T) {
 			want: &TDefaultQuotes{"foo,bar"},
 		},
 		{
+			name: "default on slice with split",
+			vars: map[string]string{},
+			in:   &TDefaultSliceSplit{},
+			want: &TDefaultSliceSplit{[]string{"a", "b"}},
+		},
+		{
 			name: "required",
 			vars: map[string]string{"V": "foo"},
 			in:   &TRequired{},
@@ -384,6 +425,18 @@ func TestUnmarshal(t *testing.T) {
 			vars:    map[string]string{},
 			in:      &TRequired{},
 			wantErr: true,
+		},
+		{
+			name: "required with default",
+			vars: map[string]string{},
+			in:   &TRequiredWithDefault{},
+			want: &TRequiredWithDefault{42},
+		},
+		{
+			name: "required field with empty value",
+			vars: map[string]string{"V": ""},
+			in:   &TRequired{},
+			want: &TRequired{""},
 		},
 		{
 			name: "ignored",
@@ -592,13 +645,6 @@ func TestUnmarshal(t *testing.T) {
 				v, ok := tc.vars[k]
 				return v, ok
 			}))
-
-			if tc.name == "unmarshaler pointer" {
-				p := new(reverse)
-				*p = "oof"
-				tc.want.(*TReversePtr).V = p
-			}
-
 			err := env.Unmarshal(tc.in, opts...)
 			if tc.wantErr {
 				require.Error(t, err)
