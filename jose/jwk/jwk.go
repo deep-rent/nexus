@@ -3,7 +3,7 @@
 // designed for the purpose of verifying JWT signatures. Hence, only public
 // keys can be represented.
 //
-// # Key Eligibility
+// # Eligible Keys
 //
 // Keys that are not intended for signature verification are considered
 // ineligible and will be skipped during parsing of a JWKS. A key is eligible
@@ -22,8 +22,8 @@
 //     mitigates algorithm confusion attacks.
 //  2. For key selection, either "kid" (Key ID) or "x5t#S256" (SHA-256
 //     Thumbprint) must be defined. The "x5t" (SHA-1 Thumbprint) parameter is
-//     explicitly ignored as it is considered outdated. No other mechanism of
-//     key selection is supported.
+//     explicitly ignored as it is considered outdated. No other lookup
+//     mechanism is supported.
 package jwk
 
 import (
@@ -274,7 +274,8 @@ func ParseSet(in []byte) (Set, error) {
 
 // CacheSet extends the Set interface with scheduler.Tick, creating a component
 // that can be deployed to a scheduler for automatic refreshing of a remote
-// JWKS view in the background.
+// JWKS view in the background. The default implementation is backed by a
+// cache.Controller.
 type CacheSet interface {
 	Set
 	scheduler.Tick
