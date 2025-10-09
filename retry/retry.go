@@ -264,7 +264,7 @@ func NewTransport(
 	next http.RoundTripper,
 	opts ...Option,
 ) http.RoundTripper {
-	c := config{
+	cfg := config{
 		policy:  DefaultPolicy(),
 		limit:   0,
 		backoff: backoff.Constant(0),
@@ -272,14 +272,14 @@ func NewTransport(
 		now:     time.Now,
 	}
 	for _, opt := range opts {
-		opt(&c)
+		opt(&cfg)
 	}
 	return &transport{
 		next:    next,
-		policy:  c.policy.LimitAttempts(c.limit),
-		backoff: c.backoff,
-		logger:  c.logger,
-		now:     c.now,
+		policy:  cfg.policy.LimitAttempts(cfg.limit),
+		backoff: cfg.backoff,
+		logger:  cfg.logger,
+		now:     cfg.now,
 	}
 }
 
