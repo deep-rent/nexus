@@ -237,31 +237,6 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 	s.pargs = append(s.pargs, a)
 }
 
-// isPrimitive reports whether the specified kind is a primitive type.
-func isPrimitive(k reflect.Kind) bool {
-	switch k {
-	case
-		reflect.String,
-		reflect.Bool,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Float32,
-		reflect.Float64,
-		reflect.Complex64,
-		reflect.Complex128:
-		return true
-	}
-	return false
-}
-
 // ErrHelp is a sentinel error returned by Parse when it encounters a help flag.
 // This signals to the caller that a help message should be displayed and the
 // program should exit successfully.
@@ -329,7 +304,7 @@ func (s *Set) consume(pargs []string) error {
 			if a.required && len(pargs) == 0 {
 				return fmt.Errorf("missing required argument <%s>", a.name)
 			}
-			if err := setSlice(a.val, pargs); err != nil {
+			if err := setVariadic(a.val, pargs); err != nil {
 				return fmt.Errorf(
 					"invalid value for variadic argument %s: %w", a.name, err,
 				)
@@ -444,21 +419,6 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 	return 2, nil
 }
 
-// setSlice populates a slice from a slice of string values.
-func setSlice(src reflect.Value, vals []string) error {
-	typ := src.Type()
-	dst := reflect.MakeSlice(typ, 0, len(vals))
-	for _, v := range vals {
-		e := reflect.New(typ.Elem()).Elem()
-		if err := parse(e, v); err != nil {
-			return err
-		}
-		dst = reflect.Append(dst, e)
-	}
-	src.Set(dst)
-	return nil
-}
-
 // Parse attempts to convert string v to the type expected by rv and sets it.
 //
 // Preconditions:
@@ -525,6 +485,21 @@ func parse(rv reflect.Value, v string) error {
 	default:
 		return fmt.Errorf("unsupported type: %s", kind)
 	}
+}
+
+// setVariadic populates a slice from a slice of variadic string arguments.
+func setVariadic(rv reflect.Value, vs []string) error {
+	typ := rv.Type()
+	dst := reflect.MakeSlice(typ, 0, len(vs))
+	for i, v := range vs {
+		e := reflect.New(typ.Elem()).Elem()
+		if err := parse(e, v); err != nil {
+			return fmt.Errorf("invalid variadic argument at index %d: %w", i, err)
+		}
+		dst = reflect.Append(dst, e)
+	}
+	rv.Set(dst)
+	return nil
 }
 
 // Usage generates a formatted help message detailing all registered flags and
@@ -658,3 +633,28 @@ func Parse() {
 // Usage prints the help message for the default Set to standard output.
 // See (*Set).Usage for more details.
 func Usage() { fmt.Fprint(os.Stdout, std.Usage()) }
+
+// isPrimitive reports whether the specified kind is a primitive type.
+func isPrimitive(k reflect.Kind) bool {
+	switch k {
+	case
+		reflect.String,
+		reflect.Bool,
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64,
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64,
+		reflect.Float32,
+		reflect.Float64,
+		reflect.Complex64,
+		reflect.Complex128:
+		return true
+	}
+	return false
+}
