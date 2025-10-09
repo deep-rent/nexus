@@ -38,7 +38,7 @@
 // The first value is the name of the environment variable. If it is omitted,
 // the field's name is used as the base for the variable name.
 //
-//	DatabaseURL string `env:"DATABASE_URL"`
+//	DatabaseURL string `env:"MY_DATABASE_URL"`
 //
 // The subsequent parts of the tag are options, which can be in a key:value
 // format or be boolean flags.
