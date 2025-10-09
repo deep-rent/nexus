@@ -105,27 +105,21 @@ func (s *Set) Add(v any, short, long, desc string) {
 	s.flags = append(s.flags, m)
 }
 
-// errShowHelp is a sentinel error that acts as a signal to display a help
-// message and exit successfully rather than indicating a failure.
-var errShowHelp = errors.New("show help")
+// ErrShowHelp acts as a signal to display a help message and exit successfully
+// rather than indicating a failure.
+var ErrShowHelp = errors.New("show help")
 
-// Parse maps command-line arguments to flags. It must be called
-// after all flags have been added. If a --help flag is encountered, it prints
-// the usage message and exits. The args parameter allows passing a custom
-// argument slice; if nil or empty, the system's arguments (os.Args) are used.
-func (s *Set) Parse(args ...string) {
+// Parse maps command-line arguments to flags.
+//
+// It must be called after all flags have been added. If a --help flag i
+// encountered, it returns ErrShowHelp. Other errors indicate parsing issues.
+// The args parameter allows feeding in a custom argument slice; if a nil or
+// empty slice is given, the system's input arguments (os.Args) are parsed.
+func (s *Set) Parse(args ...string) error {
 	if len(args) == 0 {
 		args = os.Args[1:]
 	}
-	if err := s.parse(args); err != nil {
-		code := 0
-		if !errors.Is(err, errShowHelp) {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			code = 1
-		}
-		s.Usage()
-		os.Exit(code)
-	}
+	return s.parse(args)
 }
 
 // parse is the main loop that processes the argument slice.
@@ -140,7 +134,7 @@ func (s *Set) parse(args []string) error {
 			return nil // End of flags.
 		}
 		if arg == "--help" {
-			return errShowHelp
+			return ErrShowHelp
 		}
 		var (
 			skip int
@@ -369,7 +363,20 @@ var std = New(filepath.Base(os.Args[0]))
 func Add(v any, short, long, desc string) { std.Add(v, short, long, desc) }
 
 // Parse parses command-line arguments using the default set.
-func Parse(args ...string) { std.Parse(args...) }
+//
+// This function must be called after all flags have been added. If a --help
+// flag is encountered, it prints the usage message and exits. On error, it
+// prints the error message and exits with a non-zero status code.
+func Parse() {
+	err := std.Parse()
+	code := 0
+	if !errors.Is(err, ErrShowHelp) {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		code = 1
+	}
+	std.Usage()
+	os.Exit(code)
+}
 
 // Usage prints the help message for the default set.
 func Usage() { std.Usage() }
