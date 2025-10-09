@@ -3,21 +3,8 @@
 package quote
 
 import (
-	"fmt"
 	"strings"
 )
-
-// Double surrounds a string with double quotes.
-// This function does not handle escaping of quotes within the string.
-func Double(s string) string {
-	return fmt.Sprintf(`"%s"`, s)
-}
-
-// Single surrounds a string with single quotes.
-// This function does not handle escaping of quotes within the string.
-func Single(s string) string {
-	return fmt.Sprintf("'%s'", s)
-}
 
 // Escape inserts backslashes before any occurrences of the quote character in
 // the given string.
