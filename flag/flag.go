@@ -167,15 +167,15 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 	}
 }
 
-// ErrShowHelp acts as a signal to display a help message and exit successfully
+// ErrHelp acts as a signal to display a help message and exit successfully
 // rather than indicating a failure.
-var ErrShowHelp = errors.New("show help")
+var ErrHelp = errors.New("flag: show help")
 
 // Parse maps command-line arguments to flags and returns only the positional
 // arguments (those that are not flags).
 //
 // It must be called after all flags have been added. If a --help flag is
-// encountered, it returns ErrShowHelp. Other errors indicate parsing issues.
+// encountered, it returns ErrHelp. Other errors indicate parsing issues.
 // The args parameter allows feeding in a custom argument slice; if a nil or
 // empty slice is given, the system's input arguments (os.Args) are parsed.
 func (s *Set) Parse(args []string) ([]string, error) {
@@ -197,14 +197,14 @@ func (s *Set) Parse(args []string) ([]string, error) {
 				return pos, nil
 			}
 			if arg == "--help" {
-				return nil, ErrShowHelp
+				return nil, ErrHelp
 			}
 			k, err = s.readName(args, i)
 		} else {
 			k, err = s.readChar(args, i)
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("flag: %w", err)
 		}
 		i += k
 	}
@@ -419,7 +419,7 @@ func Parse() []string {
 		return pos
 	}
 	code := 0
-	if !errors.Is(err, ErrShowHelp) {
+	if !errors.Is(err, ErrHelp) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		code = 1
 	}
