@@ -266,6 +266,38 @@ func TestSet_Parse(t *testing.T) {
 		})
 	})
 
+	t.Run("required variadic args", func(t *testing.T) {
+		t.Run("success with one value", func(t *testing.T) {
+			s := flag.New("test")
+			var v []string
+			s.Arg(&v, "V", "", true)
+
+			err := s.Parse([]string{"a"})
+			require.NoError(t, err)
+			assert.Equal(t, []string{"a"}, v)
+		})
+
+		t.Run("success with multiple values", func(t *testing.T) {
+			s := flag.New("test")
+			var v []string
+			s.Arg(&v, "V", "", true)
+
+			err := s.Parse([]string{"a", "b", "c"})
+			require.NoError(t, err)
+			assert.Equal(t, []string{"a", "b", "c"}, v)
+		})
+
+		t.Run("error with zero values", func(t *testing.T) {
+			s := flag.New("test")
+			var v []string
+			s.Arg(&v, "V", "", true)
+
+			err := s.Parse(nil)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "missing required argument <V>")
+		})
+	})
+
 	t.Run("mixed flags and args", func(t *testing.T) {
 		s := flag.New("test")
 		var verbose bool
@@ -374,15 +406,25 @@ func TestSet_Parse(t *testing.T) {
 		assert.Equal(t, "foo", b)
 	})
 
-	// t.Run("variadic integer args", func(t *testing.T) {
-	// 	s := flag.New("test")
-	// 	var nums []int
-	// 	s.Arg(&nums, "NUMS", "", false)
+	t.Run("integer arg", func(t *testing.T) {
+		s := flag.New("test")
+		var num int
+		s.Arg(&num, "NUM", "", true)
 
-	// 	err := s.Parse(strings.Fields("10 '-20' 30"))
-	// 	require.NoError(t, err)
-	// 	assert.Equal(t, []int{10, -20, 30}, nums)
-	// })
+		err := s.Parse(strings.Fields("-- -20"))
+		require.NoError(t, err)
+		assert.Equal(t, -20, num)
+	})
+
+	t.Run("variadic integer args", func(t *testing.T) {
+		s := flag.New("test")
+		var nums []int
+		s.Arg(&nums, "NUMS", "", false)
+
+		err := s.Parse(strings.Fields("-- 10 -20 30"))
+		require.NoError(t, err)
+		assert.Equal(t, []int{10, -20, 30}, nums)
+	})
 }
 
 func TestSet_Usage(t *testing.T) {

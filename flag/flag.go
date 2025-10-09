@@ -251,10 +251,9 @@ var ErrHelp = errors.New("flag: show help")
 //
 // If named arguments are defined, Parse will attempt to satisfy them from the
 // positional arguments. If there are missing, extra, or invalid arguments, it
-// returns an error.
-//
-// Parsing stops at the first error, when a --help flag is found, or after a
-// "--" terminator. If args is nil or empty, os.Args[1:] is used.
+// returns an error. Flags can be explicitly separated from positional arguments
+// using the "--" terminator. If no named arguments are defined, any positional
+// arguments are treated as errors.
 func (s *Set) Parse(args []string) error {
 	var pos []string
 	for i := 0; i < len(args); {
@@ -306,6 +305,9 @@ func (s *Set) Parse(args []string) error {
 func (s *Set) parseArgs(pos []string) error {
 	for _, a := range s.args {
 		if a.variadic {
+			if a.required && len(pos) == 0 {
+				return fmt.Errorf("missing required argument <%s>", a.name)
+			}
 			if err := s.setSlice(a.val, pos); err != nil {
 				return fmt.Errorf(
 					"invalid value for variadic argument %s: %w", a.name, err,
