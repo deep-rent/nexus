@@ -240,9 +240,9 @@ func TestSet_Usage(t *testing.T) {
 
 	assert.Contains(t, out, "Usage: foobar [OPTION]...")
 	assert.Contains(t, out, "A one-line summary of what the command does.")
-	assert.Contains(t, out, "-p, --port [int]")
+	assert.Contains(t, out, "-p, --port")
 	assert.Contains(t, out, "Port to listen on (default: 8080)")
-	assert.Contains(t, out, "-h, --host [string]")
+	assert.Contains(t, out, "-h, --host")
 	assert.Contains(t, out, "Host address to bind to (default: localhost)")
 	assert.Contains(t, out, "-v, --verbose")
 	assert.Contains(t, out, "Enable verbose logging")

@@ -51,10 +51,10 @@
 //	A simple example of a command-line server application.
 //
 //	Options:
-//	  -p, --port [int]    Port to listen on (default: 8080)
-//	  -h, --host [string] Host address to bind to (default: localhost)
-//	  -v, --verbose       Enable verbose logging
-//	      --help          Display this help message and exit
+//	  -p, --port      Port to listen on (default: 8080)
+//	  -h, --host      Host address to bind to (default: localhost)
+//	  -v, --verbose   Enable verbose logging
+//	      --help      Display this help message and exit
 package flag
 
 import (
@@ -96,7 +96,7 @@ func New(cmd string) *Set {
 	}
 }
 
-// Summary sets a one-line description for the command, which is displayed
+// Summary sets a one-line synopsis for the command, which is displayed
 // in the usage message. If not set, no summary is shown.
 func (s *Set) Summary(sum string) { s.sum = sum }
 
@@ -346,7 +346,23 @@ func (s *Set) Usage() string {
 	})
 
 	for _, f := range all {
-		keys := s.format(f)
+		// Build the left-hand side of the line
+		// Example: "-p, --port"
+		var keys string
+		if f.char != 0 {
+			keys = "-" + string(f.char)
+		} else {
+			keys = "  "
+		}
+		if f.name != "" {
+			if f.char != 0 {
+				keys += ","
+			} else {
+				keys += " "
+			}
+			keys += " --" + f.name
+		}
+
 		desc := f.desc
 		// Only show default value if it's not the zero value for its type.
 		if f.def != nil && !reflect.ValueOf(f.def).IsZero() {
@@ -358,24 +374,6 @@ func (s *Set) Usage() string {
 
 	w.Flush() // Finalize formatting.
 	return b.String()
-}
-
-// format builds the left-hand side of a help message line.
-// Example: "-p, --port [int]"
-func (s *Set) format(f *flag) string {
-	var keys []string
-	if f.char != 0 {
-		keys = append(keys, "-"+string(f.char))
-	}
-	if f.name != "" {
-		keys = append(keys, "--"+f.name)
-	}
-	out := strings.Join(keys, ", ")
-	// Append type information for non-boolean flags.
-	if f.name != "help" && f.val.Kind() != reflect.Bool {
-		out += fmt.Sprintf(" [%s]", f.val.Kind())
-	}
-	return out
 }
 
 // std is the default, package-level flag Set.
