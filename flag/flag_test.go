@@ -1,6 +1,9 @@
 package flag_test
 
 import (
+	"bytes"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -9,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAdd(t *testing.T) {
+func TestSet_Add(t *testing.T) {
 	type test struct {
 		name      string
 		v         any
@@ -59,7 +62,7 @@ func TestAdd(t *testing.T) {
 	}
 }
 
-func TestParse(t *testing.T) {
+func TestSet_Parse(t *testing.T) {
 	type flags struct {
 		Str     string
 		Int     int
@@ -183,7 +186,7 @@ func TestParse(t *testing.T) {
 	})
 }
 
-func TestUsage(t *testing.T) {
+func TestSet_Usage(t *testing.T) {
 	s := flag.New("foobar")
 	var (
 		port int    = 8080
@@ -212,4 +215,72 @@ func TestUsage(t *testing.T) {
 	assert.Contains(t, out, "-v, --verbose")
 	assert.Contains(t, out, "Enable verbose logging")
 	assert.Contains(t, out, "--help")
+}
+
+func setupTestFlags() (*int, *string, *bool) {
+	flag.Summary("A test command.")
+
+	p := 1234
+	h := "localhost"
+	v := false
+
+	flag.Add(&p, "p", "port", "Port to listen on")
+	flag.Add(&h, "h", "host", "Host address to bind to")
+	flag.Add(&v, "v", "verbose", "Enable verbose logging")
+
+	return &p, &h, &v
+}
+
+func TestParse(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		port, host, verb := setupTestFlags()
+
+		args := os.Args
+		defer func() { os.Args = args }()
+
+		os.Args = []string{"cmd", "-p", "9999", "--verbose", "--host=remote"}
+
+		flag.Parse()
+
+		assert.Equal(t, 9999, *port, "Port should be updated")
+		assert.Equal(t, "remote", *host, "Host should be updated")
+		assert.True(t, *verb, "Verbose flag should be set to true")
+	})
+
+	t.Run("error exit", func(t *testing.T) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		cmd.Args = append(cmd.Args, "--", "--unknown-flag")
+
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		err, ok := cmd.Run().(*exec.ExitError)
+		require.True(t, ok, "should exit with an ExitError")
+		assert.Equal(t, 1, err.ExitCode(), "exit code should be 1")
+
+		assert.Contains(t, stdout.String(),
+			"Usage:", "should print help message",
+		)
+		assert.Contains(t, stderr.String(),
+			"Error: unknown flag \"--unknown-flag\"", "should contain specific error",
+		)
+	})
+}
+
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	args := os.Args
+	for i, arg := range args {
+		if arg == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	os.Args = append([]string{os.Args[0]}, args...)
+	setupTestFlags()
+	flag.Parse()
 }
