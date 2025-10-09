@@ -1,57 +1,60 @@
-// Package flag provides a simple, reflection-based command-line flag parsing
-// utility. It is designed to be a modern alternative to the standard library's
-// flag package, offering a more streamlined API for defining flags.
+// Package flag provides a simple, reflection-based parser for command-line
+// arguments. It offers a streamlined API and support for POSIX/GNU conventions.
 //
-// The package is compliant with common command-line syntax conventions,
-// supporting both single-dash shorthand options (POSIX-style, e.g., -v) and
-// double-dash long-form options (GNU-style, e.g., --verbose). It also handles
-// grouped short options (e.g., -abc) and values attached to short options
-// (e.g., -p8080) for POSIX compliance.
+// # Features
 //
-// Values can be specified using either space or equals sign separators for
-// long-form options (e.g., --port 8080 or --port=8080). Boolean flags can be
-// toggled from their default value by simply specifying the flag (e.g., -v or
-// --verbose) without an explicit value.
+//   - Supports POSIX-style short options (-v) and GNU-style long options
+//     (--verbose).
+//   - Parses grouped short options (-abc) and values attached to short options
+//     (-p8080).
+//   - Handles space or equals sign separators for long option values
+//     (--port 8080, --port=8080).
+//   - Toggles boolean flags from their default value when present
+//     (--no-format, --disable).
+//   - Generates an automatic help message for the --help flag.
+//   - Filters out and returns positional (non-flag) arguments.
 //
 // # Usage
 //
-// The core of the package is the Set, which manages a collection of defined
-// flags. A default Set is provided for convenience, accessible through
-// top-level functions like Add and Parse. To use the package, define variables,
-// register them using Add, and then call Parse to process the command-line
-// arguments:
+// The core of the package is the Set, which manages a collection of flags.
+// A default Set is provided for convenience, accessible through top-level
+// functions like Add and Parse.
+//
+// To use the package, define variables, register them as flags using Add,
+// and then call Parse to process os.Args.
 //
 //	func main() {
-//	  var (
-//	    port int    = 8080          // Default value
-//	    host string = "localhost"   // Default value
-//	    verb bool                   // Default is false
-//	  )
+//		var (
+//			port int    = 8080
+//			host string = "localhost"
+//			verb bool
+//		)
 //
-//	  flag.Summary("A one-line summary of what the command does.")
+//		flag.Summary("A simple example of a command-line server application.")
 //
-//	  // Add flags, binding them to local variables.
-//	  flag.Add(&port, "p", "port", "Port to listen on")
-//	  flag.Add(&host, "h", "host", "Host address to bind to")
-//	  flag.Add(&verb, "v", "verbose", "Enable verbose logging")
+//		// Add flags, binding them to local variables.
+//		flag.Add(&port, 'p', "port", "Port to listen on")
+//		flag.Add(&host, 'h', "host", "Host address to bind to")
+//		flag.Add(&verb, 'v', "verbose", "Enable verbose logging")
 //
-//	  // Parse the command-line arguments.
-//	  flag.Parse()
+//		// Parse command-line arguments and get positional args.
+//		args := flag.Parse()
 //
-//	  fmt.Printf("Starting server on %s:%d (verbose: %v)\n", host, port, verb)
+//		fmt.Printf("Starting server on %s:%d (verbose: %v)\n", host, port, verb)
+//		fmt.Printf("Positional arguments: %v\n", args)
 //	}
 //
-// The automatically generated help message for the example above would be:
+// The automatically generated help message for the example above is:
 //
-//	Usage: foobar [OPTION]...
+//	Usage: main [OPTION]...
 //
-//	A one-line summary of what the command does.
+//	A simple example of a command-line server application.
 //
 //	Options:
-//	  -p, --port [int]     Port to listen on (default: 8080)
-//	  -h, --host [string]  Host address to bind to (default: localhost)
-//	  -v, --verbose        Enable verbose logging
-//	      --help           Display this help message and exit
+//	  -p, --port [int]    Port to listen on (default: 8080)
+//	  -h, --host [string] Host address to bind to (default: localhost)
+//	  -v, --verbose       Enable verbose logging
+//	      --help          Display this help message and exit
 package flag
 
 import (
@@ -74,7 +77,7 @@ type flag struct {
 	desc string
 }
 
-// Set manages a collection of defined flags.
+// Set manages a collection of defined flags for a command.
 type Set struct {
 	cmd   string
 	sum   string
@@ -83,7 +86,8 @@ type Set struct {
 	name  map[string]*flag
 }
 
-// New creates a new, empty flag set. The command is used in the usage message.
+// New creates a new, empty flag Set. The cmd name is used in the generated
+// usage message.
 func New(cmd string) *Set {
 	return &Set{
 		cmd:  cmd,
@@ -92,22 +96,20 @@ func New(cmd string) *Set {
 	}
 }
 
-// Summary sets a one-line description for the command, shown in the
-// usage message. If not set, no summary is displayed.
+// Summary sets a one-line description for the command, which is displayed
+// in the usage message. If not set, no summary is shown.
 func (s *Set) Summary(sum string) { s.sum = sum }
 
 // Add registers a new flag with the set. It binds a command-line option to the
-// variable pointed to by v. The variable's initial value is used as the
-// default, if present. The variable must be a pointer to one of the supported
-// types: string, int, uint, float, or bool and their sized variants.
+// variable pointed to by v. The variable's initial value is captured as the
+// default. The destination v must be a pointer to a bool, float, int, string,
+// or uint, including their sized variants (e.g., int64).
 //
-// Th char parameter is the single-letter abbreviation for the flag (e.g., 'v'
-// for -v). It can be zero if no short name is desired. The name parameter is
-// the long-form name (e.g., "verbose" for --verbose). It can be empty if no
-// long name is desired. At least one of char or name must be provided. Both
-// names are matched case-sensitively. Duplicate names will cause a panic.
-// Additionally, a description should be specified to explain the flag's purpose
-// in the help message.
+// The char parameter is the single-letter shorthand name (e.g., 'v' for -v). It
+// can be zero if no short name is desired. The name parameter is the long-form
+// name (e.g., "verbose" for --verbose) and can be empty if no long name is
+// desired. At least one name must be provided. Duplicate names cause the
+// method to panic.
 func (s *Set) Add(v any, char rune, name, desc string) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
@@ -158,17 +160,15 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 	}
 }
 
-// ErrHelp acts as a signal to display a help message and exit successfully
-// rather than indicating a failure.
+// ErrHelp is a sentinel error returned by Parse when a help flag is encountered.
+// This signals to the caller that a help message should be displayed.
 var ErrHelp = errors.New("flag: show help")
 
-// Parse maps command-line arguments to flags and returns only the positional
-// arguments (those that are not flags).
+// Parse processes command-line arguments, mapping them to their corresponding
+// flags. It returns a slice of positional arguments (non-flag arguments).
 //
-// It must be called after all flags have been added. If a --help flag is
-// encountered, it returns ErrHelp. Other errors indicate parsing issues.
-// The args parameter allows feeding in a custom argument slice; if a nil or
-// empty slice is given, the system's input arguments (os.Args) are parsed.
+// Parsing stops at the first error, when a --help flag is found, or after a
+// "--" terminator. If args is nil or empty, os.Args[1:] is used.
 func (s *Set) Parse(args []string) ([]string, error) {
 	var pos []string
 	for i := 0; i < len(args); {
@@ -361,17 +361,17 @@ func (s *Set) Usage() string {
 }
 
 // format builds the left-hand side of a help message line.
-// Example: "-v, --verbose <bool>"
+// Example: "-p, --port [int]"
 func (s *Set) format(f *flag) string {
-	var out string
+	var keys []string
 	if f.char != 0 {
-		out = "-" + string(f.char) + ", "
-	} else {
-		out = "    "
+		keys = append(keys, "-"+string(f.char))
 	}
 	if f.name != "" {
-		out += "--" + f.name
+		keys = append(keys, "--"+f.name)
 	}
+	out := strings.Join(keys, ", ")
+	// Append type information for non-boolean flags.
 	if f.name != "help" && f.val.Kind() != reflect.Bool {
 		out += fmt.Sprintf(" [%s]", f.val.Kind())
 	}
@@ -381,23 +381,19 @@ func (s *Set) format(f *flag) string {
 // std is the default, package-level flag Set.
 var std = New(filepath.Base(os.Args[0]))
 
-// Summary sets a one-line description for the command, shown in the
-// usage message of the default set. If not set, no summary is displayed.
+// Summary sets a one-line description for the command on the default Set.
+// See Set.Summary for more details.
 func Summary(sum string) { std.Summary(sum) }
 
-// Add registers a flag with the default set.
-//
-// See Set.Add for details.
+// Add registers a flag with the default Set.
+// See Set.Add for more details.
 func Add(v any, char rune, name, desc string) { std.Add(v, char, name, desc) }
 
-// Parse parses command-line arguments from os.Args and returns the positional
-// arguments (those that are not flags).
+// Parse processes command-line arguments from os.Args using the default Set.
+// It returns the positional arguments.
 //
-// This function must be called after all flags have been added. If a --help
-// flag is encountered, it prints the usage message and exits. On error, it
-// prints the error message and exits with a non-zero status code.
-//
-// See Set.Parse for details.
+// On a parsing error or if the --help flag is used, this function prints a
+// message to the console and exits the program.
 func Parse() []string {
 	pos, err := std.Parse(os.Args[1:])
 	if err == nil {
@@ -413,7 +409,6 @@ func Parse() []string {
 	return nil
 }
 
-// Usage prints the help message for the default set.
-//
-// See Set.Usage for details.
+// Usage prints the help message for the default Set to standard output.
+// See Set.Usage for more details.
 func Usage() { fmt.Fprint(os.Stdout, std.Usage()) }
