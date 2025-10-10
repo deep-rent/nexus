@@ -54,10 +54,11 @@ const (
 // support protocol upgrades and streaming.
 type interceptor struct {
 	http.ResponseWriter
-	gz     *gzip.Writer
-	level  int
-	pool   *sync.Pool
-	header bool // Tracks if WriteHeader has been called.
+	gz       *gzip.Writer
+	level    int
+	pool     *sync.Pool
+	header   bool // Tracks if WriteHeader has been called.
+	hijacked bool
 }
 
 // WriteHeader sets the Content-Encoding header and deletes Content-Length
@@ -89,9 +90,12 @@ func (w *interceptor) Write(b []byte) (int, error) {
 // the pool. It is essential that Close is called, typically via defer, to
 // ensure resources are properly released.
 func (w *interceptor) Close() {
+	// If the connection was hijacked, don't write the gzip footer.
+	// Just return the writer to the pool.
 	if w.gz != nil {
-		w.gz.Close()
-		// Reset the writer before putting it back.
+		if !w.hijacked {
+			w.gz.Close()
+		}
 		w.gz.Reset(io.Discard)
 		w.pool.Put(w.gz)
 		w.gz = nil
@@ -103,10 +107,9 @@ func (w *interceptor) Close() {
 func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := w.ResponseWriter.(http.Hijacker)
 	if !ok {
-		return nil, nil, errors.New(
-			"http.ResponseWriter does not support hijacking",
-		)
+		return nil, nil, errors.New("hijacking not supported")
 	}
+	w.hijacked = true
 	return hijacker.Hijack()
 }
 
