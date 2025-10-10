@@ -111,7 +111,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/deep-rent/nexus/snake"
+	"github.com/deep-rent/nexus/util/quote"
+	"github.com/deep-rent/nexus/util/snake"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -620,7 +621,7 @@ func parse(s string) (opts flags, err error) {
 			}
 			continue
 		}
-		val = unquote(val)
+		val = quote.Remove(val)
 		switch key {
 		case "format":
 			opts.Format = val
@@ -704,26 +705,4 @@ func asUnmarshaler(rv reflect.Value) (Unmarshaler, bool) {
 		return rv.Addr().Interface().(Unmarshaler), true
 	}
 	return nil, false
-}
-
-// unquote removes a single layer of surrounding single or double quotes from a
-// string. If the string is not quoted or is too short, it is returned
-// unchanged.
-func unquote(s string) string {
-	if len(s) < 2 {
-		return s
-	}
-	// Check for a matching pair of quotes.
-	switch s[0] {
-	case '"':
-		if s[len(s)-1] == '"' {
-			return s[1 : len(s)-1]
-		}
-	case '\'':
-		if s[len(s)-1] == '\'' {
-			return s[1 : len(s)-1]
-		}
-	}
-	// Return the original string if no matching quotes are found.
-	return s
 }
