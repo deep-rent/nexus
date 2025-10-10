@@ -26,10 +26,6 @@ var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK"))
 })
 
-var panicHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-	panic("test")
-})
-
 func TestChain(t *testing.T) {
 	t.Run("Chains pipes in correct order", func(t *testing.T) {
 		var order []string
@@ -81,7 +77,9 @@ func TestRecover(t *testing.T) {
 
 	t.Run("Recovers from panic", func(t *testing.T) {
 		buf.Reset()
-		h := pipe(panicHandler)
+		h := pipe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic("test")
+		}))
 		req := httptest.NewRequest("GET", "/panic", nil)
 		rr := httptest.NewRecorder()
 
