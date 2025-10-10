@@ -12,7 +12,7 @@
 // Example:
 //
 //	// Create the final handler.
-//	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 //		w.Header().Set("Content-Type", "text/plain")
 //		w.Write([]byte("This is a long string that will be compressed."))
 //	})
@@ -20,7 +20,6 @@
 //	// Create a gzip middleware pipe with the highest level if compression.
 //	pipe := gzip.New(gzip.WithCompressionLevel(gzip.BestCompression))
 //
-//	handler := http.HandlerFunc( ... )
 //	// Apply the CORS middleware as one of the first layers.
 //	chainedHandler := middleware.Chain(handler, pipe)
 //
@@ -214,10 +213,13 @@ func WithCompressionLevel(level int) Option {
 		}
 	}
 }
-func WithExclude(types []string) Option {
+
+// WithExclude adds one or more content type prefixes to the exclusion list.
+// This option is additive and can be called multiple times.
+func WithExclude(types ...string) Option {
 	return func(c *config) {
-		if types != nil {
-			c.exclude = types
+		if len(types) > 0 {
+			c.exclude = append(c.exclude, types...)
 		}
 	}
 }
