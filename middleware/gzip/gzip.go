@@ -34,6 +34,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/deep-rent/nexus/header"
@@ -56,9 +57,11 @@ type interceptor struct {
 	http.ResponseWriter
 	gz       *gzip.Writer
 	level    int
+	exclude  []string
 	pool     *sync.Pool
 	header   bool // Tracks if WriteHeader has been called.
-	hijacked bool
+	hijacked bool // Tracks if the connection has been hijacked.
+	skip     bool // Decide whether to skip compression.
 }
 
 // WriteHeader sets the Content-Encoding header and deletes Content-Length
@@ -69,11 +72,22 @@ func (w *interceptor) WriteHeader(statusCode int) {
 		return
 	}
 	w.header = true
-	// The content type is needed to sniff and decide if we should compress.
-	// We have to write the header before this check.
-	w.ResponseWriter.Header().Set("Content-Type", w.Header().Get("Content-Type"))
-	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Del("Content-Length")
+
+	mime := header.MediaType(w.Header())
+	for _, t := range w.exclude {
+		if strings.HasPrefix(mime, t) {
+			w.skip = true
+			break
+		}
+	}
+
+	if !w.skip {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length")
+		w.gz = w.pool.Get().(*gzip.Writer)
+		w.gz.Reset(w.ResponseWriter)
+	}
+
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
@@ -83,12 +97,14 @@ func (w *interceptor) Write(b []byte) (int, error) {
 	if !w.header {
 		w.WriteHeader(http.StatusOK)
 	}
+	if w.skip {
+		return w.ResponseWriter.Write(b)
+	}
 	return w.gz.Write(b)
 }
 
 // Close flushes any buffered data, closes the gzip writer, and returns it to
-// the pool. It is essential that Close is called, typically via defer, to
-// ensure resources are properly released.
+// the pool.
 func (w *interceptor) Close() {
 	// If the connection was hijacked, don't write the gzip footer.
 	// Just return the writer to the pool.
@@ -165,8 +181,8 @@ func New(opts ...Option) middleware.Pipe {
 			// Create the gzip response writer.
 			gzw := &interceptor{
 				ResponseWriter: w,
-				gz:             gz,
 				level:          cfg.level,
+				exclude:        cfg.exclude,
 				pool:           pool,
 			}
 			defer gzw.Close()
@@ -180,7 +196,8 @@ func New(opts ...Option) middleware.Pipe {
 
 // config holds the middleware configuration.
 type config struct {
-	level int
+	level   int
+	exclude []string
 }
 
 // Option is a function that configures the middleware.
@@ -196,6 +213,13 @@ func WithCompressionLevel(level int) Option {
 			c.level = level
 		} else {
 			c.level = DefaultCompression
+		}
+	}
+}
+func WithExclude(types []string) Option {
+	return func(c *config) {
+		if types != nil {
+			c.exclude = types
 		}
 	}
 }
