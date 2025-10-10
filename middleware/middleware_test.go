@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/middleware"
+	mw "github.com/deep-rent/nexus/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 func TestChain(t *testing.T) {
 	t.Run("Chains pipes in correct order", func(t *testing.T) {
 		var order []string
-		rec := func(id string) middleware.Pipe {
+		rec := func(id string) mw.Pipe {
 			return func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					order = append(order, id)
@@ -38,7 +38,7 @@ func TestChain(t *testing.T) {
 			}
 		}
 
-		h := middleware.Chain(okHandler, rec("A"), rec("B"), rec("C"))
+		h := mw.Chain(okHandler, rec("A"), rec("B"), rec("C"))
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 
 		exp := "A,B,C"
@@ -55,13 +55,13 @@ func TestChain(t *testing.T) {
 			})
 		}
 
-		h := middleware.Chain(okHandler, nil, p, nil)
+		h := mw.Chain(okHandler, nil, p, nil)
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 		assert.True(t, called)
 	})
 
 	t.Run("Returns original handler if no pipes", func(t *testing.T) {
-		h := middleware.Chain(okHandler)
+		h := mw.Chain(okHandler)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -73,7 +73,7 @@ func TestChain(t *testing.T) {
 func TestRecover(t *testing.T) {
 	var buf bytes.Buffer
 	logger := newLogger(&buf)
-	pipe := middleware.Recover(logger)
+	pipe := mw.Recover(logger)
 
 	t.Run("Recovers from panic", func(t *testing.T) {
 		buf.Reset()
@@ -108,11 +108,11 @@ func TestRecover(t *testing.T) {
 func TestRequestID(t *testing.T) {
 	var captured string
 	trap := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		captured = middleware.GetRequestID(r.Context())
+		captured = mw.GetRequestID(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := middleware.RequestID()(trap)
+	h := mw.RequestID()(trap)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -125,14 +125,14 @@ func TestRequestID(t *testing.T) {
 
 func TestGetSetRequestID(t *testing.T) {
 	t.Run("Get from empty context", func(t *testing.T) {
-		id := middleware.GetRequestID(context.Background())
+		id := mw.GetRequestID(context.Background())
 		assert.Empty(t, id)
 	})
 
 	t.Run("Set and get ID", func(t *testing.T) {
 		exp := "test-id"
-		ctx := middleware.SetRequestID(context.Background(), exp)
-		act := middleware.GetRequestID(ctx)
+		ctx := mw.SetRequestID(context.Background(), exp)
+		act := mw.GetRequestID(ctx)
 		assert.Equal(t, exp, act)
 	})
 }
@@ -140,7 +140,7 @@ func TestGetSetRequestID(t *testing.T) {
 func TestLog(t *testing.T) {
 	var buf bytes.Buffer
 	logger := newLogger(&buf)
-	pipe := middleware.Log(logger)
+	pipe := mw.Log(logger)
 
 	t.Run("Logs with non-default status", func(t *testing.T) {
 		buf.Reset()
@@ -153,7 +153,7 @@ func TestLog(t *testing.T) {
 		req := httptest.NewRequest("POST", "/path?q=1", nil)
 		req.RemoteAddr = "1.2.3.4:12345"
 		req.Header.Set("User-Agent", "test-agent")
-		req = req.WithContext(middleware.SetRequestID(req.Context(), "test-id"))
+		req = req.WithContext(mw.SetRequestID(req.Context(), "test-id"))
 
 		rr := httptest.NewRecorder()
 		ch.ServeHTTP(rr, req)
@@ -190,14 +190,14 @@ func TestIntegration(t *testing.T) {
 	logger := newLogger(&buf)
 
 	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.NotEmpty(t, middleware.GetRequestID(r.Context()))
+		assert.NotEmpty(t, mw.GetRequestID(r.Context()))
 		w.WriteHeader(http.StatusAccepted)
 	})
 
-	h := middleware.Chain(
-		final, middleware.Recover(logger),
-		middleware.RequestID(),
-		middleware.Log(logger),
+	h := mw.Chain(
+		final, mw.Recover(logger),
+		mw.RequestID(),
+		mw.Log(logger),
 	)
 
 	req := httptest.NewRequest("GET", "/int", nil)
