@@ -76,7 +76,7 @@ type interceptor struct {
 	level    int
 	exclude  []string
 	pool     *sync.Pool
-	header   bool // Tracks if WriteHeader has been called.
+	wrote    bool // Tracks if WriteHeader has been called.
 	hijacked bool // Tracks if the connection has been hijacked.
 	skip     bool // Decide whether to skip compression.
 }
@@ -85,10 +85,14 @@ type interceptor struct {
 // before writing the status code. Deleting Content-Length is crucial, as the
 // size of the compressed content is unknown until it's fully written.
 func (w *interceptor) WriteHeader(statusCode int) {
-	if w.header {
+	if w.wrote {
 		return
 	}
-	w.header = true
+	w.wrote = true
+
+	if w.ResponseWriter.Header().Get("Content-Encoding") != "" {
+		w.skip = true
+	}
 
 	mime := header.MediaType(w.Header())
 	if mime != "" {
@@ -120,7 +124,7 @@ func (w *interceptor) WriteHeader(statusCode int) {
 // Write compresses the data and writes it to the underlying ResponseWriter.
 // It also handles setting the Content-Encoding header on the first write.
 func (w *interceptor) Write(b []byte) (int, error) {
-	if !w.header {
+	if !w.wrote {
 		w.WriteHeader(http.StatusOK)
 	}
 	if w.skip {
