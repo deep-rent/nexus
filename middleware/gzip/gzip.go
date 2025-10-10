@@ -174,10 +174,6 @@ func New(opts ...Option) middleware.Pipe {
 				return
 			}
 
-			// Get a gzip writer from the pool.
-			gz := pool.Get().(*gzip.Writer)
-			gz.Reset(w)
-
 			// Create the gzip response writer.
 			gzw := &interceptor{
 				ResponseWriter: w,
