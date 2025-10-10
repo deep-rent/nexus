@@ -49,6 +49,21 @@ const (
 	NoCompression      = gzip.NoCompression
 )
 
+// defaultExcludeList lists common media types that are already compressed.
+var defaultExcludeList = []string{
+	// Media
+	"image/",
+	"video/",
+	"audio/",
+	// Fonts
+	"font/",
+	// Archives & Documents
+	"application/zip",
+	"application/gzip",
+	"application/pdf",
+	"application/wasm",
+}
+
 // interceptor wraps an http.ResponseWriter to transparently compress the
 // response body with gzip. It also implements http.Hijacker and http.Flusher to
 // support protocol upgrades and streaming.
@@ -152,7 +167,10 @@ var _ http.Flusher = (*interceptor)(nil)
 // Content-Encoding header. It adds the "Vary: Accept-Encoding" header to
 // responses to prevent cache poisoning.
 func New(opts ...Option) middleware.Pipe {
-	cfg := config{level: DefaultCompression}
+	cfg := config{
+		level:   DefaultCompression,
+		exclude: defaultExcludeList,
+	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -218,7 +236,7 @@ func WithCompressionLevel(level int) Option {
 // This option is additive and can be called multiple times.
 func WithExclude(types ...string) Option {
 	return func(c *config) {
-		if len(types) > 0 {
+		if len(types) != 0 {
 			c.exclude = append(c.exclude, types...)
 		}
 	}
