@@ -77,6 +77,8 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/deep-rent/nexus/util/primitive"
 )
 
 // flag encapsulates metadata for a single registered command-line flag.
@@ -95,7 +97,7 @@ func (f *flag) set(v string) error {
 	if f.repeated {
 		return addRepeated(f.val, v)
 	} else {
-		return setValue(f.val, v)
+		return primitive.Parse(f.val, v)
 	}
 }
 
@@ -115,7 +117,9 @@ type parg struct {
 }
 
 // set sets the argument's value from a string.
-func (a *parg) set(v string) error { return setValue(a.val, v) }
+func (a *parg) set(v string) error {
+	return primitive.Parse(a.val, v)
+}
 
 // Set manages a collection of defined flags for a command.
 type Set struct {
@@ -441,78 +445,10 @@ func (s *Set) parseName(args []string, i int) (int, error) {
 	return 2, nil
 }
 
-// Parse attempts to convert string v to the type expected by rv and sets it.
-//
-// Preconditions:
-// 1. rv must be a valid reflect.Value (rv.IsValid() == true).
-// 2. rv must be settable (rv.CanSet() == true).
-// 3. rv must have a Kind for which Is(rv.Kind()) returns true.
-//
-// Failure to satisfy these preconditions will result in a runtime panic or
-// an error.
-func setValue(rv reflect.Value, v string) error {
-	switch kind := rv.Kind(); kind {
-	case reflect.String:
-		rv.SetString(v)
-		return nil
-	case reflect.Bool:
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("%q is not a bool", v)
-		}
-		rv.SetBool(b)
-		return nil
-	case
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		b := rv.Type().Bits()
-		i, err := strconv.ParseInt(v, 10, b)
-		if err != nil {
-			return fmt.Errorf("%q is not an int%d", v, b)
-		}
-		rv.SetInt(i)
-		return nil
-	case
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64:
-		b := rv.Type().Bits()
-		u, err := strconv.ParseUint(v, 10, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a uint%d", v, b)
-		}
-		rv.SetUint(u)
-		return nil
-	case reflect.Float32, reflect.Float64:
-		b := rv.Type().Bits()
-		f, err := strconv.ParseFloat(v, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a float%d", v, b)
-		}
-		rv.SetFloat(f)
-		return nil
-	case reflect.Complex64, reflect.Complex128:
-		b := rv.Type().Bits()
-		c, err := strconv.ParseComplex(v, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a complex%d", v, b)
-		}
-		rv.SetComplex(c)
-		return nil
-	default:
-		return fmt.Errorf("unsupported type: %s", kind)
-	}
-}
-
 // addRepeated parses and appends a repeated flag value to a slice.
 func addRepeated(rv reflect.Value, v string) error {
 	item := reflect.New(rv.Type().Elem()).Elem()
-	if err := setValue(item, v); err != nil {
+	if err := primitive.Parse(item, v); err != nil {
 		return err
 	}
 	rv.Set(reflect.Append(rv, item))

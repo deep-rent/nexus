@@ -112,6 +112,7 @@ import (
 	"unicode"
 
 	"github.com/deep-rent/nexus/util/pointer"
+	"github.com/deep-rent/nexus/util/primitive"
 	"github.com/deep-rent/nexus/util/quote"
 	"github.com/deep-rent/nexus/util/snake"
 )
@@ -372,64 +373,10 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 // setOther handles all other supported primitive and slice types by delegating
 // to the appropriate parsing logic.
 func setOther(rv reflect.Value, v string, opts flags) error {
-	switch kind := rv.Kind(); kind {
-	case reflect.String:
-		rv.SetString(v)
-		return nil
-	case reflect.Bool:
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("%q is not a bool", v)
-		}
-		rv.SetBool(b)
-		return nil
-	case
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		b := rv.Type().Bits()
-		i, err := strconv.ParseInt(v, 10, b)
-		if err != nil {
-			return fmt.Errorf("%q is not an int%d", v, b)
-		}
-		rv.SetInt(i)
-		return nil
-	case
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64:
-		b := rv.Type().Bits()
-		u, err := strconv.ParseUint(v, 10, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a uint%d", v, b)
-		}
-		rv.SetUint(u)
-		return nil
-	case reflect.Float32, reflect.Float64:
-		b := rv.Type().Bits()
-		f, err := strconv.ParseFloat(v, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a float%d", v, b)
-		}
-		rv.SetFloat(f)
-		return nil
-	case reflect.Complex64, reflect.Complex128:
-		b := rv.Type().Bits()
-		c, err := strconv.ParseComplex(v, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a complex%d", v, b)
-		}
-		rv.SetComplex(c)
-		return nil
-	case reflect.Slice:
+	if rv.Kind() == reflect.Struct {
 		return setSlice(rv, v, opts)
-	default:
-		return fmt.Errorf("unsupported type: %s", kind)
 	}
+	return primitive.Parse(rv, v)
 }
 
 // setTime parses and sets a time.Time value based on the provided format and
