@@ -43,9 +43,9 @@ func (d Directive) String() string {
 //
 // For example, parsing "no-cache, max-age=3600" would yield two Directives:
 // {Key: "no-cache", Value: ""} and {Key: "max-age", Value: "3600"}.
-func Directives(value string) iter.Seq[Directive] {
+func Directives(s string) iter.Seq[Directive] {
 	return func(yield func(Directive) bool) {
-		for part := range strings.SplitSeq(value, ",") {
+		for part := range strings.SplitSeq(s, ",") {
 			k, v, found := strings.Cut(strings.TrimSpace(part), "=")
 			k = strings.ToLower(strings.TrimSpace(k))
 			if found {
@@ -139,9 +139,9 @@ func Credentials(h http.Header, scheme string) string {
 // values are yielded in the order they appear in the header, not sorted by
 // quality. Values without an explicit q-factor are assigned a default quality
 // of 1.0. Malformed q-factors are also treated as 1.0.
-func Preferences(value string) iter.Seq2[string, float64] {
+func Preferences(s string) iter.Seq2[string, float64] {
 	return func(yield func(string, float64) bool) {
-		for part := range strings.SplitSeq(value, ",") {
+		for part := range strings.SplitSeq(s, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
@@ -169,8 +169,8 @@ func Preferences(value string) iter.Seq2[string, float64] {
 // Accepts checks if the given key is present in a header value with
 // quality factors (e.g., Accept, Accept-Encoding) and that its quality factor
 // is greater than zero. It returns true if the key is accepted, else false.
-func Accepts(value, key string) bool {
-	for k, q := range Preferences(value) {
+func Accepts(s, key string) bool {
+	for k, q := range Preferences(s) {
 		if k == key {
 			return q > 0
 		}
@@ -213,6 +213,20 @@ func UserAgent(name, version, comment string) Header {
 		Key:   "User-Agent",
 		Value: value,
 	}
+}
+
+func MediaType(h http.Header) string {
+	v := h.Get("Content-Type")
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	i := strings.IndexByte(v, ';')
+	if i == -1 {
+		return v
+	}
+	mime := v[:i]
+	return strings.TrimSpace(mime)
 }
 
 type transport struct {
