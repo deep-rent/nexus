@@ -18,7 +18,10 @@
 //	})
 //
 //	// Create a gzip middleware pipe with the highest level if compression.
-//	pipe := gzip.New(gzip.WithCompressionLevel(gzip.BestCompression))
+//	pipe := gzip.New(
+//		gzip.WithCompressionLevel(gzip.BestCompression),
+//		gzip.WithExcludeMimeTypes("text/*", "application/font-woff"),
+//	)
 //
 //	// Apply the CORS middleware as one of the first layers.
 //	chainedHandler := middleware.Chain(handler, pipe)
@@ -52,11 +55,11 @@ const (
 // defaultExcludeList lists common media types that are already compressed.
 var defaultExcludeList = []string{
 	// Media
-	"image/",
-	"video/",
-	"audio/",
+	"image/*",
+	"video/*",
+	"audio/*",
 	// Fonts
-	"font/",
+	"font/*",
 	// Archives & Documents
 	"application/zip",
 	"application/gzip",
@@ -88,10 +91,19 @@ func (w *interceptor) WriteHeader(statusCode int) {
 	w.header = true
 
 	mime := header.MediaType(w.Header())
-	for _, t := range w.exclude {
-		if strings.HasPrefix(mime, t) {
-			w.skip = true
-			break
+	if mime != "" {
+		for _, t := range w.exclude {
+			if strings.HasSuffix(t, "*") {
+				if strings.HasPrefix(mime, t[:len(t)-1]) {
+					w.skip = true
+					break
+				}
+			} else {
+				if mime == t {
+					w.skip = true
+					break
+				}
+			}
 		}
 	}
 
@@ -224,20 +236,26 @@ type Option func(*config)
 // compression ratio.
 func WithCompressionLevel(level int) Option {
 	return func(c *config) {
-		if level >= BestSpeed && level <= BestCompression {
+		if level >= NoCompression && level <= BestCompression {
 			c.level = level
-		} else {
-			c.level = DefaultCompression
 		}
 	}
 }
 
-// WithExclude adds one or more content type prefixes to the exclusion list.
-// This option is additive and can be called multiple times.
-func WithExclude(types ...string) Option {
+// WithExcludeMimeTypes adds MIME types to the list of content types that
+// should not be compressed. This option is additive and can be called
+// multiple times; it appends to the default exclusion list rather than
+// replacing it.
+//
+// The matching logic supports two formats:
+//
+//   - Exact: Provide the full MIME type (e.g., "application/pdf").
+//   - Prefix: End the MIME type with a wildcard "*" (e.g., "image/*")
+//     to exclude all subtypes for that primary type.
+func WithExcludeMimeTypes(types ...string) Option {
 	return func(c *config) {
-		if len(types) != 0 {
-			c.exclude = append(c.exclude, types...)
+		for _, t := range types {
+			c.exclude = append(c.exclude, strings.ToLower(t))
 		}
 	}
 }
