@@ -133,7 +133,9 @@ func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // the response body, which is useful for streaming data.
 func (w *interceptor) Flush() {
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		w.gz.Flush()
+		if w.gz != nil {
+			w.gz.Flush()
+		}
 		flusher.Flush()
 	}
 }
