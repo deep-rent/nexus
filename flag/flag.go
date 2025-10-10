@@ -187,11 +187,11 @@ func (s *Set) Add(v any, char rune, name, desc string) {
 	e := rv.Elem()
 	repeated := e.Kind() == reflect.Slice
 	if repeated {
-		if kind := e.Type().Elem().Kind(); !isPrimitive(kind) {
+		if kind := e.Type().Elem().Kind(); !primitive.Is(kind) {
 			panic(fmt.Sprintf("unsupported repeatable flag type: []%s", kind))
 		}
 	} else {
-		if kind := e.Kind(); !isPrimitive(kind) {
+		if kind := e.Kind(); !primitive.Is(kind) {
 			panic(fmt.Sprintf("unsupported flag type: %s", kind))
 		}
 	}
@@ -245,12 +245,12 @@ func (s *Set) Arg(v any, name, desc string, required bool) {
 	variadic := e.Kind() == reflect.Slice
 
 	if variadic {
-		if kind := e.Type().Elem().Kind(); !isPrimitive(kind) {
+		if kind := e.Type().Elem().Kind(); !primitive.Is(kind) {
 			panic(fmt.Sprintf("unsupported variadic argument type: %s", kind))
 		}
 	} else {
 		// For non-slices, check the kind directly.
-		if kind := e.Kind(); !isPrimitive(kind) {
+		if kind := e.Kind(); !primitive.Is(kind) {
 			panic(fmt.Sprintf("unsupported argument type: %s", kind))
 		}
 	}
@@ -607,29 +607,4 @@ func Usage() { fmt.Fprint(os.Stdout, commandLine.Usage()) }
 // Set. This is intended for use in tests to ensure a clean state.
 func Reset() {
 	commandLine = New(filepath.Base(os.Args[0]))
-}
-
-// isPrimitive reports whether the specified kind is a primitive type.
-func isPrimitive(k reflect.Kind) bool {
-	switch k {
-	case
-		reflect.String,
-		reflect.Bool,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Float32,
-		reflect.Float64,
-		reflect.Complex64,
-		reflect.Complex128:
-		return true
-	}
-	return false
 }
