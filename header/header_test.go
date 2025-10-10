@@ -14,49 +14,54 @@ import (
 )
 
 func TestDirectives(t *testing.T) {
+	type directive struct {
+		k string
+		v string
+	}
+
 	type test struct {
 		name string
 		in   string
-		want []header.Directive
+		want []directive
 	}
 	tests := []test{
 		{
 			name: "simple",
 			in:   "max-age=3600",
-			want: []header.Directive{{"max-age", "3600"}},
+			want: []directive{{"max-age", "3600"}},
 		},
 		{
 			name: "multiple",
 			in:   "no-cache, max-age=3600",
-			want: []header.Directive{{"no-cache", ""}, {"max-age", "3600"}},
+			want: []directive{{"no-cache", ""}, {"max-age", "3600"}},
 		},
 		{
 			name: "with spaces",
 			in:   "  no-cache ,  max-age = 3600  ",
-			want: []header.Directive{{"no-cache", ""}, {"max-age", "3600"}},
+			want: []directive{{"no-cache", ""}, {"max-age", "3600"}},
 		},
 		{
 			name: "flag only",
 			in:   "no-cache",
-			want: []header.Directive{{"no-cache", ""}},
+			want: []directive{{"no-cache", ""}},
 		},
 		{
 			name: "empty",
 			in:   "",
-			want: []header.Directive{{"", ""}},
+			want: []directive{{"", ""}},
 		},
 		{
 			name: "only comma",
 			in:   ",",
-			want: []header.Directive{{"", ""}, {"", ""}},
+			want: []directive{{"", ""}, {"", ""}},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var got []header.Directive
-			for d := range header.Directives(tc.in) {
-				got = append(got, d)
+			var got []directive
+			for k, v := range header.Directives(tc.in) {
+				got = append(got, directive{k, v})
 			}
 			assert.Equal(t, tc.want, got)
 		})
@@ -300,6 +305,16 @@ func TestPreferences(t *testing.T) {
 			want: []pref{{"en", 1.0}},
 		},
 		{
+			name: "bounded from above",
+			in:   "a;q=2.0",
+			want: []pref{{"a", 1.0}},
+		},
+		{
+			name: "bounded from below",
+			in:   "b;q=-1.0",
+			want: []pref{{"b", 0.0}},
+		},
+		{
 			name: "empty",
 			in:   "",
 			want: nil,
@@ -348,6 +363,48 @@ func TestAccepts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := header.Accepts(tc.value, tc.key)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestMediaType(t *testing.T) {
+	type test struct {
+		name string
+		h    http.Header
+		want string
+	}
+	tests := []test{
+		{
+			name: "basic",
+			h:    http.Header{"Content-Type": {"application/json; charset=utf-8"}},
+			want: "application/json",
+		},
+		{
+			name: "not present",
+			h:    http.Header{},
+			want: "",
+		},
+		{
+			name: "empty",
+			h:    http.Header{"Content-Type": {""}},
+			want: "",
+		},
+		{
+			name: "trim space",
+			h:    http.Header{"Content-Type": {" application/json\t"}},
+			want: "application/json",
+		},
+		{
+			name: "lowercase",
+			h:    http.Header{"Content-Type": {"APPLICATION/JSON; foo=bar"}},
+			want: "application/json",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := header.MediaType(tc.h)
 			assert.Equal(t, tc.want, got)
 		})
 	}

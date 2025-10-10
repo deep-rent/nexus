@@ -20,41 +20,20 @@ import (
 	"time"
 )
 
-// Directive represents a single key-value pair from a header value,
-// such as "max-age=3600" in a Cache-Control header.
-type Directive struct {
-	// Key is the directive's key, always converted to lower-case.
-	Key string
-	// Value is the directive's value. It is empty if the directive is a flag.
-	Value string
-}
-
-// String formats the directive back into its standard string representation.
-// If the value is empty, it returns only the key (e.g., "no-cache").
-func (d Directive) String() string {
-	if d.Value == "" {
-		return d.Key
-	}
-	return d.Key + "=" + d.Value
-}
-
 // Directives parses a comma-separated header value into an iterator of
-// Directive structs.
+// key-value pairs.
 //
-// For example, parsing "no-cache, max-age=3600" would yield two Directives:
-// {Key: "no-cache", Value: ""} and {Key: "max-age", Value: "3600"}.
-func Directives(s string) iter.Seq[Directive] {
-	return func(yield func(Directive) bool) {
-		for part := range strings.SplitSeq(s, ",") {
-			k, v, found := strings.Cut(strings.TrimSpace(part), "=")
+// For example, parsing "no-cache, max-age=3600" would yield twice: first
+// "no-cache", "" and then "max-age", "3600".
+func Directives(s string) iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		for kv := range strings.SplitSeq(s, ",") {
+			k, v, ok := strings.Cut(strings.TrimSpace(kv), "=")
 			k = strings.ToLower(strings.TrimSpace(k))
-			if found {
+			if ok {
 				v = strings.TrimSpace(v)
 			}
-			if !yield(Directive{
-				Key:   k,
-				Value: v,
-			}) {
+			if !yield(k, v) {
 				return
 			}
 		}
@@ -95,12 +74,12 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	// Cache-Control takes precedence over Expires
 	if v := h.Get("Cache-Control"); v != "" {
-		for kv := range Directives(v) {
-			switch kv.Key {
+		for k, v := range Directives(v) {
+			switch k {
 			case "no-cache", "no-store":
 				return 0
 			case "max-age":
-				if d, err := strconv.ParseInt(kv.Value, 10, 64); err == nil {
+				if d, err := strconv.ParseInt(v, 10, 64); err == nil {
 					return time.Duration(d) * time.Second
 				}
 			}
@@ -135,10 +114,11 @@ func Credentials(h http.Header, scheme string) string {
 }
 
 // Preferences parses a header value with quality factors (e.g., Accept,
-// Accept-Language) into an iterator quality factors (q-value) by key. The
-// values are yielded in the order they appear in the header, not sorted by
-// quality. Values without an explicit q-factor are assigned a default quality
-// of 1.0. Malformed q-factors are also treated as 1.0.
+// Accept-Encoding, Accept-Language) into an iterator quality factors (q-value)
+// by name (media range). The values are yielded in the order they appear in the
+// header, not sorted by quality. Values without an explicit q-factor are
+// assigned a default quality of 1.0. Malformed q-factors are also treated as
+// 1.0, while out-of-range values are clamped into the [0.0, 1.0] interval.
 func Preferences(s string) iter.Seq2[string, float64] {
 	return func(yield func(string, float64) bool) {
 		for part := range strings.SplitSeq(s, ",") {
@@ -153,8 +133,8 @@ func Preferences(s string) iter.Seq2[string, float64] {
 				k, v, found := strings.Cut(p, "=")
 				if found && strings.TrimSpace(k) == "q" {
 					v = strings.TrimSpace(v)
-					if r, err := strconv.ParseFloat(v, 64); err == nil {
-						q = r
+					if f, err := strconv.ParseFloat(v, 64); err == nil {
+						q = min(1.0, max(0.0, f))
 					}
 					break
 				}
@@ -167,8 +147,9 @@ func Preferences(s string) iter.Seq2[string, float64] {
 }
 
 // Accepts checks if the given key is present in a header value with
-// quality factors (e.g., Accept, Accept-Encoding) and that its quality factor
-// is greater than zero. It returns true if the key is accepted, else false.
+// quality factors, such as Accept, Accept-Encoding, or Accept-Language, and
+// that its q-value is greater than zero. It returns true if the key (media
+// range) is accepted, else false.
 func Accepts(s, key string) bool {
 	for k, q := range Preferences(s) {
 		if k == key {
@@ -176,6 +157,24 @@ func Accepts(s, key string) bool {
 		}
 	}
 	return false
+}
+
+// MediaType extracts and returns the media type from a Content-Type header.
+// It returns the media type in lowercase, trimmed of whitespace. If the header
+// is empty or malformed, it returns an empty string.
+//
+// This function is similar to mime.ParseMediaType but does not return any
+// parameters and ignores parsing errors.
+func MediaType(h http.Header) string {
+	v := h.Get("Content-Type")
+	if v == "" {
+		return ""
+	}
+	i := strings.IndexByte(v, ';')
+	if i != -1 {
+		v = v[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(v))
 }
 
 // Header represents a single HTTP header key-value pair.
@@ -213,20 +212,6 @@ func UserAgent(name, version, comment string) Header {
 		Key:   "User-Agent",
 		Value: value,
 	}
-}
-
-func MediaType(h http.Header) string {
-	v := h.Get("Content-Type")
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return ""
-	}
-	i := strings.IndexByte(v, ';')
-	if i == -1 {
-		return v
-	}
-	mime := v[:i]
-	return strings.TrimSpace(mime)
 }
 
 type transport struct {
