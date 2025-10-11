@@ -1,3 +1,4 @@
+// Package quote provides utility functions for working with quoted strings.
 package quote
 
 // Remove strips a single layer of surrounding single or double quotes from a
