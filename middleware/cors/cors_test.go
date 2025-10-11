@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/middleware/cors"
 )
 
-func TestCorsMiddleware(t *testing.T) {
-	tests := []struct {
+func TestMiddleware(t *testing.T) {
+	type test struct {
 		name           string
 		opts           []cors.Option
 		reqMethod      string
@@ -22,7 +21,9 @@ func TestCorsMiddleware(t *testing.T) {
 		wantStatusCode int
 		wantResHeaders map[string]string
 		wantNextCalled bool
-	}{
+	}
+
+	tests := []test{
 		{
 			name:           "Non-CORS request without Origin header",
 			opts:           []cors.Option{cors.WithAllowedOrigins("http://a.com")},
@@ -60,7 +61,7 @@ func TestCorsMiddleware(t *testing.T) {
 			wantNextCalled: false,
 		},
 		{
-			name:           "Invalid preflight request without request method passes through",
+			name:           "Invalid preflight request without method passes through",
 			opts:           []cors.Option{cors.WithAllowedMethods(http.MethodPut)},
 			reqMethod:      http.MethodOptions,
 			reqHeaders:     map[string]string{"Origin": "http://a.com"},
@@ -135,32 +136,32 @@ func TestCorsMiddleware(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			nextCalled := false
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				nextCalled = true
+				called = true
 				w.WriteHeader(http.StatusOK)
 			})
 
-			handler := cors.New(tt.opts...)(next)
-			r := httptest.NewRequest(tt.reqMethod, "/", nil)
-			for k, v := range tt.reqHeaders {
+			handler := cors.New(tc.opts...)(next)
+			r := httptest.NewRequest(tc.reqMethod, "/", nil)
+			for k, v := range tc.reqHeaders {
 				r.Header.Set(k, v)
 			}
 
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, r)
 
-			require.Equal(t, tt.wantStatusCode, w.Code)
-			assert.Equal(t, tt.wantNextCalled, nextCalled)
+			assert.Equal(t, tc.wantStatusCode, w.Code)
+			assert.Equal(t, tc.wantNextCalled, called)
 
-			if tt.wantResHeaders == nil {
+			if tc.wantResHeaders == nil {
 				for h := range w.Header() {
 					assert.NotContains(t, strings.ToLower(h), "access-control-")
 				}
 			} else {
-				for k, v := range tt.wantResHeaders {
+				for k, v := range tc.wantResHeaders {
 					assert.Equal(t, v, w.Header().Get(k))
 				}
 			}

@@ -3,7 +3,6 @@ package middleware_test
 import (
 	"bytes"
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,17 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func newLogger(buf *bytes.Buffer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-}
-
-var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
-})
 
 func TestChain(t *testing.T) {
 	t.Run("Chains pipes in correct order", func(t *testing.T) {
@@ -38,10 +26,10 @@ func TestChain(t *testing.T) {
 			}
 		}
 
-		h := mw.Chain(okHandler, rec("A"), rec("B"), rec("C"))
+		h := mw.Chain(okHandler, rec("a"), rec("b"), rec("c"))
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 
-		exp := "A,B,C"
+		exp := "a,b,c"
 		act := strings.Join(order, ",")
 		assert.Equal(t, exp, act)
 	})
@@ -66,7 +54,7 @@ func TestChain(t *testing.T) {
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
 		assert.Equal(t, http.StatusOK, rr.Code)
-		assert.Equal(t, "OK", rr.Body.String())
+		assert.Equal(t, "ok", rr.Body.String())
 	})
 }
 
@@ -100,7 +88,7 @@ func TestRecover(t *testing.T) {
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/ok", nil))
 
 		assert.Equal(t, http.StatusOK, rr.Code)
-		assert.Equal(t, "OK", rr.Body.String())
+		assert.Equal(t, "ok", rr.Body.String())
 		assert.Empty(t, buf.String())
 	})
 }
@@ -144,19 +132,18 @@ func TestLog(t *testing.T) {
 
 	t.Run("Logs with non-default status", func(t *testing.T) {
 		buf.Reset()
-		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			io.WriteString(w, "Not Found")
 		})
 
-		ch := pipe(h)
+		h := pipe(final)
 		req := httptest.NewRequest("POST", "/path?q=1", nil)
 		req.RemoteAddr = "1.2.3.4:12345"
 		req.Header.Set("User-Agent", "test-agent")
 		req = req.WithContext(mw.SetRequestID(req.Context(), "test-id"))
 
 		rr := httptest.NewRecorder()
-		ch.ServeHTTP(rr, req)
+		h.ServeHTTP(rr, req)
 
 		assert.Equal(t, http.StatusNotFound, rr.Code)
 		out := buf.String()
@@ -172,11 +159,11 @@ func TestLog(t *testing.T) {
 
 	t.Run("Logs with default status", func(t *testing.T) {
 		buf.Reset()
-		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte("ok"))
 		})
 
-		ch := pipe(h)
+		ch := pipe(final)
 		rr := httptest.NewRecorder()
 		ch.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -213,3 +200,14 @@ func TestIntegration(t *testing.T) {
 	assert.Contains(t, out, "id="+id)
 	assert.Contains(t, out, "status=202")
 }
+
+func newLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+}
+
+var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+})
