@@ -111,10 +111,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/deep-rent/nexus/util/pointer"
-	"github.com/deep-rent/nexus/util/primitive"
-	"github.com/deep-rent/nexus/util/quote"
-	"github.com/deep-rent/nexus/util/snake"
+	"github.com/deep-rent/nexus/internal/util/pointer"
+	"github.com/deep-rent/nexus/internal/util/primitive"
+	"github.com/deep-rent/nexus/internal/util/quote"
+	"github.com/deep-rent/nexus/internal/util/snake"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
