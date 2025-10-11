@@ -24,8 +24,8 @@
 //	}
 //
 //	// 1. Create a scheduler to manage the refresh ticks.
-//	s := scheduler.New(context.Background())
-//	defer s.Shutdown()
+//	sched := scheduler.New(context.Background())
+//	defer sched.Shutdown()
 //
 //	// 2. Define a mapper to parse the response body into your target type.
 //	var mapper cache.Mapper[Resource] = func(body []byte) (Resource, error) {
@@ -43,7 +43,7 @@
 //	)
 //
 //	// 4. Dispatch the controller to start fetching in the background.
-//	s.Dispatch(ctrl)
+//	sched.Dispatch(ctrl)
 //
 //	// 5. You can wait for the first successful fetch.
 //	<-ctrl.Ready()
