@@ -16,32 +16,26 @@ import (
 type ServiceA struct{ ID int }
 type ServiceB struct{ DepA ServiceA }
 type ServiceC struct{ ID int }
-type ServiceD struct {
-	DepB ServiceB
-	DepC *ServiceC
-}
-type ServiceE struct{}
+type ServiceD struct{ DepB ServiceB }
+type ServiceE struct{ DepC *ServiceC }
+type ServiceF struct{}
+type ServiceX struct{ DepY *ServiceY }
+type ServiceY struct{ DepX ServiceX }
+type I interface{ Work() }
+type serviceI struct{ done atomic.Bool }
 
-type Interface interface {
-	Work() error
-}
-
-type serviceI struct {
-	done atomic.Bool
-}
-
-func (c *serviceI) Work() error {
-	c.done.Store(true)
-	return nil
-}
+func (c *serviceI) Work() { c.done.Store(true) }
 
 var (
 	SlotA = di.NewSlot[ServiceA]("service", "a")
 	SlotB = di.NewSlot[ServiceB]("service", "b")
 	SlotC = di.NewSlot[*ServiceC]("service", "c")
 	SlotD = di.NewSlot[ServiceD]("service", "d")
-	SlotE = di.NewSlot[*ServiceE]("service", "optional")
-	SlotI = di.NewSlot[Interface]("service", "closer")
+	SlotE = di.NewSlot[ServiceE]("service", "e")
+	SlotF = di.NewSlot[*ServiceF]("service", "f")
+	SlotI = di.NewSlot[I]("service", "i")
+	SlotX = di.NewSlot[ServiceX]("cycle", "x")
+	SlotY = di.NewSlot[*ServiceY]("cycle", "y")
 )
 
 func ProvideA(in *di.Injector) (ServiceA, error) {
@@ -59,11 +53,25 @@ func ProvideC(in *di.Injector) (*ServiceC, error) {
 
 func ProvideD(in *di.Injector) (ServiceD, error) {
 	b := di.Required(in, SlotB)
-	c := di.Optional(in, SlotC)
-	return ServiceD{DepB: b, DepC: c}, nil
+	return ServiceD{DepB: b}, nil
 }
 
-func ProvideNil(in *di.Injector) (*ServiceE, error) {
+func ProvideE(in *di.Injector) (ServiceE, error) {
+	c := di.Optional(in, SlotC)
+	return ServiceE{DepC: c}, nil
+}
+
+func ProvideX(in *di.Injector) (ServiceX, error) {
+	y := di.Required(in, SlotY)
+	return ServiceX{DepY: y}, nil
+}
+
+func ProvideY(in *di.Injector) (*ServiceY, error) {
+	x := di.Required(in, SlotX)
+	return &ServiceY{DepX: x}, nil
+}
+
+func ProvideNil(in *di.Injector) (*ServiceF, error) {
 	return nil, nil
 }
 
@@ -75,7 +83,7 @@ func ProvidePanic(in *di.Injector) (ServiceA, error) {
 	panic("provider panicked")
 }
 
-func ProvideI(in *di.Injector) (Interface, error) {
+func ProvideI(in *di.Injector) (I, error) {
 	return &serviceI{}, nil
 }
 
@@ -222,12 +230,16 @@ func TestResolution(t *testing.T) {
 		di.Bind(in, SlotB, ProvideB, di.Singleton())
 		di.Bind(in, SlotC, ProvideC, di.Singleton())
 		di.Bind(in, SlotD, ProvideD, di.Singleton())
+		di.Bind(in, SlotE, ProvideE, di.Singleton())
 
 		d, err := di.Use(in, SlotD)
 		require.NoError(t, err)
 		assert.Equal(t, 1, d.DepB.DepA.ID)
-		require.NotNil(t, d.DepC)
-		assert.Equal(t, 3, d.DepC.ID)
+
+		e, err := di.Use(in, SlotE)
+		require.NoError(t, err)
+		require.NotNil(t, e.DepC)
+		assert.Equal(t, 3, e.DepC.ID)
 	})
 
 	t.Run("Use returns error for unbound slot", func(t *testing.T) {
@@ -258,16 +270,16 @@ func TestResolution(t *testing.T) {
 
 	t.Run("Optional returns nil without panic", func(t *testing.T) {
 		in := di.NewInjector()
-		di.Bind(in, SlotE, ProvideNil, di.Transient())
-		instance := di.Optional(in, SlotE)
+		di.Bind(in, SlotF, ProvideNil, di.Transient())
+		instance := di.Optional(in, SlotF)
 		assert.Nil(t, instance)
 	})
 
 	t.Run("Required panics on nil value", func(t *testing.T) {
 		in := di.NewInjector()
-		di.Bind(in, SlotE, ProvideNil, di.Transient())
+		di.Bind(in, SlotF, ProvideNil, di.Transient())
 		assert.Panics(t, func() {
-			di.Required(in, SlotE)
+			di.Required(in, SlotF)
 		})
 	})
 
@@ -286,8 +298,7 @@ func TestResolution(t *testing.T) {
 		instance, err := di.Use(in, SlotI)
 		require.NoError(t, err)
 		require.NotNil(t, instance)
-		err = instance.Work()
-		require.NoError(t, err)
+		instance.Work()
 
 		c, ok := instance.(*serviceI)
 		require.True(t, ok)
@@ -295,22 +306,7 @@ func TestResolution(t *testing.T) {
 	})
 }
 
-type ServiceX struct{ DepY *ServiceY }
-type ServiceY struct{ DepX ServiceX }
-
 func TestCircularDependency(t *testing.T) {
-	SlotX := di.NewSlot[ServiceX]("cycle", "x")
-	SlotY := di.NewSlot[*ServiceY]("cycle", "y")
-
-	ProvideX := func(in *di.Injector) (ServiceX, error) {
-		y := di.Required(in, SlotY)
-		return ServiceX{DepY: y}, nil
-	}
-	ProvideY := func(in *di.Injector) (*ServiceY, error) {
-		x := di.Required(in, SlotX)
-		return &ServiceY{DepX: x}, nil
-	}
-
 	in := di.NewInjector()
 	di.Bind(in, SlotX, ProvideX, di.Transient())
 	di.Bind(in, SlotY, ProvideY, di.Transient())
