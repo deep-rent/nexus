@@ -86,9 +86,9 @@ func Recover(logger *slog.Logger) Pipe {
 
 type contextKey string // Prevents collisions with other packages.
 
-// keyRequestID is the key under which the request ID is stored in the request
+// requestIDKey is the key under which the request ID is stored in the request
 // context.
-const keyRequestID = contextKey("RequestID")
+const requestIDKey = contextKey("RequestID")
 
 // RequestID returns a middleware Pipe that injects a unique ID into each
 // request. It adds the ID to the response via the "X-Request-ID" header and to
@@ -115,14 +115,14 @@ func RequestID() Pipe {
 // GetRequestID retrieves the request ID from a given context. It returns an
 // empty string if the ID is not found.
 func GetRequestID(ctx context.Context) string {
-	id, _ := ctx.Value(keyRequestID).(string)
+	id, _ := ctx.Value(requestIDKey).(string)
 	return id
 }
 
 // SetRequestID sets the request ID in the provided context, returning a new
 // context that carries the ID.
 func SetRequestID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, keyRequestID, id)
+	return context.WithValue(ctx, requestIDKey, id)
 }
 
 // interceptor is used to wrap the original http.ResponseWriter to
