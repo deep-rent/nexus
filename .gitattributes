@@ -1,14 +1,14 @@
 *          text=auto
 .husky/*   text eol=lf
 *.bat      text eol=crlf
-*.cjs      text
+*.cjs      text linguist-vendored
 *.go       text
 *.gz       binary
-*.js       text
+*.js       text linguist-vendored
 *.json     text
 *.lock     binary
 *.md       text diff=markdown
-*.mjs      text
+*.mjs      text linguist-vendored
 *.sh       text eol=lf
 *.svg      text
 *.yaml     text
