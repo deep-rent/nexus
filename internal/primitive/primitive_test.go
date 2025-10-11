@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deep-rent/nexus/util/primitive"
+	"github.com/deep-rent/nexus/internal/primitive"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

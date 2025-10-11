@@ -3,7 +3,7 @@ package quote_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/util/quote"
+	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/stretchr/testify/assert"
 )
 
