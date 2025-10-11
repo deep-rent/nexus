@@ -78,7 +78,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/deep-rent/nexus/util/primitive"
+	"github.com/deep-rent/nexus/internal/util/primitive"
 )
 
 // flag encapsulates metadata for a single registered command-line flag.
