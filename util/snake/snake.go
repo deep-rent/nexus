@@ -8,11 +8,15 @@ import (
 )
 
 // ToUpper converts a camelCase string to an uppercase SNAKE_CASE string.
-// For example: "myVariable" -> "MY_VARIABLE", "APIService" -> "API_SERVICE".
+//
+// For example, "fooBar" is converted to "FOO_BAR", and so is "FOOBar". Note
+// that digits do not induce transitions, so "foo1" becomes "FOO1".
 func ToUpper(s string) string { return transform(s, unicode.ToUpper) }
 
 // ToLower converts a camelCase string to a lowercase snake_case string.
-// For example: "myVariable" -> "my_variable", "APIService" -> "api_service".
+//
+// For example, "fooBar" is converted to "foo_bar", and so is "FOOBar". Note
+// that digits do not induce transitions, so "foo1" becomes "FOO1".
 func ToLower(s string) string { return transform(s, unicode.ToLower) }
 
 func transform(s string, toCase func(rune) rune) string {
