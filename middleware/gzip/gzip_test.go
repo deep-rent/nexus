@@ -175,7 +175,8 @@ func TestMiddleware(t *testing.T) {
 }
 
 func TestFlusher(t *testing.T) {
-	h := gzip.New()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	pipe := gzip.New()
+	h := pipe(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		flusher, ok := w.(http.Flusher)
 		require.True(t, ok)
