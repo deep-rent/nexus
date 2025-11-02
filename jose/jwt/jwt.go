@@ -26,12 +26,11 @@
 // For advanced validation of claims like issuer, audience, and token age,
 // create a reusable Verifier with functional options:
 //
-//	verifier := jwt.NewVerifier[Claims](
-//		keySet,
-//		jwt.WithIssuer("foo", "bar"),
-//		jwt.WithAudience("baz"),
-//		jwt.WithLeeway(time.Minute),
-//		jwt.WithMaxAge(time.Hour),
+//	verifier := jwt.NewVerifier[Claims](keySet)
+//		.WithIssuer("foo", "bar")
+//	  .WithAudience("baz")
+//		.WithLeeway(time.Minute)
+//		.WithMaxAge(time.Hour)
 //	)
 //	claims, err := verifier.Verify([]byte("eyJhb..."))
 //	if err != nil { /* handle validation error */ }
@@ -168,7 +167,7 @@ func (r *Reserved) SetSubject(sub string)      { r.Sub = sub }
 func (r *Reserved) Issuer() string             { return r.Iss }
 func (r *Reserved) SetIssuer(iss string)       { r.Iss = iss }
 func (r *Reserved) Audience() []string         { return r.Aud }
-func (r *Reserved) SetAudience(aud []string)   { r.Aud = aud }
+func (r *Reserved) SetAudience(aud []string)   { r.Aud = audience(aud) }
 func (r *Reserved) IssuedAt() time.Time        { return r.Iat }
 func (r *Reserved) SetIssuedAt(iat time.Time)  { r.Iat = iat }
 func (r *Reserved) ExpiresAt() time.Time       { return r.Exp }
