@@ -121,7 +121,7 @@ func TestController_Run(t *testing.T) {
 	maxInt := 1 * time.Hour
 	goodRes := Resource{ID: 42, Name: "success"}
 	goodBody, _ := json.Marshal(goodRes)
-	tcs := []struct {
+	tests := []struct {
 		name           string
 		handler        *mockHandler
 		mapper         cache.Mapper[Resource]
@@ -210,7 +210,7 @@ func TestController_Run(t *testing.T) {
 			wantLogs:     "Failed to read response body",
 		},
 	}
-	for _, tc := range tcs {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			h.mu.Lock()
 			h.status = tc.handler.status
