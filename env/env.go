@@ -109,11 +109,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/deep-rent/nexus/internal/pointer"
-	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/deep-rent/nexus/internal/snake"
+	"github.com/deep-rent/nexus/internal/tag"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -238,22 +237,24 @@ func Expand(s string, opts ...Option) (string, error) {
 	return b.String(), nil
 }
 
+// flags encapsulates the options parsed from an `env` struct tag.
 type flags struct {
-	Name     string
-	Prefix   *string
-	Split    string
-	Unit     string
-	Format   string
-	Default  string
-	Inline   bool
-	Required bool
+	Name     string  // Name of the environment variable.
+	Prefix   *string // Optional prefix for nested structs.
+	Split    string  // Delimiter for slice types.
+	Unit     string  // Unit for time.Time or time.Duration.
+	Format   string  // Format specifier for special types.
+	Default  string  // Fallback value if the variable is not found.
+	Inline   bool    // Whether to inline an anonymous struct field.
+	Required bool    // Whether the variable is required.
 }
 
 type config struct {
-	Prefix string
-	Lookup Lookup
+	Prefix string // Common prefix for all environment variable keys.
+	Lookup Lookup // Injectable callback for variable lookup.
 }
 
+// Cache types with special unmarshaling logic.
 var (
 	typeTime        = reflect.TypeOf(time.Time{})
 	typeDuration    = reflect.TypeOf(time.Duration(0))
@@ -351,7 +352,7 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 	return nil
 }
 
-func setValue(rv reflect.Value, v string, opts flags) error {
+func setValue(rv reflect.Value, v string, f *flags) error {
 	if u, ok := asUnmarshaler(rv); ok {
 		// Use the custom unmarshaler if available.
 		return u.UnmarshalEnv(v)
@@ -359,13 +360,13 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 	rv = pointer.Deref(rv)
 	switch rv.Type() {
 	case typeTime:
-		return setTime(rv, v, opts)
+		return setTime(rv, v, f)
 	case typeDuration:
-		return setDuration(rv, v, opts)
+		return setDuration(rv, v, f)
 	case typeURL:
 		return setURL(rv, v)
 	default:
-		return setOther(rv, v, opts)
+		return setOther(rv, v, f)
 	}
 }
 
@@ -373,10 +374,10 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 // the appropriate parsing logic based on the reflective kind. If rv is a slice,
 // it calls setSlice, otherwise it attempts to convert v into the type expected
 // by rv and sets it.
-func setOther(rv reflect.Value, v string, opts flags) error {
+func setOther(rv reflect.Value, v string, f *flags) error {
 	switch kind := rv.Kind(); kind {
-	case reflect.Struct:
-		return setSlice(rv, v, opts)
+	case reflect.Slice:
+		return setSlice(rv, v, f)
 	case reflect.Bool:
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -431,15 +432,15 @@ func setOther(rv reflect.Value, v string, opts flags) error {
 
 // setTime parses and sets a time.Time value based on the provided format and
 // unit options.
-func setTime(rv reflect.Value, v string, opts flags) error {
+func setTime(rv reflect.Value, v string, f *flags) error {
 	var t time.Time
 	var err error
-	switch format := opts.Format; format {
+	switch format := f.Format; format {
 	case "unix":
 		var i int64
 		i, err = strconv.ParseInt(v, 10, 64)
 		if err == nil {
-			switch unit := opts.Unit; unit {
+			switch unit := f.Unit; unit {
 			case "s", "":
 				t = time.Unix(i, 0)
 			case "ms":
@@ -471,10 +472,10 @@ func setTime(rv reflect.Value, v string, opts flags) error {
 
 // setDuration parses and sets a time.Duration value based on the provided unit
 // option.
-func setDuration(rv reflect.Value, v string, opts flags) error {
+func setDuration(rv reflect.Value, v string, f *flags) error {
 	var d time.Duration
 	var err error
-	if unit := opts.Unit; unit == "" {
+	if unit := f.Unit; unit == "" {
 		d, err = time.ParseDuration(v)
 	} else {
 		var i int64
@@ -517,11 +518,11 @@ func setURL(rv reflect.Value, v string) error {
 
 // setSlice parses and sets a slice value. It supports []byte with special
 // encoding formats, as well as other slice types by splitting the input string.
-func setSlice(rv reflect.Value, v string, opts flags) error {
+func setSlice(rv reflect.Value, v string, f *flags) error {
 	if rv.Type().Elem().Kind() == reflect.Uint8 {
 		var b []byte
 		var err error
-		switch opts.Format {
+		switch f.Format {
 		case "":
 			b = []byte(v)
 		case "hex":
@@ -531,7 +532,7 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 		case "base64":
 			b, err = base64.StdEncoding.DecodeString(v)
 		default:
-			return fmt.Errorf("unsupported format for []byte: %q", opts.Format)
+			return fmt.Errorf("unsupported format for []byte: %q", f.Format)
 		}
 		if err != nil {
 			return err
@@ -540,7 +541,7 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 		return nil
 	}
 
-	parts := strings.Split(v, opts.Split)
+	parts := strings.Split(v, f.Split)
 	if len(parts) == 1 && parts[0] == "" {
 		rv.Set(reflect.MakeSlice(rv.Type(), 0, 0))
 		return nil
@@ -548,7 +549,7 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 
 	slice := reflect.MakeSlice(rv.Type(), len(parts), len(parts))
 	for i, part := range parts {
-		if err := setValue(slice.Index(i), part, opts); err != nil {
+		if err := setValue(slice.Index(i), part, f); err != nil {
 			return fmt.Errorf("failed to parse slice element at index %d: %w", i, err)
 		}
 	}
@@ -559,83 +560,36 @@ func setSlice(rv reflect.Value, v string, opts flags) error {
 
 // parse parses the `env` tag string. It supports quoted values for options
 // to allow commas within them, e.g., `default:'a,b,c'`.
-func parse(s string) (opts flags, err error) {
-	opts.Split = ","
+func parse(s string) (*flags, error) {
+	t := tag.Parse(s)
+	f := &flags{Name: t.Name, Split: ","}
 
-	// The first part is always the variable name.
-	name, rest, _ := strings.Cut(s, ",")
-	opts.Name = name
-
-	// Scan through the remaining options.
-	for rest != "" {
-		// Trim leading space from the rest of the string.
-		rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
-		if rest == "" {
-			break
+	seen := make(map[string]bool)
+	for k, v := range t.Opts() {
+		if seen[k] {
+			return nil, fmt.Errorf("duplicate option: %q", k)
 		}
-
-		// Find the end of the current option part by finding the next
-		// comma that is not inside quotes.
-		end := -1
-		inQuote := false
-		var q rune
-		for i, r := range rest {
-			if r == q {
-				inQuote = false
-				q = 0
-			} else if !inQuote && (r == '\'' || r == '"') {
-				inQuote = true
-				q = r
-			} else if !inQuote && r == ',' {
-				end = i
-				break
-			}
-		}
-
-		var part string
-		if end == -1 {
-			// This is the last option part.
-			part = rest
-			rest = ""
-		} else {
-			part = rest[:end]
-			rest = rest[end+1:]
-		}
-
-		// Now, parse the individual part (e.g., "default:'foo,bar'").
-		key, val, found := strings.Cut(part, ":")
-		key = strings.TrimSpace(key)
-		if !found {
-			// This is a boolean flag like "inline" or "required".
-			switch key {
-			case "inline":
-				opts.Inline = true
-			case "required":
-				opts.Required = true
-			case "":
-				// An empty part can result from trailing or double commas. Ignore it.
-			default:
-				return opts, fmt.Errorf("unknown tag option: %q", key)
-			}
-			continue
-		}
-		val = quote.Remove(val)
-		switch key {
+		switch k {
 		case "format":
-			opts.Format = val
+			f.Format = v
 		case "prefix":
-			opts.Prefix = &val
+			f.Prefix = &v
 		case "split":
-			opts.Split = val
+			f.Split = v
 		case "unit":
-			opts.Unit = val
+			f.Unit = v
 		case "default":
-			opts.Default = val
+			f.Default = v
+		case "inline":
+			f.Inline = true
+		case "required":
+			f.Required = true
 		default:
-			return opts, fmt.Errorf("unknown tag option: %q", key)
+			return nil, fmt.Errorf("unknown option: %q", k)
 		}
+		seen[k] = true
 	}
-	return opts, nil
+	return f, nil
 }
 
 // isEmbedded checks if a struct field is a true embedded struct that should
