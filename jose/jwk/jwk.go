@@ -83,6 +83,12 @@ func (h *hint[T, U]) setKid(kid string) { h.kid = kid }
 func (h *hint[T, U]) setX5t(x5t string) { h.x5t = x5t }
 func (h *hint[T, U]) isComplete() bool  { return h.kid != "" || h.x5t != "" }
 
+type pair[T crypto.PublicKey, U crypto.PrivateKey] struct {
+	pub    T
+	prv    U
+	isPair bool
+}
+
 type config interface {
 	setKid(string)
 	setX5t(string)
@@ -139,14 +145,6 @@ func New[T crypto.PublicKey, U crypto.PrivateKey](
 	if !h.isComplete() {
 		panic("key must be identifiable")
 	}
-	return newKey(h, pub, prv)
-}
-
-func newKey[T crypto.PublicKey, U crypto.PrivateKey](
-	h *hint[T, U],
-	pub T,
-	prv U,
-) Key {
 	rv := reflect.ValueOf(prv)
 	var isPair bool
 	switch rv.Kind() {
@@ -161,20 +159,15 @@ func newKey[T crypto.PublicKey, U crypto.PrivateKey](
 	default:
 		isPair = true
 	}
-	return &key[T, U]{hint: h, pub: pub, prv: prv, isPair: isPair}
+
+	return &key[T, U]{h, &pair[T, U]{pub, prv, isPair}}
 }
 
 // key is a concrete implementation of the Key interface, generic over the
 // wrapped key types.
 type key[T crypto.PublicKey, U crypto.PrivateKey] struct {
 	*hint[T, U]
-
-	// Actual cryptographic key material
-
-	pub T
-	prv U
-
-	isPair bool
+	*pair[T, U]
 }
 
 func (k *key[T, U]) Verify(msg, sig []byte) bool {
@@ -194,7 +187,7 @@ func (k *key[T, U]) Public() Key {
 	if !k.isPair {
 		return k
 	} else {
-		return &key[T, U]{hint: k.hint, pub: k.pub, isPair: false}
+		return &key[T, U]{hint: k.hint, pair: &pair[T, U]{pub: k.pub}}
 	}
 }
 
@@ -577,18 +570,20 @@ func addCodec[T crypto.PublicKey, U crypto.PrivateKey](
 		encode: func(k Key, r *raw) error {
 			switch t := k.(type) {
 			case *key[T, U]:
-				return enc(t.pub, t.prv, r)
+				return enc(t.pair, r)
 			default:
 				return fmt.Errorf("incompatible key type %T", k)
 			}
 		},
 		decode: func(r *raw) (Key, error) {
-			pub, prv, err := dec(r)
+			p, err := dec(r)
 			if err != nil {
 				return nil, err
 			}
-			h := &hint[T, U]{alg: alg, kid: r.Kid, x5t: r.X5t}
-			return newKey(h, pub, prv), nil
+			return &key[T, U]{
+				hint: &hint[T, U]{alg: alg, kid: r.Kid, x5t: r.X5t},
+				pair: p,
+			}, nil
 		},
 	}
 }
@@ -607,26 +602,28 @@ func addECDSACodec(
 }
 
 // decoder decodes the key material for a specific key type T.
-type decoder[T crypto.PublicKey, U crypto.PrivateKey] func(*raw) (T, U, error)
+type decoder[T crypto.PublicKey, U crypto.PrivateKey] func(*raw) (
+	*pair[T, U], error,
+)
 
 type encoder[T crypto.PublicKey, U crypto.PrivateKey] func(
-	pub T, prv U, r *raw,
+	p *pair[T, U], r *raw,
 ) error
 
 // decodeRSA parses the material for an RSA key.
-func decodeRSA(raw *raw) (*rsa.PublicKey, *rsa.PrivateKey, error) {
+func decodeRSA(raw *raw) (*pair[*rsa.PublicKey, *rsa.PrivateKey], error) {
 	if raw.Kty != "RSA" {
-		return nil, nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
 	if len(raw.N) == 0 {
-		return nil, nil, errors.New("missing modulus")
+		return nil, errors.New("missing modulus")
 	}
 	if len(raw.E) == 0 {
-		return nil, nil, errors.New("missing public exponent")
+		return nil, errors.New("missing public exponent")
 	}
 	// Exponents > 2^31-1 are extremely rare and not recommended.
 	if len(raw.E) > 4 {
-		return nil, nil, errors.New("public exponent exceeds 32 bits")
+		return nil, errors.New("public exponent exceeds 32 bits")
 	}
 	n := new(big.Int).SetBytes(raw.N)
 	e := 0
@@ -637,11 +634,11 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, *rsa.PrivateKey, error) {
 	}
 	pub := &rsa.PublicKey{N: n, E: e}
 	if len(raw.D) == 0 {
-		return pub, nil, nil
+		return &pair[*rsa.PublicKey, *rsa.PrivateKey]{pub: pub}, nil
 	}
 
 	if len(raw.P) == 0 || len(raw.Q) == 0 {
-		return nil, nil, errors.New("missing prime factor for private key")
+		return nil, errors.New("missing prime factor for private key")
 	}
 
 	prv := &rsa.PrivateKey{
@@ -664,43 +661,47 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, *rsa.PrivateKey, error) {
 	}
 
 	if err := prv.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("invalid private key: %w", err)
+		return nil, fmt.Errorf("invalid private key: %w", err)
 	}
 
-	return pub, prv, nil
+	return &pair[*rsa.PublicKey, *rsa.PrivateKey]{
+		pub:    pub,
+		prv:    prv,
+		isPair: true,
+	}, nil
 }
 
-func encodeRSA(pub *rsa.PublicKey, prv *rsa.PrivateKey, raw *raw) error {
+func encodeRSA(p *pair[*rsa.PublicKey, *rsa.PrivateKey], raw *raw) error {
 	raw.Kty = "RSA"
 	// Match the 32-bit limit set enforced during decoding.
-	if pub.E > 0xFFFFFFFF {
-		return fmt.Errorf("public exponent %d exceeds 32 bits", pub.E)
+	if p.pub.E > 0xFFFFFFFF {
+		return fmt.Errorf("public exponent %d exceeds 32 bits", p.pub.E)
 	}
-	raw.N = pub.N.Bytes()
-	raw.E = big.NewInt(int64(pub.E)).Bytes()
+	raw.N = p.pub.N.Bytes()
+	raw.E = big.NewInt(int64(p.pub.E)).Bytes()
 	// Per RFC 7518 Sec 6.3.1.2, "e" must not be empty.
 	// This handles the (unlikely) case of E = 0.
 	if len(raw.E) == 0 {
 		raw.E = []byte{0}
 	}
 	// Conditionally encode private parameters
-	if prv != nil {
-		raw.D = prv.D.Bytes()
+	if p.isPair {
+		raw.D = p.prv.D.Bytes()
 		// Per RFC 7518, P and Q must be provided for private keys.
-		if len(prv.Primes) != 2 {
+		if len(p.prv.Primes) != 2 {
 			return errors.New("expected two primes (p and q)")
 		}
-		raw.P = prv.Primes[0].Bytes()
-		raw.Q = prv.Primes[1].Bytes()
+		raw.P = p.prv.Primes[0].Bytes()
+		raw.Q = p.prv.Primes[1].Bytes()
 
 		// Other precomputed values are optional but recommended.
-		if dp := prv.Precomputed.Dp; dp != nil {
+		if dp := p.prv.Precomputed.Dp; dp != nil {
 			raw.DP = dp.Bytes()
 		}
-		if dq := prv.Precomputed.Dq; dq != nil {
+		if dq := p.prv.Precomputed.Dq; dq != nil {
 			raw.DQ = dq.Bytes()
 		}
-		if qi := prv.Precomputed.Qinv; qi != nil {
+		if qi := p.prv.Precomputed.Qinv; qi != nil {
 			raw.QI = qi.Bytes()
 		}
 	}
@@ -711,38 +712,38 @@ func encodeRSA(pub *rsa.PublicKey, prv *rsa.PrivateKey, raw *raw) error {
 func decodeECDSA(
 	crv elliptic.Curve,
 ) decoder[*ecdsa.PublicKey, *ecdsa.PrivateKey] {
-	return func(raw *raw) (*ecdsa.PublicKey, *ecdsa.PrivateKey, error) {
+	return func(raw *raw) (*pair[*ecdsa.PublicKey, *ecdsa.PrivateKey], error) {
 		if raw.Kty != "EC" {
-			return nil, nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+			return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 		}
 		if raw.Crv != crv.Params().Name {
-			return nil, nil, fmt.Errorf("incompatible curve %q", raw.Crv)
+			return nil, fmt.Errorf("incompatible curve %q", raw.Crv)
 		}
 		if len(raw.X) == 0 {
-			return nil, nil, errors.New("missing x coordinate")
+			return nil, errors.New("missing x coordinate")
 		}
 		if len(raw.Y) == 0 {
-			return nil, nil, errors.New("missing y coordinate")
+			return nil, errors.New("missing y coordinate")
 		}
 		x := new(big.Int).SetBytes(raw.X)
 		y := new(big.Int).SetBytes(raw.Y)
 
-		//lint:ignore SA1019 We have no alternative for this validation.
+		//lint:ignore SA1019 We have no alternative to this low-level API call.
 		if !crv.IsOnCurve(x, y) {
-			return nil, nil, errors.New("public key is not on curve")
+			return nil, errors.New("public key is not on curve")
 		}
 
 		pub := &ecdsa.PublicKey{Curve: crv, X: x, Y: y}
 		if len(raw.D) == 0 {
-			return pub, nil, nil
+			return &pair[*ecdsa.PublicKey, *ecdsa.PrivateKey]{pub: pub}, nil
 		}
 
 		d := new(big.Int).SetBytes(raw.D)
 
-		//lint:ignore SA1019 We have no alternative for this validation.
+		//lint:ignore SA1019 We have no alternative to this low-level API call.
 		derivedX, derivedY := crv.ScalarBaseMult(d.Bytes())
 		if derivedX.Cmp(x) != 0 || derivedY.Cmp(y) != 0 {
-			return nil, nil, errors.New("public key does not match private key")
+			return nil, errors.New("public key does not match private key")
 		}
 
 		prv := &ecdsa.PrivateKey{
@@ -750,7 +751,11 @@ func decodeECDSA(
 			D:         d,
 		}
 
-		return pub, prv, nil
+		return &pair[*ecdsa.PublicKey, *ecdsa.PrivateKey]{
+			pub:    pub,
+			prv:    prv,
+			isPair: true,
+		}, nil
 	}
 }
 
@@ -768,26 +773,26 @@ func encodeECDSA(
 		copy(padded[size-len(data):], data)
 		return padded
 	}
-	return func(pub *ecdsa.PublicKey, prv *ecdsa.PrivateKey, raw *raw) error {
-		if got := pub.Curve.Params().Name; got != name {
+	return func(p *pair[*ecdsa.PublicKey, *ecdsa.PrivateKey], raw *raw) error {
+		if got := p.pub.Curve.Params().Name; got != name {
 			return fmt.Errorf("incompatible curve %q", got)
 		}
 		raw.Kty = "EC"
 		raw.Crv = name
-		raw.X = pad(pub.X.Bytes())
-		raw.Y = pad(pub.Y.Bytes())
+		raw.X = pad(p.pub.X.Bytes())
+		raw.Y = pad(p.pub.Y.Bytes())
 
-		if prv != nil {
-			raw.D = pad(prv.D.Bytes())
+		if p.isPair {
+			raw.D = pad(p.prv.D.Bytes())
 		}
 		return nil
 	}
 }
 
 // decodeEdDSA parses the material for an EdDSA key.
-func decodeEdDSA(raw *raw) ([]byte, []byte, error) {
+func decodeEdDSA(raw *raw) (*pair[[]byte, []byte], error) {
 	if raw.Kty != "OKP" {
-		return nil, nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
 	var size, seed int
 	switch raw.Crv {
@@ -798,20 +803,20 @@ func decodeEdDSA(raw *raw) ([]byte, []byte, error) {
 		size = ed25519.PublicKeySize
 		seed = ed25519.SeedSize
 	default:
-		return nil, nil, fmt.Errorf("unsupported curve %q", raw.Crv)
+		return nil, fmt.Errorf("unsupported curve %q", raw.Crv)
 	}
 	if m := len(raw.X); m != size {
-		return nil, nil, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"illegal key size for %s curve: got %d, want %d", raw.Crv, m, size,
 		)
 	}
 	pub := raw.X
 	if len(raw.D) == 0 {
-		return pub, nil, nil
+		return &pair[[]byte, []byte]{pub: pub}, nil
 	}
 
 	if len(raw.D) != seed {
-		return nil, nil, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"illegal private key seed size for %s curve: got %d, want %d",
 			raw.Crv, len(raw.D), seed,
 		)
@@ -829,19 +834,19 @@ func decodeEdDSA(raw *raw) ([]byte, []byte, error) {
 	}
 
 	if !slices.Equal(pub, derived.(ed25519.PublicKey)) {
-		return nil, nil, errors.New("public key does not match private key seed")
+		return nil, errors.New("public key does not match private key seed")
 	}
 
-	return pub, prv, nil
+	return &pair[[]byte, []byte]{pub: pub, prv: prv, isPair: true}, nil
 }
 
-func encodeEdDSA(pub []byte, prv []byte, raw *raw) error {
+func encodeEdDSA(p *pair[[]byte, []byte], raw *raw) error {
 	raw.Kty = "OKP"
 
 	var name string
 	var seed int
 	var size int
-	switch len(pub) {
+	switch len(p.pub) {
 	case ed448.PublicKeySize:
 		name = "Ed448"
 		seed = ed448.SeedSize
@@ -851,20 +856,20 @@ func encodeEdDSA(pub []byte, prv []byte, raw *raw) error {
 		seed = ed25519.SeedSize
 		size = ed25519.PrivateKeySize
 	default:
-		return fmt.Errorf("unsupported public key size: %d", len(pub))
+		return fmt.Errorf("unsupported public key size: %d", len(p.pub))
 	}
 
 	raw.Crv = name
-	raw.X = pub
+	raw.X = p.pub
 
-	if prv != nil {
-		if len(prv) != size {
+	if p.prv != nil {
+		if len(p.prv) != size {
 			return fmt.Errorf(
 				"mismatched private key size for curve %s: got %d, want %d",
-				name, len(prv), size,
+				name, len(p.prv), size,
 			)
 		}
-		raw.D = prv[:seed]
+		raw.D = p.prv[:seed]
 	}
 
 	return nil
