@@ -112,7 +112,6 @@ import (
 	"unicode"
 
 	"github.com/deep-rent/nexus/internal/pointer"
-	"github.com/deep-rent/nexus/internal/primitive"
 	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/deep-rent/nexus/internal/snake"
 )
@@ -370,13 +369,64 @@ func setValue(rv reflect.Value, v string, opts flags) error {
 	}
 }
 
-// setOther handles all other supported primitive and slice types by delegating
-// to the appropriate parsing logic.
+// setOther handles all "regular" (primitive and slice) types by delegating to
+// the appropriate parsing logic based on the reflective kind. If rv is a slice,
+// it calls setSlice, otherwise it attempts to convert v into the type expected
+// by rv and sets it.
 func setOther(rv reflect.Value, v string, opts flags) error {
-	if rv.Kind() == reflect.Struct {
+	switch kind := rv.Kind(); kind {
+	case reflect.Struct:
 		return setSlice(rv, v, opts)
+	case reflect.Bool:
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("%q is not a bool", v)
+		}
+		rv.SetBool(b)
+	case reflect.String:
+		rv.SetString(v)
+	case
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64:
+		b := rv.Type().Bits()
+		i, err := strconv.ParseInt(v, 10, b)
+		if err != nil {
+			return fmt.Errorf("%q is not an int%d", v, b)
+		}
+		rv.SetInt(i)
+	case
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64:
+		b := rv.Type().Bits()
+		u, err := strconv.ParseUint(v, 10, b)
+		if err != nil {
+			return fmt.Errorf("%q is not a uint%d", v, b)
+		}
+		rv.SetUint(u)
+	case reflect.Float32, reflect.Float64:
+		b := rv.Type().Bits()
+		f, err := strconv.ParseFloat(v, b)
+		if err != nil {
+			return fmt.Errorf("%q is not a float%d", v, b)
+		}
+		rv.SetFloat(f)
+	case reflect.Complex64, reflect.Complex128:
+		b := rv.Type().Bits()
+		c, err := strconv.ParseComplex(v, b)
+		if err != nil {
+			return fmt.Errorf("%q is not a complex%d", v, b)
+		}
+		rv.SetComplex(c)
+	default:
+		return fmt.Errorf("unsupported type: %s", kind)
 	}
-	return primitive.Parse(rv, v)
+	return nil
 }
 
 // setTime parses and sets a time.Time value based on the provided format and
