@@ -1,13 +1,14 @@
 // Package jwa provides implementations for JSON Web Algorithms (JWA)
-// as defined in RFC 7518. It focuses on the verification of signatures
-// from asymmetric algorithms, whose public keys can be distributed
-// via a JWKS (JSON Web Key Set) endpoint.
+// as defined in RFC 7518. It focuses on the computation and verification of
+// signatures from asymmetric algorithms, whose public keys can be safely
+// distributed via a JWKS (JSON Web Key Set) endpoint.
 package jwa
 
 import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
 	"hash"
@@ -18,16 +19,22 @@ import (
 )
 
 // Algorithm represents an asymmetric JSON Web Algorithm (JWA) used for
-// verifying signatures. The type parameter T specifies the type of public key
-// that the algorithm works with.
-type Algorithm[T crypto.PublicKey] interface {
+// computing and verifying digitalsignatures. The type parameter T specifies
+// the type of public key that the algorithm works with, while U specifies the
+// corresponding type of private key.
+type Algorithm[T crypto.PublicKey, U crypto.PrivateKey] interface {
 	// fmt.Stringer provides the standard JWA name for the algorithm.
 	fmt.Stringer
 
 	// Verify checks a signature against a message using the provided public key.
-	// It returns true if the signature is valid, and false otherwise.
-	// None of the parameters may be nil.
+	// It returns true if the signature is valid, and false otherwise. None of the
+	// parameters must be nil, or else the call will panic.
 	Verify(key T, msg, sig []byte) bool
+
+	// Sign calculates a signature for a message using the provided private key.
+	// It returns the computed signature or an error if signing fails. None of the
+	// parameters must be nil, or else the call will panic.
+	Sign(key U, msg []byte) ([]byte, error)
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
@@ -38,7 +45,9 @@ type rs struct {
 
 // newRS creates a new Algorithm for RSASSA-PKCS1-v1_5 signatures
 // with the given JWA name and hash function.
-func newRS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
+func newRS(name string, hash crypto.Hash) Algorithm[
+	*rsa.PublicKey, *rsa.PrivateKey,
+] {
 	return &rs{
 		name: name,
 		pool: newHashPool(hash),
@@ -51,6 +60,14 @@ func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	h.Write(msg)
 	digest := h.Sum(nil)
 	return rsa.VerifyPKCS1v15(key, a.pool.Hash, digest, sig) == nil
+}
+
+func (a *rs) Sign(key *rsa.PrivateKey, msg []byte) ([]byte, error) {
+	h := a.pool.Get()
+	defer func() { a.pool.Put(h) }()
+	h.Write(msg)
+	digest := h.Sum(nil)
+	return rsa.SignPKCS1v15(nil, key, a.pool.Hash, digest)
 }
 
 func (a *rs) String() string {
@@ -74,7 +91,9 @@ type ps struct {
 
 // newPS creates a new Algorithm for RSASSA-PSS signatures
 // with the given JWA name and hash function.
-func newPS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
+func newPS(name string, hash crypto.Hash) Algorithm[
+	*rsa.PublicKey, *rsa.PrivateKey,
+] {
 	return &ps{
 		name: name,
 		pool: newHashPool(hash),
@@ -89,6 +108,16 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	// The salt length is set to match the hash size.
 	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}
 	return rsa.VerifyPSS(key, a.pool.Hash, digest, sig, opts) == nil
+}
+
+func (a *ps) Sign(key *rsa.PrivateKey, msg []byte) ([]byte, error) {
+	h := a.pool.Get()
+	defer func() { a.pool.Put(h) }()
+	h.Write(msg)
+	digest := h.Sum(nil)
+	// The salt length is set to match the hash size.
+	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}
+	return rsa.SignPSS(nil, key, a.pool.Hash, digest, opts)
 }
 
 func (a *ps) String() string {
@@ -112,7 +141,9 @@ type es struct {
 
 // newES creates a new Algorithm for ECDSA signatures
 // with the given JWA name and hash function.
-func newES(name string, hash crypto.Hash) Algorithm[*ecdsa.PublicKey] {
+func newES(name string, hash crypto.Hash) Algorithm[
+	*ecdsa.PublicKey, *ecdsa.PrivateKey,
+] {
 	return &es{
 		name: name,
 		pool: newHashPool(hash),
@@ -136,6 +167,26 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	s := new(big.Int).SetBytes(sig[n:])
 
 	return ecdsa.Verify(key, digest, r, s)
+}
+
+func (a *es) Sign(key *ecdsa.PrivateKey, msg []byte) ([]byte, error) {
+	h := a.pool.Get()
+	defer func() { a.pool.Put(h) }()
+	h.Write(msg)
+	digest := h.Sum(nil)
+
+	r, s, err := ecdsa.Sign(rand.Reader, key, digest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the byte size of the curve order.
+	// We use key.PublicKey.Curve.Params() here.
+	n := (key.PublicKey.Curve.Params().BitSize + 7) / 8
+
+	// Concatenate the fixed-size R and S (padded to 2n bytes).
+	sig := append(r.FillBytes(make([]byte, n)), s.FillBytes(make([]byte, n))...)
+	return sig, nil
 }
 
 func (a *es) String() string {
@@ -167,13 +218,28 @@ func (a *ed) Verify(key []byte, msg, sig []byte) bool {
 	}
 }
 
+func (a *ed) Sign(key []byte, msg []byte) ([]byte, error) {
+	switch len(key) {
+	case ed448.PrivateKeySize:
+		prv := ed448.PrivateKey(key)
+		sig := ed448.Sign(prv, msg, "")
+		return sig, nil
+	case ed25519.PrivateKeySize:
+		prv := ed25519.PrivateKey(key)
+		sig := ed25519.Sign(prv, msg)
+		return sig, nil
+	default:
+		return nil, fmt.Errorf("unsupported EdDSA private key size: %d", len(key))
+	}
+}
+
 func (a *ed) String() string {
 	return "EdDSA"
 }
 
 // EdDSA represents the EdDSA signature algorithm. It supports both Ed25519
 // and Ed448 curves. The curve is determined by the size of the public key.
-var EdDSA Algorithm[[]byte] = &ed{}
+var EdDSA Algorithm[[]byte, []byte] = &ed{}
 
 // hashPool manages a pool of hash.Hash objects to reduce allocations.
 type hashPool struct {

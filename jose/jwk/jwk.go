@@ -81,28 +81,29 @@ type Key interface {
 // newKey creates a new Key programmatically from its constituent parts. The
 // type parameter T must match the public key type expected by the provided
 // algorithm (e.g., *rsa.PublicKey for jwa.RS256).
-func newKey[T crypto.PublicKey](
-	alg jwa.Algorithm[T],
+func newKey[T crypto.PublicKey, U crypto.PrivateKey](
+	alg jwa.Algorithm[T, U],
 	kid string,
 	x5t string,
-	mat T) Key {
-	return &key[T]{alg: alg, kid: kid, x5t: x5t, mat: mat}
+	mat T,
+) Key {
+	return &key[T, U]{alg: alg, kid: kid, x5t: x5t, mat: mat}
 }
 
 // key is a concrete implementation of the Key interface, generic over the
 // public key type.
-type key[T crypto.PublicKey] struct {
-	alg jwa.Algorithm[T]
+type key[T crypto.PublicKey, U crypto.PrivateKey] struct {
+	alg jwa.Algorithm[T, U]
 	kid string
 	x5t string
 	mat T // The actual cryptographic public key material.
 }
 
-func (k *key[T]) Algorithm() string  { return k.alg.String() }
-func (k *key[T]) KeyID() string      { return k.kid }
-func (k *key[T]) Thumbprint() string { return k.x5t }
+func (k *key[T, U]) Algorithm() string  { return k.alg.String() }
+func (k *key[T, U]) KeyID() string      { return k.kid }
+func (k *key[T, U]) Thumbprint() string { return k.x5t }
 
-func (k *key[T]) Verify(msg, sig []byte) bool {
+func (k *key[T, U]) Verify(msg, sig []byte) bool {
 	return k.alg.Verify(k.mat, msg, sig)
 }
 
@@ -373,7 +374,9 @@ func init() {
 }
 
 // addLoader helps populate the loaders map in a type-safe manner.
-func addLoader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
+func addLoader[
+	T crypto.PublicKey, U crypto.PrivateKey,
+](alg jwa.Algorithm[T, U], dec decoder[T]) {
 	loaders[alg.String()] = func(r *raw) (Key, error) {
 		mat, err := dec(r)
 		if err != nil {
