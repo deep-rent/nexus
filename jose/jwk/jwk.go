@@ -727,6 +727,7 @@ func decodeECDSA(
 		x := new(big.Int).SetBytes(raw.X)
 		y := new(big.Int).SetBytes(raw.Y)
 
+		//lint:ignore SA1019 We have no alternative for this validation.
 		if !crv.IsOnCurve(x, y) {
 			return nil, nil, errors.New("public key is not on curve")
 		}
@@ -738,6 +739,7 @@ func decodeECDSA(
 
 		d := new(big.Int).SetBytes(raw.D)
 
+		//lint:ignore SA1019 We have no alternative for this validation.
 		derivedX, derivedY := crv.ScalarBaseMult(d.Bytes())
 		if derivedX.Cmp(x) != 0 || derivedY.Cmp(y) != 0 {
 			return nil, nil, errors.New("public key does not match private key")
