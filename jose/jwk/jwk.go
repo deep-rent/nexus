@@ -146,7 +146,7 @@ func New[T crypto.PublicKey, U crypto.PrivateKey](
 		panic("key must be identifiable")
 	}
 	rv := reflect.ValueOf(prv)
-	var isPair bool
+	var isPrivate bool
 	switch rv.Kind() {
 	case
 		reflect.Pointer,
@@ -155,12 +155,12 @@ func New[T crypto.PublicKey, U crypto.PrivateKey](
 		reflect.Func,
 		reflect.Interface,
 		reflect.Chan:
-		isPair = !rv.IsNil()
+		isPrivate = !rv.IsNil()
 	default:
-		isPair = true
+		isPrivate = !rv.IsZero()
 	}
 
-	return &key[T, U]{h, &pair[T, U]{pub, prv, isPair}}
+	return &key[T, U]{h, &pair[T, U]{pub, prv, isPrivate}}
 }
 
 // key is a concrete implementation of the Key interface, generic over the
