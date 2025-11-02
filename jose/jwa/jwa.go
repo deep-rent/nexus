@@ -210,12 +210,11 @@ func (a *es) Sign(key *ecdsa.PrivateKey, msg []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// Get the byte size of the curve order.
-	// We use key.PublicKey.Curve.Params() here.
-	n := (key.PublicKey.Curve.Params().BitSize + 7) / 8
-
 	// Concatenate the fixed-size R and S (padded to 2n bytes).
-	sig := append(r.FillBytes(make([]byte, n)), s.FillBytes(make([]byte, n))...)
+	n := (key.PublicKey.Curve.Params().BitSize + 7) / 8
+	sig := make([]byte, 2*n)
+	r.FillBytes(sig[:n])
+	s.FillBytes(sig[n:])
 	return sig, nil
 }
 
