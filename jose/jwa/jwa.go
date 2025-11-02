@@ -211,7 +211,7 @@ func (a *es) Sign(key *ecdsa.PrivateKey, msg []byte) ([]byte, error) {
 	}
 
 	// Concatenate the fixed-size R and S (padded to 2n bytes).
-	n := (key.PublicKey.Curve.Params().BitSize + 7) / 8
+	n := (key.Curve.Params().BitSize + 7) / 8
 	sig := make([]byte, 2*n)
 	r.FillBytes(sig[:n])
 	s.FillBytes(sig[n:])
