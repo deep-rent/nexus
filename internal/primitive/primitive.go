@@ -9,34 +9,6 @@ import (
 	"strconv"
 )
 
-// Is reports whether k represents a primitive type.
-//
-// Supported primitive types are bool, string, integers, unsigned integers,
-// floats, complex numbers, and their size variants.
-func Is(k reflect.Kind) bool {
-	switch k {
-	case
-		reflect.Bool,
-		reflect.String,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Float32,
-		reflect.Float64,
-		reflect.Complex64,
-		reflect.Complex128:
-		return true
-	}
-	return false
-}
-
 // Parse attempts to convert string v to the type expected by rv and sets it.
 //
 // It supports all primitive types covered by the Is function. Other types

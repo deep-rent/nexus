@@ -9,47 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIs(t *testing.T) {
-	type test struct {
-		name string
-		k    reflect.Kind
-		want bool
-	}
-
-	tests := []test{
-		{"bool", reflect.Bool, true},
-		{"string", reflect.String, true},
-		{"int", reflect.Int, true},
-		{"int8", reflect.Int8, true},
-		{"int16", reflect.Int16, true},
-		{"int32", reflect.Int32, true},
-		{"int64", reflect.Int64, true},
-		{"uint", reflect.Uint, true},
-		{"uint8", reflect.Uint8, true},
-		{"uint16", reflect.Uint16, true},
-		{"uint32", reflect.Uint32, true},
-		{"uint64", reflect.Uint64, true},
-		{"float32", reflect.Float32, true},
-		{"float64", reflect.Float64, true},
-		{"complex64", reflect.Complex64, true},
-		{"complex128", reflect.Complex128, true},
-
-		{"struct", reflect.Struct, false},
-		{"slice", reflect.Slice, false},
-		{"map", reflect.Map, false},
-		{"ptr", reflect.Ptr, false},
-		{"chan", reflect.Chan, false},
-		{"func", reflect.Func, false},
-		{"invalid", reflect.Invalid, false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := primitive.Is(tc.k)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 func TestParse(t *testing.T) {
 	type test struct {
 		name    string
