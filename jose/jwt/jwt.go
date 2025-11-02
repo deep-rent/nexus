@@ -464,11 +464,13 @@ func (s *Signer) Sign(claims Claims) ([]byte, error) {
 	if len(s.audience) > 0 {
 		claims.SetAudience(s.audience)
 	}
-	now := s.now()
-	claims.SetIssuedAt(now)
+
+	claims.SetIssuedAt(s.now())
+
 	if s.lifetime > 0 {
-		claims.SetNotBefore(now)
-		claims.SetExpiresAt(now.Add(s.lifetime))
+		iat := claims.IssuedAt()
+		claims.SetNotBefore(iat)
+		claims.SetExpiresAt(iat.Add(s.lifetime))
 	}
 	return Sign(claims, s.key)
 }
