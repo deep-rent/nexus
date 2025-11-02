@@ -1,3 +1,5 @@
+// Package tag provides utility for parsing Go struct tags that follow a
+// comma-separated key-value option format, similar to the standard `json` tag.
 package tag
 
 import (
@@ -8,11 +10,21 @@ import (
 	"github.com/deep-rent/nexus/internal/quote"
 )
 
+// Tag represents a parsed struct tag, separating the primary name from the
+// additional options.
 type Tag struct {
 	Name string
 	opts string
 }
 
+// Opts returns an iterator sequence over the tag's options.
+//
+// Each element yielded is a key-value pair. If an option does not have an
+// explicit value (e.g., "omitempty"), the value string will be empty. Keys and
+// values are trimmed of surrounding whitespace. Values that were quoted in the
+// source string (e.g., `key:"value"`) will have the quotes removed. Commas
+// inside quoted values are preserved and not treated as option separators
+// (e.g., `key:"val1,val2"` is one option).
 func (t *Tag) Opts() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		rest := t.opts
@@ -64,6 +76,8 @@ func (t *Tag) Opts() iter.Seq2[string, string] {
 	}
 }
 
+// Parse takes a raw tag string (e.g., `json:opt1,opt2:val`) and separates it
+// into the primary name and the options string.
 func Parse(s string) *Tag {
 	name, opts, _ := strings.Cut(s, ",")
 	return &Tag{
