@@ -1,7 +1,10 @@
 // Package jwa provides implementations for JSON Web Algorithms (JWA)
 // as defined in RFC 7518. It focuses on the computation and verification of
-// signatures from asymmetric algorithms, whose public keys can be safely
-// distributed via a JWKS (JSON Web Key Set) endpoint.
+// signatures from asymmetric algorithms. This package includes support for
+// RSASSA-PKCS1-v1_5 (RSxxx), RSASSA-PSS (PSxxx), ECDSA (ESxxx), and EdDSA
+// algorithms, covering commonly used curves and hash functions. It lays the
+// foundation for higher-level packages that deal with JSON Web Tokens (JWT) and
+// JSON Web Keys (JWK).
 package jwa
 
 import (
@@ -40,8 +43,8 @@ type Algorithm[T crypto.PublicKey, U crypto.PrivateKey] interface {
 	// Generate creates a new public/private key pair suitable for use with
 	// this algorithm. It returns the generated public key, private key, or an
 	// error if key generation fails. If the algorithm offers degrees of freedom
-	// in choosing key specifications (e.g., key size), it should use sensible
-	// defaults for most use cases.
+	// in choosing domain parameters (e.g., key size), it should use sensible
+	// defaults that provide adequate security.
 	Generate() (T, U, error)
 }
 
