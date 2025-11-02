@@ -80,11 +80,21 @@ const (
 	DefaultMaxInterval = 24 * time.Hour
 )
 
-// Mapper is a function that parses a raw response body into the target type T.
-// It is responsible for decoding the data (e.g., from JSON or XML) and
-// returning the structured result.
-// An error should be returned if parsing fails.
-type Mapper[T any] func(body []byte) (T, error)
+// Mapper is a function that parses a response's raw response body into the
+// target type T. It is responsible for decoding the data (e.g., from JSON or
+// XML) and returning the structured result. An error should be returned if
+// parsing fails fatally. For warnings or debug information, invoke the logger
+// contained in the Response. If the mapping takes a considerable amount of
+// time, it should generally respect the context contained in the Response.
+type Mapper[T any] func(r *Response) (T, error)
+
+// Response provides contextual information to a Mapper function,
+// including the response body, request context, and a logger.
+type Response struct {
+	Body   []byte          // Raw response payload to be mapped.
+	Ctx    context.Context // Context controlling the HTTP exchange.
+	Logger *slog.Logger    // Logger instance inherited from the Controller.
+}
 
 // Controller manages the lifecycle of a cached resource. It implements
 // scheduler.Tick, allowing it to be run by a scheduler to periodically refresh
@@ -235,7 +245,11 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 			c.logger.Error("Failed to read response body", "error", err)
 			return c.minInterval
 		}
-		resource, err := c.mapper(body)
+		resource, err := c.mapper(&Response{
+			Body:   body,
+			Ctx:    req.Context(),
+			Logger: c.logger,
+		})
 		if err != nil {
 			c.logger.Error("Couldn't parse response body", "error", err)
 			return c.minInterval

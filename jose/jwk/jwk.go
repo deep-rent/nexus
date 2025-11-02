@@ -306,10 +306,13 @@ func (s *cacheSet) Run(ctx context.Context) time.Duration {
 }
 
 // mapper adapts the ParseSet function to the cache.Mapper interface.
-var mapper cache.Mapper[Set] = func(in []byte) (Set, error) {
-	set, _ := ParseSet(in)
+var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
+	set, err := ParseSet(r.Body)
 	if set.Len() == 0 {
 		return nil, errors.New("no valid keys found")
+	}
+	if err != nil {
+		r.Logger.Debug("Some keys could not be parsed", "error", err)
 	}
 	// Don't complain unless there are no keys available at all.
 	return set, nil

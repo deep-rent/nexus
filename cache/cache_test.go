@@ -22,19 +22,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type resource struct {
+type Resource struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
 
-var mapper cache.Mapper[resource] = func(body []byte) (resource, error) {
-	var r resource
-	err := json.Unmarshal(body, &r)
-	return r, err
+var mapper cache.Mapper[Resource] = func(r *cache.Response) (Resource, error) {
+	var resource Resource
+	err := json.Unmarshal(r.Body, &resource)
+	return resource, err
 }
 
-var errorMapper cache.Mapper[resource] = func(body []byte) (resource, error) {
-	return resource{}, errors.New("parsing failed")
+var errorMapper cache.Mapper[Resource] = func(
+	*cache.Response,
+) (Resource, error) {
+	return Resource{}, errors.New("parsing failed")
 }
 
 type mockHandler struct {
@@ -102,7 +104,7 @@ func TestController_GetAndReady(t *testing.T) {
 	assert.NotZero(t, d, "Run should return a non-zero delay")
 	r, ok := c.Get()
 	assert.True(t, ok, "Get should return true after successful fetch")
-	assert.Equal(t, resource{ID: 1, Name: "test"}, r)
+	assert.Equal(t, Resource{ID: 1, Name: "test"}, r)
 	select {
 	case <-c.Ready():
 	case <-time.After(10 * time.Millisecond):
@@ -117,15 +119,15 @@ func TestController_Run(t *testing.T) {
 	defer s.Close()
 	minInt := 1 * time.Minute
 	maxInt := 1 * time.Hour
-	goodRes := resource{ID: 42, Name: "success"}
+	goodRes := Resource{ID: 42, Name: "success"}
 	goodBody, _ := json.Marshal(goodRes)
 	tcs := []struct {
 		name           string
 		handler        *mockHandler
-		mapper         cache.Mapper[resource]
+		mapper         cache.Mapper[Resource]
 		wantDelay      time.Duration
 		wantDelayDelta time.Duration
-		wantResource   resource
+		wantResource   Resource
 		wantOK         bool
 		wantLogs       string
 	}{
@@ -185,7 +187,7 @@ func TestController_Run(t *testing.T) {
 			},
 			mapper:       mapper,
 			wantDelay:    minInt,
-			wantResource: resource{},
+			wantResource: Resource{},
 			wantOK:       false,
 			wantLogs:     "Received a non-retriable HTTP status code",
 		},
@@ -194,7 +196,7 @@ func TestController_Run(t *testing.T) {
 			handler:      &mockHandler{status: http.StatusOK, body: `invalid`},
 			mapper:       errorMapper,
 			wantDelay:    minInt,
-			wantResource: resource{},
+			wantResource: Resource{},
 			wantOK:       false,
 			wantLogs:     "Couldn't parse response body",
 		},
@@ -203,7 +205,7 @@ func TestController_Run(t *testing.T) {
 			handler:      &mockHandler{status: http.StatusOK, body: "ok"},
 			mapper:       mapper,
 			wantDelay:    minInt,
-			wantResource: resource{},
+			wantResource: Resource{},
 			wantOK:       false,
 			wantLogs:     "Failed to read response body",
 		},
@@ -243,7 +245,7 @@ func TestController_Run(t *testing.T) {
 					tc.wantDelayDelta,
 					d,
 					float64(time.Second),
-					"delay should be approximately correct",
+					"Delay should be approximately correct",
 				)
 			} else {
 				assert.Equal(t, tc.wantDelay, d)
@@ -305,13 +307,18 @@ func TestController_WithScheduler(t *testing.T) {
 	select {
 	case <-c.Ready():
 	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for cache to become ready")
+		t.Fatal("Timed out waiting for cache to become ready")
 	}
 	sched.Shutdown()
 	res, ok := c.Get()
 	assert.True(t, ok)
-	assert.Equal(t, resource{ID: 123, Name: "scheduled"}, res)
-	assert.GreaterOrEqual(t, h.getReqCount(), 1, "handler should have been called at least once")
+	assert.Equal(t, Resource{ID: 123, Name: "scheduled"}, res)
+	assert.GreaterOrEqual(
+		t,
+		h.getReqCount(),
+		1,
+		"Handler should have been called at least once",
+	)
 }
 
 func TestController_Run_ContextCancellation(t *testing.T) {
@@ -325,17 +332,30 @@ func TestController_Run_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	c.Run(ctx)
-	assert.Zero(t, h.getReqCount(), "No request should complete if context is cancelled")
+	assert.Zero(
+		t,
+		h.getReqCount(),
+		"No request should complete if context is cancelled",
+	)
 }
 
 func TestNewController_Options(t *testing.T) {
 	t.Run("WithClient overrides others", func(t *testing.T) {
 		var transportUsed bool
-		mockTransport := &mockRoundTripper{roundTripFunc: func(r *http.Request) (*http.Response, error) {
-			transportUsed = true
-			assert.Empty(t, r.Header.Get("X-Test"), "Header should not be set on custom client")
-			return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader(""))}, nil
-		}}
+		mockTransport := &mockRoundTripper{
+			roundTripFunc: func(r *http.Request) (*http.Response, error) {
+				transportUsed = true
+				assert.Empty(
+					t,
+					r.Header.Get("X-Test"),
+					"Header should not be set on custom client",
+				)
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			},
+		}
 		cli := &http.Client{Transport: mockTransport}
 		c := cache.NewController("http://a.b", mapper,
 			cache.WithClient(cli),
