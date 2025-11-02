@@ -424,6 +424,9 @@ type Signer struct {
 }
 
 func NewSigner(key jwk.Key) *Signer {
+	if !key.IsPair() {
+		panic("signing key must contain private key material")
+	}
 	return &Signer{
 		key: key,
 		now: time.Now,
