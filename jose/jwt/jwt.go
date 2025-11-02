@@ -1,44 +1,67 @@
-// Package jwt provides tools for parsing and verifying JSON Web Tokens (JWTs).
+// Package jwt provides tools for parsing, verifying, and signing JSON Web
+// Tokens (JWTs).
 //
 // This package uses generics to allow users to define their own custom claims
 // structures. A common pattern is to embed the provided Reserved claims
-// struct and add extra fields for any other claims present in the token.
+// struct (and its pointer receivers) and add extra fields for any other
+// claims present in the token.
 //
-// # Basic Verification
+// # Defining Claims
 //
-// Start by defining custom claims:
+// To use the package, first define a struct for your claims. It must
+// embed jwt.Reserved to satisfy the jwt.Claims interface.
 //
-//	type Claims struct {
+//	type MyClaims struct {
 //	  jwt.Reserved
 //	  Scope string         `json:"scp"`
 //	  Extra map[string]any `json:",unknown"`
 //	}
 //
-// The top-level Verify function can be used for simple, one-off signature
-// verification without claim validation:
+// # Verifying Tokens
+//
+// Use a Verifier to parse and validate tokens. The fluent API allows you to
+// define validation rules.
 //
 //	keySet, err := jwk.ParseSet(`{"keys": [...]}`)
 //	if err != nil { /* handle parsing error */ }
-//	claims, err := jwt.Verify[Claims](keySet, []byte("eyJhb..."))
+//	verifier := jwt.NewVerifier[*MyClaims](keySet).
+//	  WithIssuers("my-app").
+//	  WithAudiences("my-api").
+//	  WithLeeway(30*time.Second)
 //
-// # Advanced Validation
-//
-// For advanced validation of claims like issuer, audience, and token age,
-// create a reusable Verifier with functional options:
-//
-//	verifier := jwt.NewVerifier[Claims](keySet)
-//		.WithIssuer("foo", "bar")
-//	  .WithAudience("baz")
-//		.WithLeeway(time.Minute)
-//		.WithMaxAge(time.Hour)
-//	)
-//	claims, err := verifier.Verify([]byte("eyJhb..."))
+//	// Verify parses, checks signature, and validates claims
+//	claims, err := verifier.Verify(tokenBytes)
 //	if err != nil { /* handle validation error */ }
+//
 //	fmt.Println("Scope:", claims.Scope)
+//
+// Alternatively, you can call the standalone Verify function for a plain,
+// one-off signature verification without performing claim validation.
+//
+// # Signing Tokens
+//
+// Use a Signer to create and sign new tokens. It automatically fills in
+// standard claims like "iat", "nbf", "exp", "iss, "aud", and "jti".
+//
+//	key, err := jwk.Parse(`{...}`) // Must contain private key material
+//	if err != nil { /* handle parsing error */ }
+//	signer := jwt.NewSigner[*MyClaims](key).
+//	  WithIssuer("my-app").
+//	  WithLifetime(1*time.Hour)
+//
+//	// Create your claims struct (must be a pointer)
+//	claims := &MyClaims{
+//	  Reserved: jwt.Reserved{Sub: "user-123"},
+//	  Scope:    "read:data",
+//	}
+//
+//	// Sign will fill in iat, nbf, exp, iss, aud, and jti
+//	token, err := signer.Sign(claims)
 package jwt
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
@@ -322,7 +345,7 @@ type Verifier[T Claims] struct {
 // "iss" claim is missing or does not match one of these, it will be rejected.
 // This option can be used multiple times to append additional values. By
 // default, no issuer validation is performed.
-func (v *Verifier[T]) WithIssuer(iss ...string) *Verifier[T] {
+func (v *Verifier[T]) WithIssuers(iss ...string) *Verifier[T] {
 	v.issuers = append(v.issuers, iss...)
 	return v
 }
@@ -331,7 +354,7 @@ func (v *Verifier[T]) WithIssuer(iss ...string) *Verifier[T] {
 // token's "aud" claim is missing or does not contain at least one of these
 // values, it will be rejected. This option can be used multiple times to append
 // additional values. By default, no audience validation is performed.
-func (v *Verifier[T]) WithAudience(aud ...string) *Verifier[T] {
+func (v *Verifier[T]) WithAudiences(aud ...string) *Verifier[T] {
 	v.audience = append(v.audience, aud...)
 	return v
 }
@@ -433,7 +456,9 @@ func NewSigner(key jwk.Key) *Signer {
 }
 
 func (s *Signer) WithIssuer(iss string) *Signer {
-	s.issuer = iss
+	if iss != "" {
+		s.issuer = iss
+	}
 	return s
 }
 
@@ -457,15 +482,18 @@ func (s *Signer) WithClock(now func() time.Time) *Signer {
 }
 
 func (s *Signer) Sign(claims Claims) ([]byte, error) {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return nil, err // Should never happen
+	}
+	claims.SetID(base64.RawURLEncoding.EncodeToString(id))
 	if s.issuer != "" {
 		claims.SetIssuer(s.issuer)
 	}
 	if len(s.audience) > 0 {
 		claims.SetAudience(s.audience)
 	}
-
 	claims.SetIssuedAt(s.now())
-
 	if s.lifetime > 0 {
 		iat := claims.IssuedAt()
 		claims.SetNotBefore(iat)
