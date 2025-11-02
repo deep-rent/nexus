@@ -84,9 +84,9 @@ func (h *hint[T, U]) setX5t(x5t string) { h.x5t = x5t }
 func (h *hint[T, U]) isComplete() bool  { return h.kid != "" || h.x5t != "" }
 
 type pair[T crypto.PublicKey, U crypto.PrivateKey] struct {
-	pub    T
-	prv    U
-	isPair bool
+	pub       T
+	prv       U
+	isPrivate bool
 }
 
 type config interface {
@@ -115,16 +115,16 @@ type Key interface {
 	Hint
 	json.Marshaler
 
+	IsPair() bool
+
+	Public() Key
+
 	// Verify checks a signature against a message using the key's material
 	// and its associated algorithm. It returns true if the signature is valid.
 	// It returns false if the signature is invalid.
 	Verify(msg, sig []byte) bool
 
 	Sign(msg []byte) ([]byte, error)
-
-	IsPair() bool
-
-	Public() Key
 }
 
 // New creates a new Key programmatically from its constituent
@@ -170,25 +170,25 @@ type key[T crypto.PublicKey, U crypto.PrivateKey] struct {
 	*pair[T, U]
 }
 
+func (k *key[T, U]) IsPair() bool { return k.isPrivate }
+
+func (k *key[T, U]) Public() Key {
+	if !k.isPrivate {
+		return k
+	} else {
+		return &key[T, U]{hint: k.hint, pair: &pair[T, U]{pub: k.pub}}
+	}
+}
+
 func (k *key[T, U]) Verify(msg, sig []byte) bool {
 	return k.alg.Verify(k.pub, msg, sig)
 }
 
 func (k *key[T, U]) Sign(msg []byte) ([]byte, error) {
-	if !k.isPair {
+	if !k.isPrivate {
 		return nil, errors.New("private key material is missing")
 	}
 	return k.alg.Sign(k.prv, msg)
-}
-
-func (k *key[T, U]) IsPair() bool { return k.isPair }
-
-func (k *key[T, U]) Public() Key {
-	if !k.isPair {
-		return k
-	} else {
-		return &key[T, U]{hint: k.hint, pair: &pair[T, U]{pub: k.pub}}
-	}
 }
 
 func (k *key[T, U]) MarshalJSON() ([]byte, error) {
@@ -203,7 +203,7 @@ func (k *key[T, U]) MarshalJSON() ([]byte, error) {
 	raw.Alg = k.alg.String()
 	raw.Kid = k.KeyID()
 	raw.X5t = k.Thumbprint()
-	if k.isPair {
+	if k.isPrivate {
 		raw.Ops = []string{"verify", "sign"}
 	} else {
 		raw.Use = "sig"
@@ -557,7 +557,7 @@ func init() {
 	addECDSACodec(jwa.ES256, elliptic.P256())
 	addECDSACodec(jwa.ES384, elliptic.P384())
 	addECDSACodec(jwa.ES512, elliptic.P521())
-	addCodec(jwa.EdDSA, encodeEdDSA, decodeEdDSA)
+	addEdDSACodec()
 }
 
 // addCodec populates the codecs map in a type-safe manner.
@@ -599,6 +599,10 @@ func addECDSACodec(
 	crv elliptic.Curve,
 ) {
 	addCodec(alg, encodeECDSA(crv), decodeECDSA(crv))
+}
+
+func addEdDSACodec() {
+	addCodec(jwa.EdDSA, encodeEdDSA, decodeEdDSA)
 }
 
 // decoder decodes the key material for a specific key type T.
@@ -665,9 +669,9 @@ func decodeRSA(raw *raw) (*pair[*rsa.PublicKey, *rsa.PrivateKey], error) {
 	}
 
 	return &pair[*rsa.PublicKey, *rsa.PrivateKey]{
-		pub:    pub,
-		prv:    prv,
-		isPair: true,
+		pub:       pub,
+		prv:       prv,
+		isPrivate: true,
 	}, nil
 }
 
@@ -685,7 +689,7 @@ func encodeRSA(p *pair[*rsa.PublicKey, *rsa.PrivateKey], raw *raw) error {
 		raw.E = []byte{0}
 	}
 	// Conditionally encode private parameters
-	if p.isPair {
+	if p.isPrivate {
 		raw.D = p.prv.D.Bytes()
 		// Per RFC 7518, P and Q must be provided for private keys.
 		if len(p.prv.Primes) != 2 {
@@ -752,9 +756,9 @@ func decodeECDSA(
 		}
 
 		return &pair[*ecdsa.PublicKey, *ecdsa.PrivateKey]{
-			pub:    pub,
-			prv:    prv,
-			isPair: true,
+			pub:       pub,
+			prv:       prv,
+			isPrivate: true,
 		}, nil
 	}
 }
@@ -782,7 +786,7 @@ func encodeECDSA(
 		raw.X = pad(p.pub.X.Bytes())
 		raw.Y = pad(p.pub.Y.Bytes())
 
-		if p.isPair {
+		if p.isPrivate {
 			raw.D = pad(p.prv.D.Bytes())
 		}
 		return nil
@@ -837,7 +841,7 @@ func decodeEdDSA(raw *raw) (*pair[[]byte, []byte], error) {
 		return nil, errors.New("public key does not match private key seed")
 	}
 
-	return &pair[[]byte, []byte]{pub: pub, prv: prv, isPair: true}, nil
+	return &pair[[]byte, []byte]{pub: pub, prv: prv, isPrivate: true}, nil
 }
 
 func encodeEdDSA(p *pair[[]byte, []byte], raw *raw) error {
@@ -862,7 +866,7 @@ func encodeEdDSA(p *pair[[]byte, []byte], raw *raw) error {
 	raw.Crv = name
 	raw.X = p.pub
 
-	if p.prv != nil {
+	if p.isPrivate {
 		if len(p.prv) != size {
 			return fmt.Errorf(
 				"mismatched private key size for curve %s: got %d, want %d",
