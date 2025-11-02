@@ -265,7 +265,7 @@ func Sign[T Claims](claims T, key jwk.Key) ([]byte, error) {
 
 	msg := make([]byte, hlen+1+clen)
 	base64.RawURLEncoding.Encode(msg[:hlen], h)
-	msg[hlen] = '.'
+	msg[hlen] = dot
 	base64.RawURLEncoding.Encode(msg[hlen+1:], c)
 
 	sig, err := key.Sign(msg)
@@ -277,7 +277,7 @@ func Sign[T Claims](claims T, key jwk.Key) ([]byte, error) {
 
 	token := make([]byte, len(msg)+1+slen)
 	copy(token, msg)
-	token[len(msg)] = '.'
+	token[len(msg)] = dot
 	base64.RawURLEncoding.Encode(token[len(msg)+1:], sig)
 
 	return token, nil
