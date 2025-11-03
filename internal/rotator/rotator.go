@@ -8,7 +8,9 @@ type Rotator[E any] struct {
 }
 
 func New[E any](items []E) *Rotator[E] {
-	return &Rotator[E]{items: items}
+	c := make([]E, len(items))
+	copy(c, items)
+	return &Rotator[E]{items: c}
 }
 
 func (r *Rotator[E]) Next() E {
