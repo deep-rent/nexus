@@ -66,10 +66,10 @@ type Option func(*config)
 
 // WithLogger provides a custom logger for the application runner. If not set,
 // the runner defaults to slog.Default(). A nil value will be ignored.
-func WithLogger(logger *slog.Logger) Option {
+func WithLogger(log *slog.Logger) Option {
 	return func(opts *config) {
-		if logger != nil {
-			opts.logger = logger
+		if log != nil {
+			opts.logger = log
 		}
 	}
 }
