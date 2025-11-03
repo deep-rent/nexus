@@ -1,3 +1,7 @@
+// Package proxy provides a configurable reverse proxy handler. It wraps
+// httputil.NewSingleHostReverseProxy, starting with sensible defaults,
+// integrating a reusable buffer pool, structured logging, and robust error
+// handling via a functional options API.
 package proxy
 
 import (
@@ -22,8 +26,8 @@ const (
 // Handler is an alias of http.Handler representing a reverse proxy.
 type Handler = http.Handler
 
-// NewHandler creates a new reverse proxy handler configured by the
-// given options.
+// NewHandler creates a new reverse proxy handler that routes to the target URL.
+// The behavior of the proxy can be customized through the given options.
 func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 	cfg := handlerConfig{
 		transport:     &http.Transport{},
@@ -75,6 +79,7 @@ func NewDirector(original Director) Director {
 type ErrorHandler = func(http.ResponseWriter, *http.Request, error)
 
 // ErrorHandlerFactory creates an ErrorHandler using the provided logger.
+// It receives the configured logger to be used for error reporting.
 type ErrorHandlerFactory = func(*slog.Logger) ErrorHandler
 
 // NewErrorHandler is the default ErrorHandlerFactory for the proxy.
@@ -124,10 +129,10 @@ type handlerConfig struct {
 // HandlerOption defines a function for setting reverse proxy options.
 type HandlerOption func(*handlerConfig)
 
-// WithTransport sets the base http.Transport for upstream requests.
+// WithTransport sets the http.Transport for upstream requests.
 //
-// Use this option to tune timeouts and the connection pool. If nil is given,
-// this option is ignored.
+// Use this option to tune connection pooling, timeouts (e.g., Dial,
+// TLSHandshake), and keep-alives. If nil is given, this option is ignored.
 func WithTransport(t *http.Transport) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if t != nil {
@@ -210,7 +215,7 @@ func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 	}
 }
 
-// WithLogger provides a custom logger for the proxy's ErrorHandler.
+// WithLogger sets the logger to be used by the proxy's ErrorHandler.
 //
 // If nil is given, this option is ignored. By default, slog.Default() is used.
 func WithLogger(log *slog.Logger) HandlerOption {
