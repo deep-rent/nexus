@@ -149,24 +149,31 @@ func (a *audience) UnmarshalJSON(b []byte) error {
 type Claims interface {
 	// ID returns the "jti" (JWT ID) claim, or an empty string if absent.
 	ID() string
+	// SetID sets the "jti" (JWT ID) claim.
 	SetID(id string)
 	// Subject returns the "sub" (Subject) claim, or an empty string if absent.
 	Subject() string
+	// SetSubject sets the "sub" (Subject) claim.
 	SetSubject(sub string)
 	// Issuer returns the "iss" (Issuer) claim, or an empty string if absent.
 	Issuer() string
+	// SetIssuer sets the "iss" (Issuer) claim.
 	SetIssuer(iss string)
 	// Audience returns the "aud" (Audience) claim, or nil if absent.
 	Audience() []string
+	// SetAudience sets the "aud" (Audience) claim.
 	SetAudience(aud []string)
 	// IssuedAt returns the "iat" (Issued At) claim, or the zero time if absent.
 	IssuedAt() time.Time
+	// SetIssuedAt sets the "iat" (Issued At) claim.
 	SetIssuedAt(iat time.Time)
 	// ExpiresAt returns the "exp" (Expires At) claim, or the zero time if absent.
 	ExpiresAt() time.Time
+	// SetExpiresAt sets the "exp" (Expires At) claim.
 	SetExpiresAt(exp time.Time)
 	// NotBefore returns the "nbf" (Not Before) claim, or the zero time if absent.
 	NotBefore() time.Time
+	// SetNotBefore sets the "nbf" (Not Before) claim.
 	SetNotBefore(nbf time.Time)
 }
 
@@ -174,13 +181,13 @@ type Claims interface {
 // the Claims interface and should be embedded in custom claims structs to
 // enable standard claim handling.
 type Reserved struct {
-	Jti string    `json:"jti"`
-	Sub string    `json:"sub"`
-	Iss string    `json:"iss"`
-	Aud audience  `json:"aud"`
-	Iat time.Time `json:"iat,format:unix"`
-	Exp time.Time `json:"exp,format:unix"`
-	Nbf time.Time `json:"nbf,format:unix"`
+	Jti string    `json:"jti"`             // JWT ID
+	Sub string    `json:"sub"`             // Subject
+	Iss string    `json:"iss"`             // Issuer
+	Aud audience  `json:"aud"`             // Audience
+	Iat time.Time `json:"iat,format:unix"` // Issued At
+	Exp time.Time `json:"exp,format:unix"` // Expires At
+	Nbf time.Time `json:"nbf,format:unix"` // Not Before
 }
 
 func (r *Reserved) ID() string                 { return r.Jti }
@@ -403,7 +410,7 @@ func (v *Verifier[T]) Verify(in []byte) (T, error) {
 		var zero T
 		return zero, ErrInvalidIssuer
 	}
-	if len(v.audience) > 0 {
+	if len(v.audience) != 0 {
 		found := false
 		for _, aud := range v.audience {
 			if slices.Contains(c.Audience(), aud) {
@@ -481,6 +488,11 @@ func (s *Signer) WithClock(now func() time.Time) *Signer {
 	return s
 }
 
+// Sign serializes a JWT into its compact representation, filling in standard
+// claims like "iat", "nbf", "exp", "iss", "aud", and "jti" as configured. The
+// claims parameter must be a pointer to a struct implementing the Claims
+// interface. If any of these claims are already set in the provided struct,
+// they will be overwritten. The returned JWT is signed using the signer's key.
 func (s *Signer) Sign(claims Claims) ([]byte, error) {
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
@@ -490,11 +502,11 @@ func (s *Signer) Sign(claims Claims) ([]byte, error) {
 	if s.issuer != "" {
 		claims.SetIssuer(s.issuer)
 	}
-	if len(s.audience) > 0 {
+	if len(s.audience) != 0 {
 		claims.SetAudience(s.audience)
 	}
 	claims.SetIssuedAt(s.now())
-	if s.lifetime > 0 {
+	if s.lifetime != 0 {
 		iat := claims.IssuedAt()
 		claims.SetNotBefore(iat)
 		claims.SetExpiresAt(iat.Add(s.lifetime))
