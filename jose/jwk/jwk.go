@@ -83,6 +83,14 @@ func (h *hint[T, U]) setKid(kid string) { h.kid = kid }
 func (h *hint[T, U]) setX5t(x5t string) { h.x5t = x5t }
 func (h *hint[T, U]) isComplete() bool  { return h.kid != "" || h.x5t != "" }
 
+func newHint[T crypto.PublicKey, U crypto.PrivateKey](
+	alg jwa.Algorithm[T, U],
+	kid,
+	x5t string,
+) *hint[T, U] {
+	return &hint[T, U]{alg: alg, kid: kid, x5t: x5t}
+}
+
 type pair[T crypto.PublicKey, U crypto.PrivateKey] struct {
 	pub       T
 	prv       U
@@ -160,7 +168,7 @@ func New[T crypto.PublicKey, U crypto.PrivateKey](
 		isPrivate = !rv.IsZero()
 	}
 
-	return &key[T, U]{h, &pair[T, U]{pub, prv, isPrivate}}
+	return &key[T, U]{h, &pair[T, U]{pub: pub, prv: prv, isPrivate: isPrivate}}
 }
 
 // key is a concrete implementation of the Key interface, generic over the
@@ -541,6 +549,8 @@ type raw struct {
 
 type codec struct {
 	encode func(Key, *raw) error
+
+	// decode loads the key maerial
 	decode func(*raw) (Key, error)
 }
 
@@ -572,7 +582,7 @@ func addCodec[T crypto.PublicKey, U crypto.PrivateKey](
 			case *key[T, U]:
 				return enc(t.pair, r)
 			default:
-				return fmt.Errorf("incompatible key type %T", k)
+				return fmt.Errorf("unsupported key implementation %T", k)
 			}
 		},
 		decode: func(r *raw) (Key, error) {
@@ -581,7 +591,7 @@ func addCodec[T crypto.PublicKey, U crypto.PrivateKey](
 				return nil, err
 			}
 			return &key[T, U]{
-				hint: &hint[T, U]{alg: alg, kid: r.Kid, x5t: r.X5t},
+				hint: newHint(alg, r.Kid, r.X5t),
 				pair: p,
 			}, nil
 		},
