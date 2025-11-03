@@ -23,7 +23,7 @@ import (
 )
 
 // Algorithm represents an asymmetric JSON Web Algorithm (JWA) used for
-// computing and verifying digitalsignatures. The type parameter T specifies
+// computing and verifying digital signatures. The type parameter T specifies
 // the type of public key that the algorithm works with, while U specifies the
 // corresponding type of private key.
 type Algorithm[T crypto.PublicKey, U crypto.PrivateKey] interface {
@@ -171,8 +171,8 @@ type es struct {
 	crv  elliptic.Curve
 }
 
-// newES creates a new Algorithm for ECDSA signatures
-// with the given JWA name, hash function, and curve.
+// newES creates a new Algorithm for ECDSA signatures with the given JWA name,
+// hash function, and curve.
 func newES(name string, hash crypto.Hash, crv elliptic.Curve) Algorithm[
 	*ecdsa.PublicKey, *ecdsa.PrivateKey,
 ] {
