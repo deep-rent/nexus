@@ -30,24 +30,24 @@ type Handler = http.Handler
 // The behavior of the proxy can be customized through the given options.
 func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 	cfg := handlerConfig{
-		transport:     &http.Transport{},
-		flushInterval: 0,
-		minBufferSize: DefaultMinBufferSize,
-		maxBufferSize: DefaultMaxBufferSize,
-		director:      NewDirector,
-		errorHandler:  NewErrorHandler,
-		logger:        slog.Default(),
+		transport:       &http.Transport{},
+		flushInterval:   0,
+		minBufferSize:   DefaultMinBufferSize,
+		maxBufferSize:   DefaultMaxBufferSize,
+		newDirector:     NewDirector,
+		newErrorHandler: NewErrorHandler,
+		logger:          slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
 	h := httputil.NewSingleHostReverseProxy(target)
-	h.ErrorHandler = cfg.errorHandler(cfg.logger)
+	h.ErrorHandler = cfg.newErrorHandler(cfg.logger)
 	h.Transport = cfg.transport
-	h.FlushInterval = cfg.flushInterval
 	h.BufferPool = buffer.NewPool(cfg.minBufferSize, cfg.maxBufferSize)
-	h.Director = cfg.director(h.Director)
+	h.FlushInterval = cfg.flushInterval
+	h.Director = cfg.newDirector(h.Director)
 
 	return h
 }
@@ -117,13 +117,13 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 
 // handlerConfig holds the configurable settings for the proxy handler.
 type handlerConfig struct {
-	transport     *http.Transport
-	flushInterval time.Duration
-	minBufferSize int
-	maxBufferSize int
-	director      DirectorFactory
-	errorHandler  ErrorHandlerFactory
-	logger        *slog.Logger
+	transport       *http.Transport
+	flushInterval   time.Duration
+	minBufferSize   int
+	maxBufferSize   int
+	newDirector     DirectorFactory
+	newErrorHandler ErrorHandlerFactory
+	logger          *slog.Logger
 }
 
 // HandlerOption defines a function for setting reverse proxy options.
@@ -176,8 +176,8 @@ func WithMinBufferSize(n int) HandlerOption {
 	}
 }
 
-// WithMaxBufferSize specifies the maximum size of buffers to keep in the
-// buffer pool. Buffers that grow larger than this size will be discarded
+// WithMaxBufferSize specifies the maximum size of buffers to be returned to
+// the buffer pool. Buffers that grow larger than this size will be discarded
 // after use to prevent memory bloat.
 //
 // Non-positive values are ignored, and DefaultMaxBufferSize is used.
@@ -199,7 +199,7 @@ func WithMaxBufferSize(n int) HandlerOption {
 func WithDirector(f DirectorFactory) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if f != nil {
-			cfg.director = f
+			cfg.newDirector = f
 		}
 	}
 }
@@ -210,7 +210,7 @@ func WithDirector(f DirectorFactory) HandlerOption {
 func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if f != nil {
-			cfg.errorHandler = f
+			cfg.newErrorHandler = f
 		}
 	}
 }
@@ -218,6 +218,8 @@ func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 // WithLogger sets the logger to be used by the proxy's ErrorHandler.
 //
 // If nil is given, this option is ignored. By default, slog.Default() is used.
+// The default error handler (NewErrorHandler) uses this logger for capturing
+// upstream errors.
 func WithLogger(log *slog.Logger) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if log != nil {
