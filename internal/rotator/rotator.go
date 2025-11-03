@@ -8,6 +8,9 @@ type Rotator[E any] struct {
 }
 
 func New[E any](items []E) *Rotator[E] {
+	if len(items) == 0 {
+		panic("rotator: items slice must not be empty")
+	}
 	c := make([]E, len(items))
 	copy(c, items)
 	return &Rotator[E]{items: c}
