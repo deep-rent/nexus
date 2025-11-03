@@ -41,10 +41,10 @@ type Algorithm[T crypto.PublicKey, U crypto.PrivateKey] interface {
 	Sign(key U, msg []byte) ([]byte, error)
 
 	// Generate creates a new public/private key pair suitable for use with
-	// this algorithm. It returns the generated public key, private key, or an
-	// error if key generation fails. If the algorithm offers degrees of freedom
-	// in choosing domain parameters (e.g., key size), it should use sensible
-	// defaults that provide adequate security.
+	// this algorithm. It returns the generated public and private keys, or an
+	// error if key generation fails. In cases where the algorithm offers degrees
+	// of freedom in choosing domain parameters such as key size, it should pick
+	// sensible defaults that provide an adequate level of security.
 	Generate() (T, U, error)
 }
 
