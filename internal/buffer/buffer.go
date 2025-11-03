@@ -1,3 +1,6 @@
+// Package buffer provides a sync.Pool-backed implementation of
+// httputil.BufferPool for reusing byte slices, aiming to save memory and
+// reduce GC pressure when dealing with large response bodies.
 package buffer
 
 import (
