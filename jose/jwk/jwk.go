@@ -39,7 +39,6 @@ import (
 	"fmt"
 	"iter"
 	"math/big"
-	"reflect"
 	"slices"
 	"time"
 
@@ -69,165 +68,42 @@ type Hint interface {
 	Thumbprint() string
 }
 
-type hint[T crypto.PublicKey, U crypto.PrivateKey] struct {
-	alg jwa.Algorithm[T, U]
-	kid string
-	x5t string
-}
-
-func (h *hint[T, U]) Algorithm() string  { return h.alg.String() }
-func (h *hint[T, U]) KeyID() string      { return h.kid }
-func (h *hint[T, U]) Thumbprint() string { return h.x5t }
-
-func (h *hint[T, U]) setKid(kid string) { h.kid = kid }
-func (h *hint[T, U]) setX5t(x5t string) { h.x5t = x5t }
-func (h *hint[T, U]) isComplete() bool  { return h.kid != "" || h.x5t != "" }
-
-func newHint[T crypto.PublicKey, U crypto.PrivateKey](
-	alg jwa.Algorithm[T, U],
-	kid,
-	x5t string,
-) *hint[T, U] {
-	return &hint[T, U]{alg: alg, kid: kid, x5t: x5t}
-}
-
-type pair[T crypto.PublicKey, U crypto.PrivateKey] struct {
-	pub       T
-	prv       U
-	isPrivate bool
-}
-
-type config interface {
-	setKid(string)
-	setX5t(string)
-	isComplete() bool
-}
-
-type Option func(config)
-
-func WithKid(kid string) Option {
-	return func(c config) {
-		c.setKid(kid)
-	}
-}
-
-func WithX5t(x5t string) Option {
-	return func(c config) {
-		c.setX5t(x5t)
-	}
-}
-
-// Key represents a public JSON Web Key (JWK) used for signature
-// verification.
+// Key represents a public JSON Web Key (JWK) used for signature verification.
 type Key interface {
 	Hint
-	json.Marshaler
-
-	IsPair() bool
-
-	Public() Key
 
 	// Verify checks a signature against a message using the key's material
 	// and its associated algorithm. It returns true if the signature is valid.
 	// It returns false if the signature is invalid.
 	Verify(msg, sig []byte) bool
-
-	Sign(msg []byte) ([]byte, error)
 }
 
-// New creates a new Key programmatically from its constituent
-// parts. The type parameters T and U must match the key types expected by the
-// provided algorithm (e.g., *rsa.PublicKey and *rsa.PrivateKey for jwa.RS256).
-// To create a public-only Key without private key material, pass nil for the
-// prv parameter.
-func New[T crypto.PublicKey, U crypto.PrivateKey](
-	alg jwa.Algorithm[T, U],
-	pub T,
-	prv U,
-	opts ...Option,
-) Key {
-	h := &hint[T, U]{alg: alg}
-	for _, opt := range opts {
-		opt(h)
-	}
-	if !h.isComplete() {
-		panic("key must be identifiable")
-	}
-	rv := reflect.ValueOf(prv)
-	var isPrivate bool
-	switch rv.Kind() {
-	case
-		reflect.Pointer,
-		reflect.Slice,
-		reflect.Map,
-		reflect.Func,
-		reflect.Interface,
-		reflect.Chan:
-		isPrivate = !rv.IsNil()
-	default:
-		isPrivate = !rv.IsZero()
-	}
-
-	return &key[T, U]{h, &pair[T, U]{pub: pub, prv: prv, isPrivate: isPrivate}}
+// newKey creates a new Key programmatically from its constituent parts. The
+// type parameter T must match the public key type expected by the provided
+// algorithm (e.g., *rsa.PublicKey for jwa.RS256).
+func newKey[T crypto.PublicKey](
+	alg jwa.Algorithm[T],
+	kid string,
+	x5t string,
+	mat T) Key {
+	return &key[T]{alg: alg, kid: kid, x5t: x5t, mat: mat}
 }
 
 // key is a concrete implementation of the Key interface, generic over the
-// wrapped key types.
-type key[T crypto.PublicKey, U crypto.PrivateKey] struct {
-	*hint[T, U]
-	*pair[T, U]
+// public key type.
+type key[T crypto.PublicKey] struct {
+	alg jwa.Algorithm[T]
+	kid string
+	x5t string
+	mat T // The actual cryptographic public key material.
 }
 
-func (k *key[T, U]) IsPair() bool { return k.isPrivate }
+func (k *key[T]) Algorithm() string  { return k.alg.String() }
+func (k *key[T]) KeyID() string      { return k.kid }
+func (k *key[T]) Thumbprint() string { return k.x5t }
 
-func (k *key[T, U]) Public() Key {
-	if !k.isPrivate {
-		return k
-	} else {
-		return &key[T, U]{hint: k.hint, pair: &pair[T, U]{pub: k.pub}}
-	}
-}
-
-func (k *key[T, U]) Verify(msg, sig []byte) bool {
-	return k.alg.Verify(k.pub, msg, sig)
-}
-
-func (k *key[T, U]) Sign(msg []byte) ([]byte, error) {
-	if !k.isPrivate {
-		return nil, errors.New("private key material is missing")
-	}
-	return k.alg.Sign(k.prv, msg)
-}
-
-func (k *key[T, U]) MarshalJSON() ([]byte, error) {
-	raw := &raw{}
-	codec := codecs[k.alg.String()]
-	if codec == nil {
-		return nil, fmt.Errorf("no codec for algorithm %q", k.alg.String())
-	}
-	if err := codec.encode(k, raw); err != nil {
-		return nil, fmt.Errorf("encode key material: %w", err)
-	}
-	raw.Alg = k.alg.String()
-	raw.Kid = k.KeyID()
-	raw.X5t = k.Thumbprint()
-	if k.isPrivate {
-		raw.Ops = []string{"verify", "sign"}
-	} else {
-		raw.Use = "sig"
-		raw.Ops = []string{"verify"}
-	}
-	return json.Marshal(raw)
-}
-
-func Generate[T crypto.PublicKey, U crypto.PrivateKey](
-	alg jwa.Algorithm[T, U], opts ...Option,
-) (Key, error) {
-	pub, prv, err := alg.Generate()
-	if err != nil {
-		return nil, err
-	}
-	return New(alg, pub, prv, opts...), nil
+func (k *key[T]) Verify(msg, sig []byte) bool {
+	return k.alg.Verify(k.mat, msg, sig)
 }
 
 // ErrIneligibleKey indicates that a key may be syntactically valid but should
@@ -242,42 +118,29 @@ var ErrIneligibleKey = errors.New("ineligible for signature verification")
 // of required parameters ("kty" and "alg"), whether the algorithm is supported,
 // and the integrity of the key material itself.
 func Parse(in []byte) (Key, error) {
-	var r raw
-	if err := json.Unmarshal(in, &r); err != nil {
+	var raw raw
+	if err := json.Unmarshal(in, &raw); err != nil {
 		return nil, fmt.Errorf("invalid json format: %w", err)
 	}
 	// Per RFC 7517, a key's purpose is determined by the union of "use" and
 	// "key_ops". We perform this check first for efficiency, as we only care
 	// about signature verification keys.
-	eligible := false
-	if len(r.Ops) != 0 {
-		// If key_ops is present, it must contain "sign" or "verify".
-		if slices.Contains(r.Ops, "verify") || slices.Contains(r.Ops, "sign") {
-			eligible = true
-		}
-	} else if r.Use == "sig" {
-		// If key_ops is missing, "use" must be "sig".
-		eligible = true
-	}
-	if !eligible {
+	if raw.Use != "sig" && !slices.Contains(raw.Ops, "verify") {
 		return nil, ErrIneligibleKey
 	}
-	if r.Kty == "" {
+	if raw.Kty == "" {
 		return nil, errors.New("undefined key type")
 	}
-	if r.Alg == "" {
+	if raw.Alg == "" {
 		return nil, errors.New("algorithm not specified")
 	}
-	if r.Kid == "" && r.X5t == "" {
-		return nil, errors.New("key must be identifiable")
+	load := loaders[raw.Alg]
+	if load == nil {
+		return nil, fmt.Errorf("unknown algorithm %q", raw.Alg)
 	}
-	codec := codecs[r.Alg]
-	if codec == nil {
-		return nil, fmt.Errorf("unknown algorithm %q", r.Alg)
-	}
-	key, err := codec.decode(&r)
+	key, err := load(&raw)
 	if err != nil {
-		return nil, fmt.Errorf("load %s key material: %w", r.Kty, err)
+		return nil, fmt.Errorf("load %s key material: %w", raw.Kty, err)
 	}
 	return key, nil
 }
@@ -285,8 +148,6 @@ func Parse(in []byte) (Key, error) {
 // Set stores an immutable collection of Keys, typically parsed from a JWKS.
 // It provides efficient lookups of keys for signature verification.
 type Set interface {
-	json.Marshaler
-
 	// Keys returns an iterator over all keys in this set.
 	Keys() iter.Seq[Key]
 	// Len returns the number of keys in this set.
@@ -300,7 +161,7 @@ type Set interface {
 // newSet creates a new, empty Set with the specified initial capacity.
 func newSet(n int) *set {
 	return &set{
-		keys: make([]Key, 0, n),
+		keys: make([]Key, n),
 		kid:  make(map[string]int, n),
 		x5t:  make(map[string]int, n),
 	}
@@ -335,33 +196,11 @@ func (s *set) Find(hint Hint) Key {
 	return k
 }
 
-func (s *set) MarshalJSON() ([]byte, error) {
-	var raw struct {
-		Keys []jsontext.Value `json:"keys"`
-	}
-	n := len(s.keys)
-	raw.Keys = make([]jsontext.Value, n)
-	for i, k := range s.keys {
-		data, err := k.Public().MarshalJSON()
-		if err != nil {
-			return nil, fmt.Errorf("marshal key at index %d: %w", i, err)
-		}
-		raw.Keys[i] = jsontext.Value(data)
-	}
-	return json.Marshal(raw)
-}
-
-var emptySetIterator = func(func(Key) bool) {}
-
 type emptySet struct{}
 
-func (e emptySet) Keys() iter.Seq[Key] { return emptySetIterator }
+func (e emptySet) Keys() iter.Seq[Key] { return func(func(Key) bool) {} }
 func (e emptySet) Len() int            { return 0 }
 func (e emptySet) Find(Hint) Key       { return nil }
-
-func (e emptySet) MarshalJSON() ([]byte, error) {
-	return []byte(`{"keys":[]}`), nil
-}
 
 // empty is a singleton instance of an empty Set.
 var empty Set = emptySet{}
@@ -397,74 +236,40 @@ func ParseSet(in []byte) (Set, error) {
 			errs = append(errs, err)
 			continue
 		}
+		idx := -1
 		kid := k.KeyID()
-		x5t := k.Thumbprint()
 		if kid != "" {
 			if _, ok := s.kid[kid]; ok {
 				errs = append(errs, fmt.Errorf(
 					"key at index %d: duplicate key id %q", i, kid,
 				))
-				continue // Skip this key
+				continue
 			}
+			idx = len(s.keys)
+			s.kid[kid] = idx
+			s.keys = append(s.keys, k)
 		}
+		x5t := k.Thumbprint()
 		if x5t != "" {
 			if _, ok := s.x5t[x5t]; ok {
 				errs = append(errs, fmt.Errorf(
 					"key at index %d: duplicate thumbprint %q", i, x5t,
 				))
-				continue // Skip this key
+				continue
 			}
-		}
-		idx := len(s.keys)
-		s.keys = append(s.keys, k)
-		if kid != "" {
-			s.kid[kid] = idx
-		}
-		if x5t != "" {
+			idx = len(s.keys)
 			s.x5t[x5t] = idx
+			s.keys = append(s.keys, k)
 		}
+		if idx == -1 {
+			errs = append(errs, fmt.Errorf(
+				"key at index %d: missing both key id and thumbprint", i,
+			))
+			continue
+		}
+		s.keys[i] = k
 	}
-
-	// Prune the slice to its actual length to free up unused capacity.
-	s.keys = slices.Clip(s.keys)
-
 	return s, errors.Join(errs...)
-}
-
-func NewSet(keys ...Key) (Set, error) {
-	s := newSet(len(keys))
-	for i, k := range keys {
-		s.keys = append(s.keys, k)
-		kid := k.KeyID()
-		x5t := k.Thumbprint()
-		if kid != "" {
-			if _, ok := s.kid[kid]; ok {
-				return nil, fmt.Errorf(
-					"key at index %d: duplicate key id %q", i, kid,
-				)
-			}
-		}
-		if x5t != "" {
-			if _, ok := s.x5t[x5t]; ok {
-				return nil, fmt.Errorf(
-					"key at index %d: duplicate thumbprint %q", i, x5t,
-				)
-			}
-		}
-		idx := len(s.keys)
-		s.keys = append(s.keys, k)
-		if kid != "" {
-			s.kid[kid] = idx
-		}
-		if x5t != "" {
-			s.x5t[x5t] = idx
-		}
-	}
-
-	// Prune the slice to its actual length to free up unused capacity.
-	s.keys = slices.Clip(s.keys)
-
-	return s, nil
 }
 
 // CacheSet extends the Set interface with scheduler.Tick, creating a component
@@ -492,10 +297,9 @@ func (s *cacheSet) get() Set {
 	return empty
 }
 
-func (s *cacheSet) Keys() iter.Seq[Key]          { return s.get().Keys() }
-func (s *cacheSet) Len() int                     { return s.get().Len() }
-func (s *cacheSet) Find(hint Hint) Key           { return s.get().Find(hint) }
-func (s *cacheSet) MarshalJSON() ([]byte, error) { return s.get().MarshalJSON() }
+func (s *cacheSet) Keys() iter.Seq[Key] { return s.get().Keys() }
+func (s *cacheSet) Len() int            { return s.get().Len() }
+func (s *cacheSet) Find(hint Hint) Key  { return s.get().Find(hint) }
 
 func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
@@ -528,363 +332,146 @@ func NewCacheSet(url string, opts ...cache.Option) CacheSet {
 
 // raw holds the JWK parameters.
 type raw struct {
-	Kty string   `json:"kty"`
-	Use string   `json:"use"`
-	Ops []string `json:"key_ops"`
-	Alg string   `json:"alg"`
-	Kid string   `json:"kid,omitempty"`
-	X5t string   `json:"x5t#S256,omitempty"`
-	N   []byte   `json:"n,format:base64url,omitempty"`
-	E   []byte   `json:"e,format:base64url,omitempty"`
-	Crv string   `json:"crv,omitempty"`
-	X   []byte   `json:"x,format:base64url,omitempty"`
-	Y   []byte   `json:"y,format:base64url,omitempty"`
-	D   []byte   `json:"d,format:base64url,omitempty"`
-	P   []byte   `json:"p,format:base64url,omitempty"`
-	Q   []byte   `json:"q,format:base64url,omitempty"`
-	DP  []byte   `json:"dp,format:base64url,omitempty"`
-	DQ  []byte   `json:"dq,format:base64url,omitempty"`
-	QI  []byte   `json:"qi,format:base64url,omitempty"`
+	Kty string         `json:"kty"`
+	Use string         `json:"use"`
+	Ops []string       `json:"key_ops"`
+	Alg string         `json:"alg"`
+	Kid string         `json:"kid"`
+	X5t string         `json:"x5t#S256"`
+	Mat jsontext.Value `json:",unknown"` // Capture all other fields.
 }
 
-type codec struct {
-	encode func(Key, *raw) error
-
-	// decode loads the key maerial
-	decode func(*raw) (Key, error)
+// Material allows deferred, type-safe unmarshaling of the key material itself
+// into the provided struct pointer.
+func (r *raw) Material(v any) error {
+	if err := json.Unmarshal(r.Mat, v); err != nil {
+		return fmt.Errorf("unmarshal %s key material: %w", r.Kty, err)
+	}
+	return nil
 }
 
-var codecs map[string]*codec
+// loader defines a function that decodes the key material from a raw JWK
+// and constructs a concrete Key.
+type loader func(r *raw) (Key, error)
+
+// loaders maps a JWA algorithm name to the function responsible for parsing
+// its key material.
+var loaders map[string]loader
 
 func init() {
-	codecs = make(map[string]*codec, 10)
-	addRSACodec(jwa.RS256)
-	addRSACodec(jwa.RS384)
-	addRSACodec(jwa.RS512)
-	addRSACodec(jwa.PS256)
-	addRSACodec(jwa.PS384)
-	addRSACodec(jwa.PS512)
-	addECDSACodec(jwa.ES256, elliptic.P256())
-	addECDSACodec(jwa.ES384, elliptic.P384())
-	addECDSACodec(jwa.ES512, elliptic.P521())
-	addEdDSACodec()
+	loaders = make(map[string]loader, 10)
+	addLoader(jwa.RS256, decodeRSA)
+	addLoader(jwa.RS384, decodeRSA)
+	addLoader(jwa.RS512, decodeRSA)
+	addLoader(jwa.PS256, decodeRSA)
+	addLoader(jwa.PS384, decodeRSA)
+	addLoader(jwa.PS512, decodeRSA)
+	addLoader(jwa.ES256, decodeECDSA(elliptic.P256()))
+	addLoader(jwa.ES384, decodeECDSA(elliptic.P384()))
+	addLoader(jwa.ES512, decodeECDSA(elliptic.P521()))
+	addLoader(jwa.EdDSA, decodeEdDSA)
 }
 
-// addCodec populates the codecs map in a type-safe manner.
-func addCodec[T crypto.PublicKey, U crypto.PrivateKey](
-	alg jwa.Algorithm[T, U],
-	enc encoder[T, U],
-	dec decoder[T, U],
-) {
-	codecs[alg.String()] = &codec{
-		encode: func(k Key, r *raw) error {
-			switch t := k.(type) {
-			case *key[T, U]:
-				return enc(t.pair, r)
-			default:
-				return fmt.Errorf("unsupported key implementation %T", k)
-			}
-		},
-		decode: func(r *raw) (Key, error) {
-			p, err := dec(r)
-			if err != nil {
-				return nil, err
-			}
-			return &key[T, U]{
-				hint: newHint(alg, r.Kid, r.X5t),
-				pair: p,
-			}, nil
-		},
+// addLoader helps populate the loaders map in a type-safe manner.
+func addLoader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
+	loaders[alg.String()] = func(r *raw) (Key, error) {
+		mat, err := dec(r)
+		if err != nil {
+			return nil, err
+		}
+		return newKey(alg, r.Kid, r.X5t, mat), nil
 	}
-}
-
-func addRSACodec(
-	alg jwa.Algorithm[*rsa.PublicKey, *rsa.PrivateKey],
-) {
-	addCodec(alg, encodeRSA, decodeRSA)
-}
-
-func addECDSACodec(
-	alg jwa.Algorithm[*ecdsa.PublicKey, *ecdsa.PrivateKey],
-	crv elliptic.Curve,
-) {
-	addCodec(alg, encodeECDSA(crv), decodeECDSA(crv))
-}
-
-func addEdDSACodec() {
-	addCodec(jwa.EdDSA, encodeEdDSA, decodeEdDSA)
 }
 
 // decoder decodes the key material for a specific key type T.
-type decoder[T crypto.PublicKey, U crypto.PrivateKey] func(*raw) (
-	*pair[T, U], error,
-)
+type decoder[T crypto.PublicKey] func(*raw) (T, error)
 
-type encoder[T crypto.PublicKey, U crypto.PrivateKey] func(
-	p *pair[T, U], r *raw,
-) error
-
-// decodeRSA parses the material for an RSA key.
-func decodeRSA(raw *raw) (*pair[*rsa.PublicKey, *rsa.PrivateKey], error) {
+// decodeRSA parses the material for an RSA public key.
+func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 	if raw.Kty != "RSA" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
-	if len(raw.N) == 0 {
+	var mat struct {
+		N []byte `json:"n,format:base64url"`
+		E []byte `json:"e,format:base64url"`
+	}
+	if err := raw.Material(&mat); err != nil {
+		return nil, err
+	}
+	if len(mat.N) == 0 {
 		return nil, errors.New("missing modulus")
 	}
-	if len(raw.E) == 0 {
+	if len(mat.E) == 0 {
 		return nil, errors.New("missing public exponent")
 	}
 	// Exponents > 2^31-1 are extremely rare and not recommended.
-	if len(raw.E) > 4 {
+	if len(mat.E) > 4 {
 		return nil, errors.New("public exponent exceeds 32 bits")
 	}
-	n := new(big.Int).SetBytes(raw.N)
+	n := new(big.Int).SetBytes(mat.N)
 	e := 0
 	// The conversion to a big-endian unsigned integer is safe because of the
 	// length check above.
-	for _, b := range raw.E {
+	for _, b := range mat.E {
 		e = (e << 8) | int(b)
 	}
-	pub := &rsa.PublicKey{N: n, E: e}
-	if len(raw.D) == 0 {
-		return &pair[*rsa.PublicKey, *rsa.PrivateKey]{pub: pub}, nil
-	}
-
-	if len(raw.P) == 0 || len(raw.Q) == 0 {
-		return nil, errors.New("missing prime factor for private key")
-	}
-
-	prv := &rsa.PrivateKey{
-		PublicKey: *pub,
-		D:         new(big.Int).SetBytes(raw.D),
-		Primes: []*big.Int{
-			new(big.Int).SetBytes(raw.P),
-			new(big.Int).SetBytes(raw.Q),
-		},
-	}
-
-	if dp := raw.DP; len(dp) > 0 {
-		prv.Precomputed.Dp = new(big.Int).SetBytes(dp)
-	}
-	if dq := raw.DQ; len(dq) > 0 {
-		prv.Precomputed.Dq = new(big.Int).SetBytes(dq)
-	}
-	if qi := raw.QI; len(qi) > 0 {
-		prv.Precomputed.Qinv = new(big.Int).SetBytes(qi)
-	}
-
-	if err := prv.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid private key: %w", err)
-	}
-
-	return &pair[*rsa.PublicKey, *rsa.PrivateKey]{
-		pub:       pub,
-		prv:       prv,
-		isPrivate: true,
-	}, nil
-}
-
-func encodeRSA(p *pair[*rsa.PublicKey, *rsa.PrivateKey], raw *raw) error {
-	raw.Kty = "RSA"
-	// Match the 32-bit limit set enforced during decoding.
-	if p.pub.E > 0xFFFFFFFF {
-		return fmt.Errorf("public exponent %d exceeds 32 bits", p.pub.E)
-	}
-	raw.N = p.pub.N.Bytes()
-	raw.E = big.NewInt(int64(p.pub.E)).Bytes()
-	// Per RFC 7518 Sec 6.3.1.2, "e" must not be empty.
-	// This handles the (unlikely) case of E = 0.
-	if len(raw.E) == 0 {
-		raw.E = []byte{0}
-	}
-	// Conditionally encode private parameters
-	if p.isPrivate {
-		raw.D = p.prv.D.Bytes()
-		// Per RFC 7518, P and Q must be provided for private keys.
-		if len(p.prv.Primes) != 2 {
-			return errors.New("expected two primes (p and q)")
-		}
-		raw.P = p.prv.Primes[0].Bytes()
-		raw.Q = p.prv.Primes[1].Bytes()
-
-		// Other precomputed values are optional but recommended.
-		if dp := p.prv.Precomputed.Dp; dp != nil {
-			raw.DP = dp.Bytes()
-		}
-		if dq := p.prv.Precomputed.Dq; dq != nil {
-			raw.DQ = dq.Bytes()
-		}
-		if qi := p.prv.Precomputed.Qinv; qi != nil {
-			raw.QI = qi.Bytes()
-		}
-	}
-	return nil
+	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
 // decodeECDSA creates a decoder for the specified elliptic curve.
-func decodeECDSA(
-	crv elliptic.Curve,
-) decoder[*ecdsa.PublicKey, *ecdsa.PrivateKey] {
-	return func(raw *raw) (*pair[*ecdsa.PublicKey, *ecdsa.PrivateKey], error) {
+func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
+	return func(raw *raw) (*ecdsa.PublicKey, error) {
 		if raw.Kty != "EC" {
 			return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 		}
-		if raw.Crv != crv.Params().Name {
-			return nil, fmt.Errorf("incompatible curve %q", raw.Crv)
+		var mat struct {
+			Crv string `json:"crv"`
+			X   []byte `json:"x,format:base64url"`
+			Y   []byte `json:"y,format:base64url"`
 		}
-		if len(raw.X) == 0 {
+		if err := raw.Material(&mat); err != nil {
+			return nil, err
+		}
+		if mat.Crv != crv.Params().Name {
+			return nil, fmt.Errorf("incompatible curve %q", mat.Crv)
+		}
+		if len(mat.X) == 0 {
 			return nil, errors.New("missing x coordinate")
 		}
-		if len(raw.Y) == 0 {
+		if len(mat.Y) == 0 {
 			return nil, errors.New("missing y coordinate")
 		}
-		x := new(big.Int).SetBytes(raw.X)
-		y := new(big.Int).SetBytes(raw.Y)
-
-		//lint:ignore SA1019 We have no alternative to this low-level API call.
-		if !crv.IsOnCurve(x, y) {
-			return nil, errors.New("public key is not on curve")
-		}
-
-		pub := &ecdsa.PublicKey{Curve: crv, X: x, Y: y}
-		if len(raw.D) == 0 {
-			return &pair[*ecdsa.PublicKey, *ecdsa.PrivateKey]{pub: pub}, nil
-		}
-
-		d := new(big.Int).SetBytes(raw.D)
-
-		//lint:ignore SA1019 We have no alternative to this low-level API call.
-		derivedX, derivedY := crv.ScalarBaseMult(d.Bytes())
-		if derivedX.Cmp(x) != 0 || derivedY.Cmp(y) != 0 {
-			return nil, errors.New("public key does not match private key")
-		}
-
-		prv := &ecdsa.PrivateKey{
-			PublicKey: *pub,
-			D:         d,
-		}
-
-		return &pair[*ecdsa.PublicKey, *ecdsa.PrivateKey]{
-			pub:       pub,
-			prv:       prv,
-			isPrivate: true,
-		}, nil
+		x := new(big.Int).SetBytes(mat.X)
+		y := new(big.Int).SetBytes(mat.Y)
+		return &ecdsa.PublicKey{Curve: crv, X: x, Y: y}, nil
 	}
 }
 
-// encodeECDSA creates an encoder for the specified elliptic curve.
-func encodeECDSA(
-	crv elliptic.Curve,
-) encoder[*ecdsa.PublicKey, *ecdsa.PrivateKey] {
-	params := crv.Params()
-	name, size := params.Name, (params.BitSize+7)/8
-	pad := func(data []byte) []byte {
-		if len(data) >= size {
-			return data
-		}
-		padded := make([]byte, size)
-		copy(padded[size-len(data):], data)
-		return padded
-	}
-	return func(p *pair[*ecdsa.PublicKey, *ecdsa.PrivateKey], raw *raw) error {
-		if got := p.pub.Curve.Params().Name; got != name {
-			return fmt.Errorf("incompatible curve %q", got)
-		}
-		raw.Kty = "EC"
-		raw.Crv = name
-		raw.X = pad(p.pub.X.Bytes())
-		raw.Y = pad(p.pub.Y.Bytes())
-
-		if p.isPrivate {
-			raw.D = pad(p.prv.D.Bytes())
-		}
-		return nil
-	}
-}
-
-// decodeEdDSA parses the material for an EdDSA key.
-func decodeEdDSA(raw *raw) (*pair[[]byte, []byte], error) {
+// decodeEdDSA parses the material for an EdDSA public key.
+func decodeEdDSA(raw *raw) ([]byte, error) {
 	if raw.Kty != "OKP" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
-	var size, seed int
-	switch raw.Crv {
+	var mat struct {
+		Crv string `json:"crv"`
+		X   []byte `json:"x,format:base64url"`
+	}
+	if err := raw.Material(&mat); err != nil {
+		return nil, err
+	}
+	var n int
+	switch mat.Crv {
 	case "Ed448":
-		size = ed448.PublicKeySize
-		seed = ed448.SeedSize
+		n = ed448.PublicKeySize
 	case "Ed25519":
-		size = ed25519.PublicKeySize
-		seed = ed25519.SeedSize
+		n = ed25519.PublicKeySize
 	default:
-		return nil, fmt.Errorf("unsupported curve %q", raw.Crv)
+		return nil, fmt.Errorf("unsupported curve %q", mat.Crv)
 	}
-	if m := len(raw.X); m != size {
+	if m := len(mat.X); m != n {
 		return nil, fmt.Errorf(
-			"illegal key size for %s curve: got %d, want %d", raw.Crv, m, size,
+			"illegal key size for %s curve: got %d, want %d", mat.Crv, m, n,
 		)
 	}
-	pub := raw.X
-	if len(raw.D) == 0 {
-		return &pair[[]byte, []byte]{pub: pub}, nil
-	}
-
-	if len(raw.D) != seed {
-		return nil, fmt.Errorf(
-			"illegal private key seed size for %s curve: got %d, want %d",
-			raw.Crv, len(raw.D), seed,
-		)
-	}
-
-	prv := make([]byte, seed+size)
-	copy(prv[:seed], raw.D)
-	copy(prv[seed:], pub)
-
-	var derived crypto.PublicKey
-	if raw.Crv == "Ed25519" {
-		derived = ed25519.PrivateKey(prv).Public()
-	} else {
-		derived = ed448.PrivateKey(prv).Public()
-	}
-
-	if !slices.Equal(pub, derived.(ed25519.PublicKey)) {
-		return nil, errors.New("public key does not match private key seed")
-	}
-
-	return &pair[[]byte, []byte]{pub: pub, prv: prv, isPrivate: true}, nil
-}
-
-func encodeEdDSA(p *pair[[]byte, []byte], raw *raw) error {
-	raw.Kty = "OKP"
-
-	var name string
-	var seed int
-	var size int
-	switch len(p.pub) {
-	case ed448.PublicKeySize:
-		name = "Ed448"
-		seed = ed448.SeedSize
-		size = ed448.PrivateKeySize
-	case ed25519.PublicKeySize:
-		name = "Ed25519"
-		seed = ed25519.SeedSize
-		size = ed25519.PrivateKeySize
-	default:
-		return fmt.Errorf("unsupported public key size: %d", len(p.pub))
-	}
-
-	raw.Crv = name
-	raw.X = p.pub
-
-	if p.isPrivate {
-		if len(p.prv) != size {
-			return fmt.Errorf(
-				"mismatched private key size for curve %s: got %d, want %d",
-				name, len(p.prv), size,
-			)
-		}
-		raw.D = p.prv[:seed]
-	}
-
-	return nil
+	return mat.X, nil
 }

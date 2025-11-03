@@ -1,67 +1,45 @@
-// Package jwt provides tools for parsing, verifying, and signing JSON Web
-// Tokens (JWTs).
+// Package jwt provides tools for parsing and verifying JSON Web Tokens (JWTs).
 //
 // This package uses generics to allow users to define their own custom claims
 // structures. A common pattern is to embed the provided Reserved claims
-// struct (and its pointer receivers) and add extra fields for any other
-// claims present in the token.
+// struct and add extra fields for any other claims present in the token.
 //
-// # Defining Claims
+// # Basic Verification
 //
-// To use the package, first define a struct for your claims. It must
-// embed jwt.Reserved to satisfy the jwt.Claims interface.
+// Start by defining custom claims:
 //
-//	type MyClaims struct {
+//	type Claims struct {
 //	  jwt.Reserved
 //	  Scope string         `json:"scp"`
 //	  Extra map[string]any `json:",unknown"`
 //	}
 //
-// # Verifying Tokens
-//
-// Use a Verifier to parse and validate tokens. The fluent API allows you to
-// define validation rules.
+// The top-level Verify function can be used for simple, one-off signature
+// verification without claim validation:
 //
 //	keySet, err := jwk.ParseSet(`{"keys": [...]}`)
 //	if err != nil { /* handle parsing error */ }
-//	verifier := jwt.NewVerifier[*MyClaims](keySet).
-//	  WithIssuers("my-app").
-//	  WithAudiences("my-api").
-//	  WithLeeway(30*time.Second)
+//	claims, err := jwt.Verify[Claims](keySet, []byte("eyJhb..."))
 //
-//	// Verify parses, checks signature, and validates claims
-//	claims, err := verifier.Verify(tokenBytes)
+// # Advanced Validation
+//
+// For advanced validation of claims like issuer, audience, and token age,
+// create a reusable Verifier with functional options:
+//
+//	verifier := jwt.NewVerifier[Claims](
+//		keySet,
+//		jwt.WithIssuer("foo", "bar"),
+//		jwt.WithAudience("baz"),
+//		jwt.WithLeeway(time.Minute),
+//		jwt.WithMaxAge(time.Hour),
+//	)
+//	claims, err := verifier.Verify([]byte("eyJhb..."))
 //	if err != nil { /* handle validation error */ }
-//
 //	fmt.Println("Scope:", claims.Scope)
-//
-// Alternatively, you can call the standalone Verify function for a plain,
-// one-off signature verification without performing claim validation.
-//
-// # Signing Tokens
-//
-// Use a Signer to create and sign new tokens. It automatically fills in
-// standard claims like "iat", "nbf", "exp", "iss, "aud", and "jti".
-//
-//	key, err := jwk.Parse(`{...}`) // Must contain private key material
-//	if err != nil { /* handle parsing error */ }
-//	signer := jwt.NewSigner[*MyClaims](key).
-//	  WithIssuer("my-app").
-//	  WithLifetime(1*time.Hour)
-//
-//	// Create your claims struct (must be a pointer)
-//	claims := &MyClaims{
-//	  Reserved: jwt.Reserved{Sub: "user-123"},
-//	  Scope:    "read:data",
-//	}
-//
-//	// Sign will fill in iat, nbf, exp, iss, aud, and jti
-//	token, err := signer.Sign(claims)
 package jwt
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
@@ -149,61 +127,40 @@ func (a *audience) UnmarshalJSON(b []byte) error {
 type Claims interface {
 	// ID returns the "jti" (JWT ID) claim, or an empty string if absent.
 	ID() string
-	// SetID sets the "jti" (JWT ID) claim.
-	SetID(id string)
 	// Subject returns the "sub" (Subject) claim, or an empty string if absent.
 	Subject() string
-	// SetSubject sets the "sub" (Subject) claim.
-	SetSubject(sub string)
 	// Issuer returns the "iss" (Issuer) claim, or an empty string if absent.
 	Issuer() string
-	// SetIssuer sets the "iss" (Issuer) claim.
-	SetIssuer(iss string)
 	// Audience returns the "aud" (Audience) claim, or nil if absent.
 	Audience() []string
-	// SetAudience sets the "aud" (Audience) claim.
-	SetAudience(aud []string)
 	// IssuedAt returns the "iat" (Issued At) claim, or the zero time if absent.
 	IssuedAt() time.Time
-	// SetIssuedAt sets the "iat" (Issued At) claim.
-	SetIssuedAt(iat time.Time)
 	// ExpiresAt returns the "exp" (Expires At) claim, or the zero time if absent.
 	ExpiresAt() time.Time
-	// SetExpiresAt sets the "exp" (Expires At) claim.
-	SetExpiresAt(exp time.Time)
 	// NotBefore returns the "nbf" (Not Before) claim, or the zero time if absent.
 	NotBefore() time.Time
-	// SetNotBefore sets the "nbf" (Not Before) claim.
-	SetNotBefore(nbf time.Time)
 }
 
 // Reserved contains the standard registered claims for a JWT. It implements
 // the Claims interface and should be embedded in custom claims structs to
 // enable standard claim handling.
 type Reserved struct {
-	Jti string    `json:"jti"`             // JWT ID
-	Sub string    `json:"sub"`             // Subject
-	Iss string    `json:"iss"`             // Issuer
-	Aud audience  `json:"aud"`             // Audience
-	Iat time.Time `json:"iat,format:unix"` // Issued At
-	Exp time.Time `json:"exp,format:unix"` // Expires At
-	Nbf time.Time `json:"nbf,format:unix"` // Not Before
+	Jti string    `json:"jti"`
+	Sub string    `json:"sub"`
+	Iss string    `json:"iss"`
+	Aud audience  `json:"aud"`
+	Iat time.Time `json:"iat,format:unix"`
+	Exp time.Time `json:"exp,format:unix"`
+	Nbf time.Time `json:"nbf,format:unix"`
 }
 
-func (r *Reserved) ID() string                 { return r.Jti }
-func (r *Reserved) SetID(id string)            { r.Jti = id }
-func (r *Reserved) Subject() string            { return r.Sub }
-func (r *Reserved) SetSubject(sub string)      { r.Sub = sub }
-func (r *Reserved) Issuer() string             { return r.Iss }
-func (r *Reserved) SetIssuer(iss string)       { r.Iss = iss }
-func (r *Reserved) Audience() []string         { return r.Aud }
-func (r *Reserved) SetAudience(aud []string)   { r.Aud = audience(aud) }
-func (r *Reserved) IssuedAt() time.Time        { return r.Iat }
-func (r *Reserved) SetIssuedAt(iat time.Time)  { r.Iat = iat }
-func (r *Reserved) ExpiresAt() time.Time       { return r.Exp }
-func (r *Reserved) SetExpiresAt(exp time.Time) { r.Exp = exp }
-func (r *Reserved) NotBefore() time.Time       { return r.Nbf }
-func (r *Reserved) SetNotBefore(nbf time.Time) { r.Nbf = nbf }
+func (r *Reserved) ID() string           { return r.Jti }
+func (r *Reserved) Subject() string      { return r.Sub }
+func (r *Reserved) Issuer() string       { return r.Iss }
+func (r *Reserved) Audience() []string   { return r.Aud }
+func (r *Reserved) IssuedAt() time.Time  { return r.Iat }
+func (r *Reserved) ExpiresAt() time.Time { return r.Exp }
+func (r *Reserved) NotBefore() time.Time { return r.Nbf }
 
 // dot is the byte value for the delimiting character of JWS segments.
 const dot = byte('.')
@@ -222,8 +179,8 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode header: %w", err)
 	}
-	var header header
-	if err := json.Unmarshal(h, &header); err != nil {
+	header := new(header)
+	if err := json.Unmarshal(h, header); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal header: %w", err)
 	}
 	if typ := header.Typ; typ != "" && typ != "JWT" {
@@ -243,51 +200,11 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 	}
 	msg := in[:j]
 	return &token[T]{
-		header: &header,
+		header: header,
 		claims: claims,
 		msg:    msg,
 		sig:    sig,
 	}, nil
-}
-
-func Sign[T Claims](claims T, key jwk.Key) ([]byte, error) {
-	h, err := json.Marshal(header{
-		Typ: "JWT",
-		Alg: key.Algorithm(),
-		Kid: key.KeyID(),
-		X5t: key.Thumbprint(),
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal header: %w", err)
-	}
-
-	c, err := json.Marshal(claims)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal claims: %w", err)
-	}
-
-	hlen := base64.RawURLEncoding.EncodedLen(len(h))
-	clen := base64.RawURLEncoding.EncodedLen(len(c))
-
-	msg := make([]byte, hlen+1+clen)
-	base64.RawURLEncoding.Encode(msg[:hlen], h)
-	msg[hlen] = dot
-	base64.RawURLEncoding.Encode(msg[hlen+1:], c)
-
-	sig, err := key.Sign(msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign token: %w", err)
-	}
-
-	slen := base64.RawURLEncoding.EncodedLen(len(sig))
-
-	token := make([]byte, len(msg)+1+slen)
-	copy(token, msg)
-	token[len(msg)] = dot
-	base64.RawURLEncoding.Encode(token[len(msg)+1:], sig)
-
-	return token, nil
 }
 
 func decode(src []byte) ([]byte, error) {
@@ -340,60 +257,71 @@ var (
 // user-defined struct for the token's claims. It must implement the Claims
 // interface, or else verification will always fail.
 type Verifier[T Claims] struct {
-	set      jwk.Set
-	issuers  []string
-	audience []string
-	leeway   time.Duration
-	age      time.Duration
-	now      func() time.Time
+	set       jwk.Set
+	issuers   []string
+	audiences []string
+	leeway    time.Duration
+	age       time.Duration
+	now       func() time.Time
 }
 
-// WithIssuer adds one or more trusted issuers to the verifier. If a token's
+// Option configures a Verifier.
+type Option[T Claims] func(*Verifier[T])
+
+// WithIssuers adds one or more trusted issuers to the verifier. If a token's
 // "iss" claim is missing or does not match one of these, it will be rejected.
 // This option can be used multiple times to append additional values. By
 // default, no issuer validation is performed.
-func (v *Verifier[T]) WithIssuers(iss ...string) *Verifier[T] {
-	v.issuers = append(v.issuers, iss...)
-	return v
+func WithIssuers[T Claims](iss ...string) Option[T] {
+	return func(v *Verifier[T]) {
+		v.issuers = append(v.issuers, iss...)
+	}
 }
 
-// WithAudience adds one or more trusted audiences to the verifier. If the
+// WithAudiences adds one or more trusted audiences to the verifier. If the
 // token's "aud" claim is missing or does not contain at least one of these
 // values, it will be rejected. This option can be used multiple times to append
 // additional values. By default, no audience validation is performed.
-func (v *Verifier[T]) WithAudiences(aud ...string) *Verifier[T] {
-	v.audience = append(v.audience, aud...)
-	return v
+func WithAudiences[T Claims](aud ...string) Option[T] {
+	return func(v *Verifier[T]) {
+		v.audiences = append(v.audiences, aud...)
+	}
 }
 
 // WithLeeway sets a grace period to allow for clock skew in temporal
 // validations of the "exp", "nbf", and "iat" claims. It is subtracted from or
 // added to the current time as appropriate. The default is zero, meaning no
 // leeway. Negative values will be ignored.
-func (v *Verifier[T]) WithLeeway(d time.Duration) *Verifier[T] {
-	if d > 0 {
-		v.leeway = d
+func WithLeeway[T Claims](d time.Duration) Option[T] {
+	return func(v *Verifier[T]) {
+		if d > 0 {
+			v.leeway = d
+		}
 	}
-	return v
 }
 
 // WithMaxAge sets the maximum age for tokens based on their "iat" claim.
 // Tokens without an "iat" claim will no longer be accepted. The default is
 // zero, meaning no age validation. Negative values will be ignored.
-func (v *Verifier[T]) WithMaxAge(d time.Duration) *Verifier[T] {
-	if d > 0 {
-		v.age = d
+func WithMaxAge[T Claims](d time.Duration) Option[T] {
+	return func(v *Verifier[T]) {
+		if d > 0 {
+			v.age = d
+		}
 	}
-	return v
 }
 
 // NewVerifier creates a new verifier bound to a specific JWK set and
 // configured with the given options.
-func NewVerifier[T Claims](set jwk.Set) *Verifier[T] {
-	return &Verifier[T]{
+func NewVerifier[T Claims](set jwk.Set, opts ...Option[T]) *Verifier[T] {
+	v := &Verifier[T]{
 		set: set,
 		now: time.Now,
 	}
+	for _, opt := range opts {
+		opt(v)
+	}
+	return v
 }
 
 // Verify parses a token from its compact serialization, verifies its
@@ -410,9 +338,9 @@ func (v *Verifier[T]) Verify(in []byte) (T, error) {
 		var zero T
 		return zero, ErrInvalidIssuer
 	}
-	if len(v.audience) != 0 {
+	if len(v.audiences) > 0 {
 		found := false
-		for _, aud := range v.audience {
+		for _, aud := range v.audiences {
 			if slices.Contains(c.Audience(), aud) {
 				found = true
 				break
@@ -442,74 +370,4 @@ func (v *Verifier[T]) Verify(in []byte) (T, error) {
 		}
 	}
 	return c, nil
-}
-
-type Signer struct {
-	key      jwk.Key
-	issuer   string
-	audience []string
-	lifetime time.Duration
-	now      func() time.Time
-}
-
-func NewSigner(key jwk.Key) *Signer {
-	if !key.IsPair() {
-		panic("signing key must contain private key material")
-	}
-	return &Signer{
-		key: key,
-		now: time.Now,
-	}
-}
-
-func (s *Signer) WithIssuer(iss string) *Signer {
-	if iss != "" {
-		s.issuer = iss
-	}
-	return s
-}
-
-func (s *Signer) WithAudience(aud ...string) *Signer {
-	s.audience = append(s.audience, aud...)
-	return s
-}
-
-func (s *Signer) WithLifetime(d time.Duration) *Signer {
-	if d > 0 {
-		s.lifetime = d
-	}
-	return s
-}
-
-func (s *Signer) WithClock(now func() time.Time) *Signer {
-	if now != nil {
-		s.now = now
-	}
-	return s
-}
-
-// Sign serializes a JWT into its compact representation, filling in standard
-// claims like "iat", "nbf", "exp", "iss", "aud", and "jti" as configured. The
-// claims parameter must be a pointer to a struct implementing the Claims
-// interface. If any of these claims are already set in the provided struct,
-// they will be overwritten. The returned JWT is signed using the signer's key.
-func (s *Signer) Sign(claims Claims) ([]byte, error) {
-	id := make([]byte, 16)
-	if _, err := rand.Read(id); err != nil {
-		return nil, err // Should never happen
-	}
-	claims.SetID(base64.RawURLEncoding.EncodeToString(id))
-	if s.issuer != "" {
-		claims.SetIssuer(s.issuer)
-	}
-	if len(s.audience) != 0 {
-		claims.SetAudience(s.audience)
-	}
-	claims.SetIssuedAt(s.now())
-	if s.lifetime != 0 {
-		iat := claims.IssuedAt()
-		claims.SetNotBefore(iat)
-		claims.SetExpiresAt(iat.Add(s.lifetime))
-	}
-	return Sign(claims, s.key)
 }
