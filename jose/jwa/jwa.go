@@ -1,7 +1,7 @@
 // Package jwa provides implementations for JSON Web Algorithms (JWA)
 // as defined in RFC 7518. It focuses on the verification of signatures
-// from asymmetric algorithms, whose public keys can be distributed
-// via a JWKS (JSON Web Key Set) endpoint.
+// from asymmetric algorithms, whose public keys can be safely shared and
+// distributed via a JWKS (JSON Web Key Set) endpoint.
 package jwa
 
 import (
@@ -159,9 +159,11 @@ func (a *ed) Verify(key []byte, msg, sig []byte) bool {
 	case ed448.PublicKeySize:
 		// Per RFC 8037, the JWS "EdDSA" algorithm corresponds to the "pure" EdDSA
 		// variant, which uses an empty string for the context parameter.
-		return ed448.Verify(ed448.PublicKey(key), msg, sig, "")
+		pub := ed448.PublicKey(key)
+		return ed448.Verify(pub, msg, sig, "")
 	case ed25519.PublicKeySize:
-		return ed25519.Verify(ed25519.PublicKey(key), msg, sig)
+		pub := ed25519.PublicKey(key)
+		return ed25519.Verify(pub, msg, sig)
 	default:
 		return false
 	}
