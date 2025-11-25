@@ -197,6 +197,7 @@ func (s *set) Find(hint Hint) Key {
 	return k
 }
 
+// emptySet is pretty self-explanatory.
 type emptySet struct{}
 
 func (e emptySet) Keys() iter.Seq[Key] { return func(func(Key) bool) {} }
@@ -205,6 +206,23 @@ func (e emptySet) Find(Hint) Key       { return nil }
 
 // empty is a singleton instance of an empty Set.
 var empty Set = emptySet{}
+
+// singletonSet is an adapter that wraps a single Key as a Set.
+type singletonSet struct{ key Key }
+
+func (s *singletonSet) Keys() iter.Seq[Key] {
+	return func(f func(Key) bool) { f(s.key) }
+}
+
+func (s *singletonSet) Len() int { return 1 }
+
+func (s *singletonSet) Find(hint Hint) Key {
+	if s.key.Algorithm() == hint.Algorithm() &&
+		(s.key.KeyID() == hint.KeyID() || s.key.Thumbprint() == hint.Thumbprint()) {
+		return s.key
+	}
+	return nil
+}
 
 // ParseSet parses a Set from a JWKS JSON input.
 //
@@ -271,6 +289,11 @@ func ParseSet(in []byte) (Set, error) {
 		s.keys[i] = k
 	}
 	return s, errors.Join(errs...)
+}
+
+// Singleton creates a Set that contains only the provided Key.
+func Singleton(key Key) Set {
+	return &singletonSet{key: key}
 }
 
 // CacheSet extends the Set interface with scheduler.Tick, creating a component
