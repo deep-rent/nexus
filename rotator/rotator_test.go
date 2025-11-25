@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/rotator"
+	"github.com/deep-rent/nexus/rotator"
 	"github.com/stretchr/testify/assert"
 )
 
