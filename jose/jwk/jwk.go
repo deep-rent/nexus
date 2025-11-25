@@ -33,6 +33,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -392,8 +393,8 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
 	var mat struct {
-		N []byte `json:"n,format:base64url"`
-		E []byte `json:"e,format:base64url"`
+		N string `json:"n"`
+		E string `json:"e"`
 	}
 	if err := raw.Material(&mat); err != nil {
 		return nil, err
@@ -404,15 +405,23 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 	if len(mat.E) == 0 {
 		return nil, errors.New("missing public exponent")
 	}
+	nBytes, err := base64.RawURLEncoding.DecodeString(mat.N)
+	if err != nil {
+		return nil, fmt.Errorf("decode modulus: %w", err)
+	}
+	eBytes, err := base64.RawURLEncoding.DecodeString(mat.E)
+	if err != nil {
+		return nil, fmt.Errorf("decode public exponent: %w", err)
+	}
 	// Exponents > 2^31-1 are extremely rare and not recommended.
-	if len(mat.E) > 4 {
+	if len(eBytes) > 4 {
 		return nil, errors.New("public exponent exceeds 32 bits")
 	}
-	n := new(big.Int).SetBytes(mat.N)
+	n := new(big.Int).SetBytes(nBytes)
 	e := 0
 	// The conversion to a big-endian unsigned integer is safe because of the
 	// length check above.
-	for _, b := range mat.E {
+	for _, b := range eBytes {
 		e = (e << 8) | int(b)
 	}
 	return &rsa.PublicKey{N: n, E: e}, nil
@@ -426,8 +435,8 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 		}
 		var mat struct {
 			Crv string `json:"crv"`
-			X   []byte `json:"x,format:base64url"`
-			Y   []byte `json:"y,format:base64url"`
+			X   string `json:"x"`
+			Y   string `json:"y"`
 		}
 		if err := raw.Material(&mat); err != nil {
 			return nil, err
@@ -441,8 +450,16 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 		if len(mat.Y) == 0 {
 			return nil, errors.New("missing y coordinate")
 		}
-		x := new(big.Int).SetBytes(mat.X)
-		y := new(big.Int).SetBytes(mat.Y)
+		xBytes, err := base64.RawURLEncoding.DecodeString(mat.X)
+		if err != nil {
+			return nil, fmt.Errorf("decode x coordinate: %w", err)
+		}
+		yBytes, err := base64.RawURLEncoding.DecodeString(mat.Y)
+		if err != nil {
+			return nil, fmt.Errorf("decode y coordinate: %w", err)
+		}
+		x := new(big.Int).SetBytes(xBytes)
+		y := new(big.Int).SetBytes(yBytes)
 		return &ecdsa.PublicKey{Curve: crv, X: x, Y: y}, nil
 	}
 }
@@ -454,7 +471,7 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 	}
 	var mat struct {
 		Crv string `json:"crv"`
-		X   []byte `json:"x,format:base64url"`
+		X   string `json:"x"`
 	}
 	if err := raw.Material(&mat); err != nil {
 		return nil, err
@@ -468,10 +485,14 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported curve %q", mat.Crv)
 	}
-	if m := len(mat.X); m != n {
+	x, err := base64.RawURLEncoding.DecodeString(mat.X)
+	if err != nil {
+		return nil, fmt.Errorf("decode x coordinate: %w", err)
+	}
+	if m := len(x); m != n {
 		return nil, fmt.Errorf(
 			"illegal key size for %s curve: got %d, want %d", mat.Crv, m, n,
 		)
 	}
-	return mat.X, nil
+	return x, nil
 }
