@@ -7,5 +7,6 @@
   "kid": "3xQ6MwN6aFYouSGZyqv9DYvst-CV_12M58EvjJ6wHQs",
   "x": "AIckPuJ5Lr1Ul2CZljJDODrjylXJiVs32z3NO82_MB5HZtUDsu7e1aqXYhLSKLV7EKtPzw74qX6_qQ3r2xGNaxZo",
   "y": "ATPZVsHxEPmbQgvt9PiDCykXJMxqK4S6VY_wsFI80PmJ8cfJUHxbfHDoH82lhTjnMLLpGprA9X5qHdNPppihX14i",
-  "alg": "ES512"
+  "alg": "ES512",
+  "x5t#S256": "036a6650cb354e6227e38bb10cecc56a4958cec5f30417cb7d8b44e5cede1dd5"
 }

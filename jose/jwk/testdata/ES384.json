@@ -7,5 +7,6 @@
   "kid": "HCgaZlHgiGkHQ9f3Q2FWYs_NtZzQsLWaii8puMRbhhE",
   "x": "TucLxQKsQhjZSdFz43U5OBbqLD0JaI3ArSOuXdJOtX400OaSV2sjMls-hhn2HuM9",
   "y": "noL1QXRkl-d_uJcHSGlNOUoNIaBLGTKqgg0tELq9R0Yvb0DmfOE9QmpRnEEML9NG",
-  "alg": "ES384"
+  "alg": "ES384",
+  "x5t#S256": "155477264a68dd6aa13969ccbbaa88c93511ccc779b9119441059298c2eb2b27"
 }

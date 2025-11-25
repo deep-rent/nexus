@@ -7,5 +7,6 @@
   "kid": "chs_bZZOVng98tfs-pQRig3RTaXszdcZ0WsoyWORzDQ",
   "x": "HG2A6H7gHeIGV1OCZi4vgrbzgkAsLhZJSVGOIUW50Zc",
   "y": "qZtHWKm7HRMkRGPthMKtJ8-S1Lb1ADEUdj9J5J1GUHI",
-  "alg": "ES256"
+  "alg": "ES256",
+  "x5t#S256": "8ae7b0b40e5abe8670d6c50500625957e824a6aad1ffc60c7cd5a082bf02cdba"
 }
