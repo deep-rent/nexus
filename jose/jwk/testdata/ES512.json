@@ -1,0 +1,11 @@
+{
+  "kty": "EC",
+  "d": "AM2BT2UAy1y-sxd-e_VriAN5dK4IfEQkDOsuZ3GvGVwl5o_G7PKyuK3SOGuxrIY_-ihkCF5yXYuIn5rssKJqsouF",
+  "use": "sig",
+  "key_ops": ["sign", "verify"],
+  "crv": "P-521",
+  "kid": "3xQ6MwN6aFYouSGZyqv9DYvst-CV_12M58EvjJ6wHQs",
+  "x": "AIckPuJ5Lr1Ul2CZljJDODrjylXJiVs32z3NO82_MB5HZtUDsu7e1aqXYhLSKLV7EKtPzw74qX6_qQ3r2xGNaxZo",
+  "y": "ATPZVsHxEPmbQgvt9PiDCykXJMxqK4S6VY_wsFI80PmJ8cfJUHxbfHDoH82lhTjnMLLpGprA9X5qHdNPppihX14i",
+  "alg": "ES512"
+}

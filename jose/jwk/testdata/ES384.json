@@ -1,0 +1,11 @@
+{
+  "kty": "EC",
+  "d": "8IbmMvJB1epDOZRpnDQIV2hLNBQsYssh5Ur8ins7rT69ZS0DNT-3BaxZcaigDsms",
+  "use": "sig",
+  "key_ops": ["sign", "verify"],
+  "crv": "P-384",
+  "kid": "HCgaZlHgiGkHQ9f3Q2FWYs_NtZzQsLWaii8puMRbhhE",
+  "x": "TucLxQKsQhjZSdFz43U5OBbqLD0JaI3ArSOuXdJOtX400OaSV2sjMls-hhn2HuM9",
+  "y": "noL1QXRkl-d_uJcHSGlNOUoNIaBLGTKqgg0tELq9R0Yvb0DmfOE9QmpRnEEML9NG",
+  "alg": "ES384"
+}
