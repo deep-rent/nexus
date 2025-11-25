@@ -91,6 +91,7 @@ func TestParse(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.alg, key.Algorithm())
 			require.Equal(t, tc.kid, key.KeyID())
+			require.Equal(t, tc.x5t, key.Thumbprint())
 		})
 	}
 }
