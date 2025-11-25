@@ -85,7 +85,7 @@ func TestParse(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.src, func(t *testing.T) {
+		t.Run(tc.alg, func(t *testing.T) {
 			in := read(t, tc.src)
 			key, err := jwk.Parse(in)
 			require.NoError(t, err)
@@ -101,6 +101,24 @@ func TestParseSet(t *testing.T) {
 	set, err := jwk.ParseSet(in)
 	require.NoError(t, err)
 	require.Equal(t, 11, set.Len())
+}
+
+func TestParseSetErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{"duplicate key id", "duplicate_key_id.json"},
+		{"duplicate thumbprint", "duplicate_thumbprint.json"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := read(t, tc.file)
+			_, err := jwk.ParseSet(in)
+			require.Error(t, err)
+		})
+	}
 }
 
 func read(t *testing.T, name string) []byte {

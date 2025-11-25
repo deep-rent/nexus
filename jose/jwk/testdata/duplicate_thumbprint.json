@@ -1,0 +1,20 @@
+{
+  "keys": [
+    {
+      "kty": "OKP",
+      "key_ops": ["verify"],
+      "crv": "Ed448",
+      "x5t#S256": "6fdfc2b56f326d45f47cdddd0a7c6a378ad92241d3183e2479be28604aa4f7a7",
+      "x": "2CPpwid_yF97Enrw0FQYfKgMuCpGwKMv3OJHDjsdFafWVenKY1FKVzVjO8KVf6WZGpeBGlDGhGyA",
+      "alg": "EdDSA"
+    },
+    {
+      "kty": "OKP",
+      "key_ops": ["verify"],
+      "crv": "Ed25519",
+      "x5t#S256": "6fdfc2b56f326d45f47cdddd0a7c6a378ad92241d3183e2479be28604aa4f7a7",
+      "x": "bnyiDZAN5ozA37tEaNay_ddD5VuWonAl0bu2Tn9pR_g",
+      "alg": "EdDSA"
+    }
+  ]
+}
