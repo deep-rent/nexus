@@ -162,7 +162,7 @@ type Set interface {
 // newSet creates a new, empty Set with the specified initial capacity.
 func newSet(n int) *set {
 	return &set{
-		keys: make([]Key, n),
+		keys: make([]Key, 0, n),
 		kid:  make(map[string]int, n),
 		x5t:  make(map[string]int, n),
 	}
