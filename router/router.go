@@ -275,6 +275,15 @@ func (r *Router) Handle(
 	r.Mux.Handle(pattern, middleware.Chain(h, local...))
 }
 
+// Mount registers a standard http.Handler (like http.FileServer) under a
+// pattern.
+//
+// The handler will still be wrapped by the Router's global middleware,
+// ensuring logging/auth logic applies to these routes as well.
+func (r *Router) Mount(pattern string, handler http.Handler) {
+	r.Mux.Handle(pattern, middleware.Chain(handler, r.mws...))
+}
+
 // handle centralizes error processing.
 func (r *Router) handle(e *Exchange, err error) {
 	ae, ok := err.(*Error)
