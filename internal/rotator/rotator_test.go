@@ -34,6 +34,17 @@ func TestNew(t *testing.T) {
 			assert.Equal(t, "a", r.Next())
 		})
 	})
+
+	t.Run("succeeds with single item", func(t *testing.T) {
+		items := []string{"a"}
+
+		assert.NotPanics(t, func() {
+			r := rotator.New(items)
+			assert.NotNil(t, r)
+			assert.Equal(t, "a", r.Next())
+			assert.Equal(t, "a", r.Next())
+		})
+	})
 }
 
 func TestNew_Copy(t *testing.T) {
@@ -100,7 +111,7 @@ func TestRotator_Next_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
+	for range concurrency {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < calls; j++ {
