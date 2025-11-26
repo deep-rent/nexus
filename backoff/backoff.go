@@ -118,7 +118,7 @@ type spread struct {
 }
 
 func (s *spread) Next() time.Duration {
-	return s.j.Rand(s.s.Next())
+	return s.j.Apply(s.s.Next())
 }
 
 func (s *spread) Done() {
@@ -126,7 +126,7 @@ func (s *spread) Done() {
 }
 
 func (s *spread) MinDelay() time.Duration {
-	return s.j.Damp(s.s.MinDelay(), 1)
+	return s.j.Floor(s.s.MinDelay(), 1)
 }
 
 func (s *spread) MaxDelay() time.Duration {

@@ -1,3 +1,14 @@
+// Package jitter provides functionality for adding random variation (jitter)
+// to time durations.
+//
+// This package is designed to help distributed systems avoid "thundering herd"
+// problems by desynchronizing retry attempts or periodic jobs.
+//
+// The jitter implementation is "subtractive". It calculates a duration
+// randomly chosen between [d * (1 - p), d], where p is the jitter percentage.
+// This ensures that the returned duration never exceeds the input duration,
+// allowing strict adherence to maximum delay limits (e.g., in backoff
+// strategies).
 package jitter
 
 import (
@@ -15,17 +26,20 @@ type Rand interface {
 var _ Rand = (*rand.Rand)(nil)
 
 // seeded is a pre-seeded Rand instance for default use.
+// Note: Go 1.20+ auto-seeds the global RNG, which spares us from time-based
+// seeding.
 var seeded Rand = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
 
-// Jitter applies random jitter to a duration.
+// Jitter applies subtractive random jitter to a duration.
 type Jitter struct {
 	p float64 // jitter percentage
 	r Rand    // random number generator
 }
 
-// New creates a new Jitter instance with the given jitter percentage p
-// (0.0 to 1.0) and random number generator r. If r is nil, a default seeded
-// generator is used.
+// New creates a new Jitter instance with the given percentage p (0.0 to 1.0)
+// and source of randomness r.
+//
+// If r is nil, a default thread-safe, seeded generator is used.
 func New(p float64, r Rand) *Jitter {
 	if r == nil {
 		r = seeded // Fallback
@@ -36,13 +50,18 @@ func New(p float64, r Rand) *Jitter {
 	}
 }
 
-// Rand applies random jitter to the given duration d and returns the result.
-func (j *Jitter) Rand(d time.Duration) time.Duration {
-	return j.Damp(d, j.r.Float64())
+// Apply returns the duration d damped by a random amount based on the
+// jitter percentage.
+//
+// The result is guaranteed to be in the range [Floor(d), d].
+func (j *Jitter) Apply(d time.Duration) time.Duration {
+	return j.Floor(d, j.r.Float64())
 }
 
-// Damp applies jitter to the given duration d based on the factor f (0.0 to
-// 1.0) and returns the result.
-func (j *Jitter) Damp(d time.Duration, f float64) time.Duration {
+// Floor returns the minimum possible duration that Apply could return for
+// the given input d.
+//
+// This is equivalent to applying maximum jitter (factor = 1.0).
+func (j *Jitter) Floor(d time.Duration, f float64) time.Duration {
 	return time.Duration(float64(d) * (1 - f*j.p))
 }
