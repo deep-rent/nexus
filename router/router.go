@@ -167,10 +167,10 @@ func (e *Exchange) BindJSON(v any) *Error {
 //
 // It automatically sets the "Content-Type: application/json" header. If
 // encoding fails, an error is returned.
-func (e *Exchange) JSON(status int, v any) error {
+func (e *Exchange) JSON(code int, v any) error {
 	e.SetHeader("Content-Type", "application/json")
 	e.SetHeader("X-Content-Type-Options", "nosniff") // Security hardening
-	e.W.WriteHeader(status)
+	e.W.WriteHeader(code)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
 	}
@@ -179,8 +179,18 @@ func (e *Exchange) JSON(status int, v any) error {
 
 // Status sends a response with the given status code and no body.
 // This is commonly used for HTTP 204 (No Content).
-func (e *Exchange) Status(status int) error {
-	e.W.WriteHeader(status)
+func (e *Exchange) Status(code int) error {
+	e.W.WriteHeader(code)
+	return nil
+}
+
+// Redirect replies to the request with a redirect to url, which may be a path
+// relative to the request path.
+//
+// Any non-ASCII characters in url will be percent-encoded, but existing percent
+// encodings will not be changed. The provided code should be in the 3xx range.
+func (e *Exchange) Redirect(url string, code int) error {
+	http.Redirect(e.W, e.R, url, code)
 	return nil
 }
 
