@@ -1,14 +1,23 @@
-// Package jwa provides implementations for JSON Web Algorithms (JWA)
-// as defined in RFC 7518. It focuses on the verification of signatures
-// from asymmetric algorithms, whose public keys can be safely shared and
-// distributed via a JWKS (JSON Web Key Set) endpoint.
+// Package jwa provides implementations for asymmetric JSON Web Algorithms
+// (JWA) as defined in RFC 7518.
+//
+// It provides a unified interface for signature verification using public
+// keys and signature creation using crypto.Signer. This abstraction handles
+// algorithm-specific complexities such as hash function selection, padding
+// schemes (e.g., PSS vs PKCS1v15), and signature format transcoding (e.g.,
+// converting ECDSA ASN.1 DER to raw concatenation).
+//
+// Note: Symmetric algorithms (such as HMAC) are not supported.
 package jwa
 
 import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
+	"encoding/asn1"
+	"errors"
 	"fmt"
 	"hash"
 	"math/big"
@@ -18,8 +27,8 @@ import (
 )
 
 // Algorithm represents an asymmetric JSON Web Algorithm (JWA) used for
-// verifying signatures. The type parameter T specifies the type of public key
-// that the algorithm works with.
+// verifying and calculating signatures. The type parameter T specifies the type
+// of public key that the algorithm works with.
 type Algorithm[T crypto.PublicKey] interface {
 	// fmt.Stringer provides the standard JWA name for the algorithm.
 	fmt.Stringer
@@ -28,6 +37,11 @@ type Algorithm[T crypto.PublicKey] interface {
 	// It returns true if the signature is valid, and false otherwise.
 	// None of the parameters may be nil.
 	Verify(key T, msg, sig []byte) bool
+
+	// Sign creates a signature for the message using the provided signer.
+	// The signer must be capable of using the algorithm's specific hash
+	// and padding scheme.
+	Sign(signer crypto.Signer, msg []byte) ([]byte, error)
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
@@ -51,6 +65,14 @@ func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	h.Write(msg)
 	digest := h.Sum(nil)
 	return rsa.VerifyPKCS1v15(key, a.pool.Hash, digest, sig) == nil
+}
+
+func (a *rs) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
+	h := a.pool.Get()
+	defer a.pool.Put(h)
+	h.Write(msg)
+	digest := h.Sum(nil)
+	return signer.Sign(rand.Reader, digest, a.pool.Hash)
 }
 
 func (a *rs) String() string {
@@ -89,6 +111,18 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	// The salt length is set to match the hash size.
 	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}
 	return rsa.VerifyPSS(key, a.pool.Hash, digest, sig, opts) == nil
+}
+
+func (a *ps) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
+	h := a.pool.Get()
+	defer a.pool.Put(h)
+	h.Write(msg)
+	digest := h.Sum(nil)
+	opts := &rsa.PSSOptions{
+		SaltLength: rsa.PSSSaltLengthEqualsHash,
+		Hash:       a.pool.Hash,
+	}
+	return signer.Sign(rand.Reader, digest, opts)
 }
 
 func (a *ps) String() string {
@@ -138,6 +172,33 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	return ecdsa.Verify(key, digest, r, s)
 }
 
+func (a *es) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
+	h := a.pool.Get()
+	defer a.pool.Put(h)
+	h.Write(msg)
+	digest := h.Sum(nil)
+	der, err := signer.Sign(rand.Reader, digest, nil)
+	if err != nil {
+		return nil, err
+	}
+	var concat struct{ R, S *big.Int }
+	if _, err := asn1.Unmarshal(der, &concat); err != nil {
+		return nil, fmt.Errorf("failed to parse ECDSA signature: %w", err)
+	}
+
+	pub, ok := signer.Public().(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("signer public key is not ECDSA")
+	}
+
+	n := (pub.Curve.Params().BitSize + 7) / 8
+	out := make([]byte, 2*n)
+	concat.R.FillBytes(out[:n])
+	concat.S.FillBytes(out[n:])
+
+	return out, nil
+}
+
 func (a *es) String() string {
 	return a.name
 }
@@ -167,6 +228,10 @@ func (a *ed) Verify(key []byte, msg, sig []byte) bool {
 	default:
 		return false
 	}
+}
+
+func (a *ed) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
+	return signer.Sign(rand.Reader, msg, crypto.Hash(0))
 }
 
 func (a *ed) String() string {
