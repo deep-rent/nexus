@@ -74,6 +74,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/rotator"
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
@@ -505,20 +506,33 @@ func encode(src []byte) []byte {
 // Signer is a configured, reusable JWT creator. It allows setting default
 // claims (like Issuer and Audience) and enforcing token lifetime (Expiration).
 type Signer struct {
-	key jwk.KeyPair
+	rot rotator.Rotator[jwk.KeyPair]
+	iat bool
 	iss string
 	aud []string
 	ttl time.Duration
 	now func() time.Time
 }
 
-// NewSigner creates a new Signer that uses the provided KeyPair for signing.
-// By default, it stamps the current time as "iat" (Issued At).
-func NewSigner(key jwk.KeyPair) *Signer {
+// NewSigner creates a new Signer that uses the provided key pairs for signing.
+// At least one key pair must be provided; otherwise, it panics. Further
+// configuration can be applied using the With... setters.
+func NewSigner(keys ...jwk.KeyPair) *Signer {
 	return &Signer{
-		key: key,
+		rot: rotator.New(keys),
+		iat: true,
 		now: time.Now,
 	}
+}
+
+// WithIssuedAt enables or disables automatic setting of the "iat" (Issued At)
+// claim for all tokens created by this signer. It is enabled by default and
+// will be stamped with the current time.
+//
+// This method is not thread-safe and should be called only during setup.
+func (s *Signer) WithIssuedAt(use bool) *Signer {
+	s.iat = use
+	return s
 }
 
 // WithIssuer sets the "iss" (Issuer) claim for all tokens created by this
@@ -554,7 +568,7 @@ func (s *Signer) WithLifetime(d time.Duration) *Signer {
 }
 
 // WithClock sets the function used to retrieve the current time when
-// timestamping tokens (iat, nbf, exp). This is useful for deterministic
+// timestamping tokens ("iat", "nbf", "exp"). This is useful for deterministic
 // testing. The default is time.Now.
 //
 // This method is not thread-safe and should be called only during setup.
@@ -570,7 +584,9 @@ func (s *Signer) WithClock(now func() time.Time) *Signer {
 func (s *Signer) Sign(claims MutableClaims) ([]byte, error) {
 	now := s.now()
 	// Always stamp the current time as time of issuance.
-	claims.SetIssuedAt(now)
+	if s.iat {
+		claims.SetIssuedAt(now)
+	}
 	// Apply configured issuer name.
 	if s.iss != "" {
 		claims.SetIssuer(s.iss)
@@ -583,6 +599,7 @@ func (s *Signer) Sign(claims MutableClaims) ([]byte, error) {
 	if s.ttl > 0 {
 		claims.SetExpiresAt(now.Add(s.ttl))
 	}
+	key := s.rot.Next()
 	// Delegate to the low-level Sign function.
-	return Sign(s.key, claims)
+	return Sign(key, claims)
 }
