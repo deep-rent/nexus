@@ -169,7 +169,8 @@ func (e *Exchange) BindJSON(v any) *Error {
 // encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
 	e.SetHeader("Content-Type", "application/json")
-	e.SetHeader("X-Content-Type-Options", "nosniff") // Security hardening
+	// Security header to prevent MIME type sniffing by browsers.
+	e.SetHeader("X-Content-Type-Options", "nosniff")
 	e.W.WriteHeader(code)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
@@ -288,6 +289,7 @@ func (r *Router) Handle(
 		}
 	})
 
+	// Combine global and local middleware.
 	local := append(r.mws, mws...)
 	r.Mux.Handle(pattern, middleware.Chain(h, local...))
 }
