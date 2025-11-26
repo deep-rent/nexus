@@ -1,4 +1,5 @@
-// Package jwt provides tools for parsing and verifying JSON Web Tokens (JWTs).
+// Package jwt provides tools for parsing, verifying, and signing JSON Web
+// Tokens (JWTs).
 //
 // This package uses generics to allow users to define their own custom claims
 // structures. A common pattern is to embed the provided Reserved claims
@@ -29,12 +30,39 @@
 //	verifier := jwt.NewVerifier[Claims](keySet).
 //		WithIssuer("foo", "bar").
 //		WithAudience("baz").
-//		WithLeeway(time.Minute).
-//		WithMaxAge(time.Hour)
+//		WithLeeway(1 * time.Minute).
+//		WithMaxAge(1 * time.Hour)
 //
 //	claims, err := verifier.Verify([]byte("eyJhb..."))
 //	if err != nil { /* handle validation error */ }
 //	fmt.Println("Scope:", claims.Scope)
+//
+// # Basic Signing
+//
+// The top-level Sign function can be used to create signed tokens from any
+// JSON-serializable struct or map. This is useful for simple tokens where
+// you manually handle all claims:
+//
+//	// keyPair must be a jwk.KeyPair (containing a private key)
+//	claims := map[string]any{"sub": "user_123", "admin": true}
+//	token, err := jwt.Sign(keyPair, claims)
+//
+// # Advanced Signing
+//
+// To enforce policies like expiration or consistent issuers, create a reusable
+// Signer. Your claims struct must implement MutableClaims (embedding
+// jwt.Reserved handles this automatically).
+//
+//	signer := jwt.NewSigner(keyPair).
+//	    WithIssuer("https://api.example.com").
+//	    WithLifetime(1 * time.Hour)
+//
+//	// The signer will automatically set "iss", "iat", and "exp" on the struct.
+//	claims := &MyClaims{
+//	    Reserved: jwt.Reserved{Subject: "user_123"},
+//	    Scope:    "admin",
+//	}
+//	token, err := signer.Sign(claims)
 package jwt
 
 import (
@@ -144,6 +172,9 @@ type Claims interface {
 }
 
 // MutableClaims extends Claims with setters for standard JWT claims.
+//
+// The setter methods are not safe for concurrent use and should only be called
+// during token creation.
 type MutableClaims interface {
 	Claims
 
@@ -239,6 +270,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 	}, nil
 }
 
+// decode is a helper for Base64URL decoding without padding.
 func decode(src []byte) ([]byte, error) {
 	n := base64.RawURLEncoding.DecodedLen(len(src))
 	d := make([]byte, n)
@@ -442,7 +474,7 @@ func Sign(k jwk.KeyPair, claims any) ([]byte, error) {
 	}
 	sig = encode(sig)
 
-	// Assemble the token.
+	// Assemble the final token.
 	token := make([]byte, 0, len(msg)+1+len(sig))
 	token = append(token, msg...)
 	token = append(token, dot)
@@ -509,6 +541,24 @@ func (s *Signer) WithLifetime(d time.Duration) *Signer {
 	return s
 }
 
+// Sign applies the signer's configuration (issuer, audience, and temporal
+// validity) directly to the mutable claims object, then signs it.
 func (s *Signer) Sign(claims MutableClaims) ([]byte, error) {
-	return nil, nil
+	now := s.now()
+	// Always stamp the current time as time of issuance.
+	claims.SetIssuedAt(now)
+	// Apply configured issuer name.
+	if s.iss != "" {
+		claims.SetIssuer(s.iss)
+	}
+	// Apply configured audience.
+	if len(s.aud) > 0 {
+		claims.SetAudience(s.aud)
+	}
+	// Calculate and apply expiration if a lifetime is configured.
+	if s.ttl > 0 {
+		claims.SetExpiresAt(now.Add(s.ttl))
+	}
+	// Delegate to the low-level Sign function.
+	return Sign(s.key, claims)
 }
