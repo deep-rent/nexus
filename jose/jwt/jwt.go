@@ -143,6 +143,26 @@ type Claims interface {
 	NotBefore() time.Time
 }
 
+// MutableClaims extends Claims with setters for standard JWT claims.
+type MutableClaims interface {
+	Claims
+
+	// SetID sets the "jti" (JWT ID) claim.
+	SetID(id string)
+	// SetSubject sets the "sub" (Subject) claim.
+	SetSubject(sub string)
+	// SetIssuer sets the "iss" (Issuer) claim.
+	SetIssuer(iss string)
+	// SetAudience sets the "aud" (Audience) claim.
+	SetAudience(aud []string)
+	// SetIssuedAt sets the "iat" (Issued At) claim.
+	SetIssuedAt(t time.Time)
+	// SetExpiresAt sets the "exp" (Expires At) claim.
+	SetExpiresAt(t time.Time)
+	// SetNotBefore sets the "nbf" (Not Before) claim.
+	SetNotBefore(t time.Time)
+}
+
 // Reserved contains the standard registered claims for a JWT. It implements
 // the Claims interface and should be embedded in custom claims structs to
 // enable standard claim handling.
@@ -156,13 +176,23 @@ type Reserved struct {
 	Nbf time.Time `json:"nbf,format:unix"` // Not Before
 }
 
-func (r *Reserved) ID() string           { return r.Jti }
-func (r *Reserved) Subject() string      { return r.Sub }
-func (r *Reserved) Issuer() string       { return r.Iss }
-func (r *Reserved) Audience() []string   { return r.Aud }
-func (r *Reserved) IssuedAt() time.Time  { return r.Iat }
-func (r *Reserved) ExpiresAt() time.Time { return r.Exp }
-func (r *Reserved) NotBefore() time.Time { return r.Nbf }
+func (r *Reserved) ID() string               { return r.Jti }
+func (r *Reserved) SetID(id string)          { r.Jti = id }
+func (r *Reserved) Subject() string          { return r.Sub }
+func (r *Reserved) SetSubject(sub string)    { r.Sub = sub }
+func (r *Reserved) Issuer() string           { return r.Iss }
+func (r *Reserved) SetIssuer(iss string)     { r.Iss = iss }
+func (r *Reserved) Audience() []string       { return r.Aud }
+func (r *Reserved) SetAudience(aud []string) { r.Aud = aud }
+func (r *Reserved) IssuedAt() time.Time      { return r.Iat }
+func (r *Reserved) SetIssuedAt(t time.Time)  { r.Iat = t }
+func (r *Reserved) ExpiresAt() time.Time     { return r.Exp }
+func (r *Reserved) SetExpiresAt(t time.Time) { r.Exp = t }
+func (r *Reserved) NotBefore() time.Time     { return r.Nbf }
+func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
+
+// Ensure Reserved implements the MutableClaims interface.
+var _ MutableClaims = (*Reserved)(nil)
 
 // dot is the byte value for the delimiting character of JWS segments.
 const dot = byte('.')
@@ -426,4 +456,59 @@ func encode(src []byte) []byte {
 	dst := make([]byte, base64.RawURLEncoding.EncodedLen(len(src)))
 	base64.RawURLEncoding.Encode(dst, src)
 	return dst
+}
+
+// Signer is a configured, reusable JWT creator. It allows setting default
+// claims (like Issuer and Audience) and enforcing token lifetime (Expiration).
+type Signer struct {
+	key jwk.KeyPair
+	iss string
+	aud []string
+	ttl time.Duration
+	now func() time.Time
+}
+
+// NewSigner creates a new Signer that uses the provided KeyPair for signing.
+// By default, it stamps the current time as "iat" (Issued At).
+func NewSigner(key jwk.KeyPair) *Signer {
+	return &Signer{
+		key: key,
+		now: time.Now,
+	}
+}
+
+// WithIssuer sets the "iss" (Issuer) claim for all tokens created by this
+// signer. If the user-provided claims already contain an issuer, this
+// configuration will overwrite it.
+//
+// This method is not thread-safe and should be called only during setup.
+func (s *Signer) WithIssuer(iss string) *Signer {
+	s.iss = iss
+	return s
+}
+
+// WithAudience sets the "aud" (Audience) claim. If the user-provided claims
+// already contain an audience, this configuration will overwrite it.
+//
+// This method is not thread-safe and should be called only during setup.
+func (s *Signer) WithAudience(aud ...string) *Signer {
+	s.aud = aud
+	return s
+}
+
+// WithLifetime sets the duration for which tokens are valid. It calculates the
+// "exp" (Expires At) claim by adding this duration to the current time.
+// If zero (default), no "exp" claim is added unless provided in the input
+// claims.
+//
+// This method is not thread-safe and should be called only during setup.
+func (s *Signer) WithLifetime(d time.Duration) *Signer {
+	if d > 0 {
+		s.ttl = d
+	}
+	return s
+}
+
+func (s *Signer) Sign(claims MutableClaims) ([]byte, error) {
+	return nil, nil
 }
