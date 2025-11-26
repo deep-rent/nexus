@@ -1,10 +1,15 @@
 package jwk_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -168,6 +173,69 @@ func TestSingleton(t *testing.T) {
 		called = true
 	}
 	assert.True(t, called)
+}
+
+func TestBuilder(t *testing.T) {
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	id := "test-id"
+
+	t.Run("Build", func(t *testing.T) {
+		v := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).Build(&k.PublicKey)
+		assert.Equal(t, id, v.KeyID())
+		assert.Equal(t, "ES256", v.Algorithm())
+	})
+
+	t.Run("BuildPair", func(t *testing.T) {
+		p := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(k)
+		assert.Equal(t, id, p.KeyID())
+
+		msg := []byte("payload")
+		sig, err := p.Sign(msg)
+		require.NoError(t, err)
+		assert.True(t, p.Verify(msg, sig))
+	})
+}
+
+func TestBuilderPanic(t *testing.T) {
+	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	rs, _ := rsa.GenerateKey(rand.Reader, 2048)
+
+	tests := []struct {
+		name string
+		call func()
+	}{
+		{
+			"unidentified key",
+			func() {
+				jwk.NewKeyBuilder(jwa.ES256).Build(&ec.PublicKey)
+			},
+		},
+		{
+			"unidentified key pair",
+			func() {
+				jwk.NewKeyBuilder(jwa.ES256).BuildPair(ec)
+			},
+		},
+		{
+			"incompatible key type 1",
+			func() {
+				jwk.NewKeyBuilder(jwa.ES256).WithKeyID("x").BuildPair(rs)
+			},
+		},
+		{
+			"incompatible key type 2",
+			func() {
+				jwk.NewKeyBuilder(jwa.RS256).WithKeyID("x").BuildPair(ec)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Panics(t, tc.call)
+		})
+	}
 }
 
 func read(t *testing.T, name string) []byte {
