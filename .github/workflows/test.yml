@@ -1,0 +1,57 @@
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Download dependencies
+        run: go mod download
+      - name: Vet source code
+        run: GOEXPERIMENT=jsonv2 go vet ./...
+      - name: Execute tests
+        run: |
+          GOEXPERIMENT=jsonv2 go test -v -cover -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+      - name: Go Coverage Badge
+        uses: tj-actions/coverage-badge-go@v3
+        with:
+          filename: coverage.out
+      - name: Verify changed files
+        uses: tj-actions/verify-changed-files@v20
+        id: verify-changed-files
+        with:
+          files: README.md
+      - name: Commit and Push Badge
+        if: |
+          github.event_name == 'push' && 
+          steps.verify-changed-files.outputs.files_changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git commit -m "chore: update coverage badge"
+          git push
