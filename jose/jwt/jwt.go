@@ -53,10 +53,10 @@ import (
 type Header jwk.Hint
 
 type header struct {
-	Typ string `json:"typ"`
+	Typ string `json:"typ,omitempty"`
 	Alg string `json:"alg"`
-	Kid string `json:"kid"`
-	X5t string `json:"x5t#S256"`
+	Kid string `json:"kid,omitempty"`
+	X5t string `json:"x5t#S256,omitempty"`
 }
 
 func (h *header) Type() string       { return h.Typ }
@@ -370,4 +370,60 @@ func (v *Verifier[T]) Verify(in []byte) (T, error) {
 		}
 	}
 	return c, nil
+}
+
+// Sign creates a new signed JWT using the provided KeyPair and claims.
+//
+// It marshals the claims using encoding/json/v2, creates a header based on
+// the key's properties, and signs the payload. The claims argument can be
+// any type that serializes to a JSON object.
+func Sign(k jwk.KeyPair, claims any) ([]byte, error) {
+	// Prepare and marshal the header.
+	header := &header{
+		Typ: "JWT",
+		Alg: k.Algorithm(),
+		Kid: k.KeyID(),
+		X5t: k.Thumbprint(),
+	}
+
+	h, err := json.Marshal(header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal header: %w", err)
+	}
+	h = encode(h)
+
+	// Marshal the claims.
+	c, err := json.Marshal(claims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal claims: %w", err)
+	}
+	c = encode(c)
+
+	// Construct the signing input (message).
+	msg := make([]byte, 0, len(h)+1+len(c))
+	msg = append(msg, h...)
+	msg = append(msg, dot)
+	msg = append(msg, c...)
+
+	// Sign the message.
+	sig, err := k.Sign(msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign token: %w", err)
+	}
+	sig = encode(sig)
+
+	// Assemble the token.
+	token := make([]byte, 0, len(msg)+1+len(sig))
+	token = append(token, msg...)
+	token = append(token, dot)
+	token = append(token, sig...)
+
+	return token, nil
+}
+
+// encode is a helper for Base64URL encoding without padding.
+func encode(src []byte) []byte {
+	dst := make([]byte, base64.RawURLEncoding.EncodedLen(len(src)))
+	base64.RawURLEncoding.Encode(dst, src)
+	return dst
 }
