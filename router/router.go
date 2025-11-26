@@ -291,5 +291,8 @@ func (r *Router) handle(e *Exchange, err error) {
 	// Attempt to write the error response.
 	// Note: If the handler has already flushed data to the response writer,
 	// this may fail or append garbage, but standard HTTP flow stops here.
-	_ = e.JSON(ae.Status, ae)
+	if w := e.JSON(ae.Status, ae); w != nil {
+		// If writing the error JSON fails (e.g. broken pipe), log it.
+		r.logger.Warn("Failed to write error response", slog.Any("err", w))
+	}
 }
