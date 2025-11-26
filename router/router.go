@@ -145,7 +145,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 			Description: "wrong content type",
 		}
 	}
-	if e.R.Body == nil {
+	if e.R.Body == nil || e.R.Body == http.NoBody {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonEmptyBody,
