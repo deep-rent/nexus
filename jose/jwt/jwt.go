@@ -147,13 +147,13 @@ type Claims interface {
 // the Claims interface and should be embedded in custom claims structs to
 // enable standard claim handling.
 type Reserved struct {
-	Jti string    `json:"jti"`
-	Sub string    `json:"sub"`
-	Iss string    `json:"iss"`
-	Aud audience  `json:"aud"`
-	Iat time.Time `json:"iat,format:unix"`
-	Exp time.Time `json:"exp,format:unix"`
-	Nbf time.Time `json:"nbf,format:unix"`
+	Jti string    `json:"jti"`             // JWT ID
+	Sub string    `json:"sub"`             // Subject
+	Iss string    `json:"iss"`             // Issuer
+	Aud audience  `json:"aud"`             // Audience
+	Iat time.Time `json:"iat,format:unix"` // Issued At
+	Exp time.Time `json:"exp,format:unix"` // Expires At
+	Nbf time.Time `json:"nbf,format:unix"` // Not Before
 }
 
 func (r *Reserved) ID() string           { return r.Jti }
