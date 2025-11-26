@@ -6,8 +6,20 @@ import (
 	"testing"
 
 	"github.com/deep-rent/nexus/jose/jwk"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type mockKey struct {
+	kid string
+	alg string
+	x5t string
+}
+
+func (k *mockKey) Algorithm() string           { return k.alg }
+func (k *mockKey) KeyID() string               { return k.kid }
+func (k *mockKey) Thumbprint() string          { return k.x5t }
+func (k *mockKey) Verify(msg, sig []byte) bool { return true }
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -119,6 +131,23 @@ func TestParseSetErrors(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestSingleton(t *testing.T) {
+	key := &mockKey{
+		kid: "kid",
+		x5t: "x5t",
+		alg: "alg",
+	}
+	set := jwk.Singleton(key)
+	assert.Equal(t, 1, set.Len())
+	assert.Equal(t, key, set.Find(key))
+	called := false
+	for k := range set.Keys() {
+		assert.Equal(t, key, k)
+		called = true
+	}
+	assert.True(t, called)
 }
 
 func read(t *testing.T, name string) []byte {
