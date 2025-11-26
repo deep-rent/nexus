@@ -27,7 +27,7 @@ jobs:
       - name: Execute tests
         run: |
           GOEXPERIMENT=jsonv2 go test -v -cover -coverprofile=coverage.out ./...
-          go tool cover -func=coverage.out
+          go tool cover -func=coverage.out -o=coverage.out
       - name: Go Coverage Badge
         uses: tj-actions/coverage-badge-go@v3
         with:
