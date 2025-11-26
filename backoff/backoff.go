@@ -32,7 +32,7 @@ const (
 	// DefaultGrowthFactor is the default growth factor in exponential backoff.
 	DefaultGrowthFactor float64 = 2.0
 	// DefaultJitterAmount is the default amount of jitter applied.
-	DefaultJitterAmount float64 = 0.3
+	DefaultJitterAmount float64 = 0.5
 )
 
 // Strategy defines the contract for a backoff algorithm.
