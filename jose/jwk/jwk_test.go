@@ -108,6 +108,26 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseError(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{"invalid key material", "invalid_key_material.json"},
+		{"undefined key type", "undefined_key_type.json"},
+		{"undefined algorithm", "undefined_algorithm.json"},
+		{"unknown algorithm", "unknown_algorithm.json"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := read(t, tc.file)
+			_, err := jwk.Parse(in)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestParseSet(t *testing.T) {
 	in := read(t, "set.json")
 	set, err := jwk.ParseSet(in)
@@ -115,7 +135,7 @@ func TestParseSet(t *testing.T) {
 	require.Equal(t, 11, set.Len())
 }
 
-func TestParseSetErrors(t *testing.T) {
+func TestParseSetError(t *testing.T) {
 	tests := []struct {
 		name string
 		file string
