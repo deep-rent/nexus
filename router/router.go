@@ -169,6 +169,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 // encoding fails, an error is returned.
 func (e *Exchange) JSON(status int, v any) error {
 	e.SetHeader("Content-Type", "application/json")
+	e.SetHeader("X-Content-Type-Options", "nosniff")
 	e.W.WriteHeader(status)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
