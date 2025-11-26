@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockHandler allows us to test Handler interface compliance.
 type mockHandler struct{}
 
 func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
@@ -20,52 +19,41 @@ func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
 }
 
 func TestExchange_BindJSON(t *testing.T) {
-	type args struct {
-		contentType string
-		body        *strings.Reader
-		isNilBody   bool // Force nil body for httptest
-	}
 	tests := []struct {
 		name       string
-		args       args
+		ctype      string
+		body       string
+		useNilBody bool
 		wantErr    bool
 		wantReason string
 		wantStatus int
 	}{
 		{
-			name: "success",
-			args: args{
-				contentType: "application/json",
-				body:        strings.NewReader(`{"name":"test"}`),
-			},
+			name:    "success",
+			ctype:   "application/json",
+			body:    `{"name":"test"}`,
 			wantErr: false,
 		},
 		{
-			name: "failure_wrong_content_type",
-			args: args{
-				contentType: "text/plain",
-				body:        strings.NewReader(`{}`),
-			},
+			name:       "failure_wrong_content_type",
+			ctype:      "text/plain",
+			body:       `{}`,
 			wantErr:    true,
 			wantReason: router.ReasonWrongType,
 			wantStatus: http.StatusUnsupportedMediaType,
 		},
 		{
-			name: "failure_empty_body_nil",
-			args: args{
-				contentType: "application/json",
-				isNilBody:   true,
-			},
+			name:       "failure_empty_body",
+			ctype:      "application/json",
+			useNilBody: true,
 			wantErr:    true,
 			wantReason: router.ReasonEmptyBody,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name: "failure_malformed_json",
-			args: args{
-				contentType: "application/json",
-				body:        strings.NewReader(`{"name":`),
-			},
+			name:       "failure_malformed_json",
+			ctype:      "application/json",
+			body:       `{"name":`,
 			wantErr:    true,
 			wantReason: router.ReasonParseJSON,
 			wantStatus: http.StatusBadRequest,
@@ -75,30 +63,27 @@ func TestExchange_BindJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var r *http.Request
-			if tt.args.isNilBody {
+			if tt.useNilBody {
 				r = httptest.NewRequest(http.MethodPost, "/", nil)
 			} else {
-				r = httptest.NewRequest(http.MethodPost, "/", tt.args.body)
+				r = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.body))
 			}
 
-			// We must set the header manually as httptest doesn't infer it
-			if tt.args.contentType != "" {
-				r.Header.Set("Content-Type", tt.args.contentType)
+			if tt.ctype != "" {
+				r.Header.Set("Content-Type", tt.ctype)
 			}
 
 			e := &router.Exchange{R: r}
-			var v map[string]string
+			var v map[string]any
 
 			err := e.BindJSON(&v)
 
 			if tt.wantErr {
-				require.Error(t, err)
-				var ae *router.Error
-				require.True(t, errors.As(err, &ae))
-				assert.Equal(t, tt.wantReason, ae.Reason)
-				assert.Equal(t, tt.wantStatus, ae.Status)
+				require.NotNil(t, err)
+				assert.Equal(t, tt.wantReason, err.Reason)
+				assert.Equal(t, tt.wantStatus, err.Status)
 			} else {
-				assert.NoError(t, err)
+				assert.Nil(t, err)
 			}
 		})
 	}
@@ -142,7 +127,7 @@ func TestExchange_Redirect(t *testing.T) {
 
 func TestExchange_Helpers(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users/123?q=search", nil)
-	req.SetPathValue("id", "123") // Simulate Go 1.22 path matching
+	req.SetPathValue("id", "123")
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{R: req, W: rec}
 
@@ -153,7 +138,6 @@ func TestExchange_Helpers(t *testing.T) {
 	assert.Equal(t, "123", e.Param("id"))
 	assert.Equal(t, "search", e.Query().Get("q"))
 
-	// Header helpers
 	req.Header.Set("X-In", "foo")
 	assert.Equal(t, "foo", e.GetHeader("X-In"))
 
@@ -161,26 +145,22 @@ func TestExchange_Helpers(t *testing.T) {
 	assert.Equal(t, "bar", rec.Header().Get("X-Out"))
 }
 
-func TestRouter_Handle_Integration(t *testing.T) {
+func TestRouter_Handle(t *testing.T) {
 	r := router.New()
 
-	// Test HandleFunc
 	r.HandleFunc("GET /func", func(e *router.Exchange) error {
 		return e.JSON(http.StatusOK, map[string]string{"type": "func"})
 	})
 
-	// Test Handle with Interface
 	r.Handle("GET /struct", &mockHandler{})
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	// 1. Assert Func
 	resp, err := http.Get(srv.URL + "/func")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// 2. Assert Struct
 	resp2, err := http.Get(srv.URL + "/struct")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
@@ -189,7 +169,6 @@ func TestRouter_Handle_Integration(t *testing.T) {
 func TestRouter_ErrorHandling(t *testing.T) {
 	r := router.New()
 
-	// 1. Typed API Error
 	r.HandleFunc("GET /typed", func(e *router.Exchange) error {
 		return &router.Error{
 			Status: http.StatusTeapot,
@@ -197,7 +176,6 @@ func TestRouter_ErrorHandling(t *testing.T) {
 		}
 	})
 
-	// 2. Standard Go Error (should become 500)
 	r.HandleFunc("GET /std", func(e *router.Exchange) error {
 		return errors.New("db crash")
 	})
@@ -216,8 +194,7 @@ func TestRouter_Mount(t *testing.T) {
 	r := router.New()
 
 	subMux := http.NewServeMux()
-	// Note: http.ServeMux does not strip prefixes by default.
-	// The sub-mux sees the full path "/mnt/check".
+	// Router.Mount does not strip prefixes. The sub-mux sees the full path.
 	subMux.HandleFunc("/mnt/check", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
@@ -233,7 +210,6 @@ func TestRouter_Mount(t *testing.T) {
 }
 
 func TestRouter_Middleware(t *testing.T) {
-	// Simple middleware that sets a header
 	mw := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Global", "true")
