@@ -34,15 +34,14 @@ func TestNew_TimeAccuracy(t *testing.T) {
 	ts |= int64(u[4]) << 8
 	ts |= int64(u[5])
 
-	uuidTime := time.UnixMilli(ts)
-	assert.WithinDuration(t, now, uuidTime, 100*time.Millisecond)
+	assert.WithinDuration(t, now, time.UnixMilli(ts), 100*time.Millisecond)
 }
 
 func TestNew_Monotonicity(t *testing.T) {
 	count := 10000
 	uuids := make([]uuid.UUIDv7, count)
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		uuids[i] = uuid.New()
 	}
 
@@ -74,12 +73,10 @@ func TestString_Format(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	validV7 := uuid.New()
-	validStr := validV7.String()
+	v7 := uuid.New()
 
-	v4Bytes := validV7
-	v4Bytes[6] = (v4Bytes[6] & 0x0f) | 0x40
-	v4Str := v4Bytes.String()
+	v4 := v7
+	v4[6] = (v4[6] & 0x0f) | 0x40
 
 	tests := []struct {
 		name    string
@@ -89,7 +86,7 @@ func TestParse(t *testing.T) {
 	}{
 		{
 			name:    "Valid UUIDv7",
-			input:   validStr,
+			input:   v7.String(),
 			wantErr: false,
 		},
 		{
@@ -100,13 +97,13 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name:    "Invalid Length (Long)",
-			input:   validStr + "a",
+			input:   v7.String() + "a",
 			wantErr: true,
 			errMsg:  "invalid UUID length",
 		},
 		{
 			name:    "Missing Hyphens",
-			input:   strings.ReplaceAll(validStr, "-", ""),
+			input:   strings.ReplaceAll(v7.String(), "-", ""),
 			wantErr: true,
 			errMsg:  "invalid UUID length",
 		},
@@ -118,20 +115,20 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name:    "Non-Hex Characters",
-			input:   strings.Replace(validStr, "a", "z", 1),
+			input:   strings.Replace(v7.String(), "a", "z", 1),
 			wantErr: true,
 			errMsg:  "invalid UUID characters",
 		},
 		{
 			name:    "Wrong Version (v4)",
-			input:   v4Str,
+			input:   v4.String(),
 			wantErr: true,
 			errMsg:  "uuid: invalid version: expected v7",
 		},
 		{
 			name: "Wrong Variant (Microsoft GUID legacy)",
 			input: func() string {
-				u := validV7
+				u := v7
 				u[8] = 0xC0
 				return u.String()
 			}(),
@@ -161,10 +158,10 @@ func TestConcurrency(t *testing.T) {
 	ids := make(chan uuid.UUIDv7, count*routines)
 
 	wg.Add(routines)
-	for r := 0; r < routines; r++ {
+	for range routines {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < count; i++ {
+			for range count {
 				ids <- uuid.New()
 			}
 		}()
@@ -190,16 +187,16 @@ func BenchmarkNew(b *testing.B) {
 
 func BenchmarkString(b *testing.B) {
 	u := uuid.New()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_ = u.String()
 	}
 }
 
 func BenchmarkParse(b *testing.B) {
 	s := uuid.New().String()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, _ = uuid.Parse(s)
 	}
 }
