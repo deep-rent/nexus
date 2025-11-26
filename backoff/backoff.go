@@ -18,9 +18,10 @@ package backoff
 
 import (
 	"math"
-	"math/rand/v2"
 	"sync/atomic"
 	"time"
+
+	"github.com/deep-rent/nexus/internal/jitter"
 )
 
 const (
@@ -105,45 +106,37 @@ func (e *exponential) MaxDelay() time.Duration { return e.maxDelay }
 
 var _ Strategy = (*exponential)(nil)
 
-// Rand serves as a minimal facade over rand.Rand to ease mocking.
-type Rand interface {
-	// Float64 generates a pseudo-random number in [0.0, 1.0).
-	Float64() float64
+// spread decorates a Strategy with jittering capabilities in order to spread
+// out retry attempts over time.
+type spread struct {
+	s Strategy
+	j *jitter.Jitter
 }
 
-var _ Rand = (*rand.Rand)(nil)
-
-type jitter struct {
-	strategy Strategy
-	amount   float64
-	r        Rand
+func (s *spread) Next() time.Duration {
+	return s.j.Rand(s.s.Next())
 }
 
-func (j *jitter) Next() time.Duration {
-	f := j.r.Float64()
-	return time.Duration(float64(j.strategy.Next()) * (1 - f*j.amount))
+func (s *spread) Done() {
+	s.s.Done()
 }
 
-func (j *jitter) Done() {
-	j.strategy.Done()
+func (s *spread) MinDelay() time.Duration {
+	return s.j.Damp(s.s.MinDelay(), 1)
 }
 
-func (j *jitter) MinDelay() time.Duration {
-	return time.Duration(float64(j.strategy.MinDelay()) * (1 - j.amount))
+func (s *spread) MaxDelay() time.Duration {
+	return s.s.MaxDelay() // Jitter does not affect the maximum delay.
 }
 
-func (j *jitter) MaxDelay() time.Duration {
-	return j.strategy.MaxDelay()
-}
-
-var _ Strategy = (*jitter)(nil)
+var _ Strategy = (*spread)(nil)
 
 type config struct {
 	minDelay     time.Duration
 	maxDelay     time.Duration
 	growthFactor float64
 	jitterAmount float64
-	r            Rand
+	r            jitter.Rand
 }
 
 // Option customizes the behavior of a backoff Strategy.
@@ -200,7 +193,7 @@ func WithJitterAmount(p float64) Option {
 
 // WithRand sets the source of randomness for jittering. If not specified or
 // nil, a default source will be seeded with the current system time.
-func WithRand(r Rand) Option {
+func WithRand(r jitter.Rand) Option {
 	return func(c *config) {
 		if r != nil {
 			c.r = r
@@ -243,16 +236,8 @@ func New(opts ...Option) Strategy {
 		return s
 	}
 
-	r := c.r
-	if r == nil {
-		s1 := uint64(time.Now().UnixNano())
-		s2 := s1 + 1
-		r = rand.New(rand.NewPCG(s1, s2))
-	}
-
-	return &jitter{
-		strategy: s,
-		amount:   c.jitterAmount,
-		r:        r,
+	return &spread{
+		s: s,
+		j: jitter.New(c.jitterAmount, c.r),
 	}
 }

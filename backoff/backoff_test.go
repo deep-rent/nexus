@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/backoff"
+	"github.com/deep-rent/nexus/internal/jitter"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,7 +13,7 @@ type mockRand struct{ val float64 }
 
 func (m *mockRand) Float64() float64 { return m.val }
 
-var _ backoff.Rand = (*mockRand)(nil)
+var _ jitter.Rand = (*mockRand)(nil)
 
 func TestConstant(t *testing.T) {
 	unit := time.Millisecond
