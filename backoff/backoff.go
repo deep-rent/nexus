@@ -77,6 +77,10 @@ type linear struct {
 
 func (l *linear) Next() time.Duration {
 	n := l.attempts.Add(1)
+	// If n is huge, simply return the delay limit to avoid overflow.
+	if l.minDelay > 0 && n > int64(l.maxDelay/l.minDelay) {
+		return l.maxDelay
+	}
 	d := l.minDelay * time.Duration(n)
 	return max(l.minDelay, min(l.maxDelay, d))
 }
