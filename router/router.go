@@ -41,8 +41,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 
+	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/middleware"
 )
 
@@ -131,15 +131,14 @@ func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 // BindJSON decodes the request body into v.
 //
 // This method enforces strict API hygiene:
-// 1. It verifies the Content-Type header starts with "application/json".
+// 1. It verifies that the media type is "application/json".
 // 2. It checks that the body is not empty.
 // 3. It unmarshals the JSON.
 //
 // If any of these checks fail, it returns a structured error that handlers
 // can return directly.
 func (e *Exchange) BindJSON(v any) *Error {
-	ct := e.GetHeader("Content-Type")
-	if ct != "" && !strings.HasPrefix(ct, "application/json") {
+	if t := header.MediaType(e.R.Header); t != "application/json" {
 		return &Error{
 			Status:      http.StatusUnsupportedMediaType,
 			Reason:      ReasonWrongType,
