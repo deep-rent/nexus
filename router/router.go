@@ -49,24 +49,40 @@ type Exchange struct {
 	W http.ResponseWriter
 }
 
+// Context returns the request's context.
 func (e *Exchange) Context() context.Context { return e.R.Context() }
 
+// Method returns the HTTP method of the request. An empty string means GET.
 func (e *Exchange) Method() string { return e.R.Method }
 
+// URL returns the full URL of the request.
 func (e *Exchange) URL() *url.URL { return e.R.URL }
 
-func (e *Exchange) Header() http.Header { return e.R.Header }
-
+// Path returns the URL path of the request.
 func (e *Exchange) Path() string { return e.R.URL.Path }
 
+// Param retrieves a path parameter by name.
 func (e *Exchange) Param(name string) string { return e.R.PathValue(name) }
 
+// Query parses the URL query parameters of the request. Malformed pairs will
+// be silently discarded.
 func (e *Exchange) Query() url.Values { return e.R.URL.Query() }
 
+// Header returns the HTTP headers of the request.
+func (e *Exchange) Header() http.Header { return e.R.Header }
+
+// GetHeader retrieves a specific header value from the request.
+func (e *Exchange) GetHeader(key string) string { return e.R.Header.Get(key) }
+
+// SetHeader sets a specific header value in the response.
 func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 
+// BindJSON decodes the request body into v.
+//
+// If the Content-Type is not application/json, or if the body is empty or
+// malformed, an appropriate API error is returned.
 func (e *Exchange) BindJSON(v any) error {
-	ct := e.R.Header.Get("Content-Type")
+	ct := e.GetHeader("Content-Type")
 	if ct != "" && !strings.HasPrefix(ct, "application/json") {
 		return &Error{
 			Status:      http.StatusUnsupportedMediaType,
@@ -91,6 +107,8 @@ func (e *Exchange) BindJSON(v any) error {
 	return nil
 }
 
+// JSON encodes v as JSON and writes it to the response with the given HTTP
+// status code. If encoding fails, an error is returned.
 func (e *Exchange) JSON(status int, v any) error {
 	e.SetHeader("Content-Type", "application/json")
 	e.W.WriteHeader(status)
@@ -100,10 +118,14 @@ func (e *Exchange) JSON(status int, v any) error {
 	return nil
 }
 
+// Handler defines the function signature for HTTP request handlers.
 type Handler func(e *Exchange) error
 
+// Option defines a configuration option for the Router.
 type Option func(*Router)
 
+// WithLogger sets a custom logger for the Router. If not set, the Router
+// defaults to slog.Default(). A nil value will be ignored.
 func WithLogger(log *slog.Logger) Option {
 	return func(r *Router) {
 		if log != nil {
@@ -112,22 +134,26 @@ func WithLogger(log *slog.Logger) Option {
 	}
 }
 
+// WithMiddleware adds global middleware pipes that will be applied to all
+// routes registered on the Router.
 func WithMiddleware(pipes ...middleware.Pipe) Option {
 	return func(r *Router) {
-		r.global = append(r.global, pipes...)
+		r.mws = append(r.mws, pipes...)
 	}
 }
 
+// Router represents an HTTP request router with middleware support.
 type Router struct {
 	Mux    *http.ServeMux
-	global []middleware.Pipe
+	mws    []middleware.Pipe
 	logger *slog.Logger
 }
 
+// New creates a new Router instance with the provided options.
 func New(opts ...Option) *Router {
 	r := &Router{
 		Mux:    http.NewServeMux(),
-		global: nil,
+		mws:    nil,
 		logger: slog.Default(),
 	}
 	for _, opt := range opts {
@@ -136,10 +162,15 @@ func New(opts ...Option) *Router {
 	return r
 }
 
+// Handle registers a new route with the given pattern, handler, and optional
+// middleware pipes.
+//
+// The handler is wrapped with the Router's global middleware and any local
+// middleware provided for this specific route.
 func (r *Router) Handle(
 	pattern string,
 	handler Handler,
-	pipes ...middleware.Pipe,
+	mws ...middleware.Pipe,
 ) {
 	h := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		e := &Exchange{
@@ -154,10 +185,12 @@ func (r *Router) Handle(
 		}
 	})
 
-	local := append(r.global, pipes...)
+	local := append(r.mws, mws...)
 	r.Mux.Handle(pattern, middleware.Chain(h, local...))
 }
 
+// handle processes an error returned by a handler and sends an appropriate
+// response to the client.
 func (r *Router) handle(e *Exchange, err error) {
 	ae, ok := err.(*Error)
 	if !ok {
