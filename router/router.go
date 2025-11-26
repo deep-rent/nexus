@@ -31,7 +31,7 @@
 //		return e.JSON(http.StatusCreated, UserResponse{ID: "123"})
 //	})
 //
-//	// 3. Start the server (Router satisfies http.Handler)
+//	// 3. Start the server
 //	http.ListenAndServe(":8080", r)
 package router
 
