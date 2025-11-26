@@ -65,7 +65,10 @@ func (h *header) KeyID() string      { return h.Kid }
 func (h *header) Thumbprint() string { return h.X5t }
 
 var (
-	ErrKeyNotFound      = errors.New("no matching key found")
+	// ErrKeyNotFound is returned when no matching key is found in the JWK set.
+	ErrKeyNotFound = errors.New("no matching key found")
+	// ErrInvalidSignature is returned when the token's signature differs from
+	// the computed signature.
 	ErrInvalidSignature = errors.New("invalid signature")
 )
 
