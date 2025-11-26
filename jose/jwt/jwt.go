@@ -376,6 +376,18 @@ func (v *Verifier[T]) WithMaxAge(d time.Duration) *Verifier[T] {
 	return v
 }
 
+// WithClock sets the function used to retrieve the current time during
+// validation. This is useful for deterministic testing or synchronizing with
+// an external time source. The default is time.Now.
+//
+// This method is not thread-safe and should be called only during setup.
+func (v *Verifier[T]) WithClock(now func() time.Time) *Verifier[T] {
+	if now != nil {
+		v.now = now
+	}
+	return v
+}
+
 // NewVerifier creates a new verifier bound to a specific JWK set.
 // The type parameter T is the user-defined struct for the token's claims.
 // Further configuration can be applied using the With... setters.
@@ -537,6 +549,18 @@ func (s *Signer) WithAudience(aud ...string) *Signer {
 func (s *Signer) WithLifetime(d time.Duration) *Signer {
 	if d > 0 {
 		s.ttl = d
+	}
+	return s
+}
+
+// WithClock sets the function used to retrieve the current time when
+// timestamping tokens (iat, nbf, exp). This is useful for deterministic
+// testing. The default is time.Now.
+//
+// This method is not thread-safe and should be called only during setup.
+func (s *Signer) WithClock(now func() time.Time) *Signer {
+	if now != nil {
+		s.now = now
 	}
 	return s
 }
