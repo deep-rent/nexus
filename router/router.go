@@ -16,7 +16,7 @@
 //
 //	// 2. Define a handler
 //	// You can use a closure, or a struct that satisfies the Handler interface.
-//	r.Handle("POST /users", router.HandlerFunc(func(e *router.Exchange) error {
+//	r.HandleFunc("POST /users", func(e *router.Exchange) error {
 //		var req CreateUserRequest
 //
 //		// BindJSON enforces Content-Type and parses the body.
@@ -29,7 +29,7 @@
 //
 //		// Return JSON response
 //		return e.JSON(http.StatusCreated, UserResponse{ID: "123"})
-//	}))
+//	})
 //
 //	// 3. Start the server (Router satisfies http.Handler)
 //	http.ListenAndServe(":8080", r)
