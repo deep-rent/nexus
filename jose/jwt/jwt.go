@@ -24,15 +24,14 @@
 // # Advanced Validation
 //
 // For advanced validation of claims like issuer, audience, and token age,
-// create a reusable Verifier with functional options:
+// create a reusable Verifier with the desired configuration:
 //
-//	verifier := jwt.NewVerifier[Claims](
-//		keySet,
-//		jwt.WithIssuer("foo", "bar"),
-//		jwt.WithAudience("baz"),
-//		jwt.WithLeeway(time.Minute),
-//		jwt.WithMaxAge(time.Hour),
-//	)
+//	verifier := jwt.NewVerifier[Claims](keySet).
+//		WithIssuer("foo", "bar").
+//		WithAudience("baz").
+//		WithLeeway(time.Minute).
+//		WithMaxAge(time.Hour)
+//
 //	claims, err := verifier.Verify([]byte("eyJhb..."))
 //	if err != nil { /* handle validation error */ }
 //	fmt.Println("Scope:", claims.Scope)
@@ -265,63 +264,61 @@ type Verifier[T Claims] struct {
 	now       func() time.Time
 }
 
-// Option configures a Verifier.
-type Option[T Claims] func(*Verifier[T])
-
 // WithIssuers adds one or more trusted issuers to the verifier. If a token's
 // "iss" claim is missing or does not match one of these, it will be rejected.
 // This option can be used multiple times to append additional values. By
 // default, no issuer validation is performed.
-func WithIssuers[T Claims](iss ...string) Option[T] {
-	return func(v *Verifier[T]) {
-		v.issuers = append(v.issuers, iss...)
-	}
+//
+// This method is not thread-safe and should be called only during setup.
+func (v *Verifier[T]) WithIssuers(iss ...string) *Verifier[T] {
+	v.issuers = append(v.issuers, iss...)
+	return v
 }
 
 // WithAudiences adds one or more trusted audiences to the verifier. If the
 // token's "aud" claim is missing or does not contain at least one of these
 // values, it will be rejected. This option can be used multiple times to append
 // additional values. By default, no audience validation is performed.
-func WithAudiences[T Claims](aud ...string) Option[T] {
-	return func(v *Verifier[T]) {
-		v.audiences = append(v.audiences, aud...)
-	}
+//
+// This method is not thread-safe and should be called only during setup.
+func (v *Verifier[T]) WithAudiences(aud ...string) *Verifier[T] {
+	v.audiences = append(v.audiences, aud...)
+	return v
 }
 
 // WithLeeway sets a grace period to allow for clock skew in temporal
 // validations of the "exp", "nbf", and "iat" claims. It is subtracted from or
 // added to the current time as appropriate. The default is zero, meaning no
 // leeway. Negative values will be ignored.
-func WithLeeway[T Claims](d time.Duration) Option[T] {
-	return func(v *Verifier[T]) {
-		if d > 0 {
-			v.leeway = d
-		}
+//
+// This method is not thread-safe and should be called only during setup.
+func (v *Verifier[T]) WithLeeway(d time.Duration) *Verifier[T] {
+	if d > 0 {
+		v.leeway = d
 	}
+	return v
 }
 
 // WithMaxAge sets the maximum age for tokens based on their "iat" claim.
 // Tokens without an "iat" claim will no longer be accepted. The default is
 // zero, meaning no age validation. Negative values will be ignored.
-func WithMaxAge[T Claims](d time.Duration) Option[T] {
-	return func(v *Verifier[T]) {
-		if d > 0 {
-			v.age = d
-		}
+//
+// This method is not thread-safe and should be called only during setup.
+func (v *Verifier[T]) WithMaxAge(d time.Duration) *Verifier[T] {
+	if d > 0 {
+		v.age = d
 	}
+	return v
 }
 
-// NewVerifier creates a new verifier bound to a specific JWK set and
-// configured with the given options.
-func NewVerifier[T Claims](set jwk.Set, opts ...Option[T]) *Verifier[T] {
-	v := &Verifier[T]{
+// NewVerifier creates a new verifier bound to a specific JWK set.
+// The type parameter T is the user-defined struct for the token's claims.
+// Further configuration can be applied using the With... setters.
+func NewVerifier[T Claims](set jwk.Set) *Verifier[T] {
+	return &Verifier[T]{
 		set: set,
 		now: time.Now,
 	}
-	for _, opt := range opts {
-		opt(v)
-	}
-	return v
 }
 
 // Verify parses a token from its compact serialization, verifies its
