@@ -43,6 +43,13 @@ func New[E any](items []E) Rotator[E] {
 
 // Next implements the Rotator interface.
 func (r *rotator[E]) Next() E {
-	idx := r.index.Add(1)
-	return r.items[(idx-1)%uint64(len(r.items))]
+	n := uint64(len(r.items))
+	var idx uint64
+	for {
+		idx = r.index.Load()
+		if r.index.CompareAndSwap(idx, (idx+1)%n) {
+			break
+		}
+	}
+	return r.items[idx]
 }
