@@ -132,7 +132,7 @@ func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 //
 // This method enforces strict API hygiene:
 // 1. It verifies that the media type is "application/json".
-// 2. It checks that the body is not empty.
+// 2. It checks that the payload is not empty.
 // 3. It unmarshals the JSON.
 //
 // If any of these checks fail, it returns a structured error that handlers
@@ -169,11 +169,18 @@ func (e *Exchange) BindJSON(v any) *Error {
 // encoding fails, an error is returned.
 func (e *Exchange) JSON(status int, v any) error {
 	e.SetHeader("Content-Type", "application/json")
-	e.SetHeader("X-Content-Type-Options", "nosniff")
+	e.SetHeader("X-Content-Type-Options", "nosniff") // Security hardening
 	e.W.WriteHeader(status)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
 	}
+	return nil
+}
+
+// Status sends a response with the given status code and no body.
+// This is commonly used for HTTP 204 (No Content).
+func (e *Exchange) Status(status int) error {
+	e.W.WriteHeader(status)
 	return nil
 }
 
@@ -310,8 +317,8 @@ func (r *Router) handle(e *Exchange, err error) {
 	// Attempt to write the error response.
 	// Note: If the handler has already flushed data to the response writer,
 	// this may fail or append garbage, but standard HTTP flow stops here.
-	if w := e.JSON(ae.Status, ae); w != nil {
+	if we := e.JSON(ae.Status, ae); we != nil {
 		// If writing the error JSON fails (e.g. broken pipe), log it.
-		r.logger.Warn("Failed to write error response", slog.Any("err", w))
+		r.logger.Warn("Failed to write error response", slog.Any("err", we))
 	}
 }
