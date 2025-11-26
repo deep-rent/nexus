@@ -275,6 +275,16 @@ func (r *Router) Handle(
 	r.Mux.Handle(pattern, middleware.Chain(h, local...))
 }
 
+// HandleFunc is a convenience wrapper for Handle that accepts a function
+// instead of a Handler interface.
+func (r *Router) HandleFunc(
+	pattern string,
+	fn func(*Exchange) error,
+	mws ...middleware.Pipe,
+) {
+	r.Handle(pattern, HandlerFunc(fn), mws...)
+}
+
 // Mount registers a standard http.Handler (like http.FileServer) under a
 // pattern.
 //
