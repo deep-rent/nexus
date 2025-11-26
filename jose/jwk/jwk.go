@@ -1,7 +1,17 @@
 // Package jwk provides functionality to parse and manage JSON Web Keys (JWK)
-// and JSON Web Key Sets (JWKS), as defined in RFC 7517. It is specifically
-// designed for the purpose of verifying JWT signatures. Hence, only public
-// keys can be represented.
+// and JSON Web Key Sets (JWKS), as defined in RFC 7517.
+//
+// # Verification
+//
+// The package is primarily designed to consume public keys from a remote JWKS
+// endpoint for the purpose of verifying JWT signatures.
+//
+// # Signing
+//
+// While JWKS parsing focuses on public keys, this package also supports the
+// creation of signing keys via the KeyBuilder. These keys wrap a crypto.Signer
+// (e.g., hardware modules, KMS, or standard library keys) to support token
+// issuance operations.
 //
 // # Eligible Keys
 //
@@ -86,7 +96,8 @@ func newKey[T crypto.PublicKey](
 	alg jwa.Algorithm[T],
 	kid string,
 	x5t string,
-	mat T) Key {
+	mat T,
+) Key {
 	return &key[T]{alg: alg, kid: kid, x5t: x5t, mat: mat}
 }
 
@@ -105,6 +116,101 @@ func (k *key[T]) Thumbprint() string { return k.x5t }
 
 func (k *key[T]) Verify(msg, sig []byte) bool {
 	return k.alg.Verify(k.mat, msg, sig)
+}
+
+// KeyPair represents a JSON Web Key that is capable of both verification and
+// signing. It embeds the public Key interface and wraps a crypto.Signer for
+// the private key operations.
+type KeyPair interface {
+	Key
+
+	// Sign generates a signature for the given message.
+	Sign(msg []byte) ([]byte, error)
+}
+
+// keyPair is the concrete implementation of KeyPair.
+type keyPair[T crypto.PublicKey] struct {
+	// We embed the struct value (not the pointer) so that the inner fields (alg,
+	// kid, etc.) are allocated together.
+	key[T]
+	signer crypto.Signer
+}
+
+func (s *keyPair[T]) Sign(msg []byte) ([]byte, error) {
+	return s.alg.Sign(s.signer, msg)
+}
+
+// KeyBuilder assists in the programmatic construction of Key and KeyPair
+// instances. It ensures that the resulting keys possess the required metadata
+// and that the cryptographic material matches the intended algorithm.
+type KeyBuilder[T crypto.PublicKey] struct {
+	alg jwa.Algorithm[T]
+	kid string
+	x5t string
+}
+
+// NewKeyBuilder starts the construction of a key for the specified algorithm.
+// The generic type T determines the expected public key material (e.g.,
+// *rsa.PublicKey).
+func NewKeyBuilder[T crypto.PublicKey](alg jwa.Algorithm[T]) *KeyBuilder[T] {
+	return &KeyBuilder[T]{alg: alg}
+}
+
+// Algorithm returns the JWA associated with this builder.
+func (b *KeyBuilder[T]) Algorithm() jwa.Algorithm[T] { return b.alg }
+
+// KeyID returns the currently configured key identifier, or an empty string.
+func (b *KeyBuilder[T]) KeyID() string { return b.kid }
+
+// Thumbprint returns the currently configured certificate thumbprint, or an
+// empty string.
+func (b *KeyBuilder[T]) Thumbprint() string { return b.x5t }
+
+// WithKeyID sets the "kid" (Key ID) parameter.
+func (b *KeyBuilder[T]) WithKeyID(kid string) *KeyBuilder[T] {
+	b.kid = kid
+	return b
+}
+
+// WithThumbprint sets the "x5t#S256" (SHA-256 Certificate Thumbprint)
+// parameter.
+func (b *KeyBuilder[T]) WithThumbprint(x5t string) *KeyBuilder[T] {
+	b.x5t = x5t
+	return b
+}
+
+// Build creates a verification-only Key using the provided public key material.
+// It panics if neither a Key ID nor a Thumbprint has been configured.
+func (b *KeyBuilder[T]) Build(mat T) Key {
+	return b.build(mat)
+}
+
+// BuildPair creates a signing-capable KeyPair using the provided signer.
+//
+// It panics if:
+//  1. The signer's public key cannot be cast to type T.
+//  2. Neither a Key ID nor a Thumbprint has been configured.
+func (b *KeyBuilder[T]) BuildPair(signer crypto.Signer) KeyPair {
+	mat, ok := signer.Public().(T)
+	if !ok {
+		panic("signer public key type does not match key builder type")
+	}
+	return &keyPair[T]{
+		key:    *b.build(mat),
+		signer: signer,
+	}
+}
+
+func (b *KeyBuilder[T]) build(mat T) *key[T] {
+	if b.kid == "" && b.x5t == "" {
+		panic("either key id or thumbprint must be set")
+	}
+	return &key[T]{
+		alg: b.alg,
+		kid: b.kid,
+		x5t: b.x5t,
+		mat: mat,
+	}
 }
 
 // ErrIneligibleKey indicates that a key may be syntactically valid but should
@@ -328,6 +434,9 @@ func (s *cacheSet) Find(hint Hint) Key  { return s.get().Find(hint) }
 func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
 }
+
+// Ensure cacheSet implements CacheSet.
+var _ CacheSet = (*cacheSet)(nil)
 
 // mapper adapts the ParseSet function to the cache.Mapper interface.
 var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
