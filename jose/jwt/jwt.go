@@ -74,7 +74,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/rotator"
+	"github.com/deep-rent/nexus/internal/rotor"
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
@@ -506,7 +506,7 @@ func encode(src []byte) []byte {
 // Signer is a configured, reusable JWT creator. It allows setting default
 // claims (like Issuer and Audience) and enforcing token lifetime (Expiration).
 type Signer struct {
-	rot rotator.Rotator[jwk.KeyPair]
+	rot rotor.Rotor[jwk.KeyPair]
 	iat bool
 	iss string
 	aud []string
@@ -514,12 +514,14 @@ type Signer struct {
 	now func() time.Time
 }
 
-// NewSigner creates a new Signer that uses the provided key pairs for signing.
-// At least one key pair must be provided; otherwise, it panics. Further
-// configuration can be applied using the With... setters.
+// NewSigner creates a new Signer that uses the provided key pool for signing.
+// At least one key pair must be provided; otherwise, it panics. If multiple
+// keys are given, they will be rotated through in a round-robin fashion to
+// ensure even usage across the key pool. Further configuration can be applied
+// using the With... setters.
 func NewSigner(keys ...jwk.KeyPair) *Signer {
 	return &Signer{
-		rot: rotator.New(keys),
+		rot: rotor.New(keys),
 		iat: true,
 		now: time.Now,
 	}
