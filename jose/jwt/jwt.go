@@ -514,9 +514,11 @@ type Signer struct {
 	now func() time.Time
 }
 
-// NewSigner creates a new Signer that uses the provided key pairs for signing.
-// At least one key pair must be provided; otherwise, it panics. Further
-// configuration can be applied using the With... setters.
+// NewSigner creates a new Signer that uses the provided key pool for signing.
+// At least one key pair must be provided; otherwise, it panics. If multiple
+// keys are given, they will be rotated through in a round-robin fashion to
+// ensure even usage across the key pool. Further configuration can be applied
+// using the With... setters.
 func NewSigner(keys ...jwk.KeyPair) *Signer {
 	return &Signer{
 		rot: rotor.New(keys),
