@@ -91,7 +91,7 @@ type Error struct {
 
 // Error implements the generic error interface.
 func (e *Error) Error() string {
-	return e.Description
+	return e.Reason + ": " + e.Description
 }
 
 // Exchange acts as a context object for a single HTTP request/response cycle.
