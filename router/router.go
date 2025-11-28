@@ -199,13 +199,16 @@ func (e *Exchange) ReadForm() (url.Values, *Error) {
 // JSON encodes v as JSON and writes it to the response with the given HTTP
 // status code.
 //
-// It automatically sets the Content-Type header to MediaTypeJSON. If
-// encoding fails, an error is returned.
+// It automatically sets the Content-Type header to MediaTypeJSON if it has not
+// already been set. When encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
-	e.SetHeader("Content-Type", MediaTypeJSON)
+	if e.W.Header().Get("Content-Type") == "" {
+		e.SetHeader("Content-Type", MediaTypeJSON)
+	}
 	// Security header to prevent MIME type sniffing by browsers.
+	// We set it unconditionally.
 	e.SetHeader("X-Content-Type-Options", "nosniff")
-	e.W.WriteHeader(code)
+	e.Status(code)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
 	}
@@ -214,12 +217,13 @@ func (e *Exchange) JSON(code int, v any) error {
 
 // Form writes the values as URL-encoded form data with the given status code.
 //
-// It automatically sets the Content-Type header to MediaTypeForm. If
-// encoding fails, an error is returned.
+// It automatically sets the Content-Type header to MediaTypeForm if it has not
+// already been set. When encoding fails, an error is returned.
 func (e *Exchange) Form(code int, v url.Values) error {
-	e.SetHeader("Content-Type", MediaTypeForm)
-	e.W.WriteHeader(code)
-	// v.Encode() handles sorting keys and URL-encoding values safely.
+	if e.W.Header().Get("Content-Type") == "" {
+		e.SetHeader("Content-Type", MediaTypeForm)
+	}
+	e.Status(code)
 	_, err := e.W.Write([]byte(v.Encode()))
 	return err
 }
