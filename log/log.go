@@ -177,3 +177,12 @@ func ParseFormat(s string) (format Format, err error) {
 		return
 	}
 }
+
+// Silent creates a logger that discards all output.
+func Silent() *slog.Logger {
+	const LevelSilent = slog.Level(100)
+	return New(
+		WithWriter(io.Discard),
+		WithLevel(LevelSilent),
+	)
+}
