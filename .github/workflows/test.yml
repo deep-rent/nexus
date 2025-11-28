@@ -2,8 +2,8 @@ name: Test
 on:
   push:
     branches: [main]
-  # pull_request:
-  #   branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
@@ -29,21 +29,17 @@ jobs:
           GOEXPERIMENT=jsonv2 go test -v -cover -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out -o=coverage.out
       - name: Go Coverage Badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: tj-actions/coverage-badge-go@v3
         with:
           filename: coverage.out
-      - name: Verify changed files
-        uses: tj-actions/verify-changed-files@v20
-        id: verify-changed-files
+      - name: Create Pull Request for Badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: peter-evans/create-pull-request@v7
         with:
-          files: README.md
-      - name: Commit and Push Badge
-        if: |
-          github.event_name == 'push' && 
-          steps.verify-changed-files.outputs.files_changed == 'true'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add README.md
-          git commit -m "chore: update coverage badge"
-          git push
+          commit-message: "docs: update coverage badge"
+          title: "Update Coverage Badge"
+          body: "Updates the coverage badge based on the latest test results."
+          branch: "docs/badge-update"
+          base: "main"
+          delete-branch: true
