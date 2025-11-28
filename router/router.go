@@ -226,9 +226,8 @@ func (e *Exchange) Form(code int, v url.Values) error {
 
 // Status sends a response with the given status code and no body.
 // This is commonly used for HTTP 204 (No Content).
-func (e *Exchange) Status(code int) error {
+func (e *Exchange) Status(code int) {
 	e.W.WriteHeader(code)
-	return nil
 }
 
 // Redirect replies to the request with a redirect to url, which may be a path

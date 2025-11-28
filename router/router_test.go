@@ -15,7 +15,8 @@ import (
 type mockHandler struct{}
 
 func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
-	return e.Status(http.StatusOK)
+	e.Status(http.StatusOK)
+	return nil
 }
 
 func TestExchange_BindJSON(t *testing.T) {
@@ -107,9 +108,7 @@ func TestExchange_Status(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: rec}
 
-	err := e.Status(http.StatusNoContent)
-
-	require.NoError(t, err)
+	e.Status(http.StatusNoContent)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
@@ -219,7 +218,8 @@ func TestRouter_Middleware(t *testing.T) {
 
 	r := router.New(router.WithMiddleware(mw))
 	r.HandleFunc("GET /", func(e *router.Exchange) error {
-		return e.Status(http.StatusOK)
+		e.Status(http.StatusOK)
+		return nil
 	})
 
 	srv := httptest.NewServer(r)
