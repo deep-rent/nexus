@@ -1,11 +1,11 @@
-package rotator_test
+package rotor_test
 
 import (
 	"sync"
 	"sync/atomic"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/rotator"
+	"github.com/deep-rent/nexus/internal/rotor"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,12 +13,12 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	t.Run("panics on empty slice", func(t *testing.T) {
-		assert.PanicsWithValue(t, "rotator: items slice must not be empty", func() {
-			rotator.New([]string{})
+		assert.PanicsWithValue(t, "rotor: items slice must not be empty", func() {
+			rotor.New([]string{})
 		}, "New with an empty string slice should panic")
 
-		assert.PanicsWithValue(t, "rotator: items slice must not be empty", func() {
-			rotator.New([]int{})
+		assert.PanicsWithValue(t, "rotor: items slice must not be empty", func() {
+			rotor.New([]int{})
 		}, "New with an empty int slice should panic")
 	})
 
@@ -26,7 +26,7 @@ func TestNew(t *testing.T) {
 		items := []string{"a", "b", "c"}
 
 		assert.NotPanics(t, func() {
-			r := rotator.New(items)
+			r := rotor.New(items)
 			assert.NotNil(t, r)
 			assert.Equal(t, "a", r.Next())
 			assert.Equal(t, "b", r.Next())
@@ -39,7 +39,7 @@ func TestNew(t *testing.T) {
 		items := []string{"a"}
 
 		assert.NotPanics(t, func() {
-			r := rotator.New(items)
+			r := rotor.New(items)
 			assert.NotNil(t, r)
 			assert.Equal(t, "a", r.Next())
 			assert.Equal(t, "a", r.Next())
@@ -51,21 +51,21 @@ func TestNew_Copy(t *testing.T) {
 	t.Parallel()
 
 	items := []string{"a", "b", "c"}
-	r := rotator.New(items)
+	r := rotor.New(items)
 	items[0] = "Z"
 
-	assert.Equal(t, "a", r.Next(), "Rotator should make a copy")
+	assert.Equal(t, "a", r.Next(), "Rotor should make a copy")
 	assert.Equal(t, "b", r.Next())
 	assert.Equal(t, "c", r.Next())
-	assert.Equal(t, "a", r.Next(), "Rotator should wrap around to the original")
+	assert.Equal(t, "a", r.Next(), "Rotor should wrap around to the original")
 }
 
-func TestRotator_Next_Sequential(t *testing.T) {
+func TestRotor_Next_Sequential(t *testing.T) {
 	t.Parallel()
 
 	t.Run("string slice", func(t *testing.T) {
 		items := []string{"1st", "2nd", "3rd"}
-		r := rotator.New(items)
+		r := rotor.New(items)
 
 		assert.Equal(t, "1st", r.Next())
 		assert.Equal(t, "2nd", r.Next())
@@ -78,7 +78,7 @@ func TestRotator_Next_Sequential(t *testing.T) {
 
 	t.Run("int slice", func(t *testing.T) {
 		items := []int{1, 2}
-		r := rotator.New(items)
+		r := rotor.New(items)
 
 		assert.Equal(t, 1, r.Next())
 		assert.Equal(t, 2, r.Next())
@@ -89,7 +89,7 @@ func TestRotator_Next_Sequential(t *testing.T) {
 
 	t.Run("single item slice", func(t *testing.T) {
 		items := []bool{true}
-		r := rotator.New(items)
+		r := rotor.New(items)
 
 		assert.Equal(t, true, r.Next())
 		assert.Equal(t, true, r.Next())
@@ -97,11 +97,11 @@ func TestRotator_Next_Sequential(t *testing.T) {
 	})
 }
 
-func TestRotator_Next_Concurrent(t *testing.T) {
+func TestRotor_Next_Concurrent(t *testing.T) {
 	t.Parallel()
 
 	items := []string{"a", "b", "c"}
-	r := rotator.New(items)
+	r := rotor.New(items)
 
 	concurrency := 50
 	calls := 100
