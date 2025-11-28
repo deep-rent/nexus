@@ -2,6 +2,7 @@ package log_test
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"testing"
 
@@ -156,4 +157,19 @@ func TestFormat_String(t *testing.T) {
 			assert.Equal(t, tc.want, tc.in.String())
 		})
 	}
+}
+
+func TestSilent(t *testing.T) {
+	logger := log.Silent()
+	require.NotNil(t, logger)
+
+	ctx := context.Background()
+	assert.False(t, logger.Enabled(ctx, slog.LevelDebug))
+	assert.False(t, logger.Enabled(ctx, slog.LevelInfo))
+	assert.False(t, logger.Enabled(ctx, slog.LevelWarn))
+	assert.False(t, logger.Enabled(ctx, slog.LevelError))
+
+	assert.NotPanics(t, func() {
+		logger.Error("This should not explode", "key", "value")
+	})
 }
