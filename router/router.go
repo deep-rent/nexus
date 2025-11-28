@@ -246,6 +246,8 @@ func (e *Exchange) Redirect(url string, code int) error {
 
 // RedirectTo constructs a URL by merging the base URL with the provided
 // query parameters and redirects the client.
+//
+// This is particularly useful for callbacks.
 func (e *Exchange) RedirectTo(base string, params url.Values, code int) error {
 	u, err := url.Parse(base)
 	if err != nil {
