@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
 	return nil
 }
 
-func TestExchange_BindJSON(t *testing.T) {
+func TestExchangeBindJSON(t *testing.T) {
 	tests := []struct {
 		name       string
 		ctype      string
@@ -61,17 +62,18 @@ func TestExchange_BindJSON(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			var r *http.Request
-			if tt.useNilBody {
+			if tc.useNilBody {
 				r = httptest.NewRequest(http.MethodPost, "/", nil)
 			} else {
-				r = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.body))
+				reader := strings.NewReader(tc.body)
+				r = httptest.NewRequest(http.MethodPost, "/", reader)
 			}
 
-			if tt.ctype != "" {
-				r.Header.Set("Content-Type", tt.ctype)
+			if tc.ctype != "" {
+				r.Header.Set("Content-Type", tc.ctype)
 			}
 
 			e := &router.Exchange{R: r}
@@ -79,10 +81,10 @@ func TestExchange_BindJSON(t *testing.T) {
 
 			err := e.BindJSON(&v)
 
-			if tt.wantErr {
+			if tc.wantErr {
 				require.NotNil(t, err)
-				assert.Equal(t, tt.wantReason, err.Reason)
-				assert.Equal(t, tt.wantStatus, err.Status)
+				assert.Equal(t, tc.wantReason, err.Reason)
+				assert.Equal(t, tc.wantStatus, err.Status)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -90,7 +92,88 @@ func TestExchange_BindJSON(t *testing.T) {
 	}
 }
 
-func TestExchange_JSON(t *testing.T) {
+func TestExchangeReadForm(t *testing.T) {
+	tests := []struct {
+		name        string
+		ctype       string
+		body        string
+		queryParams string
+		wantErr     bool
+		wantReason  string
+		wantStatus  int
+		wantKey     string
+		wantVal     string
+		missingKey  string
+	}{
+		{
+			name:    "success_basic",
+			ctype:   "application/x-www-form-urlencoded",
+			body:    "foo=bar&baz=qux",
+			wantErr: false,
+			wantKey: "foo",
+			wantVal: "bar",
+		},
+		{
+			name:        "success_ignore_query_params",
+			ctype:       "application/x-www-form-urlencoded",
+			body:        "foo=good",
+			queryParams: "?foo=bad&evil=true",
+			wantErr:     false,
+			wantKey:     "foo",
+			wantVal:     "good",
+			missingKey:  "evil",
+		},
+		{
+			name:       "failure_wrong_content_type",
+			ctype:      "application/json",
+			body:       `{"foo":"bar"}`,
+			wantErr:    true,
+			wantReason: router.ReasonWrongType,
+			wantStatus: http.StatusUnsupportedMediaType,
+		},
+		{
+			name:       "failure_malformed_encoding",
+			ctype:      "application/x-www-form-urlencoded",
+			body:       "foo=%ZZ",
+			wantErr:    true,
+			wantReason: router.ReasonParseForm,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(
+				http.MethodPost,
+				"/"+tc.queryParams,
+				strings.NewReader(tc.body),
+			)
+			if tc.ctype != "" {
+				r.Header.Set("Content-Type", tc.ctype)
+			}
+
+			e := &router.Exchange{R: r}
+
+			vals, err := e.ReadForm()
+
+			if tc.wantErr {
+				require.NotNil(t, err)
+				assert.Equal(t, tc.wantReason, err.Reason)
+				assert.Equal(t, tc.wantStatus, err.Status)
+				assert.Nil(t, vals)
+			} else {
+				require.Nil(t, err)
+				assert.Equal(t, tc.wantVal, vals.Get(tc.wantKey))
+				if tc.missingKey != "" {
+					v := vals.Get(tc.missingKey)
+					assert.Empty(t, v, "should not contain query params")
+				}
+			}
+		})
+	}
+}
+
+func TestExchangeJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: rec}
 	payload := map[string]string{"foo": "bar"}
@@ -104,7 +187,41 @@ func TestExchange_JSON(t *testing.T) {
 	assert.JSONEq(t, `{"foo":"bar"}`, rec.Body.String())
 }
 
-func TestExchange_Status(t *testing.T) {
+func TestExchangeForm(t *testing.T) {
+	t.Run("write_form_data", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		e := &router.Exchange{W: rec}
+
+		vals := url.Values{}
+		vals.Set("foo", "bar")
+		vals.Set("space", "a b")
+
+		err := e.Form(http.StatusOK, vals)
+
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, rec.Code)
+
+		ct := rec.Header().Get("Content-Type")
+		assert.Equal(t, "application/x-www-form-urlencoded", ct)
+		assert.Equal(t, "foo=bar&space=a+b", rec.Body.String())
+	})
+
+	t.Run("write_form_manual_content_type", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		e := &router.Exchange{W: rec}
+
+		e.SetHeader("Content-Type", "text/plain")
+		vals := url.Values{"a": {"b"}}
+
+		err := e.Form(http.StatusOK, vals)
+		require.NoError(t, err)
+
+		ct := rec.Header().Get("Content-Type")
+		assert.Equal(t, "text/plain", ct)
+	})
+}
+
+func TestStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: rec}
 
@@ -112,7 +229,7 @@ func TestExchange_Status(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
-func TestExchange_Redirect(t *testing.T) {
+func TestExchangeRedirect(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/old", nil)
 	e := &router.Exchange{R: req, W: rec}
@@ -124,7 +241,35 @@ func TestExchange_Redirect(t *testing.T) {
 	assert.Equal(t, "/new", rec.Header().Get("Location"))
 }
 
-func TestExchange_Helpers(t *testing.T) {
+func TestExchangeRedirectTo(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
+	e := &router.Exchange{R: req, W: rec}
+
+	params := url.Values{}
+	params.Set("code", "123")
+	params.Set("state", "xyz")
+
+	err := e.RedirectTo(
+		"https://client.com/cb?version=2",
+		params,
+		http.StatusFound,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	assert.Equal(t, "client.com", loc.Host)
+	assert.Equal(t, "/cb", loc.Path)
+
+	q := loc.Query()
+	assert.Equal(t, "123", q.Get("code"))
+	assert.Equal(t, "xyz", q.Get("state"))
+	assert.Equal(t, "2", q.Get("version"))
+}
+
+func TestExchangeHelpers(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users/123?q=search", nil)
 	req.SetPathValue("id", "123")
 	rec := httptest.NewRecorder()
@@ -144,7 +289,7 @@ func TestExchange_Helpers(t *testing.T) {
 	assert.Equal(t, "bar", rec.Header().Get("X-Out"))
 }
 
-func TestRouter_Handle(t *testing.T) {
+func TestRouterHandle(t *testing.T) {
 	r := router.New()
 
 	r.HandleFunc("GET /func", func(e *router.Exchange) error {
@@ -165,7 +310,7 @@ func TestRouter_Handle(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 }
 
-func TestRouter_ErrorHandling(t *testing.T) {
+func TestRouterErrorHandling(t *testing.T) {
 	r := router.New()
 
 	r.HandleFunc("GET /typed", func(e *router.Exchange) error {
@@ -189,11 +334,10 @@ func TestRouter_ErrorHandling(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, resp2.StatusCode)
 }
 
-func TestRouter_Mount(t *testing.T) {
+func TestRouterMount(t *testing.T) {
 	r := router.New()
 
 	subMux := http.NewServeMux()
-	// Router.Mount does not strip prefixes. The sub-mux sees the full path.
 	subMux.HandleFunc("/mnt/check", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
@@ -208,7 +352,7 @@ func TestRouter_Mount(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
 }
 
-func TestRouter_Middleware(t *testing.T) {
+func TestRouterMiddleware(t *testing.T) {
 	mw := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Global", "true")
