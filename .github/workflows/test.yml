@@ -44,3 +44,4 @@ jobs:
           branch: "docs/badge-update"
           base: "main"
           delete-branch: true
+          labels: skip-changelog
