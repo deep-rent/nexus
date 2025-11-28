@@ -244,6 +244,31 @@ func (e *Exchange) Redirect(url string, code int) error {
 	return nil
 }
 
+// RedirectTo constructs a URL by merging the base URL with the provided
+// query parameters and redirects the client.
+func (e *Exchange) RedirectTo(base string, params url.Values, code int) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Reason:      ReasonServerError,
+			Description: "invalid redirect target",
+		}
+	}
+
+	// Merge existing query params in 'base' with new 'params'
+	q := u.Query()
+	for k, vs := range params {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+
+	http.Redirect(e.W, e.R, u.String(), code)
+	return nil
+}
+
 // Handler defines the interface for HTTP request handlers used by the Router.
 //
 // This interface allows using struct-based handlers (useful for dependency
