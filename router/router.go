@@ -54,8 +54,18 @@ const (
 	ReasonEmptyBody = "empty_body"
 	// ReasonParseJSON indicates that there was an error parsing the JSON body.
 	ReasonParseJSON = "parse_json"
+	// ReasonParseForm indicates that there was an error parsing form data.
+	ReasonParseForm = "parse_form"
 	// ReasonServerError indicates that an unexpected internal error occurred.
 	ReasonServerError = "server_error"
+)
+
+// Standard media types used in the Content-Type header.
+const (
+	// MediaTypeJSON is the media type for JSON content.
+	MediaTypeJSON = "application/json"
+	// MediaTypeForm is the media type for URL-encoded form data.
+	MediaTypeForm = "application/x-www-form-urlencoded"
 )
 
 // Error describes the standardized shape of API errors returned to clients.
@@ -138,11 +148,11 @@ func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 // If any of these checks fail, it returns a structured error that handlers
 // can return directly.
 func (e *Exchange) BindJSON(v any) *Error {
-	if t := header.MediaType(e.R.Header); t != "application/json" {
+	if t := header.MediaType(e.R.Header); t != MediaTypeJSON {
 		return &Error{
 			Status:      http.StatusUnsupportedMediaType,
 			Reason:      ReasonWrongType,
-			Description: "wrong content type",
+			Description: "content-type must be " + MediaTypeJSON,
 		}
 	}
 	if e.R.Body == nil || e.R.Body == http.NoBody {
@@ -162,13 +172,37 @@ func (e *Exchange) BindJSON(v any) *Error {
 	return nil
 }
 
+// ReadForm parses the request body as URL-encoded form data and returns the
+// values.
+//
+// Unlike the standard http.Request.FormValue(), this strictly accesses
+// the PostForm (body) only, ignoring URL query parameters. This is crucial
+// for security protocols like OAuth to prevent query parameter injection.
+func (e *Exchange) ReadForm() (url.Values, *Error) {
+	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
+		return nil, &Error{
+			Status:      http.StatusUnsupportedMediaType,
+			Reason:      ReasonWrongType,
+			Description: "content-type must be " + MediaTypeForm,
+		}
+	}
+	if err := e.R.ParseForm(); err != nil {
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonParseForm,
+			Description: "malformed form data",
+		}
+	}
+	return e.R.PostForm, nil
+}
+
 // JSON encodes v as JSON and writes it to the response with the given HTTP
 // status code.
 //
-// It automatically sets the "Content-Type: application/json" header. If
+// It automatically sets the Content-Type header to MediaTypeJSON. If
 // encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
-	e.SetHeader("Content-Type", "application/json")
+	e.SetHeader("Content-Type", MediaTypeJSON)
 	// Security header to prevent MIME type sniffing by browsers.
 	e.SetHeader("X-Content-Type-Options", "nosniff")
 	e.W.WriteHeader(code)
@@ -176,6 +210,18 @@ func (e *Exchange) JSON(code int, v any) error {
 		return err
 	}
 	return nil
+}
+
+// Form writes the values as URL-encoded form data with the given status code.
+//
+// It automatically sets the Content-Type header to MediaTypeForm. If
+// encoding fails, an error is returned.
+func (e *Exchange) Form(code int, v url.Values) error {
+	e.SetHeader("Content-Type", MediaTypeForm)
+	e.W.WriteHeader(code)
+	// v.Encode() handles sorting keys and URL-encoding values safely.
+	_, err := e.W.Write([]byte(v.Encode()))
+	return err
 }
 
 // Status sends a response with the given status code and no body.
