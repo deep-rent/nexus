@@ -55,7 +55,7 @@ func (u UUIDv7) String() string {
 // millisecond are ordered. The remaining bits are filled with cryptographically
 // secure random data.
 func New() UUIDv7 {
-	ms, seq := count()
+	ms, seq := tick()
 
 	var u UUIDv7
 
@@ -112,11 +112,11 @@ var (
 	last int64
 )
 
-// count implements Method 3 from the UUIDv7 specification (RFC 9562, Section
+// tick implements Method 3 from the UUIDv7 specification (RFC 9562, Section
 // 6.2). It returns a timestamp (ms) and a strictly increasing sequence (seq).
 //
 // The sequence holds fractional nanoseconds scaled to fit into 12 bits.
-func count() (ms, seq int64) {
+func tick() (ms, seq int64) {
 	mu.Lock()
 	defer mu.Unlock()
 

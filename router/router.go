@@ -54,8 +54,18 @@ const (
 	ReasonEmptyBody = "empty_body"
 	// ReasonParseJSON indicates that there was an error parsing the JSON body.
 	ReasonParseJSON = "parse_json"
+	// ReasonParseForm indicates that there was an error parsing form data.
+	ReasonParseForm = "parse_form"
 	// ReasonServerError indicates that an unexpected internal error occurred.
 	ReasonServerError = "server_error"
+)
+
+// Standard media types used in the Content-Type header.
+const (
+	// MediaTypeJSON is the media type for JSON content.
+	MediaTypeJSON = "application/json"
+	// MediaTypeForm is the media type for URL-encoded form data.
+	MediaTypeForm = "application/x-www-form-urlencoded"
 )
 
 // Error describes the standardized shape of API errors returned to clients.
@@ -81,7 +91,7 @@ type Error struct {
 
 // Error implements the generic error interface.
 func (e *Error) Error() string {
-	return e.Description
+	return e.Reason + ": " + e.Description
 }
 
 // Exchange acts as a context object for a single HTTP request/response cycle.
@@ -138,11 +148,11 @@ func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 // If any of these checks fail, it returns a structured error that handlers
 // can return directly.
 func (e *Exchange) BindJSON(v any) *Error {
-	if t := header.MediaType(e.R.Header); t != "application/json" {
+	if t := header.MediaType(e.R.Header); t != MediaTypeJSON {
 		return &Error{
 			Status:      http.StatusUnsupportedMediaType,
 			Reason:      ReasonWrongType,
-			Description: "wrong content type",
+			Description: "content-type must be " + MediaTypeJSON,
 		}
 	}
 	if e.R.Body == nil || e.R.Body == http.NoBody {
@@ -162,27 +172,66 @@ func (e *Exchange) BindJSON(v any) *Error {
 	return nil
 }
 
+// ReadForm parses the request body as URL-encoded form data and returns the
+// values.
+//
+// Unlike the standard http.Request.FormValue(), this strictly accesses
+// the PostForm (body) only, ignoring URL query parameters. This is crucial
+// for security protocols like OAuth to prevent query parameter injection.
+func (e *Exchange) ReadForm() (url.Values, *Error) {
+	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
+		return nil, &Error{
+			Status:      http.StatusUnsupportedMediaType,
+			Reason:      ReasonWrongType,
+			Description: "content-type must be " + MediaTypeForm,
+		}
+	}
+	if err := e.R.ParseForm(); err != nil {
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonParseForm,
+			Description: "malformed form data",
+		}
+	}
+	return e.R.PostForm, nil
+}
+
 // JSON encodes v as JSON and writes it to the response with the given HTTP
 // status code.
 //
-// It automatically sets the "Content-Type: application/json" header. If
-// encoding fails, an error is returned.
+// It automatically sets the Content-Type header to MediaTypeJSON if it has not
+// already been set. When encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
-	e.SetHeader("Content-Type", "application/json")
+	if e.W.Header().Get("Content-Type") == "" {
+		e.SetHeader("Content-Type", MediaTypeJSON)
+	}
 	// Security header to prevent MIME type sniffing by browsers.
+	// We set it unconditionally.
 	e.SetHeader("X-Content-Type-Options", "nosniff")
-	e.W.WriteHeader(code)
+	e.Status(code)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
 	}
 	return nil
 }
 
+// Form writes the values as URL-encoded form data with the given status code.
+//
+// It automatically sets the Content-Type header to MediaTypeForm if it has not
+// already been set. When encoding fails, an error is returned.
+func (e *Exchange) Form(code int, v url.Values) error {
+	if e.W.Header().Get("Content-Type") == "" {
+		e.SetHeader("Content-Type", MediaTypeForm)
+	}
+	e.Status(code)
+	_, err := e.W.Write([]byte(v.Encode()))
+	return err
+}
+
 // Status sends a response with the given status code and no body.
 // This is commonly used for HTTP 204 (No Content).
-func (e *Exchange) Status(code int) error {
+func (e *Exchange) Status(code int) {
 	e.W.WriteHeader(code)
-	return nil
 }
 
 // Redirect replies to the request with a redirect to url, which may be a path
@@ -192,6 +241,33 @@ func (e *Exchange) Status(code int) error {
 // encodings will not be changed. The provided code should be in the 3xx range.
 func (e *Exchange) Redirect(url string, code int) error {
 	http.Redirect(e.W, e.R, url, code)
+	return nil
+}
+
+// RedirectTo constructs a URL by merging the base URL with the provided
+// query parameters and redirects the client.
+//
+// This is particularly useful for callbacks.
+func (e *Exchange) RedirectTo(base string, params url.Values, code int) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Reason:      ReasonServerError,
+			Description: "invalid redirect target",
+		}
+	}
+
+	// Merge existing query params in 'base' with new 'params'
+	q := u.Query()
+	for k, vs := range params {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+
+	http.Redirect(e.W, e.R, u.String(), code)
 	return nil
 }
 
