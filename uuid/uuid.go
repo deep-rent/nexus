@@ -88,14 +88,14 @@ func New() UUIDv7 {
 func Parse(s string) (UUIDv7, error) {
 	var u UUIDv7
 	if len(s) != 36 {
-		return u, fmt.Errorf("invalid UUID length (%d)", len(s))
+		return u, fmt.Errorf("uuid: invalid length (%d)", len(s))
 	}
 	if s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
-		return u, fmt.Errorf("invalid UUID format")
+		return u, fmt.Errorf("uuid: invalid format")
 	}
 	h := s[0:8] + s[9:13] + s[14:18] + s[19:23] + s[24:]
 	if _, err := hex.Decode(u[:], []byte(h)); err != nil {
-		return u, fmt.Errorf("invalid UUID characters: %w", err)
+		return u, fmt.Errorf("uuid: invalid characters: %w", err)
 	}
 	if (u[6] & 0xf0) != 0x70 {
 		return UUIDv7{}, fmt.Errorf("uuid: invalid version: expected v7")
