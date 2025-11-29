@@ -195,6 +195,7 @@ type SecurityConfig struct {
 	// If empty, the header is not set.
 	FrameOptions string
 	// NoSniff sets X-Content-Type-Options to "nosniff" if true.
+	// This helps prevent MIME type sniffing by browsers.
 	NoSniff bool
 	// CSP sets the Content-Security-Policy header.
 	// If empty, it is not set.
