@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,12 +20,14 @@ type mockKey struct {
 	kid string
 	alg string
 	x5t string
+	mat any
 }
 
 func (k *mockKey) Algorithm() string           { return k.alg }
 func (k *mockKey) KeyID() string               { return k.kid }
 func (k *mockKey) Thumbprint() string          { return k.x5t }
 func (k *mockKey) Verify(msg, sig []byte) bool { return true }
+func (k *mockKey) Material() any               { return k.mat }
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -104,11 +107,21 @@ func TestParse(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.alg, func(t *testing.T) {
 			in := read(t, tc.src)
-			key, err := jwk.Parse(in)
+
+			key1, err := jwk.Parse(in)
 			require.NoError(t, err)
-			require.Equal(t, tc.alg, key.Algorithm())
-			require.Equal(t, tc.kid, key.KeyID())
-			require.Equal(t, tc.x5t, key.Thumbprint())
+			require.Equal(t, tc.alg, key1.Algorithm())
+			require.Equal(t, tc.kid, key1.KeyID())
+			require.Equal(t, tc.x5t, key1.Thumbprint())
+
+			encoded, err := jwk.Write(key1)
+			require.NoError(t, err, "failed to write key")
+
+			key2, err := jwk.Parse(encoded)
+			require.NoError(t, err, "failed to re-parse key")
+			assert.Equal(t, key1.Algorithm(), key2.Algorithm())
+			assert.Equal(t, key1.KeyID(), key2.KeyID())
+			assert.Equal(t, key1.Thumbprint(), key2.Thumbprint())
 		})
 	}
 }
@@ -122,6 +135,8 @@ func TestParseError(t *testing.T) {
 		{"undefined key type", "undefined_key_type.json"},
 		{"undefined algorithm", "undefined_algorithm.json"},
 		{"unknown algorithm", "unknown_algorithm.json"},
+		{"unsupported ECDSA curve", "unsupported_ecdsa_curve.json"},
+		{"unsupported EdDSA curve", "unsupported_eddsa_curve.json"},
 	}
 
 	for _, tc := range tests {
@@ -135,9 +150,24 @@ func TestParseError(t *testing.T) {
 
 func TestParseSet(t *testing.T) {
 	in := read(t, "set.json")
+
 	set, err := jwk.ParseSet(in)
 	require.NoError(t, err)
 	require.Equal(t, 11, set.Len())
+
+	encoded, err := jwk.WriteSet(set)
+	require.NoError(t, err, "failed to write set")
+
+	set2, err := jwk.ParseSet(encoded)
+	require.NoError(t, err, "failed to re-parse set")
+
+	assert.Equal(t, set.Len(), set2.Len())
+
+	for k := range set.Keys() {
+		found := set2.Find(k)
+		require.NotNil(t, found, "key %s lost during round-trip", k.KeyID())
+		assert.Equal(t, k.KeyID(), found.KeyID())
+	}
 }
 
 func TestParseSetError(t *testing.T) {
@@ -156,6 +186,82 @@ func TestParseSetError(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestParseSetPartialSuccess(t *testing.T) {
+	set, err := jwk.ParseSet(read(t, "set_partial.json"))
+
+	require.Error(t, err)
+	assert.Equal(t, 2, set.Len())
+
+	k1 := set.Find(&mockKey{alg: "ES256", kid: "valid-1"})
+	assert.NotNil(t, k1)
+	k2 := set.Find(&mockKey{alg: "ES512", kid: "valid-2"})
+	assert.NotNil(t, k2)
+}
+
+func TestWriteErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     jwk.Key
+		wantErr string
+	}{
+		{
+			name: "unsupported algorithm",
+			key: &mockKey{
+				alg: "XY99",
+				kid: "test",
+			},
+			wantErr: "unsupported algorithm",
+		},
+		{
+			name: "mismatched RSA material",
+			key: &mockKey{
+				alg: jwa.RS256.String(),
+				mat: &ecdsa.PublicKey{},
+			},
+			wantErr: "invalid key for algorithm \"RS256\"",
+		},
+		{
+			name: "mismatched ECDSA material",
+			key: &mockKey{
+				alg: jwa.ES256.String(),
+				mat: &rsa.PublicKey{},
+			},
+			wantErr: "invalid key for algorithm \"ES256\"",
+		},
+		{
+			name: "mismatched EdDSA material",
+			key: &mockKey{
+				alg: jwa.EdDSA.String(),
+				mat: &rsa.PublicKey{},
+			},
+			wantErr: "invalid key for algorithm \"EdDSA\"",
+		},
+		{
+			name: "RSA zero exponent",
+			key: &mockKey{
+				alg: jwa.RS256.String(),
+				mat: &rsa.PublicKey{N: big.NewInt(123), E: 0},
+			},
+			wantErr: "public exponent is zero",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := jwk.Write(tc.key)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+func TestWriteSetErrors(t *testing.T) {
+	s := jwk.Singleton(&mockKey{alg: "XY99"})
+
+	_, err := jwk.WriteSet(s)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "unsupported algorithm")
 }
 
 func TestSingleton(t *testing.T) {
