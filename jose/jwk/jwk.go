@@ -465,22 +465,17 @@ func NewCacheSet(url string, opts ...cache.Option) CacheSet {
 
 // raw holds the JWK parameters.
 type raw struct {
-	Kty string         `json:"kty"`
-	Use string         `json:"use"`
-	Ops []string       `json:"key_ops"`
-	Alg string         `json:"alg"`
-	Kid string         `json:"kid"`
-	X5t string         `json:"x5t#S256"`
-	Mat jsontext.Value `json:",unknown"` // Capture all other fields.
-}
-
-// Material allows deferred, type-safe unmarshaling of the key material itself
-// into the provided struct pointer.
-func (r *raw) Material(v any) error {
-	if err := json.Unmarshal(r.Mat, v); err != nil {
-		return fmt.Errorf("unmarshal %s key material: %w", r.Kty, err)
-	}
-	return nil
+	Kty string   `json:"kty"`
+	Alg string   `json:"alg"`
+	Use string   `json:"use,omitempty"`
+	Ops []string `json:"key_ops,omitempty"`
+	Kid string   `json:"kid,omitempty"`
+	X5t string   `json:"x5t#S256,omitempty"`
+	N   string   `json:"n,omitempty"`
+	E   string   `json:"e,omitempty"`
+	Crv string   `json:"crv,omitempty"`
+	X   string   `json:"x,omitempty"`
+	Y   string   `json:"y,omitempty"`
 }
 
 // loader defines a function that decodes the key material from a raw JWK
@@ -524,24 +519,17 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 	if raw.Kty != "RSA" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
-	var mat struct {
-		N string `json:"n"`
-		E string `json:"e"`
-	}
-	if err := raw.Material(&mat); err != nil {
-		return nil, err
-	}
-	if len(mat.N) == 0 {
+	if len(raw.N) == 0 {
 		return nil, errors.New("missing modulus")
 	}
-	if len(mat.E) == 0 {
+	if len(raw.E) == 0 {
 		return nil, errors.New("missing public exponent")
 	}
-	nBytes, err := base64.RawURLEncoding.DecodeString(mat.N)
+	nBytes, err := base64.RawURLEncoding.DecodeString(raw.N)
 	if err != nil {
 		return nil, fmt.Errorf("decode modulus: %w", err)
 	}
-	eBytes, err := base64.RawURLEncoding.DecodeString(mat.E)
+	eBytes, err := base64.RawURLEncoding.DecodeString(raw.E)
 	if err != nil {
 		return nil, fmt.Errorf("decode public exponent: %w", err)
 	}
@@ -565,28 +553,20 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 		if raw.Kty != "EC" {
 			return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 		}
-		var mat struct {
-			Crv string `json:"crv"`
-			X   string `json:"x"`
-			Y   string `json:"y"`
+		if raw.Crv != crv.Params().Name {
+			return nil, fmt.Errorf("incompatible curve %q", raw.Crv)
 		}
-		if err := raw.Material(&mat); err != nil {
-			return nil, err
-		}
-		if mat.Crv != crv.Params().Name {
-			return nil, fmt.Errorf("incompatible curve %q", mat.Crv)
-		}
-		if len(mat.X) == 0 {
+		if len(raw.X) == 0 {
 			return nil, errors.New("missing x coordinate")
 		}
-		if len(mat.Y) == 0 {
+		if len(raw.Y) == 0 {
 			return nil, errors.New("missing y coordinate")
 		}
-		xBytes, err := base64.RawURLEncoding.DecodeString(mat.X)
+		xBytes, err := base64.RawURLEncoding.DecodeString(raw.X)
 		if err != nil {
 			return nil, fmt.Errorf("decode x coordinate: %w", err)
 		}
-		yBytes, err := base64.RawURLEncoding.DecodeString(mat.Y)
+		yBytes, err := base64.RawURLEncoding.DecodeString(raw.Y)
 		if err != nil {
 			return nil, fmt.Errorf("decode y coordinate: %w", err)
 		}
@@ -601,29 +581,22 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 	if raw.Kty != "OKP" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
-	var mat struct {
-		Crv string `json:"crv"`
-		X   string `json:"x"`
-	}
-	if err := raw.Material(&mat); err != nil {
-		return nil, err
-	}
 	var n int
-	switch mat.Crv {
+	switch raw.Crv {
 	case "Ed448":
 		n = ed448.PublicKeySize
 	case "Ed25519":
 		n = ed25519.PublicKeySize
 	default:
-		return nil, fmt.Errorf("unsupported curve %q", mat.Crv)
+		return nil, fmt.Errorf("unsupported curve %q", raw.Crv)
 	}
-	x, err := base64.RawURLEncoding.DecodeString(mat.X)
+	x, err := base64.RawURLEncoding.DecodeString(raw.X)
 	if err != nil {
 		return nil, fmt.Errorf("decode x coordinate: %w", err)
 	}
 	if m := len(x); m != n {
 		return nil, fmt.Errorf(
-			"illegal key size for %s curve: got %d, want %d", mat.Crv, m, n,
+			"illegal key size for %s curve: got %d, want %d", raw.Crv, m, n,
 		)
 	}
 	return x, nil
