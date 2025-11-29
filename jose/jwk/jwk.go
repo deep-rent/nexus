@@ -375,8 +375,17 @@ func ParseSet(in []byte) (Set, error) {
 			errs = append(errs, err)
 			continue
 		}
-		idx := -1
+
 		kid := k.KeyID()
+		x5t := k.Thumbprint()
+
+		if kid == "" && x5t == "" {
+			errs = append(errs, fmt.Errorf(
+				"key at index %d: missing both key id and thumbprint", i,
+			))
+			continue
+		}
+		// Check for duplicates before mutating the set.
 		if kid != "" {
 			if _, ok := s.kid[kid]; ok {
 				errs = append(errs, fmt.Errorf(
@@ -384,11 +393,7 @@ func ParseSet(in []byte) (Set, error) {
 				))
 				continue
 			}
-			idx = len(s.keys)
-			s.kid[kid] = idx
-			s.keys = append(s.keys, k)
 		}
-		x5t := k.Thumbprint()
 		if x5t != "" {
 			if _, ok := s.x5t[x5t]; ok {
 				errs = append(errs, fmt.Errorf(
@@ -396,17 +401,19 @@ func ParseSet(in []byte) (Set, error) {
 				))
 				continue
 			}
-			idx = len(s.keys)
+		}
+		// Determines the index in the keys'slice where this new key will be stored.
+		// This is safe because we are appending linearly.
+		idx := len(s.keys)
+		// Append the key exactly once.
+		s.keys = append(s.keys, k)
+		// Update the lookup maps.
+		if kid != "" {
+			s.kid[kid] = idx
+		}
+		if x5t != "" {
 			s.x5t[x5t] = idx
-			s.keys = append(s.keys, k)
 		}
-		if idx == -1 {
-			errs = append(errs, fmt.Errorf(
-				"key at index %d: missing both key id and thumbprint", i,
-			))
-			continue
-		}
-		s.keys[i] = k
 	}
 	return s, errors.Join(errs...)
 }
