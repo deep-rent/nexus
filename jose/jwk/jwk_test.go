@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,13 +20,14 @@ type mockKey struct {
 	kid string
 	alg string
 	x5t string
+	mat any
 }
 
 func (k *mockKey) Algorithm() string           { return k.alg }
 func (k *mockKey) KeyID() string               { return k.kid }
 func (k *mockKey) Thumbprint() string          { return k.x5t }
 func (k *mockKey) Verify(msg, sig []byte) bool { return true }
-func (k *mockKey) Material() any               { return nil }
+func (k *mockKey) Material() any               { return k.mat }
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -182,6 +184,70 @@ func TestParseSetError(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestWriteErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     jwk.Key
+		wantErr string
+	}{
+		{
+			name: "unsupported algorithm",
+			key: &mockKey{
+				alg: "XY99",
+				kid: "test",
+			},
+			wantErr: "unsupported algorithm",
+		},
+		{
+			name: "mismatched material (RSA algo, ECDSA key)",
+			key: &mockKey{
+				alg: jwa.RS256.String(),
+				mat: &ecdsa.PublicKey{},
+			},
+			wantErr: "invalid RSA key material",
+		},
+		{
+			name: "mismatched material (ECDSA algo, RSA key)",
+			key: &mockKey{
+				alg: jwa.ES256.String(),
+				mat: &rsa.PublicKey{},
+			},
+			wantErr: "invalid ECDSA key material",
+		},
+		{
+			name: "mismatched material (EdDSA algo, RSA key)",
+			key: &mockKey{
+				alg: jwa.EdDSA.String(),
+				mat: &rsa.PublicKey{},
+			},
+			wantErr: "invalid EdDSA key material",
+		},
+		{
+			name: "RSA zero exponent",
+			key: &mockKey{
+				alg: jwa.RS256.String(),
+				mat: &rsa.PublicKey{N: big.NewInt(123), E: 0},
+			},
+			wantErr: "public exponent is zero",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := jwk.Write(tc.key)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+func TestWriteSetErrors(t *testing.T) {
+	s := jwk.Singleton(&mockKey{alg: "XY99"})
+
+	_, err := jwk.WriteSet(s)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "unsupported algorithm")
 }
 
 func TestSingleton(t *testing.T) {
