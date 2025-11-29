@@ -105,11 +105,21 @@ func TestParse(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.alg, func(t *testing.T) {
 			in := read(t, tc.src)
-			key, err := jwk.Parse(in)
+
+			key1, err := jwk.Parse(in)
 			require.NoError(t, err)
-			require.Equal(t, tc.alg, key.Algorithm())
-			require.Equal(t, tc.kid, key.KeyID())
-			require.Equal(t, tc.x5t, key.Thumbprint())
+			require.Equal(t, tc.alg, key1.Algorithm())
+			require.Equal(t, tc.kid, key1.KeyID())
+			require.Equal(t, tc.x5t, key1.Thumbprint())
+
+			encoded, err := jwk.Write(key1)
+			require.NoError(t, err, "failed to write key")
+
+			key2, err := jwk.Parse(encoded)
+			require.NoError(t, err, "failed to re-parse key")
+			assert.Equal(t, key1.Algorithm(), key2.Algorithm())
+			assert.Equal(t, key1.KeyID(), key2.KeyID())
+			assert.Equal(t, key1.Thumbprint(), key2.Thumbprint())
 		})
 	}
 }
@@ -136,9 +146,24 @@ func TestParseError(t *testing.T) {
 
 func TestParseSet(t *testing.T) {
 	in := read(t, "set.json")
+
 	set, err := jwk.ParseSet(in)
 	require.NoError(t, err)
 	require.Equal(t, 11, set.Len())
+
+	encoded, err := jwk.WriteSet(set)
+	require.NoError(t, err, "failed to write set")
+
+	set2, err := jwk.ParseSet(encoded)
+	require.NoError(t, err, "failed to re-parse set")
+
+	assert.Equal(t, set.Len(), set2.Len())
+
+	for k := range set.Keys() {
+		found := set2.Find(k)
+		require.NotNil(t, found, "key %s lost during round-trip", k.KeyID())
+		assert.Equal(t, k.KeyID(), found.KeyID())
+	}
 }
 
 func TestParseSetError(t *testing.T) {
