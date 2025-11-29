@@ -135,6 +135,8 @@ func TestParseError(t *testing.T) {
 		{"undefined key type", "undefined_key_type.json"},
 		{"undefined algorithm", "undefined_algorithm.json"},
 		{"unknown algorithm", "unknown_algorithm.json"},
+		{"unsupported ECDSA curve", "unsupported_ecdsa_curve.json"},
+		{"unsupported EdDSA curve", "unsupported_eddsa_curve.json"},
 	}
 
 	for _, tc := range tests {
