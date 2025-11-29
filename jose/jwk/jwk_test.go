@@ -186,6 +186,18 @@ func TestParseSetError(t *testing.T) {
 	}
 }
 
+func TestParseSetPartialSuccess(t *testing.T) {
+	set, err := jwk.ParseSet(read(t, "set_partial.json"))
+
+	require.Error(t, err)
+	assert.Equal(t, 2, set.Len())
+
+	k1 := set.Find(&mockKey{alg: "ES256", kid: "valid-1"})
+	assert.NotNil(t, k1)
+	k2 := set.Find(&mockKey{alg: "ES512", kid: "valid-2"})
+	assert.NotNil(t, k2)
+}
+
 func TestWriteErrors(t *testing.T) {
 	tests := []struct {
 		name    string
