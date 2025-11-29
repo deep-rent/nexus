@@ -237,6 +237,41 @@ func TestSecure(t *testing.T) {
 	})
 }
 
+func TestIntegration(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newLogger(&buf)
+
+	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NotEmpty(t, mw.GetRequestID(r.Context()))
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	h := mw.Chain(
+		final,
+		mw.Recover(logger),
+		mw.RequestID(),
+		mw.Log(logger),
+		mw.Secure(mw.DefaultSecurityConfig),
+		mw.Volatile(),
+	)
+
+	req := httptest.NewRequest("GET", "/int", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	id := rr.Header().Get("X-Request-ID")
+	require.NotEmpty(t, id)
+	assert.Equal(t, http.StatusAccepted, rr.Code)
+
+	assert.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "no-cache", rr.Header().Get("Pragma"))
+
+	out := buf.String()
+	assert.Contains(t, out, "level=DEBUG")
+	assert.Contains(t, out, "id="+id)
+	assert.Contains(t, out, "status=202")
+}
+
 func newLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
