@@ -172,33 +172,69 @@ func TestLog(t *testing.T) {
 	})
 }
 
-func TestIntegration(t *testing.T) {
-	var buf bytes.Buffer
-	logger := newLogger(&buf)
+func TestVolatile(t *testing.T) {
+	h := mw.Volatile()(okHandler)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.NotEmpty(t, mw.GetRequestID(r.Context()))
-		w.WriteHeader(http.StatusAccepted)
+	cc := "no-store, no-cache, must-revalidate, proxy-revalidate"
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, cc, rr.Header().Get("Cache-Control"))
+	assert.Equal(t, "no-cache", rr.Header().Get("Pragma"))
+	assert.Equal(t, "0", rr.Header().Get("Expires"))
+}
+
+func TestSecure(t *testing.T) {
+	t.Run("uses default config", func(t *testing.T) {
+		h := mw.Secure(mw.DefaultSecurityConfig)(okHandler)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		hsts := rr.Header().Get("Strict-Transport-Security")
+		assert.Contains(t, hsts, "max-age=31536000")
+		assert.Contains(t, hsts, "includeSubDomains")
+
+		assert.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
+		assert.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
 	})
 
-	h := mw.Chain(
-		final, mw.Recover(logger),
-		mw.RequestID(),
-		mw.Log(logger),
-	)
+	t.Run("applies custom config", func(t *testing.T) {
+		cfg := mw.SecurityConfig{
+			STSMaxAge:            60,
+			STSIncludeSubdomains: false,
+			FrameOptions:         "SAMEORIGIN",
+			NoSniff:              true,
+			CSP:                  "default-src 'self'",
+			ReferrerPolicy:       "no-referrer",
+		}
+		h := mw.Secure(cfg)(okHandler)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
-	req := httptest.NewRequest("GET", "/int", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
+		hdr := rr.Header()
+		assert.Equal(t, "max-age=60", hdr.Get("Strict-Transport-Security"))
+		assert.Equal(t, "SAMEORIGIN", hdr.Get("X-Frame-Options"))
+		assert.Equal(t, "nosniff", hdr.Get("X-Content-Type-Options"))
+		assert.Equal(t, "default-src 'self'", hdr.Get("Content-Security-Policy"))
+		assert.Equal(t, "no-referrer", hdr.Get("Referrer-Policy"))
+	})
 
-	id := rr.Header().Get("X-Request-ID")
-	require.NotEmpty(t, id)
-	assert.Equal(t, http.StatusAccepted, rr.Code)
+	t.Run("sets no headers on empty config", func(t *testing.T) {
+		cfg := mw.SecurityConfig{}
+		h := mw.Secure(cfg)(okHandler)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
-	out := buf.String()
-	assert.Contains(t, out, "level=DEBUG")
-	assert.Contains(t, out, "id="+id)
-	assert.Contains(t, out, "status=202")
+		hdr := rr.Header()
+		assert.Empty(t, hdr.Get("Strict-Transport-Security"))
+		assert.Empty(t, hdr.Get("X-Frame-Options"))
+		assert.Empty(t, hdr.Get("X-Content-Type-Options"))
+		assert.Empty(t, hdr.Get("Content-Security-Policy"))
+		assert.Empty(t, hdr.Get("Referrer-Policy"))
+	})
 }
 
 func newLogger(buf *bytes.Buffer) *slog.Logger {
