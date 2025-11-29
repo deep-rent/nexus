@@ -213,28 +213,28 @@ func TestWriteErrors(t *testing.T) {
 			wantErr: "unsupported algorithm",
 		},
 		{
-			name: "mismatched material (RSA algo, ECDSA key)",
+			name: "mismatched RSA material",
 			key: &mockKey{
 				alg: jwa.RS256.String(),
 				mat: &ecdsa.PublicKey{},
 			},
-			wantErr: "invalid RSA key material",
+			wantErr: "invalid key for algorithm \"RS256\"",
 		},
 		{
-			name: "mismatched material (ECDSA algo, RSA key)",
+			name: "mismatched ECDSA material",
 			key: &mockKey{
 				alg: jwa.ES256.String(),
 				mat: &rsa.PublicKey{},
 			},
-			wantErr: "invalid ECDSA key material",
+			wantErr: "invalid key for algorithm \"ES256\"",
 		},
 		{
-			name: "mismatched material (EdDSA algo, RSA key)",
+			name: "mismatched EdDSA material",
 			key: &mockKey{
 				alg: jwa.EdDSA.String(),
 				mat: &rsa.PublicKey{},
 			},
-			wantErr: "invalid EdDSA key material",
+			wantErr: "invalid key for algorithm \"EdDSA\"",
 		},
 		{
 			name: "RSA zero exponent",

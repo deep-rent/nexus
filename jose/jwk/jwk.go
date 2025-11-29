@@ -254,13 +254,13 @@ func Parse(in []byte) (Key, error) {
 	if raw.Alg == "" {
 		return nil, errors.New("algorithm not specified")
 	}
-	load := loaders[raw.Alg]
-	if load == nil {
+	read := readers[raw.Alg]
+	if read == nil {
 		return nil, fmt.Errorf("unknown algorithm %q", raw.Alg)
 	}
-	key, err := load(&raw)
+	key, err := read(&raw)
 	if err != nil {
-		return nil, fmt.Errorf("load %s key material: %w", raw.Kty, err)
+		return nil, fmt.Errorf("read %s key material: %w", raw.Kty, err)
 	}
 	return key, nil
 }
@@ -465,7 +465,7 @@ func WriteSet(s Set) ([]byte, error) {
 
 // toRaw converts a Key object into the raw DTO.
 func toRaw(k Key) (*raw, error) {
-	enc, ok := encoders[k.Algorithm()]
+	write, ok := writers[k.Algorithm()]
 	if !ok {
 		return nil, fmt.Errorf("unsupported algorithm %q", k.Algorithm())
 	}
@@ -479,7 +479,7 @@ func toRaw(k Key) (*raw, error) {
 	}
 
 	// Populate algorithm-specific fields.
-	if err := enc(k.Material(), r); err != nil {
+	if err := write(k.Material(), r); err != nil {
 		return nil, err
 	}
 
@@ -567,31 +567,17 @@ type raw struct {
 	Y   string   `json:"y,omitempty"`
 }
 
-// loader defines a function that decodes the key material from a raw JWK
+// reader defines a function that decodes the key material from a raw JWK
 // and constructs a concrete Key.
-type loader func(r *raw) (Key, error)
+type reader func(r *raw) (Key, error)
 
-// loaders maps a JWA algorithm name to the function responsible for parsing
+// readers maps a JWA algorithm name to the function responsible for parsing
 // its key material.
-var loaders map[string]loader
+var readers map[string]reader
 
-func init() {
-	loaders = make(map[string]loader, 10)
-	addLoader(jwa.RS256, decodeRSA)
-	addLoader(jwa.RS384, decodeRSA)
-	addLoader(jwa.RS512, decodeRSA)
-	addLoader(jwa.PS256, decodeRSA)
-	addLoader(jwa.PS384, decodeRSA)
-	addLoader(jwa.PS512, decodeRSA)
-	addLoader(jwa.ES256, decodeECDSA(elliptic.P256()))
-	addLoader(jwa.ES384, decodeECDSA(elliptic.P384()))
-	addLoader(jwa.ES512, decodeECDSA(elliptic.P521()))
-	addLoader(jwa.EdDSA, decodeEdDSA)
-}
-
-// addLoader helps populate the loaders map in a type-safe manner.
-func addLoader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
-	loaders[alg.String()] = func(r *raw) (Key, error) {
+// addReader helps populate the readers map in a type-safe manner.
+func addReader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
+	readers[alg.String()] = func(r *raw) (Key, error) {
 		mat, err := dec(r)
 		if err != nil {
 			return nil, err
@@ -691,31 +677,31 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 	return x, nil
 }
 
-// encoder defines a function that populates the raw JWK parameters from the
-// algorithm-specific key material.
-type encoder func(mat any, r *raw) error
-
-// encoders maps a JWA algorithm name to the function responsible for encoding
+// writers maps a JWA algorithm name to the function responsible for encoding
 // its key material.
-var encoders = map[string]encoder{
-	jwa.RS256.String(): encodeRSA,
-	jwa.RS384.String(): encodeRSA,
-	jwa.RS512.String(): encodeRSA,
-	jwa.PS256.String(): encodeRSA,
-	jwa.PS384.String(): encodeRSA,
-	jwa.PS512.String(): encodeRSA,
-	jwa.ES256.String(): encodeECDSA,
-	jwa.ES384.String(): encodeECDSA,
-	jwa.ES512.String(): encodeECDSA,
-	jwa.EdDSA.String(): encodeEdDSA,
+var writers map[string]writer
+
+// writer defines a function that encodes the key material into a marshallable
+// JWT struct.
+type writer func(mat any, r *raw) error
+
+// addWriter helps populate the writers map in a type-safe manner.
+func addWriter[T crypto.PublicKey](alg jwa.Algorithm[T], enc encoder[T]) {
+	writers[alg.String()] = func(mat any, r *raw) error {
+		pub, ok := mat.(T)
+		if !ok {
+			return fmt.Errorf("invalid key for algorithm %q", alg.String())
+		}
+		return enc(pub, r)
+	}
 }
 
+// encoder defines a function that populates the raw JWK parameters from the
+// algorithm-specific key material.
+type encoder[T crypto.PublicKey] func(mat T, r *raw) error
+
 // encodeRSA populates the RSA-specific fields ("n", "e") in the raw JWK.
-func encodeRSA(mat any, r *raw) error {
-	key, ok := mat.(*rsa.PublicKey)
-	if !ok {
-		return errors.New("invalid RSA key material")
-	}
+func encodeRSA(key *rsa.PublicKey, r *raw) error {
 	r.Kty = "RSA"
 	r.N = base64.RawURLEncoding.EncodeToString(key.N.Bytes())
 	e := key.E
@@ -739,20 +725,16 @@ func encodeRSA(mat any, r *raw) error {
 
 // encodeECDSA populates the ECDSA-specific fields ("crv", "x", "y").
 // It enforces fixed-width padding for coordinates as required by RFC 7518.
-func encodeECDSA(mat any, r *raw) error {
-	pub, ok := mat.(*ecdsa.PublicKey)
-	if !ok {
-		return errors.New("invalid ECDSA key material")
-	}
+func encodeECDSA(key *ecdsa.PublicKey, r *raw) error {
 	r.Kty = "EC"
-	params := pub.Curve.Params()
+	params := key.Curve.Params()
 	r.Crv = params.Name
 	size := (params.BitSize + 7) / 8
 
 	x := make([]byte, size)
 	y := make([]byte, size)
-	pub.X.FillBytes(x)
-	pub.Y.FillBytes(y)
+	key.X.FillBytes(x)
+	key.Y.FillBytes(y)
 
 	r.X = base64.RawURLEncoding.EncodeToString(x)
 	r.Y = base64.RawURLEncoding.EncodeToString(y)
@@ -761,11 +743,7 @@ func encodeECDSA(mat any, r *raw) error {
 
 // encodeEdDSA populates the EdDSA-specific fields ("crv", "x").
 // It determines the curve name based on the key length.
-func encodeEdDSA(mat any, r *raw) error {
-	key, ok := mat.([]byte)
-	if !ok {
-		return errors.New("invalid EdDSA key material")
-	}
+func encodeEdDSA(key []byte, r *raw) error {
 	r.Kty = "OKP"
 
 	switch len(key) {
@@ -779,4 +757,33 @@ func encodeEdDSA(mat any, r *raw) error {
 
 	r.X = base64.RawURLEncoding.EncodeToString(key)
 	return nil
+}
+
+// init initializes the readers and writers maps with supported algorithms.
+func init() {
+	const size = 10
+
+	readers = make(map[string]reader, size)
+	addReader(jwa.RS256, decodeRSA)
+	addReader(jwa.RS384, decodeRSA)
+	addReader(jwa.RS512, decodeRSA)
+	addReader(jwa.PS256, decodeRSA)
+	addReader(jwa.PS384, decodeRSA)
+	addReader(jwa.PS512, decodeRSA)
+	addReader(jwa.ES256, decodeECDSA(elliptic.P256()))
+	addReader(jwa.ES384, decodeECDSA(elliptic.P384()))
+	addReader(jwa.ES512, decodeECDSA(elliptic.P521()))
+	addReader(jwa.EdDSA, decodeEdDSA)
+
+	writers = make(map[string]writer, size)
+	addWriter(jwa.RS256, encodeRSA)
+	addWriter(jwa.RS384, encodeRSA)
+	addWriter(jwa.RS512, encodeRSA)
+	addWriter(jwa.PS256, encodeRSA)
+	addWriter(jwa.PS384, encodeRSA)
+	addWriter(jwa.PS512, encodeRSA)
+	addWriter(jwa.ES256, encodeECDSA)
+	addWriter(jwa.ES384, encodeECDSA)
+	addWriter(jwa.ES512, encodeECDSA)
+	addWriter(jwa.EdDSA, encodeEdDSA)
 }
