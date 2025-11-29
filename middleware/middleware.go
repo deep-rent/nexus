@@ -33,6 +33,8 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -161,6 +163,97 @@ func Log(logger *slog.Logger) Pipe {
 				slog.Int("status", incpt.statusCode),
 				slog.Duration("duration", time.Since(start)),
 			)
+		})
+	}
+}
+
+// Volatile returns a middleware Pipe that prevents caching of the response.
+// It sets standard HTTP headers (Cache-Control, Pragma, Expires) to ensure
+// clients and proxies always fetch a fresh copy of the resource.
+func Volatile() Pipe {
+	control := strings.Join([]string{
+		"no-store", "no-cache", "must-revalidate", "proxy-revalidate",
+	}, ", ")
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", control)
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// SecurityConfig defines the headers applied by the Secure middleware.
+type SecurityConfig struct {
+	// STSMaxAge is the maximum age for HSTS in seconds.
+	// If 0, the header is not set.
+	STSMaxAge int64
+	// STSIncludeSubdomains adds the "includeSubDomains" directive to HSTS.
+	STSIncludeSubdomains bool
+	// FrameOptions sets the X-Frame-Options header (e.g., "DENY", "SAMEORIGIN").
+	// If empty, the header is not set.
+	FrameOptions string
+	// NoSniff sets X-Content-Type-Options to "nosniff" if true.
+	// This helps prevent MIME type sniffing by browsers.
+	NoSniff bool
+	// CSP sets the Content-Security-Policy header.
+	// If empty, it is not set.
+	CSP string
+	// ReferrerPolicy sets the Referrer-Policy header.
+	// If empty, it is not set.
+	ReferrerPolicy string
+}
+
+// DefaultSecurityConfig provides a baseline configuration that enables HSTS
+// for 1 year, disables MIME sniffing, and protects against clickjacking by
+// denying framing.
+var DefaultSecurityConfig = SecurityConfig{
+	STSMaxAge:            31536000,
+	STSIncludeSubdomains: true,
+	FrameOptions:         "DENY",
+	NoSniff:              true,
+}
+
+// Secure returns a middleware Pipe that sets various security-related HTTP
+// headers based on the provided configuration.
+func Secure(cfg SecurityConfig) Pipe {
+	hsts := ""
+	if cfg.STSMaxAge > 0 {
+		hsts = "max-age=" + strconv.FormatInt(cfg.STSMaxAge, 10)
+		if cfg.STSIncludeSubdomains {
+			hsts += "; includeSubDomains"
+		}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Strict-Transport-Security
+			if hsts != "" {
+				w.Header().Set("Strict-Transport-Security", hsts)
+			}
+
+			// X-Content-Type-Options
+			if cfg.NoSniff {
+				w.Header().Set("X-Content-Type-Options", "nosniff")
+			}
+
+			// X-Frame-Options
+			if cfg.FrameOptions != "" {
+				w.Header().Set("X-Frame-Options", cfg.FrameOptions)
+			}
+
+			// Content-Security-Policy
+			if cfg.CSP != "" {
+				w.Header().Set("Content-Security-Policy", cfg.CSP)
+			}
+
+			// Referrer-Policy
+			if cfg.ReferrerPolicy != "" {
+				w.Header().Set("Referrer-Policy", cfg.ReferrerPolicy)
+			}
+
+			next.ServeHTTP(w, r)
 		})
 	}
 }

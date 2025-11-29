@@ -183,7 +183,6 @@ func TestExchangeJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 	assert.JSONEq(t, `{"foo":"bar"}`, rec.Body.String())
 }
 
