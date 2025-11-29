@@ -25,6 +25,7 @@ func (k *mockKey) Algorithm() string           { return k.alg }
 func (k *mockKey) KeyID() string               { return k.kid }
 func (k *mockKey) Thumbprint() string          { return k.x5t }
 func (k *mockKey) Verify(msg, sig []byte) bool { return true }
+func (k *mockKey) Material() any               { return nil }
 
 func TestParse(t *testing.T) {
 	tests := []struct {
