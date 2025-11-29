@@ -164,3 +164,17 @@ func Log(logger *slog.Logger) Pipe {
 		})
 	}
 }
+
+// Volatile returns a middleware Pipe that prevents caching of the response.
+// It sets standard HTTP headers (Cache-Control, Pragma, Expires) to ensure
+// clients and proxies always fetch a fresh copy of the resource.
+func Volatile() Pipe {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			next.ServeHTTP(w, r)
+		})
+	}
+}
