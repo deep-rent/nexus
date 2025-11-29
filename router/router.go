@@ -205,9 +205,6 @@ func (e *Exchange) JSON(code int, v any) error {
 	if e.W.Header().Get("Content-Type") == "" {
 		e.SetHeader("Content-Type", MediaTypeJSON)
 	}
-	// Security header to prevent MIME type sniffing by browsers.
-	// We set it unconditionally.
-	e.SetHeader("X-Content-Type-Options", "nosniff")
 	e.Status(code)
 	if err := json.MarshalWrite(e.W, v); err != nil {
 		return err
