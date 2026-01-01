@@ -38,7 +38,7 @@ jobs:
           filename: coverage.out
       - name: Create Pull Request for Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "docs: update coverage badge"
           title: "Update Coverage Badge"
