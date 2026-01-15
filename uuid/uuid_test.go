@@ -85,42 +85,42 @@ func TestParse(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "Valid UUIDv7",
+			name:    "valid",
 			input:   v7.String(),
 			wantErr: false,
 		},
 		{
-			name:    "Invalid Length (Short)",
+			name:    "too short",
 			input:   "018e6-123",
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Invalid Length (Long)",
+			name:    "too long",
 			input:   v7.String() + "a",
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Missing Hyphens",
+			name:    "missing hyphens",
 			input:   strings.ReplaceAll(v7.String(), "-", ""),
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Wrong Hyphen Position",
+			name:    "wrong hyphen position",
 			input:   "018e66a31234-5678-9abc-def0-12345678",
 			wantErr: true,
 			errMsg:  "uuid: invalid format",
 		},
 		{
-			name:    "Wrong Version (v4)",
+			name:    "wrong version", // v4 instead of v7
 			input:   v4.String(),
 			wantErr: true,
 			errMsg:  "uuid: invalid version: expected v7",
 		},
 		{
-			name: "Wrong Variant (Microsoft GUID legacy)",
+			name: "wrong variant", // Microsoft legacy GUID
 			input: func() string {
 				u := v7
 				u[8] = 0xC0
@@ -156,33 +156,33 @@ func TestParseBytes(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "Valid UUIDv7 Bytes",
+			name:    "valid bytes",
 			input:   v7[:],
 			wantErr: false,
 		},
 		{
-			name:    "Invalid Length (Short)",
+			name:    "too short",
 			input:   v7[:10],
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Invalid Length (Long)",
+			name:    "too long",
 			input:   append(v7[:], 0x01),
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Wrong Version (v4)",
+			name:    "wrong version", // v4 instead of v7
 			input:   v4[:],
 			wantErr: true,
 			errMsg:  "uuid: invalid version: expected v7",
 		},
 		{
-			name: "Wrong Variant",
+			name: "wrong variant", // Variant 0 (NCS)
 			input: func() []byte {
 				u := v7
-				u[8] = 0x00 // Variant 0 (NCS)
+				u[8] = 0x00
 				return u[:]
 			}(),
 			wantErr: true,
@@ -203,7 +203,7 @@ func TestParseBytes(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, v7, u)
-				for i := range buf { // Safety checl
+				for i := range buf { // Safety check for mutation
 					buf[i] ^= 0xFF
 				}
 				assert.Equal(t, v7, u)
