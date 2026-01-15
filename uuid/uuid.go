@@ -1,5 +1,5 @@
 // Package uuid provides an implementation of Version 7 (Time-ordered)
-// Universally Unique Identifiers (UUID) as defined in RFC 9562.
+// Universally Unique Identifiers (UUID) as defined in RFC 4122 and RFC 9562.
 //
 // MIGRATION NOTE (v4 -> v7):
 // We migrated from UUIDv4 (fully random) to UUIDv7 (time-ordered) to improve
@@ -97,6 +97,28 @@ func Parse(s string) (UUIDv7, error) {
 	if _, err := hex.Decode(u[:], []byte(h)); err != nil {
 		return u, fmt.Errorf("uuid: invalid characters: %w", err)
 	}
+	if (u[6] & 0xf0) != 0x70 {
+		return UUIDv7{}, fmt.Errorf("uuid: invalid version: expected v7")
+	}
+	if (u[8] & 0xc0) != 0x80 {
+		return UUIDv7{}, fmt.Errorf("uuid: invalid variant: expected RFC 4122")
+	}
+	return u, nil
+}
+
+// ParseBytes parses a 16-byte raw slice into a UUIDv7 type.
+//
+// It strictly validates that the byte slice is exactly 16 bytes and conforms
+// to Version 7 and Variant 1.
+//
+// Note: This function does not modify the input slice; it creates a
+// complete copy of the data.
+func ParseBytes(b []byte) (UUIDv7, error) {
+	var u UUIDv7
+	if len(b) != 16 {
+		return u, fmt.Errorf("uuid: invalid length (%d)", len(b))
+	}
+	copy(u[:], b)
 	if (u[6] & 0xf0) != 0x70 {
 		return UUIDv7{}, fmt.Errorf("uuid: invalid version: expected v7")
 	}
