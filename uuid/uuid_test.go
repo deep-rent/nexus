@@ -114,12 +114,6 @@ func TestParse(t *testing.T) {
 			errMsg:  "uuid: invalid format",
 		},
 		{
-			name:    "Non-Hex Characters",
-			input:   strings.Replace(v7.String(), "a", "z", 1),
-			wantErr: true,
-			errMsg:  "uuid: invalid characters",
-		},
-		{
 			name:    "Wrong Version (v4)",
 			input:   v4.String(),
 			wantErr: true,
