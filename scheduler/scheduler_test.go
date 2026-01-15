@@ -40,28 +40,28 @@ func TestEvery(t *testing.T) {
 
 	tests := []test{
 		{
-			name:         "Task faster than interval",
+			name:         "task faster than interval",
 			interval:     100 * time.Millisecond,
 			duration:     20 * time.Millisecond,
 			expectedWait: 80 * time.Millisecond,
 			tolerance:    5 * time.Millisecond,
 		},
 		{
-			name:         "Task slower than interval",
+			name:         "task slower than interval",
 			interval:     50 * time.Millisecond,
 			duration:     60 * time.Millisecond,
 			expectedWait: 0,
 			tolerance:    5 * time.Millisecond,
 		},
 		{
-			name:         "Task equals interval",
+			name:         "task equals interval",
 			interval:     50 * time.Millisecond,
 			duration:     50 * time.Millisecond,
 			expectedWait: 0,
 			tolerance:    5 * time.Millisecond,
 		},
 		{
-			name:         "Zero interval",
+			name:         "zero interval",
 			interval:     0,
 			duration:     10 * time.Millisecond,
 			expectedWait: 0,
@@ -92,14 +92,14 @@ func TestEvery(t *testing.T) {
 func TestScheduler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("New and Context", func(t *testing.T) {
+	t.Run("constructor", func(t *testing.T) {
 		t.Parallel()
 		s := scheduler.New(t.Context())
 		require.NotNil(t, s)
 		require.NotNil(t, s.Context(), "should have a non-nil context")
 	})
 
-	t.Run("Parent context cancellation shuts down scheduler", func(t *testing.T) {
+	t.Run("parent context cancellation shuts down scheduler", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(t.Context())
 		s := scheduler.New(ctx)
@@ -116,7 +116,7 @@ func TestScheduler(t *testing.T) {
 		)
 	})
 
-	t.Run("Dispatch and Shutdown", func(t *testing.T) {
+	t.Run("dispatch and shutdown", func(t *testing.T) {
 		t.Parallel()
 		s := scheduler.New(t.Context())
 
@@ -143,7 +143,7 @@ func TestScheduler(t *testing.T) {
 		)
 	})
 
-	t.Run("Shutdown blocks until tasks complete", func(t *testing.T) {
+	t.Run("shutdown blocks until tasks complete", func(t *testing.T) {
 		t.Parallel()
 		s := scheduler.New(t.Context())
 
@@ -182,7 +182,7 @@ func TestScheduler(t *testing.T) {
 		wg.Wait()
 	})
 
-	t.Run("Dispatch multiple ticks concurrently", func(t *testing.T) {
+	t.Run("dispatch multiple ticks concurrently", func(t *testing.T) {
 		t.Parallel()
 		s := scheduler.New(t.Context())
 
@@ -215,7 +215,7 @@ func TestScheduler(t *testing.T) {
 func TestOnceScheduler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Context", func(t *testing.T) {
+	t.Run("context", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.WithValue(t.Context(), "key", "value")
 		s := scheduler.Once(ctx)
@@ -224,7 +224,7 @@ func TestOnceScheduler(t *testing.T) {
 		)
 	})
 
-	t.Run("Dispatch is synchronous and runs once", func(t *testing.T) {
+	t.Run("dispatch is synchronous and runs once", func(t *testing.T) {
 		t.Parallel()
 		s := scheduler.Once(t.Context())
 
@@ -246,7 +246,7 @@ func TestOnceScheduler(t *testing.T) {
 		)
 	})
 
-	t.Run("Shutdown is a no-op", func(t *testing.T) {
+	t.Run("shutdown is a no-op", func(t *testing.T) {
 		t.Parallel()
 		s := scheduler.Once(t.Context())
 		done := make(chan struct{})
