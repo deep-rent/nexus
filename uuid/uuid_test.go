@@ -150,6 +150,74 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseBytes(t *testing.T) {
+	v7 := uuid.New()
+	v4 := v7
+	v4[6] = (v4[6] & 0x0f) | 0x40
+
+	tests := []struct {
+		name    string
+		input   []byte
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "Valid UUIDv7 Bytes",
+			input:   v7[:],
+			wantErr: false,
+		},
+		{
+			name:    "Invalid Length (Short)",
+			input:   v7[:10],
+			wantErr: true,
+			errMsg:  "uuid: invalid length",
+		},
+		{
+			name:    "Invalid Length (Long)",
+			input:   append(v7[:], 0x01),
+			wantErr: true,
+			errMsg:  "uuid: invalid length",
+		},
+		{
+			name:    "Wrong Version (v4)",
+			input:   v4[:],
+			wantErr: true,
+			errMsg:  "uuid: invalid version: expected v7",
+		},
+		{
+			name: "Wrong Variant",
+			input: func() []byte {
+				u := v7
+				u[8] = 0x00 // Variant 0 (NCS)
+				return u[:]
+			}(),
+			wantErr: true,
+			errMsg:  "uuid: invalid variant",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := make([]byte, len(tc.input))
+			copy(buf, tc.input)
+
+			u, err := uuid.ParseBytes(buf)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, v7, u)
+				for i := range buf { // Safety checl
+					buf[i] ^= 0xFF
+				}
+				assert.Equal(t, v7, u)
+			}
+		})
+	}
+}
+
 func TestConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	count := 100
