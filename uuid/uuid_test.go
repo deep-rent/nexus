@@ -268,3 +268,13 @@ func BenchmarkParse(b *testing.B) {
 		_, _ = uuid.Parse(s)
 	}
 }
+
+func BenchmarkParseBytes(b *testing.B) {
+	u := uuid.New()
+	input := u[:]
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = uuid.ParseBytes(input)
+	}
+}
