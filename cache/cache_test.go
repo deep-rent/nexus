@@ -132,7 +132,7 @@ func TestController_Run(t *testing.T) {
 		wantLogs       string
 	}{
 		{
-			name: "200 OK with max-age",
+			name: "success with max-age",
 			handler: &mockHandler{
 				status: http.StatusOK,
 				body:   string(goodBody),
@@ -144,7 +144,7 @@ func TestController_Run(t *testing.T) {
 			wantOK:       true,
 		},
 		{
-			name: "Clamp to min interval",
+			name: "clamp to min interval",
 			handler: &mockHandler{
 				status: http.StatusOK,
 				body:   string(goodBody),
@@ -156,7 +156,7 @@ func TestController_Run(t *testing.T) {
 			wantOK:       true,
 		},
 		{
-			name: "Clamp to max interval",
+			name: "clamp to max interval",
 			handler: &mockHandler{
 				status: http.StatusOK,
 				body:   string(goodBody),
@@ -180,7 +180,7 @@ func TestController_Run(t *testing.T) {
 			wantOK:       true,
 		},
 		{
-			name: "500 Server Error",
+			name: "server error",
 			handler: &mockHandler{
 				status: http.StatusInternalServerError,
 				body:   "error",
@@ -192,7 +192,7 @@ func TestController_Run(t *testing.T) {
 			wantLogs:     "Received a non-retriable HTTP status code",
 		},
 		{
-			name:         "Mapper Error",
+			name:         "mapper error",
 			handler:      &mockHandler{status: http.StatusOK, body: `invalid`},
 			mapper:       errorMapper,
 			wantDelay:    minInt,
@@ -201,7 +201,7 @@ func TestController_Run(t *testing.T) {
 			wantLogs:     "Couldn't parse response body",
 		},
 		{
-			name:         "Body Read Error",
+			name:         "body read error",
 			handler:      &mockHandler{status: http.StatusOK, body: "ok"},
 			mapper:       mapper,
 			wantDelay:    minInt,
@@ -219,7 +219,7 @@ func TestController_Run(t *testing.T) {
 			h.sleep = tc.handler.sleep
 			h.count.Store(0)
 			h.mu.Unlock()
-			if tc.name == "Body Read Error" {
+			if tc.name == "body read error" {
 				s.Config.Handler = http.HandlerFunc(func(
 					w http.ResponseWriter, _ *http.Request,
 				) {

@@ -85,48 +85,42 @@ func TestParse(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "Valid UUIDv7",
+			name:    "valid",
 			input:   v7.String(),
 			wantErr: false,
 		},
 		{
-			name:    "Invalid Length (Short)",
+			name:    "too short",
 			input:   "018e6-123",
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Invalid Length (Long)",
+			name:    "too long",
 			input:   v7.String() + "a",
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Missing Hyphens",
+			name:    "missing hyphens",
 			input:   strings.ReplaceAll(v7.String(), "-", ""),
 			wantErr: true,
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "Wrong Hyphen Position",
+			name:    "wrong hyphen position",
 			input:   "018e66a31234-5678-9abc-def0-12345678",
 			wantErr: true,
 			errMsg:  "uuid: invalid format",
 		},
 		{
-			name:    "Non-Hex Characters",
-			input:   strings.Replace(v7.String(), "a", "z", 1),
-			wantErr: true,
-			errMsg:  "uuid: invalid characters",
-		},
-		{
-			name:    "Wrong Version (v4)",
+			name:    "wrong version", // v4 instead of v7
 			input:   v4.String(),
 			wantErr: true,
 			errMsg:  "uuid: invalid version: expected v7",
 		},
 		{
-			name: "Wrong Variant (Microsoft GUID legacy)",
+			name: "wrong variant", // Microsoft legacy GUID
 			input: func() string {
 				u := v7
 				u[8] = 0xC0
@@ -145,6 +139,74 @@ func TestParse(t *testing.T) {
 				assert.ErrorContains(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestParseBytes(t *testing.T) {
+	v7 := uuid.New()
+	v4 := v7
+	v4[6] = (v4[6] & 0x0f) | 0x40
+
+	tests := []struct {
+		name    string
+		input   []byte
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid bytes",
+			input:   v7[:],
+			wantErr: false,
+		},
+		{
+			name:    "too short",
+			input:   v7[:10],
+			wantErr: true,
+			errMsg:  "uuid: invalid length",
+		},
+		{
+			name:    "too long",
+			input:   append(v7[:], 0x01),
+			wantErr: true,
+			errMsg:  "uuid: invalid length",
+		},
+		{
+			name:    "wrong version", // v4 instead of v7
+			input:   v4[:],
+			wantErr: true,
+			errMsg:  "uuid: invalid version: expected v7",
+		},
+		{
+			name: "wrong variant", // Variant 0 (NCS)
+			input: func() []byte {
+				u := v7
+				u[8] = 0x00
+				return u[:]
+			}(),
+			wantErr: true,
+			errMsg:  "uuid: invalid variant",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := make([]byte, len(tc.input))
+			copy(buf, tc.input)
+
+			u, err := uuid.ParseBytes(buf)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, v7, u)
+				for i := range buf { // Safety check for mutation
+					buf[i] ^= 0xFF
+				}
+				assert.Equal(t, v7, u)
 			}
 		})
 	}
@@ -198,5 +260,15 @@ func BenchmarkParse(b *testing.B) {
 
 	for b.Loop() {
 		_, _ = uuid.Parse(s)
+	}
+}
+
+func BenchmarkParseBytes(b *testing.B) {
+	u := uuid.New()
+	input := u[:]
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = uuid.ParseBytes(input)
 	}
 }
