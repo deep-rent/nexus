@@ -1,6 +1,6 @@
 module github.com/deep-rent/nexus
 
-go 1.25.5
+go 1.25.6
 
 require (
 	github.com/cloudflare/circl v1.6.2
