@@ -17,10 +17,3 @@ go.mod     text
 go.sum     text
 LICENSE    text
 Makefile   text
-
-# Yarn
-/.yarn/**            linguist-vendored
-/.yarn/releases/*    binary
-/.yarn/plugins/**/*  binary
-/.pnp.*              binary linguist-generated
-/vendor/**           linguist-vendored
