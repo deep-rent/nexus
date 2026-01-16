@@ -8,16 +8,5 @@ __metadata:
 "@deep-rent/nexus@workspace:.":
   version: 0.0.0-use.local
   resolution: "@deep-rent/nexus@workspace:."
-  dependencies:
-    husky: "npm:9.1.7"
   languageName: unknown
   linkType: soft
-
-"husky@npm:9.1.7":
-  version: 9.1.7
-  resolution: "husky@npm:9.1.7"
-  bin:
-    husky: bin.js
-  checksum: 10c0/35bb110a71086c48906aa7cd3ed4913fb913823715359d65e32e0b964cb1e255593b0ae8014a5005c66a68e6fa66c38dcfa8056dbbdfb8b0187c0ffe7ee3a58f
-  languageName: node
-  linkType: hard

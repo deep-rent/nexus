@@ -28,8 +28,7 @@ const RAW_RUNTIME_STATE =
       [null, {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["@deep-rent/nexus", "workspace:."],\
-          ["husky", "npm:9.1.7"]\
+          ["@deep-rent/nexus", "workspace:."]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -38,19 +37,9 @@ const RAW_RUNTIME_STATE =
       ["workspace:.", {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["@deep-rent/nexus", "workspace:."],\
-          ["husky", "npm:9.1.7"]\
+          ["@deep-rent/nexus", "workspace:."]\
         ],\
         "linkType": "SOFT"\
-      }]\
-    ]],\
-    ["husky", [\
-      ["npm:9.1.7", {\
-        "packageLocation": "./.yarn/cache/husky-npm-9.1.7-5b02eaabc4-35bb110a71.zip/node_modules/husky/",\
-        "packageDependencies": [\
-          ["husky", "npm:9.1.7"]\
-        ],\
-        "linkType": "HARD"\
       }]\
     ]]\
   ]\
