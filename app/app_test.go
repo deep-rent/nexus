@@ -29,6 +29,20 @@ func TestRun_AppError(t *testing.T) {
 	assert.ErrorIs(t, err, assert.AnError)
 }
 
+func TestRun_Panic(t *testing.T) {
+	// This ensures the panic recovery logic works and prevents the test
+	// runner from crashing.
+	r := func(context.Context) error {
+		panic("something went terribly wrong")
+	}
+
+	err := app.Run(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "application panic")
+	assert.Contains(t, err.Error(), "something went terribly wrong")
+	assert.Contains(t, err.Error(), "app_test.go")
+}
+
 func TestRun_SignalShutdown(t *testing.T) {
 	done := make(chan struct{})
 	r := func(ctx context.Context) error {
