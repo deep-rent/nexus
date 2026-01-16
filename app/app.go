@@ -8,28 +8,42 @@
 //
 // # Usage
 //
-// A typical use case involves starting a server or a worker that needs to
-// shut down cleanly. The Run function handles the signal boilerplate, letting
-// you focus on your application's logic.
+// A typical use case involves starting a worker or server that runs until
+// interrupted. The Run function handles signal trapping and timeouts, letting
+// you focus on the business logic.
 //
 //	func main() {
-//		// Create a logger with a custom level.
-//		logger := log.New(log.WithLevel("debug"))
+//		// 1. Configure a logger (slog).
+//		logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 //
-//		// Run the application, providing the main logic as a function.
-//		if err := app.Run(func(ctx context.Context) error {
-//			logger.Info("Application logic started")
+//		// 2. Define the application logic.
+//		// This function blocks until ctx is canceled or an error occurs.
+//		runnable := func(ctx context.Context) error {
+//			logger.Info("Worker started")
 //
-//			// Simulate work by waiting for the context to be cancelled.
-//			<-ctx.Done()
+//			// Simulate a task that runs periodically.
+//			ticker := time.NewTicker(1 * time.Second)
+//			defer ticker.Stop()
 //
-//			// Perform cleanup tasks here.
-//			logger.Info("Performing cleanup before shutdown...")
-//			time.Sleep(500 * time.Millisecond) // Simulate cleanup delay.
+//			for {
+//				select {
+//				case <-ctx.Done():
+//					// Context canceled (signal received).
+//					logger.Info("Worker stopping...")
 //
-//			return nil
-//		}, app.WithLogger(logger)); err != nil {
-//			logger.Error("Application exited with an error", "error", err)
+//					// Perform cleanup (e.g., closing DB connections).
+//					time.Sleep(500 * time.Millisecond)
+//					return nil
+//
+//				case t := <-ticker.C:
+//					logger.Info("Working...", "time", t.Format(time.TimeOnly))
+//				}
+//			}
+//		}
+//
+//		// 3. Run the application.
+//		if err := app.Run(runnable, app.WithLogger(logger)); err != nil {
+//			logger.Error("Application failed", "error", err)
 //			os.Exit(1)
 //		}
 //	}
