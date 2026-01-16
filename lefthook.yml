@@ -1,0 +1,4 @@
+commit-msg:
+  commands:
+    lint:
+      run: go-commitlint -e {1}
