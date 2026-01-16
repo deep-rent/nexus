@@ -129,8 +129,11 @@ func WithAllowCredentials(allow bool) Option {
 // WithMaxAge indicates how long the results of a preflight request can be
 // cached by the browser, in seconds.
 //
-// A duration of 0 or less omits the header. Caching preflight responses can
-// significantly reduce latency for clients making multiple different requests.
+// If set to 0 (the default), the header is omitted. Be aware that browsers
+// have a default internal limit (usually 5 seconds) when this header is
+// missing. This results in a preflight request for almost every API call, which
+// can double the traffic to your server. It is recommended to set this to a
+// higher value (e.g., 10 minutes) for stable APIs to reduce latency.
 func WithMaxAge(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
@@ -170,6 +173,12 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
+
+	// Apply this header immediately to ensure caches respect the difference
+	// between allowed and disallowed origin responses.
+	h := w.Header()
+	h.Add("Vary", "Origin")
+
 	preflight := r.Method == http.MethodOptions
 	// Pass through invalid preflight requests.
 	if preflight && r.Header.Get("Access-Control-Request-Method") == "" {
@@ -182,11 +191,10 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 
-	h := w.Header()
-	h.Add("Vary", "Origin")
 	if !cfg.allowCredentials && cfg.allowedOrigins == nil {
 		origin = wildcard
 	}
+
 	h.Set("Access-Control-Allow-Origin", origin)
 	if cfg.allowCredentials {
 		h.Set("Access-Control-Allow-Credentials", "true")
