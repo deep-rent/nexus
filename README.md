@@ -1,6 +1,6 @@
 # Nexus
 
-![Coverage](https://img.shields.io/badge/Coverage-90.3%25-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-90.4%25-brightgreen)
 [![Report](https://goreportcard.com/badge/github.com/deep-rent/nexus)](https://goreportcard.com/report/github.com/deep-rent/nexus)
 ![Test](https://github.com/deep-rent/nexus/actions/workflows/test.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
