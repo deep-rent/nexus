@@ -37,10 +37,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 )
@@ -128,23 +130,36 @@ func Run(fn Runnable, opts ...Option) error {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+
+	// Create a context that cancels on OS signals.
 	ctx, cancel := signal.NotifyContext(cfg.ctx, cfg.signals...)
 	defer cancel()
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- fn(ctx) }()
+	// Run the application logic in a goroutine with panic recovery.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				stack := string(debug.Stack())
+				errCh <- fmt.Errorf("application panic: %v\nstack: %s", r, stack)
+			}
+		}()
+		errCh <- fn(ctx)
+	}()
 
 	cfg.logger.Info("Application started")
 
 	select {
 	case err := <-errCh:
+		// The application exited naturally (without a signal).
 		if err != nil {
-			return fmt.Errorf("encountered an application error: %w", err)
+			return fmt.Errorf("application exited with error: %w", err)
 		}
 		cfg.logger.Info("Application stopped")
 		return nil
 
 	case <-ctx.Done():
+		// A signal was received (or parent context canceled).
 		cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
 
 		timer := time.NewTimer(cfg.timeout)
@@ -152,8 +167,10 @@ func Run(fn Runnable, opts ...Option) error {
 
 		select {
 		case err := <-errCh:
-			if err != nil {
-				return fmt.Errorf("error occurred during shutdown: %w", err)
+			// If the error encountered is just "context canceled", we consider it a
+			// successful shutdown.
+			if err != nil && !errors.Is(err, context.Canceled) {
+				return fmt.Errorf("error during graceful shutdown: %w", err)
 			}
 			cfg.logger.Info("Shutdown completed successfully")
 			return nil
