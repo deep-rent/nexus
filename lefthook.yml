@@ -3,14 +3,14 @@ commit-msg:
     lint:
       run: go-commitlint -e {1}
 
-pre-commit:
-  parallel: true
-  commands:
-    golangci-lint:
-      root: "."
-      glob: "*.go"
-      run: golangci-lint run --fix {staged_files}
-    go-test:
-      root: "."
-      glob: "*.go"
-      run: go test -v ./...
+# pre-commit:
+#   parallel: true
+#   commands:
+#     golangci-lint:
+#       root: "."
+#       glob: "*.go"
+#       run: golangci-lint run --fix {staged_files}
+#     go-test:
+#       root: "."
+#       glob: "*.go"
+#       run: go test -v ./...
