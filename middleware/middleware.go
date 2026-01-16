@@ -203,21 +203,30 @@ type SecurityConfig struct {
 	// ReferrerPolicy sets the Referrer-Policy header.
 	// If empty, it is not set.
 	ReferrerPolicy string
+	// PermissionsPolicy sets the Permissions-Policy header.
+	// Example: "geolocation=(), microphone=()"
+	PermissionsPolicy string
+	// CrossOriginOpenerPolicy sets the Cross-Origin-Opener-Policy header.
+	// Recommended: "same-origin"
+	CrossOriginOpenerPolicy string
 }
 
 // DefaultSecurityConfig provides a baseline configuration that enables HSTS
 // for 1 year, disables MIME sniffing, and protects against clickjacking by
 // denying framing.
 var DefaultSecurityConfig = SecurityConfig{
-	STSMaxAge:            31536000,
-	STSIncludeSubdomains: true,
-	FrameOptions:         "DENY",
-	NoSniff:              true,
+	STSMaxAge:               31536000,
+	STSIncludeSubdomains:    true,
+	FrameOptions:            "DENY",
+	NoSniff:                 true,
+	PermissionsPolicy:       "geolocation=(), microphone=(), camera=(), payment=()",
+	CrossOriginOpenerPolicy: "same-origin",
 }
 
 // Secure returns a middleware Pipe that sets various security-related HTTP
 // headers based on the provided configuration.
 func Secure(cfg SecurityConfig) Pipe {
+	// Pre-calculate HSTS header to avoid string allocation on every request.
 	hsts := ""
 	if cfg.STSMaxAge > 0 {
 		hsts = "max-age=" + strconv.FormatInt(cfg.STSMaxAge, 10)
@@ -228,30 +237,43 @@ func Secure(cfg SecurityConfig) Pipe {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Strict-Transport-Security
+			// 1. Strict-Transport-Security
 			if hsts != "" {
 				w.Header().Set("Strict-Transport-Security", hsts)
 			}
 
-			// X-Content-Type-Options
+			// 2. X-Content-Type-Options
 			if cfg.NoSniff {
 				w.Header().Set("X-Content-Type-Options", "nosniff")
 			}
 
-			// X-Frame-Options
+			// 3. X-Frame-Options
 			if cfg.FrameOptions != "" {
 				w.Header().Set("X-Frame-Options", cfg.FrameOptions)
 			}
 
-			// Content-Security-Policy
+			// 4. Content-Security-Policy
 			if cfg.CSP != "" {
 				w.Header().Set("Content-Security-Policy", cfg.CSP)
 			}
 
-			// Referrer-Policy
+			// 5. Referrer-Policy
 			if cfg.ReferrerPolicy != "" {
 				w.Header().Set("Referrer-Policy", cfg.ReferrerPolicy)
 			}
+
+			// 6. Permissions-Policy (New)
+			if cfg.PermissionsPolicy != "" {
+				w.Header().Set("Permissions-Policy", cfg.PermissionsPolicy)
+			}
+
+			// 7. Cross-Origin-Opener-Policy (New)
+			if cfg.CrossOriginOpenerPolicy != "" {
+				w.Header().Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
+			}
+
+			// 8. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
+			w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 
 			next.ServeHTTP(w, r)
 		})
