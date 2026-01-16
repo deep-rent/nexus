@@ -26,11 +26,3 @@ UserInterfaceState.xcuserstate
 /dist/
 /vendor/
 
-# Yarn
-.yarn/*
-!.yarn/cache
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
