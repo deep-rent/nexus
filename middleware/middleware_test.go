@@ -199,16 +199,22 @@ func TestSecure(t *testing.T) {
 
 		assert.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
 		assert.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
+
+		assert.Equal(t, "geolocation=(), microphone=(), camera=(), payment=()", rr.Header().Get("Permissions-Policy"))
+		assert.Equal(t, "same-origin", rr.Header().Get("Cross-Origin-Opener-Policy"))
+		assert.Equal(t, "none", rr.Header().Get("X-Permitted-Cross-Domain-Policies"))
 	})
 
 	t.Run("applies custom config", func(t *testing.T) {
 		cfg := mw.SecurityConfig{
-			STSMaxAge:            60,
-			STSIncludeSubdomains: false,
-			FrameOptions:         "SAMEORIGIN",
-			NoSniff:              true,
-			CSP:                  "default-src 'self'",
-			ReferrerPolicy:       "no-referrer",
+			STSMaxAge:               60,
+			STSIncludeSubdomains:    false,
+			FrameOptions:            "SAMEORIGIN",
+			NoSniff:                 true,
+			CSP:                     "default-src 'self'",
+			ReferrerPolicy:          "no-referrer",
+			PermissionsPolicy:       "geolocation=()",           // Custom
+			CrossOriginOpenerPolicy: "same-origin-allow-popups", // Custom
 		}
 		h := mw.Secure(cfg)(okHandler)
 		rr := httptest.NewRecorder()
@@ -220,9 +226,13 @@ func TestSecure(t *testing.T) {
 		assert.Equal(t, "nosniff", hdr.Get("X-Content-Type-Options"))
 		assert.Equal(t, "default-src 'self'", hdr.Get("Content-Security-Policy"))
 		assert.Equal(t, "no-referrer", hdr.Get("Referrer-Policy"))
+
+		assert.Equal(t, "geolocation=()", hdr.Get("Permissions-Policy"))
+		assert.Equal(t, "same-origin-allow-popups", hdr.Get("Cross-Origin-Opener-Policy"))
+		assert.Equal(t, "none", hdr.Get("X-Permitted-Cross-Domain-Policies"))
 	})
 
-	t.Run("sets no headers on empty config", func(t *testing.T) {
+	t.Run("sets only hardcoded headers on empty config", func(t *testing.T) {
 		cfg := mw.SecurityConfig{}
 		h := mw.Secure(cfg)(okHandler)
 		rr := httptest.NewRecorder()
@@ -234,6 +244,9 @@ func TestSecure(t *testing.T) {
 		assert.Empty(t, hdr.Get("X-Content-Type-Options"))
 		assert.Empty(t, hdr.Get("Content-Security-Policy"))
 		assert.Empty(t, hdr.Get("Referrer-Policy"))
+		assert.Empty(t, hdr.Get("Permissions-Policy"))
+		assert.Empty(t, hdr.Get("Cross-Origin-Opener-Policy"))
+		assert.Equal(t, "none", hdr.Get("X-Permitted-Cross-Domain-Policies"))
 	})
 }
 
