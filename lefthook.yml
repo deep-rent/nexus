@@ -1,16 +1,16 @@
 commit-msg:
   commands:
     lint:
-      run: go-commitlint -e {1}
+      run: go-gitlint --msg-file={1}
 
 # pre-commit:
 #   parallel: true
 #   commands:
-#     golangci-lint:
+#     lint:
 #       root: "."
 #       glob: "*.go"
 #       run: golangci-lint run --fix {staged_files}
-#     go-test:
+#     test:
 #       root: "."
 #       glob: "*.go"
 #       run: go test -v ./...
