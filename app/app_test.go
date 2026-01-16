@@ -79,6 +79,33 @@ func TestRun_SignalShutdown(t *testing.T) {
 	}
 }
 
+func TestRun_ContextCanceledIgnored(t *testing.T) {
+	// Many libraries return ctx.Err() when they shut down.
+	// We want to ensure this is treated as a clean exit, not an error.
+	sig := syscall.SIGUSR1
+	r := func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- app.Run(r, app.WithSignals(sig))
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	p, _ := os.FindProcess(os.Getpid())
+	_ = p.Signal(sig)
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err, "context.Canceled should be filtered out")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout waiting for shutdown")
+	}
+}
+
 func TestRun_ShutdownTimeout(t *testing.T) {
 	timeout := 20 * time.Millisecond
 	r := func(ctx context.Context) error {
