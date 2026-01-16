@@ -144,7 +144,7 @@ func TestRun_ShutdownTimeout(t *testing.T) {
 }
 
 func TestRun_ParentContextCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	r := func(ctx context.Context) error {
