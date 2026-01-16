@@ -29,39 +29,84 @@ func TestRun_AppError(t *testing.T) {
 	assert.ErrorIs(t, err, assert.AnError)
 }
 
+func TestRun_Panic(t *testing.T) {
+	// This ensures the panic recovery logic works and prevents the test
+	// runner from crashing.
+	r := func(context.Context) error {
+		panic("something went terribly wrong")
+	}
+
+	err := app.Run(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "application panic")
+	assert.Contains(t, err.Error(), "something went terribly wrong")
+	assert.Contains(t, err.Error(), "app_test.go")
+}
+
 func TestRun_SignalShutdown(t *testing.T) {
 	done := make(chan struct{})
 	r := func(ctx context.Context) error {
 		<-ctx.Done()
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // Simulate cleanup work
 		close(done)
 		return nil
 	}
 
-	signal := syscall.SIGUSR1
-
+	// Use SIGUSR1 to avoid killing the test runner if something leaks
+	sig := syscall.SIGUSR1
 	errCh := make(chan error, 1)
+
 	go func() {
-		errCh <- app.Run(r, app.WithSignals(signal))
+		errCh <- app.Run(r, app.WithSignals(sig))
 	}()
 
-	time.Sleep(20 * time.Millisecond)
+	// Wait for app to "start"
+	time.Sleep(50 * time.Millisecond)
 
+	// Send signal to self
 	p, err := os.FindProcess(os.Getpid())
 	require.NoError(t, err)
-	p.Signal(signal)
+	require.NoError(t, p.Signal(sig))
 
 	select {
 	case err := <-errCh:
 		require.NoError(t, err)
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("did not return after shutdown signal")
 	}
 
 	select {
 	case <-done:
+		// Success
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("cleanup did not finish in time")
+	}
+}
+
+func TestRun_ContextCanceledIgnored(t *testing.T) {
+	// Many libraries return ctx.Err() when they shut down.
+	// We want to ensure this is treated as a clean exit, not an error.
+	sig := syscall.SIGUSR1
+	r := func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- app.Run(r, app.WithSignals(sig))
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	p, _ := os.FindProcess(os.Getpid())
+	_ = p.Signal(sig)
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err, "context.Canceled should be filtered out")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout waiting for shutdown")
 	}
 }
 
@@ -69,25 +114,25 @@ func TestRun_ShutdownTimeout(t *testing.T) {
 	timeout := 20 * time.Millisecond
 	r := func(ctx context.Context) error {
 		<-ctx.Done()
-		time.Sleep(2 * timeout) // Cleanup is stubbornly slow
+		time.Sleep(5 * timeout) // Cleanup is stubbornly slow
 		return nil
 	}
 
-	signal := syscall.SIGUSR1
-
+	sig := syscall.SIGUSR1
 	errCh := make(chan error, 1)
+
 	go func() {
 		errCh <- app.Run(
 			r,
-			app.WithSignals(signal),
+			app.WithSignals(sig),
 			app.WithTimeout(timeout),
 		)
 	}()
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	p, _ := os.FindProcess(os.Getpid())
-	p.Signal(signal)
+	_ = p.Signal(sig)
 
 	select {
 	case err := <-errCh:
@@ -99,7 +144,7 @@ func TestRun_ShutdownTimeout(t *testing.T) {
 }
 
 func TestRun_ParentContextCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	r := func(ctx context.Context) error {
