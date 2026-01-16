@@ -276,7 +276,9 @@ func TestIntegration(t *testing.T) {
 	require.NotEmpty(t, id)
 	assert.Equal(t, http.StatusAccepted, rr.Code)
 
+	// Verify a mix of headers from different middleware.
 	assert.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "same-origin", rr.Header().Get("Cross-Origin-Opener-Policy"))
 	assert.Equal(t, "no-cache", rr.Header().Get("Pragma"))
 
 	out := buf.String()
