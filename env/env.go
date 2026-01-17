@@ -18,7 +18,7 @@
 //		Port     int           `env:",default:8080"`
 //		Timeout  time.Duration `env:",unit:s"`
 //		Debug    bool
-//		Proxy    ProxyConfig   `env:"prefix:'HTTP_PROXY_'"`
+//		Proxy    ProxyConfig   `env:",prefix:'HTTP_PROXY_'"`
 //		Roles    []string      `env:",split:';'"`
 //		Internal int           `env:"-"`
 //		internal int
