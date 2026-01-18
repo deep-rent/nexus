@@ -1,6 +1,7 @@
 package router_test
 
 import (
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// mockHandler implements router.Handler
 type mockHandler struct{}
 
 func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
@@ -76,6 +78,7 @@ func TestExchangeBindJSON(t *testing.T) {
 				r.Header.Set("Content-Type", tc.ctype)
 			}
 
+			// We manually construct Exchange here for unit testing BindJSON isolation
 			e := &router.Exchange{R: r}
 			var v map[string]any
 
@@ -175,7 +178,8 @@ func TestExchangeReadForm(t *testing.T) {
 
 func TestExchangeJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
-	e := &router.Exchange{W: rec}
+	// Use NewResponseWriter for correct interface implementation
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 	payload := map[string]string{"foo": "bar"}
 
 	err := e.JSON(http.StatusCreated, payload)
@@ -189,7 +193,7 @@ func TestExchangeJSON(t *testing.T) {
 func TestExchangeForm(t *testing.T) {
 	t.Run("write_form_data", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		e := &router.Exchange{W: rec}
+		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
 		vals := url.Values{}
 		vals.Set("foo", "bar")
@@ -207,7 +211,7 @@ func TestExchangeForm(t *testing.T) {
 
 	t.Run("write_form_manual_content_type", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		e := &router.Exchange{W: rec}
+		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
 		e.SetHeader("Content-Type", "text/plain")
 		vals := url.Values{"a": {"b"}}
@@ -222,7 +226,7 @@ func TestExchangeForm(t *testing.T) {
 
 func TestStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
-	e := &router.Exchange{W: rec}
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
 	e.Status(http.StatusNoContent)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
@@ -231,7 +235,7 @@ func TestStatus(t *testing.T) {
 func TestExchangeRedirect(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/old", nil)
-	e := &router.Exchange{R: req, W: rec}
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	err := e.Redirect("/new", http.StatusFound)
 
@@ -243,7 +247,7 @@ func TestExchangeRedirect(t *testing.T) {
 func TestExchangeRedirectTo(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	e := &router.Exchange{R: req, W: rec}
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	params := url.Values{}
 	params.Set("code", "123")
@@ -272,7 +276,7 @@ func TestExchangeHelpers(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users/123?q=search", nil)
 	req.SetPathValue("id", "123")
 	rec := httptest.NewRecorder()
-	e := &router.Exchange{R: req, W: rec}
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	assert.Equal(t, http.MethodGet, e.Method())
 	assert.Equal(t, "/users/123", e.Path())
@@ -300,13 +304,13 @@ func TestRouterHandle(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/func")
+	res1, err := http.Get(srv.URL + "/func")
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, res1.StatusCode)
 
-	resp2, err := http.Get(srv.URL + "/struct")
+	res2, err := http.Get(srv.URL + "/struct")
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp2.StatusCode)
+	assert.Equal(t, http.StatusOK, res2.StatusCode)
 }
 
 func TestRouterErrorHandling(t *testing.T) {
@@ -314,8 +318,9 @@ func TestRouterErrorHandling(t *testing.T) {
 
 	r.HandleFunc("GET /typed", func(e *router.Exchange) error {
 		return &router.Error{
-			Status: http.StatusTeapot,
-			Reason: "tea_time",
+			Status:  http.StatusTeapot,
+			Reason:  "tea_time",
+			Context: map[string]any{"brand": "earl_grey"},
 		}
 	})
 
@@ -326,11 +331,83 @@ func TestRouterErrorHandling(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	resp1, _ := http.Get(srv.URL + "/typed")
-	assert.Equal(t, http.StatusTeapot, resp1.StatusCode)
+	res1, _ := http.Get(srv.URL + "/typed")
+	assert.Equal(t, http.StatusTeapot, res1.StatusCode)
 
-	resp2, _ := http.Get(srv.URL + "/std")
-	assert.Equal(t, http.StatusInternalServerError, resp2.StatusCode)
+	res2, _ := http.Get(srv.URL + "/std")
+	assert.Equal(t, http.StatusInternalServerError, res2.StatusCode)
+}
+
+func TestRouterStrictDecoding(t *testing.T) {
+	r := router.New(
+		router.WithJSONOptions(json.RejectUnknownMembers(true)),
+	)
+
+	type Request struct {
+		Name string `json:"name"`
+	}
+
+	r.HandleFunc("POST /strict", func(e *router.Exchange) error {
+		var req Request
+		if err := e.BindJSON(&req); err != nil {
+			return err
+		}
+		e.Status(http.StatusOK)
+		return nil
+	})
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"name": "Alice", "age": 30}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/strict", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, res.StatusCode)
+}
+
+func TestRouterMaxBodySize(t *testing.T) {
+	r := router.New(
+		router.WithMaxBodySize(10),
+	)
+
+	r.HandleFunc("POST /limit", func(e *router.Exchange) error {
+		var v map[string]any
+		return e.BindJSON(&v)
+	})
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"a":"large payload"}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/limit", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.True(
+		t,
+		res.StatusCode == http.StatusBadRequest ||
+			res.StatusCode == http.StatusRequestEntityTooLarge,
+	)
+}
+
+func TestRouterDoubleWrite(t *testing.T) {
+	r := router.New()
+
+	r.HandleFunc("GET /double", func(e *router.Exchange) error {
+		e.JSON(http.StatusCreated, map[string]string{"ok": "true"})
+		return errors.New("late error")
+	})
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/double")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, res.StatusCode)
 }
 
 func TestRouterMount(t *testing.T) {
@@ -346,9 +423,9 @@ func TestRouterMount(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/mnt/check")
+	res, err := http.Get(srv.URL + "/mnt/check")
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Equal(t, http.StatusAccepted, res.StatusCode)
 }
 
 func TestRouterMiddleware(t *testing.T) {
@@ -368,6 +445,6 @@ func TestRouterMiddleware(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	resp, _ := http.Get(srv.URL + "/")
-	assert.Equal(t, "true", resp.Header.Get("X-Global"))
+	res, _ := http.Get(srv.URL + "/")
+	assert.Equal(t, "true", res.Header.Get("X-Global"))
 }

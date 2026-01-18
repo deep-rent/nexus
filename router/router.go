@@ -68,6 +68,65 @@ const (
 	MediaTypeForm = "application/x-www-form-urlencoded"
 )
 
+// ResponseWriter extends the standard http.ResponseWriter with introspection
+// capabilities.
+//
+// It allows handlers and middleware to check if the response headers have
+// already been written, which is crucial for robust error handling.
+type ResponseWriter interface {
+	http.ResponseWriter
+	// Status returns the HTTP status code written, or 0 if not written yet.
+	Status() int
+	// Closed reports whether the headers have already been written.
+	// This indicates that the response is committed.
+	Closed() bool
+	// Unwrap returns the underlying http.ResponseWriter.
+	// This allows http.ResponseController to access features like Flush(),
+	// Hijack(), and SetReadDeadline().
+	Unwrap() http.ResponseWriter
+}
+
+// NewResponseWriter wraps an http.ResponseWriter into a ResponseWriter.
+func NewResponseWriter(w http.ResponseWriter) ResponseWriter {
+	return &responseWriter{
+		ResponseWriter: w,
+		status:         0,
+	}
+}
+
+// responseWriter is the concrete implementation of ResponseWriter.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	if rw.status != 0 {
+		return
+	}
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if rw.status == 0 {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
+func (rw *responseWriter) Status() int {
+	return rw.status
+}
+
+func (rw *responseWriter) Closed() bool {
+	return rw.status != 0
+}
+
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 // Error describes the standardized shape of API errors returned to clients.
 //
 // Handlers can return this struct directly to control the HTTP status code
@@ -84,6 +143,9 @@ type Error struct {
 	// ID is a unique identifier of the specific occurrence for tracing purposes
 	// (optional).
 	ID string `json:"id,omitempty"`
+	// Context contains arbitrary additional data about the error, such as
+	// validation fields.
+	Context map[string]any `json:"context,omitempty"`
 	// Cause is the underlying error that triggered this error (if any).
 	// It is excluded from JSON serialization to prevent leaking internal details.
 	Cause error `json:"-"`
@@ -103,7 +165,9 @@ type Exchange struct {
 	// R is the incoming HTTP request.
 	R *http.Request
 	// W is a writer for the outgoing HTTP response.
-	W http.ResponseWriter
+	W ResponseWriter
+	// jsonOpts is inherited from the parent Router.
+	jsonOpts []json.Options
 }
 
 // Context returns the request's context.
@@ -162,7 +226,8 @@ func (e *Exchange) BindJSON(v any) *Error {
 			Description: "empty request body",
 		}
 	}
-	if err := json.UnmarshalRead(e.R.Body, v); err != nil {
+
+	if err := json.UnmarshalRead(e.R.Body, v, e.jsonOpts...); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseJSON,
@@ -202,14 +267,20 @@ func (e *Exchange) ReadForm() (url.Values, *Error) {
 // It automatically sets the Content-Type header to MediaTypeJSON if it has not
 // already been set. When encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
+	buf, err := json.Marshal(v, e.jsonOpts...)
+	if err != nil {
+		// The error handler will catch this and map it to a 500 status.
+		return err
+	}
+
 	if e.W.Header().Get("Content-Type") == "" {
 		e.SetHeader("Content-Type", MediaTypeJSON)
 	}
+
 	e.Status(code)
-	if err := json.MarshalWrite(e.W, v); err != nil {
-		return err
-	}
-	return nil
+
+	_, err = e.W.Write(buf)
+	return err
 }
 
 // Form writes the values as URL-encoded form data with the given status code.
@@ -229,6 +300,11 @@ func (e *Exchange) Form(code int, v url.Values) error {
 // This is commonly used for HTTP 204 (No Content).
 func (e *Exchange) Status(code int) {
 	e.W.WriteHeader(code)
+}
+
+// NoContent sends a HTTP 204 No Content response.
+func (e *Exchange) NoContent() {
+	e.Status(http.StatusNoContent)
 }
 
 // Redirect replies to the request with a redirect to url, which may be a path
@@ -287,18 +363,11 @@ func (f HandlerFunc) ServeHTTP(e *Exchange) error { return f(e) }
 // Ensure HandlerFunc implements Handler.
 var _ Handler = HandlerFunc(nil)
 
+// ErrorHandler defines a function that handles errors returned by routes.
+type ErrorHandler func(e *Exchange, err error)
+
 // Option defines a functional configuration option for the Router.
 type Option func(*Router)
-
-// WithLogger sets a custom logger for the Router. If not set, the Router
-// defaults to using slog.Default(). A nil value will be ignored.
-func WithLogger(log *slog.Logger) Option {
-	return func(r *Router) {
-		if log != nil {
-			r.logger = log
-		}
-	}
-}
 
 // WithMiddleware adds global middleware pipes to the Router.
 // These pipes are applied to every route registered with the Router.
@@ -308,21 +377,60 @@ func WithMiddleware(pipes ...middleware.Pipe) Option {
 	}
 }
 
+// WithMaxBodySize sets the maximum allowed size for request bodies.
+// Defaults to 0 (unlimited), but typically should be set (e.g., 1MB).
+func WithMaxBodySize(bytes int64) Option {
+	return func(r *Router) {
+		r.maxBytes = bytes
+	}
+}
+
+// WithJSONOptions sets custom JSON options for the Router.
+// They configure both, marshaling and unmarshaling operations.
+func WithJSONOptions(opts ...json.Options) Option {
+	return func(r *Router) {
+		r.jsonOpts = opts
+	}
+}
+
+// WithErrorHandler sets a custom error handler.
+// This allows you to override the default JSON error formatting.
+func WithErrorHandler(h ErrorHandler) Option {
+	return func(r *Router) {
+		if h != nil {
+			r.errorHandler = h
+		}
+	}
+}
+
+// WithLogger updates the default error handler to use the given logger. If not
+// set, the Router defaults to using slog.Default(). A nil value will be
+// ignored.
+func WithLogger(log *slog.Logger) Option {
+	return func(r *Router) {
+		if log != nil {
+			r.errorHandler = defaultErrorHandler(log)
+		}
+	}
+}
+
 // Router represents an HTTP request router with middleware support.
 type Router struct {
 	// Mux is the underlying http.ServeMux. It is exposed to allow direct
 	// usage with http.ListenAndServe.
-	Mux    *http.ServeMux
-	mws    []middleware.Pipe
-	logger *slog.Logger
+	Mux          *http.ServeMux
+	mws          []middleware.Pipe
+	maxBytes     int64
+	jsonOpts     []json.Options
+	errorHandler ErrorHandler
 }
 
 // New creates a new Router instance with the provided options.
 func New(opts ...Option) *Router {
 	r := &Router{
-		Mux:    http.NewServeMux(),
-		mws:    nil,
-		logger: slog.Default(),
+		Mux:          http.NewServeMux(),
+		mws:          nil,
+		errorHandler: defaultErrorHandler(slog.Default()),
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -350,15 +458,21 @@ func (r *Router) Handle(
 	mws ...middleware.Pipe,
 ) {
 	h := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		// Enforce body size limit if configured.
+		if r.maxBytes > 0 {
+			req.Body = http.MaxBytesReader(res, req.Body, r.maxBytes)
+		}
+
 		e := &Exchange{
-			R: req,
-			W: res,
+			R:        req,
+			W:        NewResponseWriter(res),
+			jsonOpts: r.jsonOpts,
 		}
 
 		err := handler.ServeHTTP(e)
 
 		if err != nil {
-			r.handle(e, err)
+			r.errorHandler(e, err)
 		}
 	})
 
@@ -387,23 +501,36 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 }
 
 // handle centralizes error processing.
-func (r *Router) handle(e *Exchange, err error) {
-	ae, ok := err.(*Error)
-	if !ok {
-		// Log the internal error details for debugging.
-		r.logger.Error("An internal server error occurred", slog.Any("err", err))
-		ae = &Error{
-			Status:      http.StatusInternalServerError,
-			Reason:      ReasonServerError,
-			Description: "internal server error",
+func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
+	return func(e *Exchange, err error) {
+		// NOTE: This function could be replaced by a customizable error handler
+		// in the future.
+		if e.W.Closed() {
+			// Response is already committed; we cannot write a JSON error.
+			// Log the error and exit to prevent "superfluous response.WriteHeader".
+			logger.Error(
+				"Handler returned error after writing response",
+				slog.Any("err", err),
+			)
+			return
 		}
-	}
+		ae, ok := err.(*Error)
+		if !ok {
+			// Log the internal error details for debugging.
+			logger.Error("An internal server error occurred", slog.Any("err", err))
+			ae = &Error{
+				Status:      http.StatusInternalServerError,
+				Reason:      ReasonServerError,
+				Description: "internal server error",
+			}
+		}
 
-	// Attempt to write the error response.
-	// Note: If the handler has already flushed data to the response writer,
-	// this may fail or append garbage, but standard HTTP flow stops here.
-	if we := e.JSON(ae.Status, ae); we != nil {
-		// If writing the error JSON fails (e.g. broken pipe), log it.
-		r.logger.Warn("Failed to write error response", slog.Any("err", we))
+		// Attempt to write the error response.
+		// Note: If the handler has already flushed data to the response writer,
+		// this may fail or append garbage, but standard HTTP flow stops here.
+		if we := e.JSON(ae.Status, ae); we != nil {
+			// If writing the error JSON fails (e.g. broken pipe), log it.
+			logger.Warn("Failed to write error response", slog.Any("err", we))
+		}
 	}
 }
