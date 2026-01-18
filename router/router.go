@@ -360,18 +360,11 @@ func (f HandlerFunc) ServeHTTP(e *Exchange) error { return f(e) }
 // Ensure HandlerFunc implements Handler.
 var _ Handler = HandlerFunc(nil)
 
+// ErrorHandler defines a function that handles errors returned by routes.
+type ErrorHandler func(e *Exchange, err error)
+
 // Option defines a functional configuration option for the Router.
 type Option func(*Router)
-
-// WithLogger sets a custom logger for the Router. If not set, the Router
-// defaults to using slog.Default(). A nil value will be ignored.
-func WithLogger(log *slog.Logger) Option {
-	return func(r *Router) {
-		if log != nil {
-			r.logger = log
-		}
-	}
-}
 
 // WithMiddleware adds global middleware pipes to the Router.
 // These pipes are applied to every route registered with the Router.
@@ -397,23 +390,44 @@ func WithJSONOptions(opts ...json.Options) Option {
 	}
 }
 
+// WithErrorHandler sets a custom error handler.
+// This allows you to override the default JSON error formatting.
+func WithErrorHandler(h ErrorHandler) Option {
+	return func(r *Router) {
+		if h != nil {
+			r.errorHandler = h
+		}
+	}
+}
+
+// WithLogger updates the default error handler to use the given logger. If not
+// set, the Router defaults to using slog.Default(). A nil value will be
+// ignored.
+func WithLogger(log *slog.Logger) Option {
+	return func(r *Router) {
+		if log != nil {
+			r.errorHandler = defaultErrorHandler(log)
+		}
+	}
+}
+
 // Router represents an HTTP request router with middleware support.
 type Router struct {
 	// Mux is the underlying http.ServeMux. It is exposed to allow direct
 	// usage with http.ListenAndServe.
-	Mux      *http.ServeMux
-	mws      []middleware.Pipe
-	logger   *slog.Logger
-	maxBytes int64
-	jsonOpts []json.Options
+	Mux          *http.ServeMux
+	mws          []middleware.Pipe
+	maxBytes     int64
+	jsonOpts     []json.Options
+	errorHandler ErrorHandler
 }
 
 // New creates a new Router instance with the provided options.
 func New(opts ...Option) *Router {
 	r := &Router{
-		Mux:    http.NewServeMux(),
-		mws:    nil,
-		logger: slog.Default(),
+		Mux:          http.NewServeMux(),
+		mws:          nil,
+		errorHandler: defaultErrorHandler(slog.Default()),
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -455,7 +469,7 @@ func (r *Router) Handle(
 		err := handler.ServeHTTP(e)
 
 		if err != nil {
-			r.handle(e, err)
+			r.errorHandler(e, err)
 		}
 	})
 
@@ -484,34 +498,37 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 }
 
 // handle centralizes error processing.
-func (r *Router) handle(e *Exchange, err error) {
-	// NOTE: This function could be replaced by a customizable error handler
-	// in the future.
-	if e.W.Closed() {
-		// Response is already committed; we cannot write a JSON error.
-		// Log the error and exit to prevent "superfluous response.WriteHeader".
-		r.logger.Error(
-			"Handler returned error after writing response",
-			slog.Any("err", err),
-		)
-		return
-	}
-	ae, ok := err.(*Error)
-	if !ok {
-		// Log the internal error details for debugging.
-		r.logger.Error("An internal server error occurred", slog.Any("err", err))
-		ae = &Error{
-			Status:      http.StatusInternalServerError,
-			Reason:      ReasonServerError,
-			Description: "internal server error",
+func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
+	return func(e *Exchange, err error) {
+		// NOTE: This function could be replaced by a customizable error handler
+		// in the future.
+		if e.W.Closed() {
+			// Response is already committed; we cannot write a JSON error.
+			// Log the error and exit to prevent "superfluous response.WriteHeader".
+			logger.Error(
+				"Handler returned error after writing response",
+				slog.Any("err", err),
+			)
+			return
+		}
+		ae, ok := err.(*Error)
+		if !ok {
+			// Log the internal error details for debugging.
+			logger.Error("An internal server error occurred", slog.Any("err", err))
+			ae = &Error{
+				Status:      http.StatusInternalServerError,
+				Reason:      ReasonServerError,
+				Description: "internal server error",
+			}
+		}
+
+		// Attempt to write the error response.
+		// Note: If the handler has already flushed data to the response writer,
+		// this may fail or append garbage, but standard HTTP flow stops here.
+		if we := e.JSON(ae.Status, ae); we != nil {
+			// If writing the error JSON fails (e.g. broken pipe), log it.
+			logger.Warn("Failed to write error response", slog.Any("err", we))
 		}
 	}
 
-	// Attempt to write the error response.
-	// Note: If the handler has already flushed data to the response writer,
-	// this may fail or append garbage, but standard HTTP flow stops here.
-	if we := e.JSON(ae.Status, ae); we != nil {
-		// If writing the error JSON fails (e.g. broken pipe), log it.
-		r.logger.Warn("Failed to write error response", slog.Any("err", we))
-	}
 }
