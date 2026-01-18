@@ -104,6 +104,8 @@ type Exchange struct {
 	R *http.Request
 	// W is a writer for the outgoing HTTP response.
 	W http.ResponseWriter
+	// jsonOpts is inherited from the parent Router.
+	jsonOpts []json.Options
 }
 
 // Context returns the request's context.
@@ -163,7 +165,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 		}
 	}
 
-	if err := json.UnmarshalRead(e.R.Body, v); err != nil {
+	if err := json.UnmarshalRead(e.R.Body, v, e.jsonOpts...); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseJSON,
@@ -203,7 +205,7 @@ func (e *Exchange) ReadForm() (url.Values, *Error) {
 // It automatically sets the Content-Type header to MediaTypeJSON if it has not
 // already been set. When encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
-	buf, err := json.Marshal(v)
+	buf, err := json.Marshal(v, e.jsonOpts...)
 	if err != nil {
 		// The error handler will catch this and map it to a 500 status.
 		return err
@@ -324,7 +326,15 @@ func WithMiddleware(pipes ...middleware.Pipe) Option {
 // Defaults to 0 (unlimited), but typically should be set (e.g., 1MB).
 func WithMaxBodySize(bytes int64) Option {
 	return func(r *Router) {
-		r.maxBodyBytes = bytes
+		r.maxBytes = bytes
+	}
+}
+
+// WithJSONOptions sets custom JSON options for the Router.
+// They configure both, marshaling and unmarshaling operations.
+func WithJSONOptions(opts ...json.Options) Option {
+	return func(r *Router) {
+		r.jsonOpts = opts
 	}
 }
 
@@ -332,10 +342,11 @@ func WithMaxBodySize(bytes int64) Option {
 type Router struct {
 	// Mux is the underlying http.ServeMux. It is exposed to allow direct
 	// usage with http.ListenAndServe.
-	Mux          *http.ServeMux
-	mws          []middleware.Pipe
-	logger       *slog.Logger
-	maxBodyBytes int64
+	Mux      *http.ServeMux
+	mws      []middleware.Pipe
+	logger   *slog.Logger
+	maxBytes int64
+	jsonOpts []json.Options
 }
 
 // New creates a new Router instance with the provided options.
@@ -377,8 +388,8 @@ func (r *Router) Handle(
 		}
 
 		// Enforce body size limit if configured.
-		if r.maxBodyBytes > 0 {
-			req.Body = http.MaxBytesReader(rw, req.Body, r.maxBodyBytes)
+		if r.maxBytes > 0 {
+			req.Body = http.MaxBytesReader(rw, req.Body, r.maxBytes)
 		}
 
 		e := &Exchange{
