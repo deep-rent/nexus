@@ -488,3 +488,13 @@ func TestExchangeRedirectTo_Error(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, router.ReasonServerError, x.Reason)
 }
+
+func TestExchange_NoContent(t *testing.T) {
+	rec := httptest.NewRecorder()
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
+
+	e.NoContent()
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.True(t, e.W.Closed())
+}
