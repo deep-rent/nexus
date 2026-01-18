@@ -487,3 +487,10 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	}
 	return rw.ResponseWriter.Write(b)
 }
+
+// Unwrap returns the underlying http.ResponseWriter.
+// This allows http.ResponseController to access features like Flush(),
+// Hijack(), and SetReadDeadline().
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
