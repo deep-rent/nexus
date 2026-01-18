@@ -68,6 +68,59 @@ const (
 	MediaTypeForm = "application/x-www-form-urlencoded"
 )
 
+// ResponseWriter extends the standard http.ResponseWriter with introspection
+// capabilities.
+//
+// It allows handlers and middleware to check if the response headers have
+// already been written, which is crucial for robust error handling.
+type ResponseWriter interface {
+	http.ResponseWriter
+	// Written returns true if the response headers have been written.
+	Written() bool
+	// Status returns the HTTP status code written, or 0 if not written yet.
+	Status() int
+	// Unwrap returns the underlying http.ResponseWriter.
+	Unwrap() http.ResponseWriter
+}
+
+// responseWriter is the concrete implementation of ResponseWriter.
+type responseWriter struct {
+	http.ResponseWriter
+	written bool
+	status  int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	if rw.written {
+		return
+	}
+	rw.status = code
+	rw.written = true
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.written {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
+func (rw *responseWriter) Written() bool {
+	return rw.written
+}
+
+func (rw *responseWriter) Status() int {
+	return rw.status
+}
+
+// Unwrap returns the underlying http.ResponseWriter.
+// This allows http.ResponseController to access features like Flush(),
+// Hijack(), and SetReadDeadline().
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 // Error describes the standardized shape of API errors returned to clients.
 //
 // Handlers can return this struct directly to control the HTTP status code
@@ -103,7 +156,7 @@ type Exchange struct {
 	// R is the incoming HTTP request.
 	R *http.Request
 	// W is a writer for the outgoing HTTP response.
-	W http.ResponseWriter
+	W ResponseWriter
 	// jsonOpts is inherited from the parent Router.
 	jsonOpts []json.Options
 }
@@ -381,27 +434,26 @@ func (r *Router) Handle(
 	handler Handler,
 	mws ...middleware.Pipe,
 ) {
-	h := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		res := &responseWriter{
-			ResponseWriter: rw,
-			status:         http.StatusOK,
-		}
-
+	h := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		// Enforce body size limit if configured.
 		if r.maxBytes > 0 {
-			req.Body = http.MaxBytesReader(rw, req.Body, r.maxBytes)
+			req.Body = http.MaxBytesReader(res, req.Body, r.maxBytes)
 		}
 
 		e := &Exchange{
-			R:        req,
-			W:        res,
+			R: req,
+			// Wrap the response writer to track writes.
+			W: &responseWriter{
+				ResponseWriter: res,
+				status:         http.StatusOK,
+			},
 			jsonOpts: r.jsonOpts,
 		}
 
 		err := handler.ServeHTTP(e)
 
 		if err != nil {
-			r.handle(e, res, err)
+			r.handle(e, err)
 		}
 	})
 
@@ -430,10 +482,10 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 }
 
 // handle centralizes error processing.
-func (r *Router) handle(e *Exchange, rw *responseWriter, err error) {
+func (r *Router) handle(e *Exchange, err error) {
 	// NOTE: This function could be replaced by a customizable error handler
 	// in the future.
-	if rw.written {
+	if e.W.Written() {
 		// Response is already committed; we cannot write a JSON error.
 		// Log the error and exit to prevent "superfluous response.WriteHeader".
 		r.logger.Error(
@@ -460,37 +512,4 @@ func (r *Router) handle(e *Exchange, rw *responseWriter, err error) {
 		// If writing the error JSON fails (e.g. broken pipe), log it.
 		r.logger.Warn("Failed to write error response", slog.Any("err", we))
 	}
-}
-
-// responseWriter is a wrapper around http.ResponseWriter that tracks
-// if the response has already been written to.
-type responseWriter struct {
-	http.ResponseWriter
-	written bool
-	status  int
-}
-
-// WriteHeader implements http.ResponseWriter interface.
-func (rw *responseWriter) WriteHeader(code int) {
-	if rw.written {
-		return
-	}
-	rw.status = code
-	rw.written = true
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-// Write implements http.ResponseWriter interface.
-func (rw *responseWriter) Write(b []byte) (int, error) {
-	if !rw.written {
-		rw.WriteHeader(http.StatusOK)
-	}
-	return rw.ResponseWriter.Write(b)
-}
-
-// Unwrap returns the underlying http.ResponseWriter.
-// This allows http.ResponseController to access features like Flush(),
-// Hijack(), and SetReadDeadline().
-func (rw *responseWriter) Unwrap() http.ResponseWriter {
-	return rw.ResponseWriter
 }
