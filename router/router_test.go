@@ -175,7 +175,7 @@ func TestExchangeReadForm(t *testing.T) {
 
 func TestExchangeJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
-	e := &router.Exchange{W: rec}
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 	payload := map[string]string{"foo": "bar"}
 
 	err := e.JSON(http.StatusCreated, payload)
@@ -189,7 +189,7 @@ func TestExchangeJSON(t *testing.T) {
 func TestExchangeForm(t *testing.T) {
 	t.Run("write_form_data", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		e := &router.Exchange{W: rec}
+		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
 		vals := url.Values{}
 		vals.Set("foo", "bar")
@@ -207,7 +207,7 @@ func TestExchangeForm(t *testing.T) {
 
 	t.Run("write_form_manual_content_type", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		e := &router.Exchange{W: rec}
+		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
 		e.SetHeader("Content-Type", "text/plain")
 		vals := url.Values{"a": {"b"}}
@@ -222,7 +222,7 @@ func TestExchangeForm(t *testing.T) {
 
 func TestStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
-	e := &router.Exchange{W: rec}
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
 	e.Status(http.StatusNoContent)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
@@ -231,7 +231,7 @@ func TestStatus(t *testing.T) {
 func TestExchangeRedirect(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/old", nil)
-	e := &router.Exchange{R: req, W: rec}
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	err := e.Redirect("/new", http.StatusFound)
 
@@ -243,7 +243,7 @@ func TestExchangeRedirect(t *testing.T) {
 func TestExchangeRedirectTo(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	e := &router.Exchange{R: req, W: rec}
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	params := url.Values{}
 	params.Set("code", "123")
@@ -272,7 +272,7 @@ func TestExchangeHelpers(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users/123?q=search", nil)
 	req.SetPathValue("id", "123")
 	rec := httptest.NewRecorder()
-	e := &router.Exchange{R: req, W: rec}
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	assert.Equal(t, http.MethodGet, e.Method())
 	assert.Equal(t, "/users/123", e.Path())

@@ -75,39 +75,39 @@ const (
 // already been written, which is crucial for robust error handling.
 type ResponseWriter interface {
 	http.ResponseWriter
-	// Written returns true if the response headers have been written.
-	Written() bool
 	// Status returns the HTTP status code written, or 0 if not written yet.
 	Status() int
 	// Unwrap returns the underlying http.ResponseWriter.
 	Unwrap() http.ResponseWriter
 }
 
+// NewResponseWriter wraps an http.ResponseWriter into a ResponseWriter.
+func NewResponseWriter(w http.ResponseWriter) ResponseWriter {
+	return &responseWriter{
+		ResponseWriter: w,
+		status:         0,
+	}
+}
+
 // responseWriter is the concrete implementation of ResponseWriter.
 type responseWriter struct {
 	http.ResponseWriter
-	written bool
-	status  int
+	status int
 }
 
 func (rw *responseWriter) WriteHeader(code int) {
-	if rw.written {
+	if rw.status != 0 {
 		return
 	}
 	rw.status = code
-	rw.written = true
 	rw.ResponseWriter.WriteHeader(code)
 }
 
 func (rw *responseWriter) Write(b []byte) (int, error) {
-	if !rw.written {
+	if rw.status == 0 {
 		rw.WriteHeader(http.StatusOK)
 	}
 	return rw.ResponseWriter.Write(b)
-}
-
-func (rw *responseWriter) Written() bool {
-	return rw.written
 }
 
 func (rw *responseWriter) Status() int {
@@ -441,12 +441,8 @@ func (r *Router) Handle(
 		}
 
 		e := &Exchange{
-			R: req,
-			// Wrap the response writer to track writes.
-			W: &responseWriter{
-				ResponseWriter: res,
-				status:         http.StatusOK,
-			},
+			R:        req,
+			W:        NewResponseWriter(res),
 			jsonOpts: r.jsonOpts,
 		}
 
@@ -485,7 +481,7 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 func (r *Router) handle(e *Exchange, err error) {
 	// NOTE: This function could be replaced by a customizable error handler
 	// in the future.
-	if e.W.Written() {
+	if e.W.Status() != 0 {
 		// Response is already committed; we cannot write a JSON error.
 		// Log the error and exit to prevent "superfluous response.WriteHeader".
 		r.logger.Error(
