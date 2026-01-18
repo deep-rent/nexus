@@ -77,7 +77,12 @@ type ResponseWriter interface {
 	http.ResponseWriter
 	// Status returns the HTTP status code written, or 0 if not written yet.
 	Status() int
+	// Closed reports whether the headers have already been written.
+	// This indicates that the response is committed.
+	Closed() bool
 	// Unwrap returns the underlying http.ResponseWriter.
+	// This allows http.ResponseController to access features like Flush(),
+	// Hijack(), and SetReadDeadline().
 	Unwrap() http.ResponseWriter
 }
 
@@ -114,9 +119,10 @@ func (rw *responseWriter) Status() int {
 	return rw.status
 }
 
-// Unwrap returns the underlying http.ResponseWriter.
-// This allows http.ResponseController to access features like Flush(),
-// Hijack(), and SetReadDeadline().
+func (rw *responseWriter) Closed() bool {
+	return rw.status != 0
+}
+
 func (rw *responseWriter) Unwrap() http.ResponseWriter {
 	return rw.ResponseWriter
 }
@@ -481,7 +487,7 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 func (r *Router) handle(e *Exchange, err error) {
 	// NOTE: This function could be replaced by a customizable error handler
 	// in the future.
-	if e.W.Status() != 0 {
+	if e.W.Closed() {
 		// Response is already committed; we cannot write a JSON error.
 		// Log the error and exit to prevent "superfluous response.WriteHeader".
 		r.logger.Error(
