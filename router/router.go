@@ -308,13 +308,22 @@ func WithMiddleware(pipes ...middleware.Pipe) Option {
 	}
 }
 
+// WithMaxBodySize sets the maximum allowed size for request bodies.
+// Defaults to 0 (unlimited), but typically should be set (e.g., 1MB).
+func WithMaxBodySize(bytes int64) Option {
+	return func(r *Router) {
+		r.maxBodyBytes = bytes
+	}
+}
+
 // Router represents an HTTP request router with middleware support.
 type Router struct {
 	// Mux is the underlying http.ServeMux. It is exposed to allow direct
 	// usage with http.ListenAndServe.
-	Mux    *http.ServeMux
-	mws    []middleware.Pipe
-	logger *slog.Logger
+	Mux          *http.ServeMux
+	mws          []middleware.Pipe
+	logger       *slog.Logger
+	maxBodyBytes int64
 }
 
 // New creates a new Router instance with the provided options.
@@ -353,6 +362,11 @@ func (r *Router) Handle(
 		res := &responseWriter{
 			ResponseWriter: rw,
 			status:         http.StatusOK,
+		}
+
+		// Enforce body size limit if configured.
+		if r.maxBodyBytes > 0 {
+			req.Body = http.MaxBytesReader(rw, req.Body, r.maxBodyBytes)
 		}
 
 		e := &Exchange{
