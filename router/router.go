@@ -238,6 +238,11 @@ func (e *Exchange) Status(code int) {
 	e.W.WriteHeader(code)
 }
 
+// NoContent sends a HTTP 204 No Content response.
+func (e *Exchange) NoContent() {
+	e.Status(http.StatusNoContent)
+}
+
 // Redirect replies to the request with a redirect to url, which may be a path
 // relative to the request path.
 //
