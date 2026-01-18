@@ -78,7 +78,6 @@ func TestExchangeBindJSON(t *testing.T) {
 				r.Header.Set("Content-Type", tc.ctype)
 			}
 
-			// We manually construct Exchange here for unit testing BindJSON isolation
 			e := &router.Exchange{R: r}
 			var v map[string]any
 
@@ -178,7 +177,6 @@ func TestExchangeReadForm(t *testing.T) {
 
 func TestExchangeJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
-	// Use NewResponseWriter for correct interface implementation
 	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 	payload := map[string]string{"foo": "bar"}
 
@@ -447,4 +445,21 @@ func TestRouterMiddleware(t *testing.T) {
 
 	res, _ := http.Get(srv.URL + "/")
 	assert.Equal(t, "true", res.Header.Get("X-Global"))
+}
+
+func TestResponseWriter_Unwrap(t *testing.T) {
+	rec := httptest.NewRecorder()
+	rw := router.NewResponseWriter(rec)
+	rc := http.NewResponseController(rw)
+
+	err := rc.Flush()
+	assert.NoError(t, err, "ResponseController should be able to Flush via Unwrap")
+}
+
+func TestError_ErrorString(t *testing.T) {
+	e := &router.Error{
+		Reason:      "reason",
+		Description: "description",
+	}
+	assert.Equal(t, "reason: description", e.Error())
 }
