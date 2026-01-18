@@ -202,14 +202,20 @@ func (e *Exchange) ReadForm() (url.Values, *Error) {
 // It automatically sets the Content-Type header to MediaTypeJSON if it has not
 // already been set. When encoding fails, an error is returned.
 func (e *Exchange) JSON(code int, v any) error {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		// The error handler will catch this and map it to a 500 status.
+		return err
+	}
+
 	if e.W.Header().Get("Content-Type") == "" {
 		e.SetHeader("Content-Type", MediaTypeJSON)
 	}
+
 	e.Status(code)
-	if err := json.MarshalWrite(e.W, v); err != nil {
-		return err
-	}
-	return nil
+
+	_, err = e.W.Write(buf)
+	return err
 }
 
 // Form writes the values as URL-encoded form data with the given status code.
@@ -287,6 +293,9 @@ func (f HandlerFunc) ServeHTTP(e *Exchange) error { return f(e) }
 // Ensure HandlerFunc implements Handler.
 var _ Handler = HandlerFunc(nil)
 
+// ErrorHandler handles the final step of writing an error to the response.
+type ErrorHandler func(e *Exchange, err error)
+
 // Option defines a functional configuration option for the Router.
 type Option func(*Router)
 
@@ -316,6 +325,14 @@ func WithMaxBodySize(bytes int64) Option {
 	}
 }
 
+// WithErrorHandler sets a custom error handler.
+// The default error handler
+func WithErrorHandler(h ErrorHandler) Option {
+	return func(r *Router) {
+		r.errorHandler = h
+	}
+}
+
 // Router represents an HTTP request router with middleware support.
 type Router struct {
 	// Mux is the underlying http.ServeMux. It is exposed to allow direct
@@ -324,6 +341,7 @@ type Router struct {
 	mws          []middleware.Pipe
 	logger       *slog.Logger
 	maxBodyBytes int64
+	errorHandler ErrorHandler
 }
 
 // New creates a new Router instance with the provided options.
