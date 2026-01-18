@@ -463,3 +463,28 @@ func TestError_ErrorString(t *testing.T) {
 	}
 	assert.Equal(t, "reason: description", e.Error())
 }
+
+type unmarshalable struct {
+	C chan int
+}
+
+func TestExchangeJSON_MarshalError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
+	err := e.JSON(http.StatusOK, unmarshalable{C: make(chan int)})
+
+	assert.Error(t, err)
+	assert.Equal(t, 200, rec.Code)
+}
+
+func TestExchangeRedirectTo_Error(t *testing.T) {
+	rec := httptest.NewRecorder()
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
+
+	err := e.RedirectTo("http://site.com/\nerror", nil, http.StatusFound)
+
+	require.Error(t, err)
+	x, ok := err.(*router.Error)
+	require.True(t, ok)
+	assert.Equal(t, router.ReasonServerError, x.Reason)
+}
