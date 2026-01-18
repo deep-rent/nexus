@@ -349,7 +349,12 @@ func (r *Router) Handle(
 	handler Handler,
 	mws ...middleware.Pipe,
 ) {
-	h := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+	h := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		res := &responseWriter{
+			ResponseWriter: rw,
+			status:         http.StatusOK,
+		}
+
 		e := &Exchange{
 			R: req,
 			W: res,
@@ -358,7 +363,7 @@ func (r *Router) Handle(
 		err := handler.ServeHTTP(e)
 
 		if err != nil {
-			r.handle(e, err)
+			r.handle(e, res, err)
 		}
 	})
 
@@ -387,7 +392,16 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 }
 
 // handle centralizes error processing.
-func (r *Router) handle(e *Exchange, err error) {
+func (r *Router) handle(e *Exchange, rw *responseWriter, err error) {
+	if rw.written {
+		// Response is already committed; we cannot write a JSON error.
+		// Log the error and exit to prevent "superfluous response.WriteHeader".
+		r.logger.Error(
+			"Handler returned error after writing response",
+			slog.Any("err", err),
+		)
+		return
+	}
 	ae, ok := err.(*Error)
 	if !ok {
 		// Log the internal error details for debugging.
@@ -406,4 +420,30 @@ func (r *Router) handle(e *Exchange, err error) {
 		// If writing the error JSON fails (e.g. broken pipe), log it.
 		r.logger.Warn("Failed to write error response", slog.Any("err", we))
 	}
+}
+
+// responseWriter is a wrapper around http.ResponseWriter that tracks
+// if the response has already been written to.
+type responseWriter struct {
+	http.ResponseWriter
+	written bool
+	status  int
+}
+
+// WriteHeader implements http.ResponseWriter interface.
+func (rw *responseWriter) WriteHeader(code int) {
+	if rw.written {
+		return
+	}
+	rw.status = code
+	rw.written = true
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Write implements http.ResponseWriter interface.
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.written {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
 }
