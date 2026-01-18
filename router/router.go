@@ -393,8 +393,9 @@ func (r *Router) Handle(
 		}
 
 		e := &Exchange{
-			R: req,
-			W: res,
+			R:        req,
+			W:        res,
+			jsonOpts: r.jsonOpts,
 		}
 
 		err := handler.ServeHTTP(e)
