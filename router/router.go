@@ -530,5 +530,4 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 			logger.Warn("Failed to write error response", slog.Any("err", we))
 		}
 	}
-
 }
