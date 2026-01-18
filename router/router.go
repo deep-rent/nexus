@@ -162,6 +162,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 			Description: "empty request body",
 		}
 	}
+
 	if err := json.UnmarshalRead(e.R.Body, v); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
@@ -413,6 +414,8 @@ func (r *Router) Mount(pattern string, handler http.Handler) {
 
 // handle centralizes error processing.
 func (r *Router) handle(e *Exchange, rw *responseWriter, err error) {
+	// NOTE: This function could be replaced by a customizable error handler
+	// in the future.
 	if rw.written {
 		// Response is already committed; we cannot write a JSON error.
 		// Log the error and exit to prevent "superfluous response.WriteHeader".
