@@ -143,6 +143,9 @@ type Error struct {
 	// ID is a unique identifier of the specific occurrence for tracing purposes
 	// (optional).
 	ID string `json:"id,omitempty"`
+	// Context contains arbitrary additional data about the error, such as
+	// validation fields.
+	Context map[string]any `json:"context,omitempty"`
 	// Cause is the underlying error that triggered this error (if any).
 	// It is excluded from JSON serialization to prevent leaking internal details.
 	Cause error `json:"-"`
