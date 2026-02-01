@@ -3,7 +3,7 @@ module github.com/deep-rent/nexus
 go 1.25.6
 
 require (
-	github.com/cloudflare/circl v1.6.2
+	github.com/cloudflare/circl v1.6.3
 	github.com/stretchr/testify v1.11.1
 )
 
