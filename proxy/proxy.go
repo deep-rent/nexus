@@ -110,13 +110,15 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 
 		if errors.Is(err, context.DeadlineExceeded) {
 			status = http.StatusGatewayTimeout
-			logger.Error(
+			logger.ErrorContext(
+				r.Context(),
 				"Upstream request timed out",
 				slog.String("method", method),
 				slog.String("uri", uri),
 			)
 		} else {
-			logger.Error(
+			logger.ErrorContext(
+				r.Context(),
 				"Upstream request failed",
 				slog.String("method", method),
 				slog.String("uri", uri),
