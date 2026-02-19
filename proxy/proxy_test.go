@@ -94,8 +94,14 @@ func TestErrorHandler(t *testing.T) {
 			"Upstream request failed",
 		},
 		{
-			"Timeout",
+			"Timeout 1",
 			context.DeadlineExceeded,
+			http.StatusGatewayTimeout,
+			"Upstream request timed out",
+		},
+		{
+			"Timeout 2",
+			http.ErrHandlerTimeout,
 			http.StatusGatewayTimeout,
 			"Upstream request timed out",
 		},
