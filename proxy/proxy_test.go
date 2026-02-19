@@ -45,7 +45,7 @@ func TestEndToEnd(t *testing.T) {
 	assert.Equal(t, msg, string(b))
 }
 
-func TestDirector(t *testing.T) {
+func TestRewrite(t *testing.T) {
 	hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Auth") != "Secret" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -58,14 +58,16 @@ func TestDirector(t *testing.T) {
 
 	u, _ := url.Parse(ts.URL)
 
-	f := func(next proxy.Director) proxy.Director {
-		return func(req *http.Request) {
-			next(req)
-			req.Header.Set("X-Auth", "Secret")
+	f := func(next proxy.RewriteFunc) proxy.RewriteFunc {
+		return func(pr *httputil.ProxyRequest) {
+			// Call the original/default rewrite to set up the target URL
+			next(pr)
+			// Modify the outbound request headers
+			pr.Out.Header.Set("X-Auth", "Secret")
 		}
 	}
 
-	h := proxy.NewHandler(u, proxy.WithDirector(f))
+	h := proxy.NewHandler(u, proxy.WithRewrite(f))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
@@ -151,7 +153,7 @@ func TestOptions(t *testing.T) {
 			proxy.WithMinBufferSize(-1),
 			proxy.WithMaxBufferSize(0),
 			proxy.WithErrorHandler(nil),
-			proxy.WithDirector(nil),
+			proxy.WithRewrite(nil),
 			proxy.WithLogger(nil),
 			proxy.WithTransport(nil),
 		)
@@ -161,7 +163,8 @@ func TestOptions(t *testing.T) {
 
 		assert.NotNil(t, rp.BufferPool)
 		assert.NotNil(t, rp.ErrorHandler)
-		assert.NotNil(t, rp.Director)
+		assert.NotNil(t, rp.Rewrite)
+		assert.Nil(t, rp.Director) // Ensure the legacy field remains unset
 	})
 }
 
