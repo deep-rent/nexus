@@ -173,3 +173,15 @@ func TestSilent(t *testing.T) {
 		logger.Error("This should not explode", "key", "value")
 	})
 }
+
+func TestNewHandler(t *testing.T) {
+	var buf bytes.Buffer
+	handler := log.NewHandler(
+		log.WithLevel(slog.LevelDebug),
+		log.WithWriter(&buf),
+	)
+
+	require.NotNil(t, handler)
+	ctx := context.Background()
+	assert.True(t, handler.Enabled(ctx, slog.LevelDebug))
+}
