@@ -60,6 +60,10 @@ func New(opts ...Option) *slog.Logger {
 	return slog.New(NewHandler(opts...))
 }
 
+func Combine(handlers ...slog.Handler) *slog.Logger {
+	return slog.New(slog.NewMultiHandler(handlers...))
+}
+
 func NewHandler(opts ...Option) slog.Handler {
 	c := config{
 		Level:     DefaultLevel,
