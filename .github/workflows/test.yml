@@ -38,7 +38,13 @@ jobs:
           mkdir -p public
           go tool cover -html=coverage.out -o public/index.html
           go tool cover -func=coverage.out -o=coverage.out
-          
+
+      - name: Upload GitHub Pages Artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
       - name: Generate Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: tj-actions/coverage-badge-go@v3
@@ -56,12 +62,6 @@ jobs:
           base: "main"
           delete-branch: true
           labels: skip-changelog
-
-      - name: Upload GitHub Pages Artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: public
 
   deploy-pages:
     needs: build
