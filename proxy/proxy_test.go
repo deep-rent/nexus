@@ -164,3 +164,28 @@ func TestOptions(t *testing.T) {
 		assert.NotNil(t, rp.Director)
 	})
 }
+
+func TestWithErrorHandler(t *testing.T) {
+	u, _ := url.Parse("http://example.com")
+	called := false
+
+	factory := func(log *slog.Logger) proxy.ErrorHandler {
+		return func(w http.ResponseWriter, r *http.Request, err error) {
+			called = true
+			assert.Equal(t, assert.AnError, err)
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}
+
+	h := proxy.NewHandler(u, proxy.WithErrorHandler(factory))
+	rp, ok := h.(*httputil.ReverseProxy)
+	require.True(t, ok)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+
+	rp.ErrorHandler(rec, req, assert.AnError)
+
+	assert.True(t, called)
+	assert.Equal(t, http.StatusTeapot, rec.Code)
+}
