@@ -68,6 +68,7 @@ package jwt
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -225,6 +226,29 @@ func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
 
 // Ensure Reserved implements the MutableClaims interface.
 var _ MutableClaims = (*Reserved)(nil)
+
+type DynamicClaims struct {
+	Reserved
+	Other map[string]jsontext.Value `json:",inline"`
+}
+
+func Get[T any](c *DynamicClaims, key string) (T, bool) {
+	if c == nil || c.Other == nil {
+		var zero T
+		return zero, false
+	}
+	val, ok := c.Other[key]
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	var out T
+	if err := json.Unmarshal(val, &out); err != nil {
+		var zero T
+		return zero, false
+	}
+	return out, true
+}
 
 // dot is the byte value for the delimiting character of JWS segments.
 const dot = byte('.')
