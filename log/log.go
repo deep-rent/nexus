@@ -75,6 +75,9 @@ func Combine(handlers ...slog.Handler) *slog.Logger {
 	return slog.New(slog.NewMultiHandler(handlers...))
 }
 
+// NewHandler creates and configures a new slog.Handler. By default, it
+// sets up a text handler logging at slog.LevelInfo to os.Stdout.
+// These defaults can be overridden by passing in one or more Option functions.
 func NewHandler(opts ...Option) slog.Handler {
 	c := config{
 		Level:     DefaultLevel,
