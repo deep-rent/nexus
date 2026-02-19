@@ -18,6 +18,15 @@
 //
 //	slog.SetDefault(logger)
 //	slog.Debug("This is a debug message")
+//
+// Create a multi-target logger using Combine and NewHandler:
+//
+//	h1 := log.NewHandler(log.WithLevel("debug"), log.WithFormat("text"), log.WithWriter(os.Stdout))
+//	h2 := log.NewHandler(log.WithLevel("error"), log.WithFormat("json"), log.WithWriter(os.Stderr))
+//	multiLogger := log.Combine(h1, h2)
+//
+//	slog.SetDefault(multiLogger)
+//	slog.Debug("This is a debug message")
 package log
 
 import (
@@ -57,6 +66,19 @@ func (f Format) String() string {
 // slog.LevelInfo in plain text to os.Stdout, without source information.
 // These defaults can be overridden by passing in one or more Option functions.
 func New(opts ...Option) *slog.Logger {
+	return slog.New(NewHandler(opts...))
+}
+
+// Combine creates a new slog.Logger that broadcasts log records to multiple
+// provided slog.Handlers simultaneously using slog.NewMultiHandler.
+func Combine(handlers ...slog.Handler) *slog.Logger {
+	return slog.New(slog.NewMultiHandler(handlers...))
+}
+
+// NewHandler creates and configures a new slog.Handler. By default, it
+// sets up a text handler logging at slog.LevelInfo to os.Stdout.
+// These defaults can be overridden by passing in one or more Option functions.
+func NewHandler(opts ...Option) slog.Handler {
 	c := config{
 		Level:     DefaultLevel,
 		AddSource: DefaultAddSource,
@@ -81,7 +103,7 @@ func New(opts ...Option) *slog.Logger {
 		handler = slog.NewTextHandler(w, o)
 	}
 
-	return slog.New(handler)
+	return handler
 }
 
 // config holds the configuration settings for the logger.

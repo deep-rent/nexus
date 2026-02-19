@@ -173,3 +173,32 @@ func TestSilent(t *testing.T) {
 		logger.Error("This should not explode", "key", "value")
 	})
 }
+
+func TestNewHandler(t *testing.T) {
+	var buf bytes.Buffer
+	handler := log.NewHandler(
+		log.WithLevel(slog.LevelDebug),
+		log.WithWriter(&buf),
+	)
+
+	require.NotNil(t, handler)
+	ctx := context.Background()
+	assert.True(t, handler.Enabled(ctx, slog.LevelDebug))
+}
+
+func TestCombine(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	h1 := log.NewHandler(log.WithWriter(&buf1), log.WithFormat(log.FormatText))
+	h2 := log.NewHandler(log.WithWriter(&buf2), log.WithFormat(log.FormatJSON))
+
+	logger := log.Combine(h1, h2)
+	require.NotNil(t, logger)
+
+	logger.Info("broadcast message", slog.String("key", "value"))
+
+	assert.Contains(t, buf1.String(), "broadcast message")
+	assert.Contains(t, buf1.String(), "key=value")
+
+	assert.Contains(t, buf2.String(), "broadcast message")
+	assert.Contains(t, buf2.String(), `"key":"value"`)
+}
