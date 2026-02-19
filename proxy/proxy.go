@@ -30,7 +30,7 @@ type Handler = http.Handler
 // The behavior of the proxy can be customized through the given options.
 func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 	cfg := handlerConfig{
-		transport:       &http.Transport{},
+		transport:       http.DefaultTransport.(*http.Transport).Clone(),
 		flushInterval:   0,
 		minBufferSize:   DefaultMinBufferSize,
 		maxBufferSize:   DefaultMaxBufferSize,
