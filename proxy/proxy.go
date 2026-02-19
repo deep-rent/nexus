@@ -42,6 +42,10 @@ func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 		opt(&cfg)
 	}
 
+	if cfg.minBufferSize > cfg.maxBufferSize {
+		cfg.minBufferSize = cfg.maxBufferSize
+	}
+
 	// Construct ReverseProxy directly to avoid the deprecated Director hook
 	// set by NewSingleHostReverseProxy.
 	h := &httputil.ReverseProxy{
