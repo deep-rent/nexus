@@ -108,7 +108,8 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 		status := http.StatusBadGateway
 		method, uri := r.Method, r.RequestURI
 
-		if errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, http.ErrHandlerTimeout) {
 			status = http.StatusGatewayTimeout
 			logger.ErrorContext(
 				r.Context(),
