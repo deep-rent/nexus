@@ -14,28 +14,37 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout Repository
+        uses: actions/checkout@v6
         with:
           persist-credentials: true
           fetch-depth: 0
+          
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - name: Download dependencies
+          
+      - name: Download Dependencies
         run: go mod download
-      - name: Vet source code
+        
+      - name: Vet Source Code
         run: GOEXPERIMENT=jsonv2 go vet ./...
-      - name: Execute tests
+        
+      - name: Execute Tests and Generate HTML
         run: |
           GOEXPERIMENT=jsonv2 go test -v -cover -coverprofile=coverage.out ./...
+          mkdir -p public
+          go tool cover -html=coverage.out -o public/index.html
           go tool cover -func=coverage.out -o=coverage.out
-      - name: Go Coverage Badge
+          
+      - name: Generate Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: tj-actions/coverage-badge-go@v3
         with:
           filename: coverage.out
+          
       - name: Create Pull Request for Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peter-evans/create-pull-request@v8
@@ -47,3 +56,24 @@ jobs:
           base: "main"
           delete-branch: true
           labels: skip-changelog
+
+      - name: Upload GitHub Pages Artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy-pages:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
