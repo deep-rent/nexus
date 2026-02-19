@@ -57,6 +57,10 @@ func (f Format) String() string {
 // slog.LevelInfo in plain text to os.Stdout, without source information.
 // These defaults can be overridden by passing in one or more Option functions.
 func New(opts ...Option) *slog.Logger {
+	return slog.New(NewHandler(opts...))
+}
+
+func NewHandler(opts ...Option) slog.Handler {
 	c := config{
 		Level:     DefaultLevel,
 		AddSource: DefaultAddSource,
@@ -81,7 +85,7 @@ func New(opts ...Option) *slog.Logger {
 		handler = slog.NewTextHandler(w, o)
 	}
 
-	return slog.New(handler)
+	return handler
 }
 
 // config holds the configuration settings for the logger.
