@@ -50,6 +50,7 @@ jobs:
         uses: tj-actions/coverage-badge-go@v3
         with:
           filename: coverage.out
+          link: https://deep-rent.github.io/nexus
           
       - name: Create Pull Request for Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
