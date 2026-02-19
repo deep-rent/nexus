@@ -19,6 +19,7 @@ func ToUpper(s string) string { return transform(s, unicode.ToUpper) }
 // that digits do not induce transitions, so "foo1" becomes "FOO1".
 func ToLower(s string) string { return transform(s, unicode.ToLower) }
 
+// transform is a helper function that performs the actual text conversion.
 func transform(s string, toCase func(rune) rune) string {
 	var b strings.Builder
 	b.Grow(len(s) + 5)
