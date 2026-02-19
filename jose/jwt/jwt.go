@@ -227,11 +227,28 @@ func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
 // Ensure Reserved implements the MutableClaims interface.
 var _ MutableClaims = (*Reserved)(nil)
 
+// DynamicClaims represents a standard JWT payload extended with arbitrary
+// custom claims. It embeds the standard Reserved claims and captures any
+// unmapped JSON properties into the Other map.
+//
+// By applying jsontext.Value and the `json:",inline"` tag from the
+// encoding/json/v2 package, custom claims are retained as raw JSON bytes.
+// This defers parsing until the exact target type is known, avoiding the
+// common pitfalls of default map[string]any unmarshaling (such as all
+// numbers defaulting to float64).
 type DynamicClaims struct {
 	Reserved
 	Other map[string]jsontext.Value `json:",inline"`
 }
 
+// Get retrieves a specific custom claim by key from the DynamicClaims
+// payload and unmarshals it into the requested type T.
+//
+// It safely handles nil pointers, missing keys, and parsing errors. If the
+// receiver 'c' is nil, the 'Other' map is uninitialized, the key is not
+// found, or the raw JSON cannot be successfully unmarshaled into type T,
+// Get returns the zero value of T and false. Otherwise, it returns the
+// parsed value and true.
 func Get[T any](c *DynamicClaims, key string) (T, bool) {
 	if c == nil || c.Other == nil {
 		var zero T
