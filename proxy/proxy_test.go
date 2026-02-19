@@ -130,15 +130,37 @@ func TestOptions(t *testing.T) {
 	tr := &http.Transport{}
 	d := time.Second
 
-	h := proxy.NewHandler(u,
-		proxy.WithTransport(tr),
-		proxy.WithFlushInterval(d),
-	)
+	t.Run("Valid Options", func(t *testing.T) {
+		h := proxy.NewHandler(u,
+			proxy.WithTransport(tr),
+			proxy.WithFlushInterval(d),
+			proxy.WithMinBufferSize(1024),
+			proxy.WithMaxBufferSize(2048),
+		)
 
-	rp, ok := h.(*httputil.ReverseProxy)
-	require.True(t, ok)
+		rp, ok := h.(*httputil.ReverseProxy)
+		require.True(t, ok)
 
-	assert.Equal(t, tr, rp.Transport)
-	assert.Equal(t, d, rp.FlushInterval)
-	assert.NotNil(t, rp.BufferPool)
+		assert.Equal(t, tr, rp.Transport)
+		assert.Equal(t, d, rp.FlushInterval)
+		assert.NotNil(t, rp.BufferPool)
+	})
+
+	t.Run("Ignored Invalid Options", func(t *testing.T) {
+		h := proxy.NewHandler(u,
+			proxy.WithMinBufferSize(-1),
+			proxy.WithMaxBufferSize(0),
+			proxy.WithErrorHandler(nil),
+			proxy.WithDirector(nil),
+			proxy.WithLogger(nil),
+			proxy.WithTransport(nil),
+		)
+
+		rp, ok := h.(*httputil.ReverseProxy)
+		require.True(t, ok)
+
+		assert.NotNil(t, rp.BufferPool)
+		assert.NotNil(t, rp.ErrorHandler)
+		assert.NotNil(t, rp.Director)
+	})
 }
