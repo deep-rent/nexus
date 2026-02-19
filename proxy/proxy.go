@@ -1,7 +1,7 @@
-// Package proxy provides a configurable reverse proxy handler. It wraps
-// httputil.NewSingleHostReverseProxy, starting with sensible defaults,
-// integrating a reusable buffer pool, structured logging, and robust error
-// handling via a functional options API.
+// Package proxy provides a configurable reverse proxy handler. It constructs an
+// httputil.ReverseProxy, starting with sensible defaults, integrating a
+// reusable buffer pool, structured logging, and robust error handling
+// via a functional options API.
 package proxy
 
 import (
@@ -34,7 +34,7 @@ func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 		flushInterval:   0,
 		minBufferSize:   DefaultMinBufferSize,
 		maxBufferSize:   DefaultMaxBufferSize,
-		newDirector:     NewDirector,
+		newRewrite:      NewRewrite,
 		newErrorHandler: NewErrorHandler,
 		logger:          slog.Default(),
 	}
@@ -42,33 +42,41 @@ func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 		opt(&cfg)
 	}
 
-	h := httputil.NewSingleHostReverseProxy(target)
-	h.ErrorHandler = cfg.newErrorHandler(cfg.logger)
-	h.Transport = cfg.transport
-	h.BufferPool = buffer.NewPool(cfg.minBufferSize, cfg.maxBufferSize)
-	h.FlushInterval = cfg.flushInterval
-	// TODO: Replace deprecated option.
-	h.Director = cfg.newDirector(h.Director)
+	// Construct ReverseProxy directly to avoid the deprecated Director hook
+	// set by NewSingleHostReverseProxy.
+	h := &httputil.ReverseProxy{
+		ErrorHandler:  cfg.newErrorHandler(cfg.logger),
+		Transport:     cfg.transport,
+		BufferPool:    buffer.NewPool(cfg.minBufferSize, cfg.maxBufferSize),
+		FlushInterval: cfg.flushInterval,
+	}
+
+	defaultRewrite := func(pr *httputil.ProxyRequest) {
+		pr.SetXForwarded()
+		pr.SetURL(target)
+	}
+
+	h.Rewrite = cfg.newRewrite(defaultRewrite)
 
 	return h
 }
 
-// Director defines a function to modify the request before it is sent to the
-// upstream target.
+// RewriteFunc defines a function to modify the proxy request before it is sent
+// to the upstream target.
 //
-// The signature matches httputil.ReverseProxy.Director.
-type Director func(*http.Request)
+// The signature matches httputil.ReverseProxy.Rewrite.
+type RewriteFunc func(*httputil.ProxyRequest)
 
-// DirectorFactory creates a Director using the provided original Director.
-// The returned Director may call original to retain its behavior.
-type DirectorFactory = func(original Director) Director
+// RewriteFactory creates a RewriteFunc using the provided original RewriteFunc.
+// The returned RewriteFunc may call original to retain its behavior.
+type RewriteFactory = func(original RewriteFunc) RewriteFunc
 
-// NewDirector is the default DirectorFactory for the proxy.
-// It returns the original Director unmodified.
-func NewDirector(original Director) Director {
-	// The default director need not be overridden; it already sets the
-	// X-Forwarded-Host and X-Forwarded-Proto headers, which is exactly
-	// what most proxies expect. It also correctly rewrites the Host header
+// NewRewrite is the default RewriteFactory for the proxy.
+// It returns the original RewriteFunc unmodified.
+func NewRewrite(original RewriteFunc) RewriteFunc {
+	// The default rewrite need not be overridden; it already sets the
+	// X-Forwarded-Host, X-Forwarded-Proto, and X-Forwarded-For headers, which is
+	// exactly what most proxies expect. It also correctly rewrites the Host header
 	// to match the target (required for sidecar setups to function).
 	return original
 }
@@ -122,7 +130,7 @@ type handlerConfig struct {
 	flushInterval   time.Duration
 	minBufferSize   int
 	maxBufferSize   int
-	newDirector     DirectorFactory
+	newRewrite      RewriteFactory
 	newErrorHandler ErrorHandlerFactory
 	logger          *slog.Logger
 }
@@ -194,13 +202,13 @@ func WithMaxBufferSize(n int) HandlerOption {
 	}
 }
 
-// WithDirector provides a custom DirectorFactory for the proxy.
+// WithRewrite provides a custom RewriteFactory for the proxy.
 //
-// If nil is given, this option is ignored. By default, NewDirector is used.
-func WithDirector(f DirectorFactory) HandlerOption {
+// If nil is given, this option is ignored. By default, NewRewrite is used.
+func WithRewrite(f RewriteFactory) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if f != nil {
-			cfg.newDirector = f
+			cfg.newRewrite = f
 		}
 	}
 }
