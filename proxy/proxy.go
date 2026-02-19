@@ -47,6 +47,7 @@ func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 	h.Transport = cfg.transport
 	h.BufferPool = buffer.NewPool(cfg.minBufferSize, cfg.maxBufferSize)
 	h.FlushInterval = cfg.flushInterval
+	// TODO: Replace deprecated option.
 	h.Director = cfg.newDirector(h.Director)
 
 	return h
