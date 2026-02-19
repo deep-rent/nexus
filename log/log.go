@@ -69,6 +69,8 @@ func New(opts ...Option) *slog.Logger {
 	return slog.New(NewHandler(opts...))
 }
 
+// Combine creates a new slog.Logger that broadcasts log records to multiple
+// provided slog.Handlers simultaneously using slog.NewMultiHandler.
 func Combine(handlers ...slog.Handler) *slog.Logger {
 	return slog.New(slog.NewMultiHandler(handlers...))
 }
