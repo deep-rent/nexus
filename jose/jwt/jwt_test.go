@@ -203,3 +203,65 @@ func TestOmitEmpty(t *testing.T) {
 	assert.NotContains(t, s, "exp")
 	assert.Equal(t, "{}", s)
 }
+
+func TestDynamicClaims(t *testing.T) {
+	k := gen(t, "k1")
+	set := jwk.Singleton(k)
+
+	input := map[string]any{
+		"sub":    "alice",
+		"str":    "nexus",
+		"num":    42,
+		"flag":   true,
+		"nested": map[string]string{"foo": "bar"},
+	}
+
+	raw, err := jwt.Sign(k, input)
+	require.NoError(t, err)
+
+	claims, err := jwt.Verify[*jwt.DynamicClaims](set, raw)
+	require.NoError(t, err)
+
+	t.Run("valid string", func(t *testing.T) {
+		v, ok := jwt.Get[string](claims, "str")
+		assert.True(t, ok)
+		assert.Equal(t, "nexus", v)
+	})
+
+	t.Run("valid int", func(t *testing.T) {
+		v, ok := jwt.Get[int](claims, "num")
+		assert.True(t, ok)
+		assert.Equal(t, 42, v)
+	})
+
+	t.Run("valid bool", func(t *testing.T) {
+		v, ok := jwt.Get[bool](claims, "flag")
+		assert.True(t, ok)
+		assert.True(t, v)
+	})
+
+	t.Run("valid struct", func(t *testing.T) {
+		type nested struct {
+			Foo string `json:"foo"`
+		}
+		v, ok := jwt.Get[nested](claims, "nested")
+		assert.True(t, ok)
+		assert.Equal(t, "bar", v.Foo)
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		_, ok := jwt.Get[string](claims, "missing")
+		assert.False(t, ok)
+	})
+
+	t.Run("type mismatch", func(t *testing.T) {
+		_, ok := jwt.Get[string](claims, "num")
+		assert.False(t, ok)
+	})
+
+	t.Run("nil receiver", func(t *testing.T) {
+		var empty *jwt.DynamicClaims
+		_, ok := jwt.Get[string](empty, "str")
+		assert.False(t, ok)
+	})
+}
