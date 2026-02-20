@@ -137,7 +137,7 @@ func WithContext(ctx context.Context) Option {
 // Run provides a managed execution environment for a single Runnable.
 // It launches the Runnable in a separate goroutine and blocks until it
 // completes, an OS interrupt signal is caught, or the parent context is
-// canceled. For running multiple components concurrently, see All.
+// canceled. For running multiple components concurrently, see RunAll.
 func Run(runnable Runnable, opts ...Option) error {
 	return RunAll([]Runnable{runnable}, opts...)
 }
