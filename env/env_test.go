@@ -866,9 +866,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 		}),
 	}
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var cfg BenchConfig
 		if err := env.Unmarshal(&cfg, opts...); err != nil {
 			b.Fatalf("unexpected error: %v", err)
@@ -892,9 +890,7 @@ func BenchmarkExpand(b *testing.B) {
 
 	input := "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}"
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := env.Expand(input, opts...)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
