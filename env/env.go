@@ -595,13 +595,19 @@ func parse(s string) (*flags, error) {
 // isEmbedded checks if a struct field is a true embedded struct that should
 // be processed recursively.
 func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
-	// A field is an embedded struct to be recursed into if:
-	// 1. It is a struct.
-	if f.Type.Kind() != reflect.Struct {
+	t := f.Type
+
+	// Unwrap pointer(s) to check the underlying type.
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	// 1. It must resolve to a struct.
+	if t.Kind() != reflect.Struct {
 		return false
 	}
 	// 2. It is not one of the special struct types we handle directly.
-	if f.Type == typeTime || f.Type == typeURL {
+	if t == typeTime || t == typeURL {
 		return false
 	}
 	// 3. It does NOT implement the Unmarshaler interface.
