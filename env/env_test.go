@@ -721,9 +721,27 @@ func TestExpand(t *testing.T) {
 			want: "foo bar baz",
 		},
 		{
-			name: "simple expansion",
+			name: "simple bracket expansion",
 			vars: map[string]string{"FOO": "bar"},
 			in:   "hello ${FOO}",
+			want: "hello bar",
+		},
+		{
+			name: "simple unbracketed expansion",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "hello $FOO",
+			want: "hello bar",
+		},
+		{
+			name: "unbracketed expansion stopping at non-identifier",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "$FOO-baz",
+			want: "bar-baz",
+		},
+		{
+			name: "unbracketed expansion with numbers and underscores",
+			vars: map[string]string{"VAR_123": "bar"},
+			in:   "hello $VAR_123",
 			want: "hello bar",
 		},
 		{
@@ -745,6 +763,12 @@ func TestExpand(t *testing.T) {
 			want: "a lone $ sign",
 		},
 		{
+			name: "lone dollar sign before number",
+			vars: map[string]string{},
+			in:   "cost is $5",
+			want: "cost is $5",
+		},
+		{
 			name: "variable at start",
 			vars: map[string]string{"FOO": "bar"},
 			in:   "${FOO} baz",
@@ -757,16 +781,29 @@ func TestExpand(t *testing.T) {
 			want: "baz bar",
 		},
 		{
-			name: "with prefix",
+			name: "bracketed with prefix",
 			vars: map[string]string{"APP_FOO": "bar"},
 			opts: []env.Option{env.WithPrefix("APP_")},
 			in:   "${FOO}",
 			want: "bar",
 		},
 		{
-			name:    "variable not set",
+			name: "unbracketed with prefix",
+			vars: map[string]string{"APP_FOO": "bar"},
+			opts: []env.Option{env.WithPrefix("APP_")},
+			in:   "$FOO",
+			want: "bar",
+		},
+		{
+			name:    "bracketed variable not set",
 			vars:    map[string]string{},
 			in:      "${FOO}",
+			wantErr: true,
+		},
+		{
+			name:    "unbracketed variable not set",
+			vars:    map[string]string{},
+			in:      "$FOO",
 			wantErr: true,
 		},
 		{
@@ -783,7 +820,7 @@ func TestExpand(t *testing.T) {
 		{
 			name: "complex string",
 			vars: map[string]string{"USER": "foo", "HOST": "bar", "PORT": "8080"},
-			in:   "user=${USER}, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
+			in:   "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
 			want: "user=foo, pass=$ECRET, dsn=foo@bar:8080",
 		},
 	}
