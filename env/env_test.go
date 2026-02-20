@@ -205,8 +205,36 @@ type TDuration struct {
 	V time.Duration
 }
 
-type TDurationUnit struct {
+type TDurationUnitS struct {
 	V time.Duration `env:",unit:s"`
+}
+
+type TDurationUnitNs struct {
+	V time.Duration `env:",unit:ns"`
+}
+
+type TDurationUnitUs struct {
+	V time.Duration `env:",unit:us"`
+}
+
+type TDurationUnitMicro struct {
+	V time.Duration `env:",unit:μs"`
+}
+
+type TDurationUnitMs struct {
+	V time.Duration `env:",unit:ms"`
+}
+
+type TDurationUnitM struct {
+	V time.Duration `env:",unit:m"`
+}
+
+type TDurationUnitH struct {
+	V time.Duration `env:",unit:h"`
+}
+
+type TDurationUnitInvalid struct {
+	V time.Duration `env:",unit:invalid"`
 }
 
 type TTime struct {
@@ -231,6 +259,22 @@ type TTimeFormatUnix struct {
 
 type TTimeFormatUnixUnit struct {
 	V time.Time `env:",format:unix,unit:ms"`
+}
+
+type TTimeFormatUnixUnitS struct {
+	V time.Time `env:",format:unix,unit:s"`
+}
+
+type TTimeFormatUnixUnitUs struct {
+	V time.Time `env:",format:unix,unit:us"`
+}
+
+type TTimeFormatUnixUnitMicro struct {
+	V time.Time `env:",format:unix,unit:μs"`
+}
+
+type TTimeFormatUnixUnitInvalid struct {
+	V time.Time `env:",format:unix,unit:invalid"`
 }
 
 type TUnknownTag struct {
@@ -591,10 +635,52 @@ func TestUnmarshal(t *testing.T) {
 			want: &TDuration{time.Minute},
 		},
 		{
-			name: "duration with unit",
+			name: "duration with unit s",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnit{},
-			want: &TDurationUnit{5 * time.Second},
+			in:   &TDurationUnitS{},
+			want: &TDurationUnitS{5 * time.Second},
+		},
+		{
+			name: "duration with unit ns",
+			vars: map[string]string{"V": "5"},
+			in:   &TDurationUnitNs{},
+			want: &TDurationUnitNs{5 * time.Nanosecond},
+		},
+		{
+			name: "duration with unit us",
+			vars: map[string]string{"V": "5"},
+			in:   &TDurationUnitUs{},
+			want: &TDurationUnitUs{5 * time.Microsecond},
+		},
+		{
+			name: "duration with unit μs",
+			vars: map[string]string{"V": "5"},
+			in:   &TDurationUnitMicro{},
+			want: &TDurationUnitMicro{5 * time.Microsecond},
+		},
+		{
+			name: "duration with unit ms",
+			vars: map[string]string{"V": "5"},
+			in:   &TDurationUnitMs{},
+			want: &TDurationUnitMs{5 * time.Millisecond},
+		},
+		{
+			name: "duration with unit m",
+			vars: map[string]string{"V": "5"},
+			in:   &TDurationUnitM{},
+			want: &TDurationUnitM{5 * time.Minute},
+		},
+		{
+			name: "duration with unit h",
+			vars: map[string]string{"V": "5"},
+			in:   &TDurationUnitH{},
+			want: &TDurationUnitH{5 * time.Hour},
+		},
+		{
+			name:    "duration with invalid unit",
+			vars:    map[string]string{"V": "5"},
+			in:      &TDurationUnitInvalid{},
+			wantErr: true,
 		},
 		{
 			name: "time rfc3339",
@@ -631,6 +717,30 @@ func TestUnmarshal(t *testing.T) {
 			vars: map[string]string{"V": "1760000000000"},
 			in:   &TTimeFormatUnixUnit{},
 			want: &TTimeFormatUnixUnit{time.UnixMilli(1760000000000)},
+		},
+		{
+			name: "time unix explicitly seconds",
+			vars: map[string]string{"V": "1760000000"},
+			in:   &TTimeFormatUnixUnitS{},
+			want: &TTimeFormatUnixUnitS{time.Unix(1760000000, 0)},
+		},
+		{
+			name: "time unix microseconds (us)",
+			vars: map[string]string{"V": "1760000000000000"},
+			in:   &TTimeFormatUnixUnitUs{},
+			want: &TTimeFormatUnixUnitUs{time.UnixMicro(1760000000000000)},
+		},
+		{
+			name: "time unix microseconds (μs)",
+			vars: map[string]string{"V": "1760000000000000"},
+			in:   &TTimeFormatUnixUnitMicro{},
+			want: &TTimeFormatUnixUnitMicro{time.UnixMicro(1760000000000000)},
+		},
+		{
+			name:    "time unix invalid unit",
+			vars:    map[string]string{"V": "1760000000"},
+			in:      &TTimeFormatUnixUnitInvalid{},
+			wantErr: true,
 		},
 		{
 			name: "not set keeps original value",
