@@ -249,6 +249,14 @@ type TNestedDoublePtr struct {
 	Nested **TInner
 }
 
+type TLocation struct {
+	V time.Location
+}
+
+type TLocationPtr struct {
+	V *time.Location
+}
+
 func TestUnmarshal(t *testing.T) {
 	u, err := url.Parse("http://foo.com/bar")
 	require.NoError(t, err)
@@ -664,6 +672,24 @@ func TestUnmarshal(t *testing.T) {
 			name:    "unknown tag option",
 			vars:    map[string]string{},
 			in:      &TUnknownTag{},
+			wantErr: true,
+		},
+		{
+			name: "location",
+			vars: map[string]string{"V": "UTC"},
+			in:   &TLocation{},
+			want: &TLocation{*time.UTC},
+		},
+		{
+			name: "location pointer",
+			vars: map[string]string{"V": "UTC"},
+			in:   &TLocationPtr{},
+			want: &TLocationPtr{time.UTC},
+		},
+		{
+			name:    "parse error location",
+			vars:    map[string]string{"V": "Invalid/Timezone"},
+			in:      &TLocation{},
 			wantErr: true,
 		},
 	}
