@@ -230,33 +230,33 @@ func Expand(s string, opts ...Option) (string, error) {
 		default:
 			// Case 3: Standard variable expansion ($KEY) or lone dollar sign. Scan
 			// ahead for valid identifier characters (alphanumeric and underscore).
-			nameLen := 0
+			n := 0
 			for j := i + 1; j < len(s); j++ {
 				c := s[j]
 				if c == '_' ||
 					('a' <= c && c <= 'z') ||
 					('A' <= c && c <= 'Z') ||
 					('0' <= c && c <= '9') {
-					nameLen++
+					n++
 				} else {
 					break
 				}
 			}
 
-			if nameLen == 0 {
+			if n == 0 {
 				// No valid identifier characters found. Treat as a literal dollar sign.
 				b.WriteByte('$')
 				i++
 			} else {
 				// Extract the unbracketed variable name.
-				key := cfg.Prefix + s[i+1:i+1+nameLen]
+				key := cfg.Prefix + s[i+1:i+1+n]
 				val, ok := cfg.Lookup(key)
 				if !ok {
 					return "", fmt.Errorf("env: variable %q is not set", key)
 				}
 				b.WriteString(val)
 				// Move the index past the processed variable `$KEY`.
-				i += 1 + nameLen
+				i += 1 + n
 			}
 		}
 	}
