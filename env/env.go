@@ -305,7 +305,9 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		}
 
 		if ft.Anonymous && opts.Inline {
-			if err := process(fv, prefix, lookup); err != nil {
+			// Dereference and allocate in case the inline field is a pointer.
+			embedded := pointer.Deref(fv)
+			if err := process(embedded, prefix, lookup); err != nil {
 				return err
 			}
 			continue
@@ -324,7 +326,10 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 			} else {
 				nested += key + "_"
 			}
-			if err := process(fv, nested, lookup); err != nil {
+
+			// Dereference and allocate in case the field is a pointer.
+			embedded := pointer.Deref(fv)
+			if err := process(embedded, nested, lookup); err != nil {
 				return err
 			}
 			continue
