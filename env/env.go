@@ -337,27 +337,25 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		key = prefix + key
 		val, ok := lookup(key)
-		// Trigger the default fallback if the variable is missing or
-		// explicitly empty.
-		if !ok || val == "" {
+		// A variable is "set" even if it is empty. We only trigger the strictly
+		// missing variable logic if 'ok' is false.
+		if !ok {
 			if opts.Default != "" {
 				val = opts.Default
 			} else if opts.Required {
-				return fmt.Errorf("required variable %q is missing or empty", key)
-			} else if !ok {
-				// The variable is completely unset and has no default.
-				// Skip setting the field so it retains its zero-value.
+				return fmt.Errorf("required variable %q is not set", key)
+			} else {
 				continue
 			}
-
-			// If we reach here, ok == true, val == "", opts.Default == "", and
-			// opts.Required == false. We allow this to fall through to setValue.
-			// For strings, this correctly sets an empty string.
-			// For other types (like int or bool), setValue will naturally and
-			// correctly return a parsing error, since "" is not a valid integer
-			// or boolean.
+		} else if val == "" && opts.Default != "" {
+			// If the variable is explicitly set to empty (""), but a default
+			// exists in the tags, fall back to the default value.
+			val = opts.Default
 		}
 
+		// If a field is required and set to "", it bypasses the errors above.
+		// For strings, setValue will correctly assign the empty string. For types
+		// like int or bool, setValue will return a natural parsing error.
 		if err := setValue(fv, val, opts); err != nil {
 			return fmt.Errorf(
 				"error setting field %q from variable %q: %w",
