@@ -50,15 +50,10 @@
 //	  }
 //
 //	  // 3. Run the application components concurrently.
-//	  err := app.Run(
+//	  err := app.RunAll(
 //	    []app.Runnable{worker, server},
 //	    app.WithLogger(logger),
 //	  )
-//	  if err != nil {
-//	    logger.Error("Application failed", "error", err)
-//	    os.Exit(1)
-//	  }
-//	}
 package app
 
 import (
