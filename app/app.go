@@ -54,6 +54,10 @@
 //	    []app.Runnable{worker, server},
 //	    app.WithLogger(logger),
 //	  )
+//	  if err != nil {
+//	    logger.Error("Application failed", "error", err)
+//	    os.Exit(1)
+//	  }
 package app
 
 import (
