@@ -174,8 +174,8 @@ func Unmarshal(v any, opts ...Option) error {
 
 // Expand substitutes environment variables in a string.
 //
-// It replaces references to environment variables in the format ${KEY} with
-// their corresponding values. A literal dollar sign can be escaped with $$.
+// It replaces references to environment variables in the formats ${KEY} or $KEY
+// with their corresponding values. A literal dollar sign can be escaped with $$.
 // If a referenced variable is not found in the environment, the function
 // returns an error. Its behavior can be adjusted through functional options.
 func Expand(s string, opts ...Option) (string, error) {
@@ -212,7 +212,7 @@ func Expand(s string, opts ...Option) (string, error) {
 			i += 2 // Skip both signs.
 
 		case i+1 < len(s) && s[i+1] == '{':
-			// Case 2: Variable expansion (${KEY}).
+			// Case 2: Bracketed variable expansion (${KEY}).
 			end := strings.IndexByte(s[i+2:], '}')
 			if end == -1 {
 				return "", errors.New("env: variable bracket not closed")
@@ -228,9 +228,36 @@ func Expand(s string, opts ...Option) (string, error) {
 			i += 2 + end + 1
 
 		default:
-			// Case 3: Lone dollar sign. Treat it literally.
-			b.WriteByte('$')
-			i++
+			// Case 3: Standard variable expansion ($KEY) or lone dollar sign. Scan
+			// ahead for valid identifier characters (alphanumeric and underscore).
+			nameLen := 0
+			for j := i + 1; j < len(s); j++ {
+				c := s[j]
+				if c == '_' ||
+					('a' <= c && c <= 'z') ||
+					('A' <= c && c <= 'Z') ||
+					('0' <= c && c <= '9') {
+					nameLen++
+				} else {
+					break
+				}
+			}
+
+			if nameLen == 0 {
+				// No valid identifier characters found. Treat as a literal dollar sign.
+				b.WriteByte('$')
+				i++
+			} else {
+				// Extract the unbracketed variable name.
+				key := cfg.Prefix + s[i+1:i+1+nameLen]
+				val, ok := cfg.Lookup(key)
+				if !ok {
+					return "", fmt.Errorf("env: variable %q is not set", key)
+				}
+				b.WriteString(val)
+				// Move the index past the processed variable `$KEY`.
+				i += 1 + nameLen
+			}
 		}
 	}
 
