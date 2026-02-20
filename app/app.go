@@ -151,9 +151,9 @@ func Run(runnable Runnable, opts ...Option) error {
 // Upon receiving a signal or encountering an error in any Runnable, it
 // cancels the context passed to all Runnables and waits for the specified
 // shutdown timeout. The Runnables are expected to honor the context
-// cancellation and perform any necessary cleanup before returning. All returns
-// any error from the Runnables themselves, or an error if the shutdown process
-// times out.
+// cancellation and perform any necessary cleanup before returning. RunAll
+// returns any error from the Runnables themselves, or an error if the shutdown
+// process times out.
 func RunAll(runnables []Runnable, opts ...Option) error {
 	cfg := config{
 		logger:  slog.Default(),
