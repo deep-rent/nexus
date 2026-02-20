@@ -287,6 +287,7 @@ type config struct {
 var (
 	typeTime        = reflect.TypeFor[time.Time]()
 	typeDuration    = reflect.TypeFor[time.Duration]()
+	typeLocation    = reflect.TypeFor[time.Location]()
 	typeURL         = reflect.TypeFor[url.URL]()
 	typeUnmarshaler = reflect.TypeFor[Unmarshaler]()
 )
@@ -406,6 +407,8 @@ func setValue(rv reflect.Value, v string, f *flags) error {
 		return setTime(rv, v, f)
 	case typeDuration:
 		return setDuration(rv, v, f)
+	case typeLocation:
+		return setLocation(rv, v)
 	case typeURL:
 		return setURL(rv, v)
 	default:
@@ -549,6 +552,16 @@ func setDuration(rv reflect.Value, v string, f *flags) error {
 	return nil
 }
 
+// setLocation parses and sets a time.Location value.
+func setLocation(rv reflect.Value, v string) error {
+	loc, err := time.LoadLocation(v)
+	if err != nil {
+		return err
+	}
+	rv.Set(reflect.ValueOf(*loc))
+	return nil
+}
+
 // setURL parses and sets a url.URL value.
 func setURL(rv reflect.Value, v string) error {
 	u, err := url.Parse(v)
@@ -650,7 +663,7 @@ func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
 		return false
 	}
 	// 2. It is not one of the special struct types we handle directly.
-	if t == typeTime || t == typeURL {
+	if t == typeTime || t == typeURL || t == typeLocation {
 		return false
 	}
 	// 3. It does NOT implement the Unmarshaler interface.
