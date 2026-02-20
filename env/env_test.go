@@ -875,3 +875,29 @@ func BenchmarkUnmarshal(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkExpand(b *testing.B) {
+	mockEnv := map[string]string{
+		"USER": "foo",
+		"HOST": "bar",
+		"PORT": "8080",
+	}
+
+	opts := []env.Option{
+		env.WithLookup(func(k string) (string, bool) {
+			v, ok := mockEnv[k]
+			return v, ok
+		}),
+	}
+
+	input := "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}"
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := env.Expand(input, opts...)
+		if err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
