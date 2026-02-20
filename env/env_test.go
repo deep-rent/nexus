@@ -241,6 +241,14 @@ type TTrimOptions struct {
 	V string `env:", default:foo"`
 }
 
+type TNestedPtr struct {
+	Nested *TInner
+}
+
+type TNestedDoublePtr struct {
+	Nested **TInner
+}
+
 func TestUnmarshal(t *testing.T) {
 	u, err := url.Parse("http://foo.com/bar")
 	require.NoError(t, err)
@@ -403,6 +411,12 @@ func TestUnmarshal(t *testing.T) {
 			want: &TDefault{"foo"},
 		},
 		{
+			name: "explicitly empty string uses default",
+			vars: map[string]string{"V": ""},
+			in:   &TDefault{},
+			want: &TDefault{"foo"},
+		},
+		{
 			name: "default with quotes",
 			vars: map[string]string{},
 			in:   &TDefaultQuotes{},
@@ -521,6 +535,21 @@ func TestUnmarshal(t *testing.T) {
 			vars: map[string]string{"NESTED_V": "foo"},
 			in:   &TNested{},
 			want: &TNested{Nested: TInner{"foo"}},
+		},
+		{
+			name: "nested struct pointer",
+			vars: map[string]string{"NESTED_V": "foo"},
+			in:   &TNestedPtr{},
+			want: &TNestedPtr{Nested: &TInner{"foo"}},
+		},
+		{
+			name: "nested struct double pointer",
+			vars: map[string]string{"NESTED_V": "foo"},
+			in:   &TNestedDoublePtr{},
+			want: &TNestedDoublePtr{Nested: func() **TInner {
+				p := &TInner{"foo"}
+				return &p
+			}()},
 		},
 		{
 			name: "nested struct with custom prefix",
@@ -692,9 +721,27 @@ func TestExpand(t *testing.T) {
 			want: "foo bar baz",
 		},
 		{
-			name: "simple expansion",
+			name: "simple bracket expansion",
 			vars: map[string]string{"FOO": "bar"},
 			in:   "hello ${FOO}",
+			want: "hello bar",
+		},
+		{
+			name: "simple unbracketed expansion",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "hello $FOO",
+			want: "hello bar",
+		},
+		{
+			name: "unbracketed expansion stopping at non-identifier",
+			vars: map[string]string{"FOO": "bar"},
+			in:   "$FOO-baz",
+			want: "bar-baz",
+		},
+		{
+			name: "unbracketed expansion with numbers and underscores",
+			vars: map[string]string{"VAR_123": "bar"},
+			in:   "hello $VAR_123",
 			want: "hello bar",
 		},
 		{
@@ -716,6 +763,12 @@ func TestExpand(t *testing.T) {
 			want: "a lone $ sign",
 		},
 		{
+			name: "lone dollar sign before number",
+			vars: map[string]string{},
+			in:   "cost is $5",
+			want: "cost is $5",
+		},
+		{
 			name: "variable at start",
 			vars: map[string]string{"FOO": "bar"},
 			in:   "${FOO} baz",
@@ -728,16 +781,29 @@ func TestExpand(t *testing.T) {
 			want: "baz bar",
 		},
 		{
-			name: "with prefix",
+			name: "bracketed with prefix",
 			vars: map[string]string{"APP_FOO": "bar"},
 			opts: []env.Option{env.WithPrefix("APP_")},
 			in:   "${FOO}",
 			want: "bar",
 		},
 		{
-			name:    "variable not set",
+			name: "unbracketed with prefix",
+			vars: map[string]string{"APP_FOO": "bar"},
+			opts: []env.Option{env.WithPrefix("APP_")},
+			in:   "$FOO",
+			want: "bar",
+		},
+		{
+			name:    "bracketed variable not set",
 			vars:    map[string]string{},
 			in:      "${FOO}",
+			wantErr: true,
+		},
+		{
+			name:    "unbracketed variable not set",
+			vars:    map[string]string{},
+			in:      "$FOO",
 			wantErr: true,
 		},
 		{
@@ -754,7 +820,7 @@ func TestExpand(t *testing.T) {
 		{
 			name: "complex string",
 			vars: map[string]string{"USER": "foo", "HOST": "bar", "PORT": "8080"},
-			in:   "user=${USER}, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
+			in:   "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
 			want: "user=foo, pass=$ECRET, dsn=foo@bar:8080",
 		},
 	}
@@ -773,5 +839,61 @@ func TestExpand(t *testing.T) {
 				assert.Equal(t, tc.want, got)
 			}
 		})
+	}
+}
+
+type BenchConfig struct {
+	Host    string        `env:",required"`
+	Port    int           `env:",default:8080"`
+	Timeout time.Duration `env:",unit:s"`
+	Debug   bool
+	Roles   []string `env:",split:';'"`
+}
+
+func BenchmarkUnmarshal(b *testing.B) {
+	mockEnv := map[string]string{
+		"HOST":    "localhost",
+		"PORT":    "9090",
+		"TIMEOUT": "30",
+		"DEBUG":   "true",
+		"ROLES":   "admin;user;guest",
+	}
+
+	opts := []env.Option{
+		env.WithLookup(func(k string) (string, bool) {
+			v, ok := mockEnv[k]
+			return v, ok
+		}),
+	}
+
+	for b.Loop() {
+		var cfg BenchConfig
+		if err := env.Unmarshal(&cfg, opts...); err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
+
+func BenchmarkExpand(b *testing.B) {
+	mockEnv := map[string]string{
+		"USER": "foo",
+		"HOST": "bar",
+		"PORT": "8080",
+	}
+
+	opts := []env.Option{
+		env.WithLookup(func(k string) (string, bool) {
+			v, ok := mockEnv[k]
+			return v, ok
+		}),
+	}
+
+	input := "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}"
+
+	for b.Loop() {
+		_, err := env.Expand(input, opts...)
+		if err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
 	}
 }

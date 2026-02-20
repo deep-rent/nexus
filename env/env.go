@@ -174,8 +174,8 @@ func Unmarshal(v any, opts ...Option) error {
 
 // Expand substitutes environment variables in a string.
 //
-// It replaces references to environment variables in the format ${KEY} with
-// their corresponding values. A literal dollar sign can be escaped with $$.
+// It replaces references to environment variables in the formats ${KEY} or $KEY
+// with their corresponding values. A literal dollar sign can be escaped with $$.
 // If a referenced variable is not found in the environment, the function
 // returns an error. Its behavior can be adjusted through functional options.
 func Expand(s string, opts ...Option) (string, error) {
@@ -212,7 +212,7 @@ func Expand(s string, opts ...Option) (string, error) {
 			i += 2 // Skip both signs.
 
 		case i+1 < len(s) && s[i+1] == '{':
-			// Case 2: Variable expansion (${KEY}).
+			// Case 2: Bracketed variable expansion (${KEY}).
 			end := strings.IndexByte(s[i+2:], '}')
 			if end == -1 {
 				return "", errors.New("env: variable bracket not closed")
@@ -228,9 +228,38 @@ func Expand(s string, opts ...Option) (string, error) {
 			i += 2 + end + 1
 
 		default:
-			// Case 3: Lone dollar sign. Treat it literally.
-			b.WriteByte('$')
-			i++
+			// Case 3: Standard variable expansion ($KEY) or lone dollar sign. Scan
+			// ahead for valid identifier characters. The first character must be
+			// a letter or underscore; subsequent characters can include digits.
+			n := 0
+			for j := i + 1; j < len(s); j++ {
+				c := s[j]
+				// Allow if it's a letter/underscore, OR if it's a digit but NOT the
+				// first character.
+				if (c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')) ||
+					(n > 0 && ('0' <= c && c <= '9')) {
+					n++
+				} else {
+					break
+				}
+			}
+
+			if n == 0 {
+				// No valid identifier characters found (e.g., "$5", "$!").
+				// Treat as a literal dollar sign.
+				b.WriteByte('$')
+				i++
+			} else {
+				// Extract the unbracketed variable name.
+				key := cfg.Prefix + s[i+1:i+1+n]
+				val, ok := cfg.Lookup(key)
+				if !ok {
+					return "", fmt.Errorf("env: variable %q is not set", key)
+				}
+				b.WriteString(val)
+				// Move the index past the processed variable `$KEY`.
+				i += 1 + n
+			}
 		}
 	}
 
@@ -256,10 +285,10 @@ type config struct {
 
 // Cache types with special unmarshaling logic.
 var (
-	typeTime        = reflect.TypeOf(time.Time{})
-	typeDuration    = reflect.TypeOf(time.Duration(0))
-	typeURL         = reflect.TypeOf(url.URL{})
-	typeUnmarshaler = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
+	typeTime        = reflect.TypeFor[time.Time]()
+	typeDuration    = reflect.TypeFor[time.Duration]()
+	typeURL         = reflect.TypeFor[url.URL]()
+	typeUnmarshaler = reflect.TypeFor[Unmarshaler]()
 )
 
 func unmarshal(v any, opts ...Option) error {
@@ -305,7 +334,9 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		}
 
 		if ft.Anonymous && opts.Inline {
-			if err := process(fv, prefix, lookup); err != nil {
+			// Dereference and allocate in case the inline field is a pointer.
+			embedded := pointer.Deref(fv)
+			if err := process(embedded, prefix, lookup); err != nil {
 				return err
 			}
 			continue
@@ -324,7 +355,10 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 			} else {
 				nested += key + "_"
 			}
-			if err := process(fv, nested, lookup); err != nil {
+
+			// Dereference and allocate in case the field is a pointer.
+			embedded := pointer.Deref(fv)
+			if err := process(embedded, nested, lookup); err != nil {
 				return err
 			}
 			continue
@@ -332,6 +366,8 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		key = prefix + key
 		val, ok := lookup(key)
+		// A variable is "set" even if it is empty. We only trigger the strictly
+		// missing variable logic if 'ok' is false.
 		if !ok {
 			if opts.Default != "" {
 				val = opts.Default
@@ -340,8 +376,15 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 			} else {
 				continue
 			}
+		} else if val == "" && opts.Default != "" {
+			// If the variable is explicitly set to empty (""), but a default
+			// exists in the tags, fall back to the default value.
+			val = opts.Default
 		}
 
+		// If a field is required and set to "", it bypasses the errors above.
+		// For strings, setValue will correctly assign the empty string. For types
+		// like int or bool, setValue will return a natural parsing error.
 		if err := setValue(fv, val, opts); err != nil {
 			return fmt.Errorf(
 				"error setting field %q from variable %q: %w",
@@ -595,13 +638,19 @@ func parse(s string) (*flags, error) {
 // isEmbedded checks if a struct field is a true embedded struct that should
 // be processed recursively.
 func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
-	// A field is an embedded struct to be recursed into if:
-	// 1. It is a struct.
-	if f.Type.Kind() != reflect.Struct {
+	t := f.Type
+
+	// Unwrap pointer(s) to check the underlying type.
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	// 1. It must resolve to a struct.
+	if t.Kind() != reflect.Struct {
 		return false
 	}
 	// 2. It is not one of the special struct types we handle directly.
-	if f.Type == typeTime || f.Type == typeURL {
+	if t == typeTime || t == typeURL {
 		return false
 	}
 	// 3. It does NOT implement the Unmarshaler interface.
