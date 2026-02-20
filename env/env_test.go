@@ -841,3 +841,37 @@ func TestExpand(t *testing.T) {
 		})
 	}
 }
+
+type BenchConfig struct {
+	Host    string        `env:",required"`
+	Port    int           `env:",default:8080"`
+	Timeout time.Duration `env:",unit:s"`
+	Debug   bool
+	Roles   []string `env:",split:';'"`
+}
+
+func BenchmarkUnmarshal(b *testing.B) {
+	mockEnv := map[string]string{
+		"HOST":    "localhost",
+		"PORT":    "9090",
+		"TIMEOUT": "30",
+		"DEBUG":   "true",
+		"ROLES":   "admin;user;guest",
+	}
+
+	opts := []env.Option{
+		env.WithLookup(func(k string) (string, bool) {
+			v, ok := mockEnv[k]
+			return v, ok
+		}),
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		var cfg BenchConfig
+		if err := env.Unmarshal(&cfg, opts...); err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
