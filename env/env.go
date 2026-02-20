@@ -229,14 +229,15 @@ func Expand(s string, opts ...Option) (string, error) {
 
 		default:
 			// Case 3: Standard variable expansion ($KEY) or lone dollar sign. Scan
-			// ahead for valid identifier characters (alphanumeric and underscore).
+			// ahead for valid identifier characters. The first character must be
+			// a letter or underscore; subsequent characters can include digits.
 			n := 0
 			for j := i + 1; j < len(s); j++ {
 				c := s[j]
-				if c == '_' ||
-					('a' <= c && c <= 'z') ||
-					('A' <= c && c <= 'Z') ||
-					('0' <= c && c <= '9') {
+				// Allow if it's a letter/underscore, OR if it's a digit but NOT the
+				// first character.
+				if (c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')) ||
+					(n > 0 && ('0' <= c && c <= '9')) {
 					n++
 				} else {
 					break
@@ -244,7 +245,8 @@ func Expand(s string, opts ...Option) (string, error) {
 			}
 
 			if n == 0 {
-				// No valid identifier characters found. Treat as a literal dollar sign.
+				// No valid identifier characters found (e.g., "$5", "$!").
+				// Treat as a literal dollar sign.
 				b.WriteByte('$')
 				i++
 			} else {
