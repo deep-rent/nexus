@@ -101,8 +101,8 @@ func WithLogger(log *slog.Logger) Option {
 }
 
 // WithTimeout sets a custom timeout for the graceful shutdown process.
-// If the application components take longer than this duration to return after a
-// shutdown signal is received, the runner will exit with an error. A negative
+// If the application components take longer than this duration to return after
+// a shutdown signal is received, the runner will exit with an error. A negative
 // or zero duration will be ignored, and the DefaultTimeout is used instead.
 func WithTimeout(d time.Duration) Option {
 	return func(opts *config) {
