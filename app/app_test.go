@@ -3,6 +3,7 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"syscall"
@@ -60,8 +61,7 @@ func TestRun_SignalShutdown(t *testing.T) {
 		errCh <- app.Run(r, app.WithSignals(sig))
 	}()
 
-	// Wait for app to "start"
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // Wait for the app to start up
 
 	// Send signal to self
 	p, err := os.FindProcess(os.Getpid())
@@ -179,4 +179,104 @@ func TestRun_WithLogger(t *testing.T) {
 	logs := buf.String()
 	assert.Contains(t, logs, "Application started")
 	assert.Contains(t, logs, "Application stopped")
+}
+
+func TestRunAll_Success(t *testing.T) {
+	r1 := func(ctx context.Context) error { return nil }
+	r2 := func(ctx context.Context) error { return nil }
+
+	err := app.RunAll([]app.Runnable{r1, r2})
+	require.NoError(t, err)
+}
+
+func TestRunAll_CascadingError(t *testing.T) {
+	errTriggered := errors.New("worker 1 failed")
+	var worker2Canceled bool
+
+	r1 := func(ctx context.Context) error {
+		time.Sleep(10 * time.Millisecond)
+		return errTriggered
+	}
+
+	r2 := func(ctx context.Context) error {
+		<-ctx.Done()
+		if errors.Is(ctx.Err(), context.Canceled) {
+			worker2Canceled = true
+		}
+		return nil
+	}
+
+	err := app.RunAll([]app.Runnable{r1, r2})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errTriggered)
+	assert.True(
+		t,
+		worker2Canceled,
+		"worker 2 should've been canceled when worker 1 failed",
+	)
+}
+
+func TestRunAll_CascadingPanic(t *testing.T) {
+	var worker2Canceled bool
+
+	r1 := func(ctx context.Context) error {
+		time.Sleep(10 * time.Millisecond)
+		panic("worker 1 panicked")
+	}
+
+	r2 := func(ctx context.Context) error {
+		<-ctx.Done()
+		if errors.Is(ctx.Err(), context.Canceled) {
+			worker2Canceled = true
+		}
+		return nil
+	}
+
+	err := app.RunAll([]app.Runnable{r1, r2})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "worker 1 panicked")
+	assert.True(
+		t,
+		worker2Canceled,
+		"worker 2 should've been canceled when worker 1 panicked",
+	)
+}
+
+func TestRunAll_SignalShutdownAll(t *testing.T) {
+	sig := syscall.SIGUSR1
+	var w1Canceled, w2Canceled bool
+
+	r1 := func(ctx context.Context) error {
+		<-ctx.Done()
+		w1Canceled = true
+		return nil
+	}
+	r2 := func(ctx context.Context) error {
+		<-ctx.Done()
+		w2Canceled = true
+		return nil
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- app.RunAll([]app.Runnable{r1, r2}, app.WithSignals(sig))
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	p, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err)
+	require.NoError(t, p.Signal(sig))
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout waiting for shutdown")
+	}
+
+	assert.True(t, w1Canceled, "worker 1 should've received context cancellation")
+	assert.True(t, w2Canceled, "worker 2 should've received context cancellation")
 }
