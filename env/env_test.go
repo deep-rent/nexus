@@ -241,6 +241,14 @@ type TTrimOptions struct {
 	V string `env:", default:foo"`
 }
 
+type TNestedPtr struct {
+	Nested *TInner
+}
+
+type TNestedDoublePtr struct {
+	Nested **TInner
+}
+
 func TestUnmarshal(t *testing.T) {
 	u, err := url.Parse("http://foo.com/bar")
 	require.NoError(t, err)
@@ -403,6 +411,12 @@ func TestUnmarshal(t *testing.T) {
 			want: &TDefault{"foo"},
 		},
 		{
+			name: "explicitly empty string uses default",
+			vars: map[string]string{"V": ""},
+			in:   &TDefault{},
+			want: &TDefault{"foo"},
+		},
+		{
 			name: "default with quotes",
 			vars: map[string]string{},
 			in:   &TDefaultQuotes{},
@@ -521,6 +535,21 @@ func TestUnmarshal(t *testing.T) {
 			vars: map[string]string{"NESTED_V": "foo"},
 			in:   &TNested{},
 			want: &TNested{Nested: TInner{"foo"}},
+		},
+		{
+			name: "nested struct pointer",
+			vars: map[string]string{"NESTED_V": "foo"},
+			in:   &TNestedPtr{},
+			want: &TNestedPtr{Nested: &TInner{"foo"}},
+		},
+		{
+			name: "nested struct double pointer",
+			vars: map[string]string{"NESTED_V": "foo"},
+			in:   &TNestedDoublePtr{},
+			want: &TNestedDoublePtr{Nested: func() **TInner {
+				p := &TInner{"foo"}
+				return &p
+			}()},
 		},
 		{
 			name: "nested struct with custom prefix",
