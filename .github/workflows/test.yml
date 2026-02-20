@@ -1,12 +1,18 @@
 name: Test
 
 on:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'README.md'
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
   workflow_dispatch: {}
 
 jobs:
