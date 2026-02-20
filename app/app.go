@@ -177,7 +177,6 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	cfg.logger.Info("Application started", "components", len(runnables))
 
 	for _, fn := range runnables {
-		fn := fn // Capture range variable for the goroutine
 		g.Go(func() (err error) {
 			defer func() {
 				if r := recover(); r != nil {
