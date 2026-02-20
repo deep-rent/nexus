@@ -256,10 +256,10 @@ type config struct {
 
 // Cache types with special unmarshaling logic.
 var (
-	typeTime        = reflect.TypeOf(time.Time{})
-	typeDuration    = reflect.TypeOf(time.Duration(0))
-	typeURL         = reflect.TypeOf(url.URL{})
-	typeUnmarshaler = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
+	typeTime        = reflect.TypeFor[time.Time]()
+	typeDuration    = reflect.TypeFor[time.Duration]()
+	typeURL         = reflect.TypeFor[url.URL]()
+	typeUnmarshaler = reflect.TypeFor[Unmarshaler]()
 )
 
 func unmarshal(v any, opts ...Option) error {
