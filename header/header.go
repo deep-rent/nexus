@@ -160,17 +160,40 @@ func Preferences(s string) iter.Seq2[string, float64] {
 	}
 }
 
-// Accepts checks if the given key is present in a header value with
-// quality factors, such as Accept, Accept-Encoding, or Accept-Language, and
-// that its q-value is greater than zero. It returns true if the key (media
-// range) is accepted, else false.
+// Accepts checks if the given key is accepted based on a header value with
+// quality factors (e.g., Accept, Accept-Encoding, or Accept-Language).
+// It properly weights exact matches over partial wildcards (e.g., "text/*")
+// and global wildcards ("*/*" or "*"), returning true if the best match has
+// a q-value greater than zero.
 func Accepts(s, key string) bool {
+	var (
+		maxQ float64
+		maxP int
+	)
+
+	// Extract the major type (e.g., "text" from "text/html") for partial
+	// wildcards.
+	major, _, hasSlash := strings.Cut(key, "/")
+
 	for k, q := range Preferences(s) {
+		var p int
 		if k == key {
-			return q > 0
+			p = 3 // Exact match (highest precedence)
+		} else if hasSlash && k == major+"/*" {
+			p = 2 // Partial wildcard match (e.g., "text/*")
+		} else if k == "*/*" || k == "*" {
+			p = 1 // Global wildcard match
+		}
+
+		// Update if we found a more specific match than our current best.
+		if p > maxP {
+			maxP = p
+			maxQ = q
 		}
 	}
-	return false
+
+	// It is accepted if we found a valid match and its q-value is greater than 0.
+	return maxP > 0 && maxQ > 0
 }
 
 // MediaType extracts and returns the media type from a Content-Type header.
