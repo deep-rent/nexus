@@ -22,7 +22,7 @@ import (
 func TestEndToEnd(t *testing.T) {
 	msg := "hello"
 	hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(msg))
+		_, _ = w.Write([]byte(msg))
 	})
 	ts := httptest.NewServer(hf)
 	defer ts.Close()
