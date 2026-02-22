@@ -703,8 +703,9 @@ func encodeECDSA(key *ecdsa.PublicKey, r *raw) error {
 
 	x := make([]byte, size)
 	y := make([]byte, size)
-	key.X.FillBytes(x)
-	key.Y.FillBytes(y)
+	// TODO (SA1019): X/Y coordinates have been deprecated as of Go 1.26.
+	key.X.FillBytes(x) // nolint:staticcheck
+	key.Y.FillBytes(y) // nolint:staticcheck
 
 	r.X = base64.RawURLEncoding.EncodeToString(x)
 	r.Y = base64.RawURLEncoding.EncodeToString(y)
