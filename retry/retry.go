@@ -190,8 +190,12 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		// If retrying, drain and close the previous response body.
 		if res != nil && res.Body != nil {
-			io.Copy(io.Discard, res.Body)
-			res.Body.Close()
+			if _, err := io.Copy(io.Discard, res.Body); err != nil {
+				t.logger.Warn("Failed to drain response body", slog.Any("error", err))
+			}
+			if err := res.Body.Close(); err != nil {
+				t.logger.Warn("Failed to close response body", slog.Any("error", err))
+			}
 		}
 
 		delay := t.backoff.Next()
