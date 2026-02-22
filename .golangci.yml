@@ -2,6 +2,10 @@
 
 version: "2"
 
+run:
+  build-tags:
+    - jsonv2
+
 linters:
   enable:
     - goheader
