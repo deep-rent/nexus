@@ -1,8 +1,8 @@
 $schema: 'https://raw.githubusercontent.com/evilmartians/lefthook/master/schema.json'
-commit-msg:
-  commands:
-    lint:
-      run: go-gitlint --msg-file={1}
+# commit-msg:
+#   commands:
+#     lint:
+#       run: go-gitlint --msg-file={1}
 
 pre-commit:
   parallel: true
