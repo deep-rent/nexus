@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"math/big"
 	"slices"
 	"time"
@@ -503,8 +504,8 @@ var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 	if set.Len() == 0 {
 		return nil, errors.New("no valid keys found")
 	}
-	if err != nil {
-		r.Logger.Debug("Some keys could not be parsed", "error", err)
+	if err != nil && r.Logger.Enabled(r.Ctx, slog.LevelDebug) {
+		r.Logger.Debug("Some keys could not be parsed", slog.Any("error", err))
 	}
 	// Don't complain unless there are no keys available at all.
 	return set, nil
