@@ -151,6 +151,7 @@ func TestParseError(t *testing.T) {
 		{"unknown algorithm", "unknown_algorithm.json"},
 		{"unsupported ECDSA curve", "unsupported_ecdsa_curve.json"},
 		{"unsupported EdDSA curve", "unsupported_eddsa_curve.json"},
+		{"invalid ECDSA point (not on curve)", "ecdsa_not_on_curve.json"},
 	}
 
 	for _, tc := range tests {
