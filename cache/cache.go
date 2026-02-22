@@ -184,13 +184,16 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	res, err := c.client.Do(req)
 	if err != nil {
 		if err != context.Canceled {
-			c.logger.Error("HTTP request failed after retries", "error", err)
+			c.logger.Error(
+				"HTTP request failed after retries",
+				slog.Any("error", err),
+			)
 		}
 		return c.minInterval
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			c.logger.Warn("Failed to close response body", "error", err)
+			c.logger.Warn("Failed to close response body", slog.Any("error", err))
 		}
 	}()
 
