@@ -1,6 +1,9 @@
 {
   "editor.formatOnSave": true,
   "editor.formatOnType": true,
+  "files.associations": {
+    "LICENSE": "plaintext"
+  },
   "files.encoding": "utf8",
   "[go]": {
     "editor.rulers": [
@@ -15,6 +18,9 @@
     "editor.rulers": [
       100
     ]
+  },
+  "[plaintext]": {
+    "editor.formatOnSave": false
   },
   "go.lintTool": "golangci-lint",
   "go.lintFlags": [

@@ -1,19 +1,17 @@
-// Package backoff provides customizable strategies for retrying operations with
-// increasing delays.
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
 //
-// The core of the package is the Strategy interface, which computes the next
-// backoff duration. Implementations are stateful; the Next method returns
-// progressively longer durations with each call. Once the retried operation is
-// successful or abandoned, Done must be called to reset the strategy's internal
-// state.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// # Usage
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// A default exponential backoff strategy with jitter can be created using the
-// New function. The behavior can be customized using various Option functions,
-// such as WithMinDelay, WithMaxDelay, WithGrowthFactor, and WithJitterAmount.
-// Jitter is added by default to prevent multiple clients from retrying in sync
-// (the "thundering herd" problem), which can overwhelm a recovering service.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package backoff
 
 import (

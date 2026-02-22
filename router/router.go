@@ -1,38 +1,17 @@
-// Package router provides a lightweight, JSON-centric wrapper around Go's
-// native http.ServeMux.
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
 //
-// It simplifies building JSON APIs by offering a consolidated "Exchange" object
-// for handling requests and responses, standardized error formatting, and a
-// middleware chaining mechanism.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// Basic Usage:
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//	// 1. Setup the router with options
-//	logger := log.New()
-//	r := router.New(
-//		router.WithLogger(logger),
-//		router.WithMiddleware(middleware.Log(logger)),
-//	)
-//
-//	// 2. Define a handler
-//	// You can use a closure, or a struct that satisfies the Handler interface.
-//	r.HandleFunc("POST /users", func(e *router.Exchange) error {
-//		var req CreateUserRequest
-//
-//		// BindJSON enforces Content-Type and parses the body.
-//		// It returns a specific *router.Error type if validation fails.
-//		if err := e.BindJSON(&req); err != nil {
-//			return err
-//		}
-//
-//		// ... Logic to save user ...
-//
-//		// Return JSON response
-//		return e.JSON(http.StatusCreated, UserResponse{ID: "123"})
-//	})
-//
-//	// 3. Start the server
-//	http.ListenAndServe(":8080", r)
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package router
 
 import (

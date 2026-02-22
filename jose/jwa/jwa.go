@@ -1,13 +1,17 @@
-// Package jwa provides implementations for asymmetric JSON Web Algorithms
-// (JWA) as defined in RFC 7518.
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
 //
-// It provides a unified interface for signature verification using public
-// keys and signature creation using crypto.Signer. This abstraction handles
-// algorithm-specific complexities such as hash function selection, padding
-// schemes (e.g., PSS vs PKCS1v15), and signature format transcoding (e.g.,
-// converting ECDSA ASN.1 DER to raw concatenation).
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// Note: Symmetric algorithms (such as HMAC) are not supported.
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package jwa
 
 import (

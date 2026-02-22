@@ -1,32 +1,17 @@
-// Package gzip provides an HTTP middleware for compressing response bodies
-// using the gzip algorithm. It automatically adds the "Content-Encoding: gzip"
-// header and compresses the payload for clients that support it (indicated by
-// the "Accept-Encoding" request header).
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
 //
-// # Usage
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// The middleware is designed to be efficient. It pools gzip writers to reduce
-// memory allocations and gracefully skips compression for responses tha
-// already have a "Content-Encoding" header set.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// Example:
-//
-//	// Create the final handler.
-//	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//		w.Header().Set("Content-Type", "text/plain")
-//		w.Write([]byte("This is a long string that will be compressed."))
-//	})
-//
-//	// Create a gzip middleware pipe with the highest level if compression.
-//	pipe := gzip.New(
-//		gzip.WithCompressionLevel(gzip.BestCompression),
-//		gzip.WithExcludeMimeTypes("text/*", "application/font-woff"),
-//	)
-//
-//	// Apply the CORS middleware as one of the first layers.
-//	chainedHandler := middleware.Chain(handler, pipe)
-//
-//	http.ListenAndServe(":8080", chainedHandler)
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package gzip
 
 import (
@@ -140,7 +125,7 @@ func (w *interceptor) Close() {
 	// Just return the writer to the pool.
 	if w.gz != nil {
 		if !w.hijacked {
-			w.gz.Close()
+			_ = w.gz.Close()
 		}
 		w.gz.Reset(io.Discard)
 		w.pool.Put(w.gz)
@@ -164,7 +149,7 @@ func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (w *interceptor) Flush() {
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		if w.gz != nil {
-			w.gz.Flush()
+			_ = w.gz.Flush()
 		}
 		flusher.Flush()
 	}
