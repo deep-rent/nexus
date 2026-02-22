@@ -17,7 +17,8 @@
 //
 // The package includes helpers for common header-related tasks, such as:
 //   - Parsing comma-separated directives (e.g., "max-age=3600").
-//   - Parsing and sorting content negotiation headers with q-factors.
+//   - Parsing wildcard-aware content negotiation headers with q-factors.
+//   - Parsing RFC 5988 Link headers to extract relations for API pagination.
 //   - Extracting credentials from an Authorization header.
 //   - Calculating cache lifetime from Cache-Control and Expires headers.
 //   - Determining throttle delays from Retry-After and X-Ratelimit-* headers.
@@ -212,6 +213,57 @@ func MediaType(h http.Header) string {
 		v = v[:i]
 	}
 	return strings.ToLower(strings.TrimSpace(v))
+}
+
+// Links parses an RFC 5988 Link header into an iterator of relation types (rel)
+// and their corresponding URLs.
+//
+// If a link has multiple space-separated relations (e.g., rel="next archive"),
+// it yields the URL for each relation separately.
+func Links(s string) iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		for part := range strings.SplitSeq(s, ",") {
+			s := strings.IndexByte(part, '<')
+			e := strings.IndexByte(part, '>')
+
+			// Ensure the URL brackets are present and valid.
+			if s == -1 || e == -1 || s >= e {
+				continue
+			}
+			url := part[s+1 : e]
+
+			// Parse the parameters following the URL.
+			params := strings.SplitSeq(part[e+1:], ";")
+			for p := range params {
+				p = strings.TrimSpace(p)
+				k, v, found := strings.Cut(p, "=")
+
+				if found && strings.ToLower(strings.TrimSpace(k)) == "rel" {
+					// Remove optional quotes around the relation value.
+					v = strings.Trim(strings.TrimSpace(v), `"`)
+
+					// A single link can have multiple relation types.
+					for rel := range strings.FieldsSeq(v) {
+						if !yield(strings.ToLower(rel), url) {
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// Link extracts the URL for a specific relation (e.g., "next" or "last") from
+// a Link header. It returns an empty string if the relation is not found.
+func Link(s, rel string) string {
+	rel = strings.ToLower(rel)
+	for k, v := range Links(s) {
+		if k == rel {
+			return v
+		}
+	}
+	return ""
 }
 
 // Header represents a single HTTP header key-value pair.
