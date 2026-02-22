@@ -50,7 +50,9 @@ func TestEndToEnd(t *testing.T) {
 
 	res, err := http.Get(ps.URL)
 	require.NoError(t, err)
-	defer res.Body.Close()
+	defer func() {
+		_ = res.Body.Close()
+	}()
 
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 
@@ -184,7 +186,7 @@ func TestOptions(t *testing.T) {
 		assert.NotNil(t, rp.BufferPool)
 		assert.NotNil(t, rp.ErrorHandler)
 		assert.NotNil(t, rp.Rewrite)
-		assert.Nil(t, rp.Director) // Ensure the legacy field remains unset
+		assert.Nil(t, rp.Director) // nolint:deprecated
 	})
 }
 
