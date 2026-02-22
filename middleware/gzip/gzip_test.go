@@ -150,7 +150,7 @@ func TestMiddleware(t *testing.T) {
 				if tc.preEnc != "" {
 					w.Header().Set("Content-Encoding", tc.preEnc)
 				}
-				w.Write([]byte(tc.body))
+				_, _ = w.Write([]byte(tc.body))
 			})
 
 			chain := gzip.New(tc.opts...)(h)

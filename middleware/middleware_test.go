@@ -174,7 +174,7 @@ func TestLog(t *testing.T) {
 	t.Run("Logs with default status", func(t *testing.T) {
 		buf.Reset()
 		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte("ok"))
+			_, _ = w.Write([]byte("ok"))
 		})
 
 		ch := pipe(final)
@@ -309,5 +309,5 @@ func newLogger(buf *bytes.Buffer) *slog.Logger {
 
 var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
+	_, _ = w.Write([]byte("ok"))
 })
