@@ -1,0 +1,9 @@
+{
+  "alg": "ES256",
+  "crv": "P-256",
+  "key_ops": ["verify"],
+  "kty": "EC",
+  "use": "sig",
+  "x": "9hay5Jz74MYIlZ7SUSd9M38W_qTA8ETf6NLq0gx3lg",
+  "y": "IjKwKzIii0A0ZpKTOD2Gv04h9mtxPyO1X2cMP-hAMbM"
+}

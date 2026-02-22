@@ -1,0 +1,10 @@
+{
+  "kty": "EC",
+  "use": "sig",
+  "key_ops": ["verify"],
+  "crv": "P-256",
+  "kid": "not-on-curve",
+  "x": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+  "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+  "alg": "ES256"
+}

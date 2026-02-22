@@ -167,7 +167,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
 		// This is a non-retriable error in request creation.
-		c.logger.Error("Failed to create request", "error", err)
+		c.logger.Error("Failed to create request", slog.Any("error", err))
 		return c.minInterval // Wait a long time before trying to create it again.
 	}
 
@@ -184,27 +184,30 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	res, err := c.client.Do(req)
 	if err != nil {
 		if err != context.Canceled {
-			c.logger.Error("HTTP request failed after retries", "error", err)
+			c.logger.Error(
+				"HTTP request failed after retries",
+				slog.Any("error", err),
+			)
 		}
 		return c.minInterval
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			c.logger.Warn("Failed to close response body", "error", err)
+			c.logger.Warn("Failed to close response body", slog.Any("error", err))
 		}
 	}()
 
 	switch code := res.StatusCode; code {
 
 	case http.StatusNotModified:
-		c.logger.Debug("Resource unchanged", "etag", c.etag)
+		c.logger.Debug("Resource unchanged", slog.String("etag", c.etag))
 		c.ready()
 		return c.delay(res.Header)
 
 	case http.StatusOK:
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			c.logger.Error("Failed to read response body", "error", err)
+			c.logger.Error("Failed to read response body", slog.Any("error", err))
 			return c.minInterval
 		}
 		resource, err := c.mapper(&Response{
@@ -213,7 +216,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 			Logger: c.logger,
 		})
 		if err != nil {
-			c.logger.Error("Couldn't parse response body", "error", err)
+			c.logger.Error("Couldn't parse response body", slog.Any("error", err))
 			return c.minInterval
 		}
 		c.mu.Lock()
@@ -228,7 +231,10 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		return c.delay(res.Header)
 
 	default:
-		c.logger.Error("Received a non-retriable HTTP status code", "status", code)
+		c.logger.Error(
+			"Received a non-retriable HTTP status code",
+			slog.Int("status", code),
+		)
 		return c.minInterval
 	}
 }
