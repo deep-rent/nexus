@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/scheduler"
@@ -133,7 +132,6 @@ type controller[T any] struct {
 	minInterval  time.Duration
 	maxInterval  time.Duration
 	now          func() time.Time
-	backoff      backoff.Strategy
 	logger       *slog.Logger
 	readyOnce    sync.Once
 	readyChan    chan struct{}
