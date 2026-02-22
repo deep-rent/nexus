@@ -125,7 +125,7 @@ func (w *interceptor) Close() {
 	// Just return the writer to the pool.
 	if w.gz != nil {
 		if !w.hijacked {
-			w.gz.Close()
+			_ = w.gz.Close()
 		}
 		w.gz.Reset(io.Discard)
 		w.pool.Put(w.gz)
@@ -149,7 +149,7 @@ func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (w *interceptor) Flush() {
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		if w.gz != nil {
-			w.gz.Flush()
+			_ = w.gz.Flush()
 		}
 		flusher.Flush()
 	}
