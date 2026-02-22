@@ -4,14 +4,15 @@ commit-msg:
     lint:
       run: go-gitlint --msg-file={1}
 
-# pre-commit:
-#   parallel: true
-#   commands:
-#     lint:
-#       root: "."
-#       glob: "*.go"
-#       run: golangci-lint run --fix {staged_files}
-#     test:
-#       root: "."
-#       glob: "*.go"
-#       run: go test -v ./...
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      root: "."
+      glob: "*.go"
+      run: GOEXPERIMENT=jsonv2 golangci-lint run --fix
+      stage_fixed: true
+    test:
+      root: "."
+      glob: "*.go"
+      run: GOEXPERIMENT=jsonv2 go test -v ./...
