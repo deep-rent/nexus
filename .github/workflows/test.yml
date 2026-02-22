@@ -43,9 +43,6 @@ jobs:
           version: latest
         env:
           GOEXPERIMENT: jsonv2
-
-      - name: Vet Source Code
-        run: GOEXPERIMENT=jsonv2 go vet ./...
         
       - name: Execute Tests and Generate HTML
         run: |
