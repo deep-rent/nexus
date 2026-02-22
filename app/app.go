@@ -132,7 +132,7 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	// error.
 	g, gCtx := errgroup.WithContext(ctx)
 
-	cfg.logger.Info("Application started", "components", len(runnables))
+	cfg.logger.Info("Application started", slog.Int("components", len(runnables)))
 
 	for _, fn := range runnables {
 		g.Go(func() (err error) {
