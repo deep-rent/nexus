@@ -229,9 +229,12 @@ func TestScheduler(t *testing.T) {
 func TestOnceScheduler(t *testing.T) {
 	t.Parallel()
 
+	type contextKey string
+	const testKey contextKey = "key"
+
 	t.Run("context", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.WithValue(t.Context(), "key", "value")
+		ctx := context.WithValue(t.Context(), testKey, "value")
 		s := scheduler.Once(ctx)
 		assert.Equal(t, ctx, s.Context(),
 			"should return the context it was created with",
