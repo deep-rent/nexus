@@ -190,7 +190,11 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		}
 		return c.minInterval
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			c.logger.Error("Failed to close response body", "error", err)
+		}
+	}()
 
 	switch code := res.StatusCode; code {
 
