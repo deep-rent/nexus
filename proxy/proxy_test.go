@@ -186,7 +186,7 @@ func TestOptions(t *testing.T) {
 		assert.NotNil(t, rp.BufferPool)
 		assert.NotNil(t, rp.ErrorHandler)
 		assert.NotNil(t, rp.Rewrite)
-		assert.Nil(t, rp.Director) // nolint:deprecated
+		assert.Nil(t, rp.Director) // nolint:staticcheck
 	})
 }
 
