@@ -5,6 +5,7 @@ version: "2"
 run:
   build-tags:
     - jsonv2
+  modules-download-mode: readonly
 
 linters:
   enable:
