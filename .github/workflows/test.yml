@@ -36,7 +36,14 @@ jobs:
           
       - name: Download Dependencies
         run: go mod download
-        
+
+      - name: Lint Source Code
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+        env:
+          GOEXPERIMENT: jsonv2
+
       - name: Vet Source Code
         run: GOEXPERIMENT=jsonv2 go vet ./...
         
