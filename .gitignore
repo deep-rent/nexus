@@ -19,6 +19,9 @@ UserInterfaceState.xcuserstate
 .history/
 *.vsix
 
+# Cursor
+.cursor/*
+
 # Go
 .go-version
 /coverage.out
