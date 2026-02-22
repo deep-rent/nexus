@@ -1,15 +1,17 @@
-// Package header provides a collection of utility functions for parsing,
-// interpreting, and manipulating HTTP headers.
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
 //
-// The package includes helpers for common header-related tasks, such as:
-//   - Parsing comma-separated directives (e.g., "max-age=3600").
-//   - Parsing and sorting content negotiation headers with q-factors.
-//   - Extracting credentials from an Authorization header.
-//   - Calculating cache lifetime from Cache-Control and Expires headers.
-//   - Determining throttle delays from Retry-After and X-Ratelimit-* headers.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// It also provides a convenient http.RoundTripper implementation for
-// automatically attaching a static set of headers to all outgoing requests.
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package header
 
 import (
@@ -127,7 +129,7 @@ func Preferences(s string) iter.Seq2[string, float64] {
 				continue
 			}
 			params := strings.Split(part, ";")
-			var q float64 = 1.0
+			var q = 1.0
 			for i := 1; i < len(params); i++ {
 				p := strings.TrimSpace(params[i])
 				k, v, found := strings.Cut(p, "=")

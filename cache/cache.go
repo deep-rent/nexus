@@ -1,57 +1,17 @@
-// Package cache provides a generic, auto-refreshing in-memory cache for a
-// resource fetched from a URL.
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
 //
-// The core of the package is the Controller, a scheduler.Tick that periodically
-// fetches a remote resource, parses it, and caches it in memory. It is designed
-// to be resilient, with a built-in, configurable retry mechanism for handling
-// transient network failures.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// The refresh interval is intelligently determined by the resource's caching
-// headers (e.g., Cache-Control, Expires), but can be clamped within a specified
-// min/max range. The controller also handles conditional requests using ETag
-// and Last-Modified headers to reduce bandwidth and server load.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// # Usage
-//
-// A typical use case involves creating a scheduler, defining a Mapper function
-// to parse the HTTP response, creating and configuring a Controller, and then
-// dispatching it to run in the background.
-//
-// Example:
-//
-//	type Resource struct {
-//		// fields for the parsed data
-//	}
-//
-//	// 1. Create a scheduler to manage the refresh ticks.
-//	sched := scheduler.New(context.Background())
-//	defer sched.Shutdown()
-//
-//	// 2. Define a mapper to parse the response body into your target type.
-//	var mapper cache.Mapper[Resource] = func(body []byte) (Resource, error) {
-//		var data Resource
-//		err := json.Unmarshal(body, &data)
-//		return data, err
-//	}
-//
-//	// 3. Create and configure the cache controller.
-//	ctrl := cache.NewController(
-//		"https://api.example.com/resource",
-//		mapper,
-//		cache.WithMinInterval(5*time.Minute),
-//		cache.WithHeader("Authorization", "Bearer *****"),
-//	)
-//
-//	// 4. Dispatch the controller to start fetching in the background.
-//	sched.Dispatch(ctrl)
-//
-//	// 5. You can wait for the first successful fetch.
-//	<-ctrl.Ready()
-//
-//	// 6. Get the cached data.
-//	if data, ok := ctrl.Get(); ok {
-//		fmt.Printf("Successfully fetched and cached data: %+v\n", data)
-//	}
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package cache
 
 import (
