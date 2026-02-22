@@ -6,6 +6,7 @@ run:
   build-tags:
     - jsonv2
   modules-download-mode: readonly
+  allow-parallel-runners: true
 
 linters:
   enable:
