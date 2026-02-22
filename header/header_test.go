@@ -472,6 +472,72 @@ func TestMediaType(t *testing.T) {
 	}
 }
 
+func TestLink(t *testing.T) {
+	type test struct {
+		name  string
+		value string
+		rel   string
+		want  string
+	}
+	tests := []test{
+		{
+			name:  "single link",
+			value: `<https://api.example.com/items?page=2>; rel="next"`,
+			rel:   "next",
+			want:  "https://api.example.com/items?page=2",
+		},
+		{
+			name:  "multiple links finding last",
+			value: `<https://api.example.com/items?page=2>; rel="next", <https://api.example.com/items?page=5>; rel="last"`,
+			rel:   "last",
+			want:  "https://api.example.com/items?page=5",
+		},
+		{
+			name:  "multiple links finding first",
+			value: `<https://api.example.com/items?page=2>; rel="next", <https://api.example.com/items?page=1>; rel="prev"`,
+			rel:   "prev",
+			want:  "https://api.example.com/items?page=1",
+		},
+		{
+			name:  "unquoted relation token",
+			value: `<https://api.example.com/items?page=2>; rel=next`,
+			rel:   "next",
+			want:  "https://api.example.com/items?page=2",
+		},
+		{
+			name:  "multiple space-separated relations in one link",
+			value: `<https://api.example.com/items?page=2>; rel="next archive"`,
+			rel:   "archive",
+			want:  "https://api.example.com/items?page=2",
+		},
+		{
+			name:  "relation not present",
+			value: `<https://api.example.com/items?page=2>; rel="next"`,
+			rel:   "last",
+			want:  "",
+		},
+		{
+			name:  "malformed link without brackets",
+			value: `https://api.example.com/items?page=2; rel="next"`,
+			rel:   "next",
+			want:  "",
+		},
+		{
+			name:  "case insensitive relation lookup",
+			value: `<https://api.example.com/items?page=2>; rel="NEXT"`,
+			rel:   "next",
+			want:  "https://api.example.com/items?page=2",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := header.Link(tc.value, tc.rel)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestNew(t *testing.T) {
 	h := header.New("x-foo-bar", "baz")
 	assert.Equal(t, "X-Foo-Bar", h.Key)
