@@ -71,7 +71,7 @@ func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(h.status)
 	if h.body != "" {
-		io.WriteString(w, h.body)
+		_, _ = io.WriteString(w, h.body)
 	}
 }
 
@@ -225,7 +225,7 @@ func TestController_Run(t *testing.T) {
 				) {
 					w.Header().Set("Content-Length", "10")
 					w.WriteHeader(http.StatusOK)
-					io.WriteString(w, "short")
+					_, _ = io.WriteString(w, "short")
 				})
 			} else {
 				s.Config.Handler = h
