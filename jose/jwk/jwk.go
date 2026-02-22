@@ -608,6 +608,7 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 		if len(raw.Y) == 0 {
 			return nil, errors.New("missing y coordinate")
 		}
+
 		xBytes, err := base64.RawURLEncoding.DecodeString(raw.X)
 		if err != nil {
 			return nil, fmt.Errorf("decode x coordinate: %w", err)
@@ -616,9 +617,25 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 		if err != nil {
 			return nil, fmt.Errorf("decode y coordinate: %w", err)
 		}
-		x := new(big.Int).SetBytes(xBytes)
-		y := new(big.Int).SetBytes(yBytes)
-		return &ecdsa.PublicKey{Curve: crv, X: x, Y: y}, nil
+
+		// Calculate the required byte size for the curve coordinates.
+		size := (crv.Params().BitSize + 7) / 8
+		if len(xBytes) > size || len(yBytes) > size {
+			return nil, errors.New("coordinate length exceeds curve size")
+		}
+
+		// Construct the SEC 1 uncompressed point format: 0x04 || X || Y.
+		uncompressed := make([]byte, 1+(2*size))
+		uncompressed[0] = 4
+		copy(uncompressed[1+size-len(xBytes):1+size], xBytes)
+		copy(uncompressed[1+(2*size)-len(yBytes):], yBytes)
+
+		pub, err := ecdsa.ParseUncompressedPublicKey(crv, uncompressed)
+		if err != nil {
+			return nil, fmt.Errorf("parse public key: %w", err)
+		}
+
+		return pub, nil
 	}
 }
 
@@ -700,13 +717,21 @@ func encodeECDSA(key *ecdsa.PublicKey, r *raw) error {
 	r.Kty = "EC"
 	params := key.Params()
 	r.Crv = params.Name
-	size := (params.BitSize + 7) / 8
 
-	x := make([]byte, size)
-	y := make([]byte, size)
-	// TODO (SA1019): X/Y coordinates have been deprecated as of Go 1.26.
-	key.X.FillBytes(x) // nolint:staticcheck
-	key.Y.FillBytes(y) // nolint:staticcheck
+	// Obtain the SEC 1 uncompressed format: 0x04 || X || Y.
+	b, err := key.Bytes()
+	if err != nil {
+		return fmt.Errorf("encode ecdsa key: %w", err)
+	}
+
+	if len(b) < 1 || b[0] != 4 {
+		return errors.New("invalid public key format")
+	}
+
+	// Calculate coordinate size dynamically based on the returned slice.
+	size := (len(b) - 1) / 2
+	x := b[1 : 1+size]
+	y := b[1+size : 1+(2*size)]
 
 	r.X = base64.RawURLEncoding.EncodeToString(x)
 	r.Y = base64.RawURLEncoding.EncodeToString(y)
