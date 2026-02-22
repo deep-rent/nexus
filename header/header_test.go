@@ -372,6 +372,54 @@ func TestAccepts(t *testing.T) {
 			key:   "image/png",
 			want:  false,
 		},
+		{
+			name:  "global wildcard matching (*/*)",
+			value: "application/json, */*;q=0.5",
+			key:   "image/png",
+			want:  true,
+		},
+		{
+			name:  "global wildcard matching (*)",
+			value: "gzip, deflate, *;q=0.5",
+			key:   "br",
+			want:  true,
+		},
+		{
+			name:  "partial wildcard matching",
+			value: "text/*;q=0.8",
+			key:   "text/html",
+			want:  true,
+		},
+		{
+			name:  "partial wildcard mismatch",
+			value: "image/*;q=0.8",
+			key:   "text/html",
+			want:  false,
+		},
+		{
+			name:  "exact match overrides partial wildcard",
+			value: "text/*;q=1.0, text/html;q=0.0",
+			key:   "text/html",
+			want:  false,
+		},
+		{
+			name:  "exact match overrides global wildcard",
+			value: "*/*;q=1.0, text/plain;q=0.0",
+			key:   "text/plain",
+			want:  false,
+		},
+		{
+			name:  "partial wildcard overrides global wildcard",
+			value: "*/*;q=1.0, text/*;q=0.0",
+			key:   "text/html",
+			want:  false,
+		},
+		{
+			name:  "order independence (exact match first)",
+			value: "text/plain;q=0.0, */*;q=1.0",
+			key:   "text/plain",
+			want:  false,
+		},
 	}
 
 	for _, tc := range tests {
