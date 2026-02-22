@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package rotor provides a thread-safe, generic type for rotating
+// through a slice of items in a round-robin fashion.
 package rotor
 
 import "sync/atomic"

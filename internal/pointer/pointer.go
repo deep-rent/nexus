@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package pointer provides reflection-based helpers for working with pointers.
+// These functions are useful for dynamically allocating and dereferencing
+// variables in contexts like configuration loading or data mapping.
 package pointer
 
 import "reflect"

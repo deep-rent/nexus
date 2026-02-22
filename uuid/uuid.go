@@ -12,6 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package uuid provides an implementation of Version 7 (Time-ordered)
+// Universally Unique Identifiers (UUID) as defined in RFC 4122 and RFC 9562.
+//
+// MIGRATION NOTE (v4 -> v7):
+// We migrated from UUIDv4 (fully random) to UUIDv7 (time-ordered) to improve
+// database performance. UUIDv4 causes significant index fragmentation and
+// random I/O in B-Tree structures (standard database primary keys) due to
+// its lack of locality.
+//
+// UUIDv7 solves this by being strictly monotonic (like a sequence ID) while
+// retaining global uniqueness. This results in "append-only" index behavior,
+// significantly higher write throughput, and better cache locality.
+// It also aligns with native support arriving in PostgreSQL 18+.
 package uuid
 
 import (

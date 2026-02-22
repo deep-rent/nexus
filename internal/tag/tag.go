@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package tag provides utility for parsing Go struct tags that follow a
+// comma-separated key-value option format, similar to the `json` tag known from
+// the standard library.
 package tag
 
 import (

@@ -12,6 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package retry is an http.RoundTripper middleware that provides automatic,
+// policy-driven retries for HTTP requests.
+//
+// It wraps an existing http.RoundTripper (such as http.DefaultTransport)
+// and intercepts requests to apply retry logic. The decision to retry is
+// controlled by a Policy, and the delay between attempts is determined by a
+// backoff.Strategy.
+//
+// # Usage
+//
+// A new transport is created with NewTransport, configured with functional
+// options like WithAttemptLimit and WithBackoff.
+//
+// Example:
+//
+//	// Retry up to 3 times with exponential backoff starting at 1 second.
+//	transport := retry.NewTransport(
+//		http.DefaultTransport,
+//		retry.WithAttemptLimit(3),
+//		retry.WithBackoff(backoff.New(
+//			backoff.WithMinDelay(1*time.Second),
+//		)),
+//	)
+//
+//	client := &http.Client{Transport: transport}
+//
+//	// This request will be retried automatically on temporary failures.
+//	res, err := client.Get("http://example.com/flaky")
+//	if err != nil {
+//		slog.Error("Request failed after all retries", "error", err)
+//		return
+//	}
+//	defer res.Body.Close()
 package retry
 
 import (

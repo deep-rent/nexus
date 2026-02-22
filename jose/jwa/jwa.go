@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package jwa provides implementations for asymmetric JSON Web Algorithms
+// (JWA) as defined in RFC 7518.
+//
+// It provides a unified interface for signature verification using public
+// keys and signature creation using crypto.Signer. This abstraction handles
+// algorithm-specific complexities such as hash function selection, padding
+// schemes (e.g., PSS vs PKCS1v15), and signature format transcoding (e.g.,
+// converting ECDSA ASN.1 DER to raw concatenation).
+//
+// Note: Symmetric algorithms (such as HMAC) are not supported.
 package jwa
 
 import (

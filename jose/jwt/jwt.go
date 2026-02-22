@@ -12,6 +12,71 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package jwt provides tools for parsing, verifying, and signing JSON Web
+// Tokens (JWTs).
+//
+// This package uses generics to allow users to define their own custom claims
+// structures. A common pattern is to embed the provided Reserved claims
+// struct and add extra fields for any other claims present in the token.
+//
+// # Basic Verification
+//
+// Start by defining custom claims:
+//
+//	type Claims struct {
+//	  jwt.Reserved
+//	  Scope string         `json:"scp"`
+//	  Extra map[string]any `json:",unknown"`
+//	}
+//
+// The top-level Verify function can be used for simple, one-off signature
+// verification without claim validation:
+//
+//	keySet, err := jwk.ParseSet(`{"keys": [...]}`)
+//	if err != nil { /* handle parsing error */ }
+//	claims, err := jwt.Verify[Claims](keySet, []byte("eyJhb..."))
+//
+// # Advanced Validation
+//
+// For advanced validation of claims like issuer, audience, and token age,
+// create a reusable Verifier with the desired configuration:
+//
+//	verifier := jwt.NewVerifier[Claims](keySet).
+//		WithIssuer("foo", "bar").
+//		WithAudience("baz").
+//		WithLeeway(1 * time.Minute).
+//		WithMaxAge(1 * time.Hour)
+//
+//	claims, err := verifier.Verify([]byte("eyJhb..."))
+//	if err != nil { /* handle validation error */ }
+//	fmt.Println("Scope:", claims.Scope)
+//
+// # Basic Signing
+//
+// The top-level Sign function can be used to create signed tokens from any
+// JSON-serializable struct or map. This is useful for simple tokens where
+// you manually handle all claims:
+//
+//	// keyPair must be a jwk.KeyPair (containing a private key)
+//	claims := map[string]any{"sub": "user_123", "admin": true}
+//	token, err := jwt.Sign(keyPair, claims)
+//
+// # Advanced Signing
+//
+// To enforce policies like expiration or consistent issuers, create a reusable
+// Signer. Your claims struct must implement MutableClaims (embedding
+// jwt.Reserved handles this automatically).
+//
+//	signer := jwt.NewSigner(keyPair).
+//	    WithIssuer("https://api.example.com").
+//	    WithLifetime(1 * time.Hour)
+//
+//	// The signer will automatically set "iss", "iat", and "exp" on the struct.
+//	claims := &MyClaims{
+//	    Reserved: jwt.Reserved{Subject: "user_123"},
+//	    Scope:    "admin",
+//	}
+//	token, err := signer.Sign(claims)
 package jwt
 
 import (

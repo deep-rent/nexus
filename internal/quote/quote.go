@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package quote provides utility functions for working with quoted strings.
 package quote
 
 // Remove strips a single layer of surrounding single or double quotes from a
