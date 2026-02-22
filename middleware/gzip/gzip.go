@@ -12,6 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package gzip provides an HTTP middleware for compressing response bodies
+// using the gzip algorithm. It automatically adds the "Content-Encoding: gzip"
+// header and compresses the payload for clients that support it (indicated by
+// the "Accept-Encoding" request header).
+//
+// # Usage
+//
+// The middleware is designed to be efficient. It pools gzip writers to reduce
+// memory allocations and gracefully skips compression for responses tha
+// already have a "Content-Encoding" header set.
+//
+// Example:
+//
+//	// Create the final handler.
+//	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//		w.Header().Set("Content-Type", "text/plain")
+//		w.Write([]byte("This is a long string that will be compressed."))
+//	})
+//
+//	// Create a gzip middleware pipe with the highest level if compression.
+//	pipe := gzip.New(
+//		gzip.WithCompressionLevel(gzip.BestCompression),
+//		gzip.WithExcludeMimeTypes("text/*", "application/font-woff"),
+//	)
+//
+//	// Apply the CORS middleware as one of the first layers.
+//	chainedHandler := middleware.Chain(handler, pipe)
+//
+//	http.ListenAndServe(":8080", chainedHandler)
 package gzip
 
 import (

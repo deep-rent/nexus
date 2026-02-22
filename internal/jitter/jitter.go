@@ -12,6 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package jitter provides functionality for adding random variation (jitter)
+// to time durations.
+//
+// This package is designed to help distributed systems avoid "thundering herd"
+// problems by desynchronizing retry attempts or periodic jobs.
+//
+// The jitter implementation is "subtractive". It calculates a duration
+// randomly chosen between [d * (1 - p), d], where p is the jitter percentage.
+// This ensures that the returned duration never exceeds the input duration,
+// allowing strict adherence to maximum delay limits (e.g., in backoff
+// strategies).
 package jitter
 
 import (

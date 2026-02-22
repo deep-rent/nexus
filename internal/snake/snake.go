@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package snake provides functions for converting strings between camelCase
+// and snake_case formats.
 package snake
 
 import (

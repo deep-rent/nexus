@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package proxy provides a configurable reverse proxy handler. It constructs an
+// httputil.ReverseProxy, starting with sensible defaults, integrating a
+// reusable buffer pool, structured logging, and robust error handling
+// via a functional options API.
 package proxy
 
 import (

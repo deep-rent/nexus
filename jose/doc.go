@@ -12,4 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package jose implements select JavaScript Object Signing and Encryption
+// (JOSE) specifications.
 package jose

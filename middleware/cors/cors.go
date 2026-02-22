@@ -12,6 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package cors provides a configurable CORS (Cross-Origin Resource Sharing)
+// middleware for http.Handlers.
+//
+// # Usage
+//
+// The New function creates the middleware pipe, which can be configured with
+// functional options (e.g., WithAllowedOrigins, WithAllowedMethods). The
+// middleware automatically handles preflight (OPTIONS) requests and injects the
+// appropriate CORS headers into responses for actual requests.
+//
+// Example:
+//
+//	// Configure CORS to allow requests from a specific origin with
+//	// restricted methods and additional headers.
+//	pipe := cors.New(
+//		cors.WithAllowedOrigins("https://example.com"),
+//		cors.WithAllowedMethods(http.MethodGet, http.MethodOptions),
+//		cors.WithAllowedHeaders("Authorization", "Content-Type"),
+//		cors.WithMaxAge(12*time.Hour),
+//	)
+//
+//	handler := http.HandlerFunc( ... )
+//	// Apply the CORS middleware as one of the first layers.
+//	chainedHandler := middleware.Chain(handler, pipe)
+//
+//	http.ListenAndServe(":8080", chainedHandler)
 package cors
 
 import (

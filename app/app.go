@@ -12,6 +12,66 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package app provides a managed lifecycle for command-line applications,
+// ensuring graceful shutdown on OS signals.
+//
+// The Run function is the main entry point. It wraps your application
+// components (Runnables), executing them concurrently. It listens for interrupt
+// signals (like SIGINT/SIGTERM) and propagates a cancellation signal via a
+// context. This allows your application to perform cleanup tasks before
+// exiting.
+//
+// # Usage
+//
+// A typical use case involves starting workers or servers that run until
+// interrupted. The Run function handles signal trapping, concurrency, and
+// timeouts, letting you focus on the business logic.
+//
+//	func main() {
+//	  // 1. Configure a logger (slog).
+//	  logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+//
+//	  // 2. Define the application components.
+//	  // These functions block until ctx is canceled or an error occurs.
+//	  worker := func(ctx context.Context) error {
+//	    logger.Info("Worker started")
+//
+//	    // Simulate a task that runs periodically.
+//	    ticker := time.NewTicker(1 * time.Second)
+//	    defer ticker.Stop()
+//
+//	    for {
+//	      select {
+//	      case <-ctx.Done():
+//	        // Context canceled (signal received or sibling component failed).
+//	        logger.Info("Worker stopping...")
+//
+//	        // Perform cleanup (e.g., closing DB connections).
+//	        time.Sleep(500 * time.Millisecond)
+//	        return nil
+//
+//	      case t := <-ticker.C:
+//	        logger.Info("Working...", "time", t.Format(time.TimeOnly))
+//	      }
+//	    }
+//	  }
+//
+//	  server := func(ctx context.Context) error {
+//	    logger.Info("Server started")
+//	    <-ctx.Done()
+//	    logger.Info("Server stopping...")
+//	    return nil
+//	  }
+//
+//	  // 3. Run the application components concurrently.
+//	  err := app.RunAll(
+//	    []app.Runnable{worker, server},
+//	    app.WithLogger(logger),
+//	  )
+//	  if err != nil {
+//	    logger.Error("Application failed", "error", err)
+//	    os.Exit(1)
+//	  }
 package app
 
 import (

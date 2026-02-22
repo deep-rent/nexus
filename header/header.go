@@ -12,6 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package header provides a collection of utility functions for parsing,
+// interpreting, and manipulating HTTP headers.
+//
+// The package includes helpers for common header-related tasks, such as:
+//   - Parsing comma-separated directives (e.g., "max-age=3600").
+//   - Parsing and sorting content negotiation headers with q-factors.
+//   - Extracting credentials from an Authorization header.
+//   - Calculating cache lifetime from Cache-Control and Expires headers.
+//   - Determining throttle delays from Retry-After and X-Ratelimit-* headers.
+//
+// It also provides a convenient http.RoundTripper implementation for
+// automatically attaching a static set of headers to all outgoing requests.
 package header
 
 import (

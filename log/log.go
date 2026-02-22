@@ -12,6 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package log provides a configurable constructor for the standard slog.Logger,
+// allowing for easy setup using the functional options pattern.
+//
+// It simplifies the creation of a structured logger by abstracting away the
+// handler setup and providing flexible options for setting the level, format,
+// and output from common types like strings.
+//
+// # Usage:
+//
+// Create a logger that outputs JSON at a debug level to standard error:
+//
+//	logger := log.New(
+//		log.WithLevel("debug"),
+//		log.WithFormat("json"),
+//		log.WithWriter(os.Stderr),
+//		log.WithAddSource(true), // Include file and line number.
+//	)
+//
+//	slog.SetDefault(logger)
+//	slog.Debug("This is a debug message")
+//
+// Create a multi-target logger using Combine and NewHandler:
+//
+//	h1 := log.NewHandler(log.WithLevel("debug"), log.WithFormat("text"), log.WithWriter(os.Stdout))
+//	h2 := log.NewHandler(log.WithLevel("error"), log.WithFormat("json"), log.WithWriter(os.Stderr))
+//	multiLogger := log.Combine(h1, h2)
+//
+//	slog.SetDefault(multiLogger)
+//	slog.Debug("This is a debug message")
 package log
 
 import (
