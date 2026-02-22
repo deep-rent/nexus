@@ -37,7 +37,7 @@ func TestAlloc(t *testing.T) {
 	})
 
 	t.Run("panics on non-settable pointer", func(t *testing.T) {
-		type foobar struct{ v *int }
+		type foobar struct{ v *int } // nolint:unused
 		rv := reflect.ValueOf(foobar{}).FieldByName("v")
 		require.False(t, rv.CanSet(), "precondition: value should not be settable")
 		assert.Panics(t, func() {

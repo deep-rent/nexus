@@ -152,7 +152,7 @@ type TIgnored struct {
 }
 
 type TUnexported struct {
-	v string
+	v string // nolint:unused
 }
 
 type TCustomName struct {
