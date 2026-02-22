@@ -614,6 +614,74 @@ func TestLinks(t *testing.T) {
 	}
 }
 
+func TestFilename(t *testing.T) {
+	type test struct {
+		name string
+		h    http.Header
+		want string
+	}
+	tests := []test{
+		{
+			name: "standard filename",
+			h: http.Header{
+				"Content-Disposition": []string{`attachment; filename="report.pdf"`},
+			},
+			want: "report.pdf",
+		},
+		{
+			name: "unquoted filename",
+			h: http.Header{
+				"Content-Disposition": []string{`attachment; filename=report.pdf`},
+			},
+			want: "report.pdf",
+		},
+		{
+			name: "utf-8 filename (RFC 6266)",
+			h: http.Header{
+				"Content-Disposition": []string{
+					`attachment; filename*=UTF-8''%e2%82%ac%20rates.pdf`,
+				},
+			},
+			want: "€ rates.pdf",
+		},
+		{
+			name: "fallback with both filename and filename*",
+			h: http.Header{
+				"Content-Disposition": []string{
+					`attachment; filename="rates.pdf"; filename*=UTF-8''%e2%82%ac%20rates.pdf`,
+				},
+			},
+			want: "€ rates.pdf",
+		},
+		{
+			name: "no filename present",
+			h:    http.Header{"Content-Disposition": []string{`inline`}},
+			want: "",
+		},
+		{
+			name: "empty header",
+			h:    http.Header{},
+			want: "",
+		},
+		{
+			name: "malformed header",
+			h: http.Header{
+				"Content-Disposition": []string{
+					`attachment; filename="missing-quote.pdf`,
+				},
+			},
+			want: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := header.Filename(tc.h)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestNew(t *testing.T) {
 	h := header.New("x-foo-bar", "baz")
 	assert.Equal(t, "X-Foo-Bar", h.Key)
