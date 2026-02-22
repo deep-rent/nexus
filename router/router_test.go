@@ -410,7 +410,8 @@ func TestRouterDoubleWrite(t *testing.T) {
 	r := router.New()
 
 	r.HandleFunc("GET /double", func(e *router.Exchange) error {
-		e.JSON(http.StatusCreated, map[string]string{"ok": "true"})
+		err := e.JSON(http.StatusCreated, map[string]string{"ok": "true"})
+		require.Nil(t, err)
 		return errors.New("late error")
 	})
 
