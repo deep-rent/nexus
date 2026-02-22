@@ -29,6 +29,7 @@ package header
 
 import (
 	"iter"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -264,6 +265,25 @@ func Link(s, rel string) string {
 		}
 	}
 	return ""
+}
+
+// Filename extracts the intended filename from a Content-Disposition header.
+//
+// It automatically handles both the standard "filename" parameter and the
+// RFC 6266 "filename*" parameter, which is used for non-ASCII (UTF-8) names.
+// It returns an empty string if the header is missing, malformed, or does
+// not contain a filename.
+func Filename(h http.Header) string {
+	v := h.Get("Content-Disposition")
+	if v == "" {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(v)
+	if err != nil {
+		return ""
+	}
+	// The filename* parameter is decoded automatically.
+	return params["filename"]
 }
 
 // Header represents a single HTTP header key-value pair.
