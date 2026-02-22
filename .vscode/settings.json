@@ -19,6 +19,9 @@
       100
     ]
   },
+  "[plaintext]": {
+    "editor.formatOnSave": false
+  },
   "go.lintTool": "golangci-lint",
   "go.lintFlags": [
     "--path-mode=abs",
