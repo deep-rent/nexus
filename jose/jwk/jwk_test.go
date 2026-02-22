@@ -116,6 +116,12 @@ func TestParse(t *testing.T) {
 			"f23401b9e029adf752b1ea06b8e02020fb26fe96bf2f885d9c7f00c5ba5ce67e",
 			"RS512.json",
 		},
+		{
+			"ES256",
+			"",
+			"",
+			"ecdsa_short_coordinate.json",
+		},
 	}
 
 	for _, tc := range tests {
@@ -151,7 +157,7 @@ func TestParseError(t *testing.T) {
 		{"unknown algorithm", "unknown_algorithm.json"},
 		{"unsupported ECDSA curve", "unsupported_ecdsa_curve.json"},
 		{"unsupported EdDSA curve", "unsupported_eddsa_curve.json"},
-		{"invalid ECDSA point (not on curve)", "ecdsa_not_on_curve.json"},
+		{"ECDSA point not on curve", "ecdsa_not_on_curve.json"},
 	}
 
 	for _, tc := range tests {
