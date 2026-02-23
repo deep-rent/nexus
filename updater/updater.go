@@ -41,27 +41,27 @@ type Config struct {
 	Repo      string        // GitHub repository name (required).
 	Current   string        // Current version of the application (required).
 	UserAgent string        // User-Agent header (optional).
-	Client    *http.Client  // Custom HTTP client (optional).
 	Timeout   time.Duration // Request timeout (optional, defaults to 10s).
 }
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	cfg Config
+	cfg    Config
+	client *http.Client
 }
 
 // New creates a new Updater with the given configuration.
 func New(cfg Config) *Updater {
-	if cfg.Client == nil {
-		timeout := cfg.Timeout
-		if timeout == 0 {
-			timeout = 10 * time.Second
-		}
-		cfg.Client = &http.Client{
-			Timeout: timeout,
-		}
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
 	}
-	return &Updater{cfg: cfg}
+	return &Updater{
+		cfg: cfg,
+		client: &http.Client{
+			Timeout: timeout,
+		},
+	}
 }
 
 // Check queries the GitHub Releases API to determine if a newer version is
@@ -84,7 +84,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		req.Header.Set("User-Agent", u.cfg.UserAgent)
 	}
 
-	res, err := u.cfg.Client.Do(req)
+	res, err := u.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
