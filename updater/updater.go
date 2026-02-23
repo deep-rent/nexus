@@ -166,6 +166,10 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 
 	latest := normalize(r.Version)
 
+	if !semver.IsValid(latest) {
+		return nil, fmt.Errorf("latest version %q is not a valid semver", r.Version)
+	}
+
 	if semver.Compare(latest, u.current) > 0 {
 		return &r, nil
 	}
