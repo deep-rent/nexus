@@ -18,7 +18,7 @@ package updater
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
@@ -107,7 +107,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	}
 
 	var rel Release
-	if err := json.NewDecoder(res.Body).Decode(&rel); err != nil {
+	if err := json.UnmarshalRead(res.Body, &rel); err != nil {
 		return nil, fmt.Errorf("decode github response: %w", err)
 	}
 
