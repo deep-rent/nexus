@@ -46,8 +46,11 @@ type Config struct {
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	cfg    Config
-	client *http.Client
+	owner     string
+	repo      string
+	current   string
+	userAgent string
+	client    *http.Client
 }
 
 // New creates a new Updater with the given configuration.
@@ -57,7 +60,10 @@ func New(cfg Config) *Updater {
 		timeout = 10 * time.Second
 	}
 	return &Updater{
-		cfg: cfg,
+		owner:     cfg.Owner,
+		repo:      cfg.Repo,
+		current:   cfg.Current,
+		userAgent: cfg.UserAgent,
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -72,7 +78,7 @@ func New(cfg Config) *Updater {
 // if the current version is up-to-date, if the current version string is not
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", u.cfg.Owner, u.cfg.Repo)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", u.owner, u.repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -80,8 +86,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	if u.cfg.UserAgent != "" {
-		req.Header.Set("User-Agent", u.cfg.UserAgent)
+	if u.userAgent != "" {
+		req.Header.Set("User-Agent", u.userAgent)
 	}
 
 	res, err := u.client.Do(req)
@@ -101,7 +107,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("failed to decode response body: %w", err)
 	}
 
-	vCurrent := normalize(u.cfg.Current)
+	vCurrent := normalize(u.current)
 	vLatest := normalize(rel.Version)
 
 	if semver.IsValid(vCurrent) && semver.Compare(vLatest, vCurrent) > 0 {
