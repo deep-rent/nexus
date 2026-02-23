@@ -68,8 +68,5 @@ func TestWaitT(t *testing.T) {
 		_ = l.Close()
 	}()
 
-	ctx, c := context.WithTimeout(t.Context(), time.Second)
-	defer c()
-
-	ports.WaitT(t, ctx, "127.0.0.1", p)
+	ports.WaitT(t, "127.0.0.1", p)
 }
