@@ -13,3 +13,25 @@
 // limitations under the License.
 
 package build
+
+import (
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func Binary(t testing.TB, src string, dst string) string {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), dst)
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+
+	cmd := exec.Command("go", "build", "-o", exe, src)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build %s: %v\n%s", dst, err, out)
+	}
+
+	return exe
+}
