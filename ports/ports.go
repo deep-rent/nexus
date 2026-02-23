@@ -51,13 +51,18 @@ func Wait(host string, port int, timeout time.Duration) bool {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	end := time.Now().Add(timeout)
 
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 	for time.Now().Before(end) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
 			return true
 		}
-		time.Sleep(100 * time.Millisecond)
+
+		<-ticker.C
 	}
+
 	return false
 }
