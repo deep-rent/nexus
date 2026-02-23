@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	BaseURL        = "https://api.github.com"
+	DefaultBaseURL = "https://api.github.com"
 	DefaultTimeout = 5 * time.Second
 )
 
@@ -42,6 +42,7 @@ type Release struct {
 
 // Config holds the configuration for the Updater.
 type Config struct {
+	BaseURL   string
 	Owner     string        // GitHub repository owner (required).
 	Repo      string        // GitHub repository name (required).
 	Current   string        // Current version of the application (required).
@@ -51,6 +52,7 @@ type Config struct {
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
+	baseURL   string
 	owner     string
 	repo      string
 	current   string
@@ -60,11 +62,16 @@ type Updater struct {
 
 // New creates a new Updater with the given configuration.
 func New(cfg *Config) *Updater {
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = DefaultTimeout
 	}
 	return &Updater{
+		baseURL:   baseURL,
 		owner:     cfg.Owner,
 		repo:      cfg.Repo,
 		current:   cfg.Current,
@@ -83,7 +90,10 @@ func New(cfg *Config) *Updater {
 // if the current version is up-to-date, if the current version string is not
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", BaseURL, u.owner, u.repo)
+	url := fmt.Sprintf(
+		"%s/repos/%s/%s/releases/latest",
+		u.baseURL, u.owner, u.repo,
+	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
