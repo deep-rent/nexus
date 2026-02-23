@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package updater provides functionality to check for newer releases of an
-// application on GitHub.
+// Package updater provides a simple mechanism to check for newer releases of an
+// application hosted on GitHub.
+//
+// It queries the GitHub Releases API and compares the latest release tag
+// against the current application version using semantic versioning.
 package updater
 
 import (
@@ -83,7 +86,9 @@ type Updater struct {
 
 // New creates a new Updater with the given configuration.
 //
-// It initializes the HTTP client with the specified timeout.
+// It initializes the HTTP client with the specified timeout. It panics if the
+// configuration is invalid (missing required fields) or if the current version
+// string is not a valid semantic version.
 func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
 		panic("updater: owner is required")
@@ -94,9 +99,7 @@ func New(cfg *Config) *Updater {
 	if cfg.Current == "" {
 		panic("updater: current version is required")
 	}
-
 	current := normalize(cfg.Current)
-
 	if !semver.IsValid(current) {
 		panic(fmt.Sprintf(
 			"updater: current version %q is not a valid semver",
@@ -129,8 +132,9 @@ func New(cfg *Config) *Updater {
 //
 // It compares the latest release tag against the current version using semantic
 // versioning. It returns a Release if a newer version is found. It returns nil
-// if the current version is up-to-date, if the current version string is not a
-// valid semantic version, or if the latest release is older or equal.
+// if the current version is up-to-date or if the latest release is older or
+// equal. It returns an error if the GitHub API request fails or if the latest
+// release tag is not a valid semantic version.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	url := fmt.Sprintf(
 		"%s/repos/%s/%s/releases/latest",
@@ -177,8 +181,9 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	return nil, nil
 }
 
-// Check is a shortcut function to check for updates in a single call.
-// It creates a temporary Updater with the provided config and calls Check.
+// Check is a convenience function to check for updates in a single call.
+// It creates a temporary Updater with the provided config and calls its Check
+// method.
 func Check(ctx context.Context, cfg *Config) (*Release, error) {
 	return New(cfg).Check(ctx)
 }
