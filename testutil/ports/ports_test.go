@@ -49,7 +49,7 @@ func TestWait(t *testing.T) {
 	}
 	defer l.Close()
 
-	ctx, c := context.WithTimeout(context.Background(), time.Second)
+	ctx, c := context.WithTimeout(t.Context(), time.Second)
 	defer c()
 
 	err = ports.Wait(ctx, "127.0.0.1", p)
@@ -60,7 +60,7 @@ func TestWait(t *testing.T) {
 
 func TestWaitTimeout(t *testing.T) {
 	p := ports.FreeT(t)
-	ctx, c := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, c := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer c()
 
 	err := ports.Wait(ctx, "127.0.0.1", p)
@@ -77,7 +77,7 @@ func TestWaitT(t *testing.T) {
 	}
 	defer l.Close()
 
-	ctx, c := context.WithTimeout(context.Background(), time.Second)
+	ctx, c := context.WithTimeout(t.Context(), time.Second)
 	defer c()
 
 	ports.WaitT(t, ctx, "127.0.0.1", p)
