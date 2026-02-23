@@ -37,23 +37,45 @@ type Release struct {
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	repo    string
-	current string
-	client  *http.Client
+	repo      string
+	current   string
+	userAgent string
+	client    *http.Client
+}
+
+// Option configures the Updater.
+type Option func(*Updater)
+
+// WithUserAgent sets the User-Agent header for requests.
+func WithUserAgent(agent string) Option {
+	return func(u *Updater) {
+		u.userAgent = agent
+	}
+}
+
+// WithClient sets a custom HTTP client.
+func WithClient(client *http.Client) Option {
+	return func(u *Updater) {
+		u.client = client
+	}
 }
 
 // New creates a new Updater.
 //
 // repo should be in the format "owner/repo" (e.g., "deep-rent/vouch").
 // current is the current version string of the application (e.g., "v1.0.0" or "1.0.0").
-func New(repo, current string) *Updater {
-	return &Updater{
+func New(repo, current string, opts ...Option) *Updater {
+	u := &Updater{
 		repo:    repo,
 		current: current,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
 	}
+	for _, opt := range opts {
+		opt(u)
+	}
+	return u
 }
 
 // Check queries the GitHub API for the latest release.
@@ -70,6 +92,9 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	if u.userAgent != "" {
+		req.Header.Set("User-Agent", u.userAgent)
+	}
 
 	res, err := u.client.Do(req)
 	if err != nil {
@@ -97,8 +122,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 }
 
 // Check is a convenience function to check for updates in a single call.
-func Check(ctx context.Context, repo, current string) (*Release, error) {
-	return New(repo, current).Check(ctx)
+func Check(ctx context.Context, repo, current string, opts ...Option) (*Release, error) {
+	return New(repo, current, opts...).Check(ctx)
 }
 
 func normalize(v string) string {
