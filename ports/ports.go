@@ -15,8 +15,8 @@
 package ports
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -48,7 +48,7 @@ func FreeT(t testing.TB) int {
 // Wait blocks until the specified host and port are accepting TCP connections,
 // or until the timeout duration is reached. It returns true if successful.
 func Wait(host string, port int, timeout time.Duration) bool {
-	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	end := time.Now().Add(timeout)
 
 	for time.Now().Before(end) {
