@@ -14,7 +14,10 @@
 
 package ports
 
-import "net"
+import (
+	"net"
+	"testing"
+)
 
 // Free asks the kernel for a free, open port that is ready to use.
 func Free() (int, error) {
@@ -32,4 +35,15 @@ func Free() (int, error) {
 	}()
 
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// FreeT is a test helper that wraps Free. It fails the test immediately if
+// a free port cannot be found.
+func FreeT(t testing.TB) int {
+	t.Helper()
+	port, err := Free()
+	if err != nil {
+		t.Fatalf("failed to get free port: %v", err)
+	}
+	return port
 }
