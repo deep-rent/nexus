@@ -22,40 +22,31 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/testutil/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFree(t *testing.T) {
 	p, err := ports.Free()
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if p <= 0 {
-		t.Fatalf("p: %d", p)
-	}
+	require.NoError(t, err)
+	require.Greater(t, p, 0)
 }
 
 func TestFreeT(t *testing.T) {
 	p := ports.FreeT(t)
-	if p <= 0 {
-		t.Fatalf("p: %d", p)
-	}
+	require.Greater(t, p, 0)
 }
 
 func TestWait(t *testing.T) {
 	p := ports.FreeT(t)
 	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	require.NoError(t, err)
 	defer l.Close()
 
 	ctx, c := context.WithTimeout(t.Context(), time.Second)
 	defer c()
 
 	err = ports.Wait(ctx, "127.0.0.1", p)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestWaitTimeout(t *testing.T) {
@@ -64,17 +55,13 @@ func TestWaitTimeout(t *testing.T) {
 	defer c()
 
 	err := ports.Wait(ctx, "127.0.0.1", p)
-	if err == nil {
-		t.Fatal("expected err")
-	}
+	require.Error(t, err)
 }
 
 func TestWaitT(t *testing.T) {
 	p := ports.FreeT(t)
 	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	require.NoError(t, err)
 	defer l.Close()
 
 	ctx, c := context.WithTimeout(t.Context(), time.Second)
