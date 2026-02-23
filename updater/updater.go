@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	baseURL        = "https://api.github.com"
-	defaultTimeout = 10 * time.Second
+	BaseURL        = "https://api.github.com"
+	DefaultTimeout = 10 * time.Second
 )
 
 // Release represents a published release on GitHub.
@@ -62,7 +62,7 @@ type Updater struct {
 func New(cfg *Config) *Updater {
 	timeout := cfg.Timeout
 	if timeout == 0 {
-		timeout = defaultTimeout
+		timeout = DefaultTimeout
 	}
 	return &Updater{
 		owner:     cfg.Owner,
@@ -83,7 +83,7 @@ func New(cfg *Config) *Updater {
 // if the current version is up-to-date, if the current version string is not
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", baseURL, u.owner, u.repo)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", BaseURL, u.owner, u.repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
