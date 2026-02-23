@@ -331,14 +331,14 @@ type transport struct {
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	for _, h := range t.headers {
-		clone.Header.Add(h.Key, h.Value)
+		clone.Header.Set(h.Key, h.Value)
 	}
 	return t.wrapped.RoundTrip(clone)
 }
 
 var _ http.RoundTripper = (*transport)(nil)
 
-// NewTransport wraps a base transport and adds a static set of headers on
+// NewTransport wraps a base transport and sets a static set of headers on
 // each outgoing request. If the provided headers map is empty, the base
 // transport is returned unmodified. The function creates a defensive copy of
 // the provided map. The resulting transport clones the request before
