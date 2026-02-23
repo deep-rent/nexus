@@ -71,26 +71,26 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := u.client.Do(req)
+	res, err := u.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch latest release: %w", err)
 	}
-	defer resp.Body.Close()
+	defer res.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github api returned status: %s", resp.Status)
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github api returned status: %s", res.Status)
 	}
 
-	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	var rel Release
+	if err := json.NewDecoder(res.Body).Decode(&rel); err != nil {
 		return nil, fmt.Errorf("decode github response: %w", err)
 	}
 
 	v1 := normalize(u.current)
-	v2 := normalize(release.Version)
+	v2 := normalize(rel.Version)
 
 	if semver.IsValid(v1) && semver.Compare(v2, v1) > 0 {
-		return &release, nil
+		return &rel, nil
 	}
 
 	return nil, nil
