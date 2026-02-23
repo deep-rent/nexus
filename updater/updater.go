@@ -27,27 +27,49 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// Default configuration values for the updater.
 const (
+	// DefaultBaseURL is the default GitHub API base URL.
 	DefaultBaseURL = "https://api.github.com"
+	// DefaultTimeout is the default timeout for HTTP requests.
 	DefaultTimeout = 5 * time.Second
 )
 
 // Release represents a published release on GitHub.
 type Release struct {
-	Version   string    `json:"tag_name"`
-	URL       string    `json:"html_url"`
+	// Version is the tag name of the release (e.g., "v1.0.0").
+	Version string `json:"tag_name"`
+	// URL to view the release on GitHub.
+	URL string `json:"html_url"`
+	// Published is the timestamp the release was published on GitHub.
 	Published time.Time `json:"published_at"`
-	Body      string    `json:"body"`
+	// Notes contains the release notes or description.
+	Notes string `json:"body"`
 }
 
 // Config holds the configuration for the Updater.
 type Config struct {
-	BaseURL   string
-	Owner     string        // GitHub repository owner (required).
-	Repo      string        // GitHub repository name (required).
-	Current   string        // Current version of the application (required).
-	UserAgent string        // User-Agent header (optional).
-	Timeout   time.Duration // Request timeout (optional, defaults to 10s).
+	// BaseURL is the base URL for the GitHub API.
+	// It defaults to "https://api.github.com" if not set.
+	// This is primarily used for testing.
+	BaseURL string
+
+	// Owner is the GitHub repository owner (required).
+	Owner string
+
+	// Repo is the GitHub repository name (required).
+	Repo string
+
+	// Current is the current version string of the application (required).
+	Current string
+
+	// UserAgent is the value for the User-Agent header sent with requests.
+	// If empty, no User-Agent header is sent.
+	UserAgent string
+
+	// Timeout is the time limit for requests made by the updater.
+	// It defaults to 5 seconds if not set.
+	Timeout time.Duration
 }
 
 // Updater checks for updates on GitHub for a specific repository.
@@ -61,6 +83,8 @@ type Updater struct {
 }
 
 // New creates a new Updater with the given configuration.
+//
+// It initializes the HTTP client with the specified timeout.
 func New(cfg *Config) *Updater {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
@@ -87,7 +111,7 @@ func New(cfg *Config) *Updater {
 //
 // It compares the latest release tag against the current version using semantic
 // versioning. It returns a Release if a newer version is found. It returns nil
-// if the current version is up-to-date, if the current version string is not
+// if the current version is up-to-date, if the current version string is not a
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	url := fmt.Sprintf(
@@ -132,7 +156,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	return nil, nil
 }
 
-// Check is a convenience function to check for updates in a single call.
+// Check is a shortcut function to check for updates in a single call.
+// It creates a temporary Updater with the provided config and calls Check.
 func Check(ctx context.Context, cfg *Config) (*Release, error) {
 	return New(cfg).Check(ctx)
 }
