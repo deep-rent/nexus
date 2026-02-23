@@ -85,6 +85,25 @@ type Updater struct {
 //
 // It initializes the HTTP client with the specified timeout.
 func New(cfg *Config) *Updater {
+	if cfg.Owner == "" {
+		panic("updater: owner is required")
+	}
+	if cfg.Repo == "" {
+		panic("updater: repo is required")
+	}
+	if cfg.Current == "" {
+		panic("updater: current version is required")
+	}
+
+	current := normalize(cfg.Current)
+
+	if !semver.IsValid(current) {
+		panic(fmt.Sprintf(
+			"updater: current version %q is not a valid semver",
+			cfg.Current,
+		))
+	}
+
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
@@ -97,7 +116,7 @@ func New(cfg *Config) *Updater {
 		baseURL:   baseURL,
 		owner:     cfg.Owner,
 		repo:      cfg.Repo,
-		current:   cfg.Current,
+		current:   current,
 		userAgent: cfg.UserAgent,
 		client: &http.Client{
 			Timeout: timeout,
@@ -145,10 +164,9 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("failed to decode response body: %w", err)
 	}
 
-	v1 := normalize(u.current)
-	v2 := normalize(r.Version)
+	latest := normalize(r.Version)
 
-	if semver.IsValid(v1) && semver.Compare(v2, v1) > 0 {
+	if semver.Compare(latest, u.current) > 0 {
 		return &r, nil
 	}
 
