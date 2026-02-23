@@ -70,3 +70,14 @@ func TestWaitT(t *testing.T) {
 
 	ports.WaitT(t, "127.0.0.1", p)
 }
+
+func TestWaitT_Timeout(t *testing.T) {
+	p := ports.FreeT(t)
+	t.Run("fails on timeout", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+
+		err := ports.Wait(ctx, "127.0.0.1", p)
+		require.Error(t, err)
+	})
+}
