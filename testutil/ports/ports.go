@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package ports provides network port management and synchronization functions,
+// primarily designed for integration testing. It allows you to find free open
+// ports and block execution until a specific port begins accepting connections.
+//
+// Note: Because this package imports the "testing" standard library, it should
+// reside in a test-exclusive directory (e.g., internal/testutil/ports) to avoid
+// compiling the testing framework into your final production binaries.
 package ports
 
 import (
