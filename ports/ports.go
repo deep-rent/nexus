@@ -59,7 +59,7 @@ func Wait(host string, port int, timeout time.Duration) bool {
 	for time.Now().Before(end) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return true
 		}
 		time.Sleep(100 * time.Millisecond)
