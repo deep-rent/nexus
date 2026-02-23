@@ -76,10 +76,10 @@ func Wait(ctx context.Context, host string, port int) error {
 }
 
 // WaitT is a test helper that wraps Wait. It fails the test immediately if
-// the port does not become available before the context expires.
-func WaitT(t testing.TB, ctx context.Context, host string, port int) {
+// the port does not become available before the test context expires.
+func WaitT(t testing.TB, host string, port int) {
 	t.Helper()
-	if err := Wait(ctx, host, port); err != nil {
+	if err := Wait(t.Context(), host, port); err != nil {
 		t.Fatalf("failed waiting for port %d on %s: %v", port, host, err)
 	}
 }
