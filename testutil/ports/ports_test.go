@@ -40,7 +40,9 @@ func TestWait(t *testing.T) {
 	p := ports.FreeT(t)
 	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() {
+		_ = l.Close()
+	}()
 
 	ctx, c := context.WithTimeout(t.Context(), time.Second)
 	defer c()
@@ -62,7 +64,9 @@ func TestWaitT(t *testing.T) {
 	p := ports.FreeT(t)
 	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() {
+		_ = l.Close()
+	}()
 
 	ctx, c := context.WithTimeout(t.Context(), time.Second)
 	defer c()
