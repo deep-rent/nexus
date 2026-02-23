@@ -37,10 +37,10 @@ type Release struct {
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	repo      string
-	current   string
-	userAgent string
-	client    *http.Client
+	repo      string       // Repository name in "owner/repo" format.
+	current   string       // Current version of the application.
+	userAgent string       // User-Agent header to send with requests.
+	client    *http.Client // HTTP client used for making requests.
 }
 
 // Option configures the Updater.
@@ -60,7 +60,7 @@ func WithClient(client *http.Client) Option {
 	}
 }
 
-// New creates a new Updater.
+// New creates a new Updater for the specified repository and current version.
 //
 // repo should be in the format "owner/repo" (e.g., "deep-rent/vouch").
 // current is the current version string of the application (e.g., "v1.0.0" or "1.0.0").
@@ -78,17 +78,19 @@ func New(repo, current string, opts ...Option) *Updater {
 	return u
 }
 
-// Check queries the GitHub API for the latest release.
+// Check queries the GitHub Releases API to determine if a newer version is
+// available.
 //
-// It returns a Release if a newer version is available compared to the current
-// one. It returns nil if the current version is up-to-date, if the current
-// version string is invalid (e.g. "dev"), or if the latest release is older.
+// It compares the latest release tag against the current version using semantic
+// versioning. It returns a Release if a newer version is found. It returns nil
+// if the current version is up-to-date, if the current version string is not
+// valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -98,23 +100,25 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 
 	res, err := u.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch latest release: %w", err)
+		return nil, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		_ = res.Body.Close()
+	}()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github api returned status: %s", res.Status)
+		return nil, fmt.Errorf("unexpected status from github api: %s", res.Status)
 	}
 
 	var rel Release
 	if err := json.UnmarshalRead(res.Body, &rel); err != nil {
-		return nil, fmt.Errorf("decode github response: %w", err)
+		return nil, fmt.Errorf("failed to decode response body: %w", err)
 	}
 
-	v1 := normalize(u.current)
-	v2 := normalize(rel.Version)
+	vCurrent := normalize(u.current)
+	vLatest := normalize(rel.Version)
 
-	if semver.IsValid(v1) && semver.Compare(v2, v1) > 0 {
+	if semver.IsValid(vCurrent) && semver.Compare(vLatest, vCurrent) > 0 {
 		return &rel, nil
 	}
 
@@ -126,6 +130,8 @@ func Check(ctx context.Context, repo, current string, opts ...Option) (*Release,
 	return New(repo, current, opts...).Check(ctx)
 }
 
+// normalize ensures the version string has a "v" prefix, which is required by
+// the semver package.
 func normalize(v string) string {
 	if strings.HasPrefix(v, "v") {
 		return v
