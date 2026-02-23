@@ -59,8 +59,8 @@ type Config struct {
 	// Owner is the GitHub repository owner (required).
 	Owner string
 
-	// Repo is the name of the GitHub repository. (required).
-	Repo string
+	// Repository is the name of the GitHub repository. (required).
+	Repository string
 
 	// Current is the current version string of the application (required).
 	Current string
@@ -76,12 +76,12 @@ type Config struct {
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	baseURL   string
-	owner     string
-	repo      string
-	current   string
-	userAgent string
-	client    *http.Client
+	baseURL    string
+	owner      string
+	repository string
+	current    string
+	userAgent  string
+	client     *http.Client
 }
 
 // New creates a new Updater with the given configuration.
@@ -93,8 +93,8 @@ func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
 		panic("updater: owner is required")
 	}
-	if cfg.Repo == "" {
-		panic("updater: repo is required")
+	if cfg.Repository == "" {
+		panic("updater: repository is required")
 	}
 	if cfg.Current == "" {
 		panic("updater: current version is required")
@@ -116,11 +116,11 @@ func New(cfg *Config) *Updater {
 		timeout = DefaultTimeout
 	}
 	return &Updater{
-		baseURL:   baseURL,
-		owner:     cfg.Owner,
-		repo:      cfg.Repo,
-		current:   current,
-		userAgent: cfg.UserAgent,
+		baseURL:    baseURL,
+		owner:      cfg.Owner,
+		repository: cfg.Repository,
+		current:    current,
+		userAgent:  cfg.UserAgent,
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -138,7 +138,7 @@ func New(cfg *Config) *Updater {
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	url := fmt.Sprintf(
 		"%s/repos/%s/%s/releases/latest",
-		u.baseURL, u.owner, u.repo,
+		u.baseURL, u.owner, u.repository,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -169,7 +169,6 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	}
 
 	latest := normalize(r.Version)
-
 	if !semver.IsValid(latest) {
 		return nil, fmt.Errorf("latest version %q is not a valid semver", r.Version)
 	}
