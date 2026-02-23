@@ -29,7 +29,7 @@ import (
 
 const (
 	BaseURL        = "https://api.github.com"
-	DefaultTimeout = 10 * time.Second
+	DefaultTimeout = 5 * time.Second
 )
 
 // Release represents a published release on GitHub.
