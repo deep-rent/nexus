@@ -15,8 +15,10 @@
 package ports
 
 import (
+	"fmt"
 	"net"
 	"testing"
+	"time"
 )
 
 // Free asks the kernel for a free, open port that is ready to use.
@@ -46,4 +48,21 @@ func FreeT(t testing.TB) int {
 		t.Fatalf("failed to get free port: %v", err)
 	}
 	return port
+}
+
+// Wait blocks until the specified host and port are accepting TCP connections,
+// or until the timeout duration is reached. It returns true if successful.
+func Wait(host string, port int, timeout time.Duration) bool {
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	end := time.Now().Add(timeout)
+
+	for time.Now().Before(end) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
 }
