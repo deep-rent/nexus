@@ -13,3 +13,27 @@
 // limitations under the License.
 
 package build_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/deep-rent/nexus/testutil/build"
+	"github.com/stretchr/testify/require"
+)
+
+func TestBinary(t *testing.T) {
+	src := t.TempDir()
+	f := filepath.Join(src, "main.go")
+	code := []byte("package main\nfunc main() {}\n")
+
+	err := os.WriteFile(f, code, 0644)
+	require.NoError(t, err)
+
+	exe := build.Binary(t, src, "testbin")
+
+	stat, err := os.Stat(exe)
+	require.NoError(t, err)
+	require.False(t, stat.IsDir())
+}
