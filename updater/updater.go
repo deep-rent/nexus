@@ -27,6 +27,11 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+const (
+	baseURL        = "https://api.github.com"
+	defaultTimeout = 10 * time.Second
+)
+
 // Release represents a published release on GitHub.
 type Release struct {
 	Version   string    `json:"tag_name"`
@@ -57,7 +62,7 @@ type Updater struct {
 func New(cfg Config) *Updater {
 	timeout := cfg.Timeout
 	if timeout == 0 {
-		timeout = 10 * time.Second
+		timeout = defaultTimeout
 	}
 	return &Updater{
 		owner:     cfg.Owner,
@@ -78,7 +83,7 @@ func New(cfg Config) *Updater {
 // if the current version is up-to-date, if the current version string is not
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", u.owner, u.repo)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", baseURL, u.owner, u.repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -102,16 +107,16 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("unexpected status from github api: %s", res.Status)
 	}
 
-	var rel Release
-	if err := json.UnmarshalRead(res.Body, &rel); err != nil {
+	var r Release
+	if err := json.UnmarshalRead(res.Body, &r); err != nil {
 		return nil, fmt.Errorf("failed to decode response body: %w", err)
 	}
 
-	vCurrent := normalize(u.current)
-	vLatest := normalize(rel.Version)
+	v1 := normalize(u.current)
+	v2 := normalize(r.Version)
 
-	if semver.IsValid(vCurrent) && semver.Compare(vLatest, vCurrent) > 0 {
-		return &rel, nil
+	if semver.IsValid(v1) && semver.Compare(v2, v1) > 0 {
+		return &r, nil
 	}
 
 	return nil, nil
