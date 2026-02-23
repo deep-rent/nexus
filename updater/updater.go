@@ -29,10 +29,10 @@ import (
 
 // Release represents a published release on GitHub.
 type Release struct {
-	Version string    `json:"tag_name"`
-	URL     string    `json:"html_url"`
-	Date    time.Time `json:"published_at"`
-	Body    string    `json:"body"`
+	Version   string    `json:"tag_name"`
+	URL       string    `json:"html_url"`
+	Published time.Time `json:"published_at"`
+	Body      string    `json:"body"`
 }
 
 // Config holds the configuration for the Updater.
