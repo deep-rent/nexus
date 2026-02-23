@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package build provides test helpers for compiling Go binaries.
+// It ensures that build artifacts are isolated and automatically cleaned up
+// after the tests finish.
 package build
 
 import (
