@@ -15,6 +15,7 @@
 package ports
 
 import (
+	"context"
 	"net"
 	"strconv"
 	"testing"
@@ -46,23 +47,28 @@ func FreeT(t testing.TB) int {
 }
 
 // Wait blocks until the specified host and port are accepting TCP connections,
-// or until the timeout duration is reached. It returns true if successful.
-func Wait(host string, port int, timeout time.Duration) bool {
+// or until the context is canceled/times out.
+func Wait(ctx context.Context, host string, port int) error {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	end := time.Now().Add(timeout)
+	var d net.Dialer
 
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	for time.Now().Before(end) {
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+	for {
+		// DialContext respects the context for the dial operation itself.
+		conn, err := d.DialContext(ctx, "tcp", addr)
 		if err == nil {
 			_ = conn.Close()
-			return true
+			return nil
 		}
 
-		<-ticker.C
+		select {
+		case <-ctx.Done():
+			// The context was canceled or its deadline exceeded.
+			return ctx.Err()
+		case <-ticker.C:
+			// Wait for the next tick before trying again.
+		}
 	}
-
-	return false
 }
