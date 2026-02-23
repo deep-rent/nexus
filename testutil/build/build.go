@@ -24,10 +24,10 @@ import (
 	"testing"
 )
 
-// Binary compiles the Go source code located at src and writes the resulting
-// executable to dst within a temporary directory. It returns the absolute
-// path to the compiled binary. The test framework automatically removes the
-// executable and its directory when the test completes.
+// Binary compiles the Go source code located at the src directory and writes
+// the resulting executable to dst within a temporary directory. It returns the
+// absolute path to the compiled binary. The test framework automatically
+// removes the executable and its directory when the test completes.
 func Binary(t testing.TB, src string, dst string) string {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), dst)
@@ -35,7 +35,12 @@ func Binary(t testing.TB, src string, dst string) string {
 		exe += ".exe"
 	}
 
-	cmd := exec.Command("go", "build", "-o", exe, src)
+	// Compile the current directory but execute the command inside the src
+	// directory. This ensures Go respects the module context of the target
+	// program.
+	cmd := exec.Command("go", "build", "-o", exe, ".")
+	cmd.Dir = src
+
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build %s: %v\n%s", dst, err, out)
 	}
