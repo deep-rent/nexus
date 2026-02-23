@@ -12,11 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package updater provides a simple mechanism to check for newer releases of an
+// Package updater provides functionality to check for newer releases of an
 // application hosted on GitHub.
 //
-// It queries the GitHub Releases API and compares the latest release tag
-// against the current application version using semantic versioning.
+// It queries the GitHub Releases API to retrieve the latest release and
+// compares its tag against the current application version using semantic
+// versioning.
+//
+// # Usage
+//
+//	cfg := &updater.Config{
+//		Owner:      "deep-rent",
+//		Repository: "vouch",
+//		Current:    "v1.0.0",
+//		UserAgent:  "Vouch/1.0.0",
+//	}
+//
+//	// Check for updates.
+//	rel, err := updater.Check(context.Background(), cfg)
+//	if err != nil {
+//		log.Printf("Failed to check for updates: %v", err)
+//	} else if rel != nil {
+//		log.Printf("New version available: %s (see %s)", rel.Version, rel.URL)
+//	}
 package updater
 
 import (
@@ -55,20 +73,15 @@ type Config struct {
 	// BaseURL is the base URL for the GitHub API. It defaults to DefaultBaseURL
 	// if not set. This is primarily used for testing purposes.
 	BaseURL string
-
 	// Owner is the GitHub repository owner (required).
 	Owner string
-
-	// Repository is the name of the GitHub repository. (required).
+	// Repository is the name of the GitHub repository (required).
 	Repository string
-
 	// Current is the current version string of the application (required).
 	Current string
-
 	// UserAgent is the value for the User-Agent header sent with requests.
 	// If empty, no User-Agent header is sent.
 	UserAgent string
-
 	// Timeout is the time limit for requests made by the updater.
 	// It defaults to 5 seconds if not set.
 	Timeout time.Duration
@@ -88,7 +101,8 @@ type Updater struct {
 //
 // It initializes the HTTP client with the specified timeout. It panics if the
 // configuration is invalid (missing required fields) or if the current version
-// string is not a valid semantic version.
+// string is not a valid semantic version (after normalizing it with a "v"
+// prefix if missing).
 func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
 		panic("updater: owner is required")
@@ -130,9 +144,10 @@ func New(cfg *Config) *Updater {
 // Check queries the GitHub Releases API to determine if a newer version is
 // available.
 //
-// It compares the latest release tag against the current version using semantic
-// versioning. It returns a Release if a newer version is found. It returns nil
-// if the current version is up-to-date or if the latest release is older or
+// It compares the latest release tag against the current version using
+// semantic versioning. Both versions are normalized with a "v" prefix if
+// missing. It returns a Release if a newer version is found. It returns nil if
+// the current version is up-to-date or if the latest release is older or
 // equal. It returns an error if the GitHub API request fails or if the latest
 // release tag is not a valid semantic version.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
