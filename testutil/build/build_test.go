@@ -25,10 +25,15 @@ import (
 
 func TestBinary(t *testing.T) {
 	src := t.TempDir()
+
+	// Write a minimal go.mod file so the compiler treats it as a valid module.
+	mod := []byte("module dummy\n")
+	err := os.WriteFile(filepath.Join(src, "go.mod"), mod, 0644)
+	require.NoError(t, err)
+
 	f := filepath.Join(src, "main.go")
 	code := []byte("package main\nfunc main() {}\n")
-
-	err := os.WriteFile(f, code, 0644)
+	err = os.WriteFile(f, code, 0644)
 	require.NoError(t, err)
 
 	exe := build.Binary(t, src, "testbin")
