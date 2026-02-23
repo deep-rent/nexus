@@ -59,7 +59,7 @@ type Updater struct {
 }
 
 // New creates a new Updater with the given configuration.
-func New(cfg Config) *Updater {
+func New(cfg *Config) *Updater {
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = defaultTimeout
@@ -123,7 +123,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 }
 
 // Check is a convenience function to check for updates in a single call.
-func Check(ctx context.Context, cfg Config) (*Release, error) {
+func Check(ctx context.Context, cfg *Config) (*Release, error) {
 	return New(cfg).Check(ctx)
 }
 
