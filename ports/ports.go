@@ -13,3 +13,23 @@
 // limitations under the License.
 
 package ports
+
+import "net"
+
+// Free asks the kernel for a free, open port that is ready to use.
+func Free() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = l.Close()
+	}()
+
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
