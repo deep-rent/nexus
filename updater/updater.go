@@ -60,6 +60,13 @@ func WithClient(client *http.Client) Option {
 	}
 }
 
+// WithTimeout sets the timeout for requests.
+func WithTimeout(timeout time.Duration) Option {
+	return func(u *Updater) {
+		u.client.Timeout = timeout
+	}
+}
+
 // New creates a new Updater for the specified repository and current version.
 //
 // repo should be in the format "owner/repo" (e.g., "deep-rent/vouch").
@@ -69,7 +76,7 @@ func New(repo, current string, opts ...Option) *Updater {
 		repo:    repo,
 		current: current,
 		client: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: 10 * time.Second,
 		},
 	}
 	for _, opt := range opts {
