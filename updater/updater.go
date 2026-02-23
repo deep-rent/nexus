@@ -49,15 +49,14 @@ type Release struct {
 
 // Config holds the configuration for the Updater.
 type Config struct {
-	// BaseURL is the base URL for the GitHub API.
-	// It defaults to "https://api.github.com" if not set.
-	// This is primarily used for testing.
+	// BaseURL is the base URL for the GitHub API. It defaults to DefaultBaseURL
+	// if not set. This is primarily used for testing purposes.
 	BaseURL string
 
 	// Owner is the GitHub repository owner (required).
 	Owner string
 
-	// Repo is the GitHub repository name (required).
+	// Repo is the name of the GitHub repository. (required).
 	Repo string
 
 	// Current is the current version string of the application (required).
