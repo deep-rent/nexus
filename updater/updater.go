@@ -37,7 +37,8 @@ type Release struct {
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	repo      string       // Repository name in "owner/repo" format.
+	owner     string       // GitHub repository owner.
+	repo      string       // GitHub repository name.
 	current   string       // Current version of the application.
 	userAgent string       // User-Agent header to send with requests.
 	client    *http.Client // HTTP client used for making requests.
@@ -69,10 +70,10 @@ func WithTimeout(timeout time.Duration) Option {
 
 // New creates a new Updater for the specified repository and current version.
 //
-// repo should be in the format "owner/repo" (e.g., "deep-rent/vouch").
 // current is the current version string of the application (e.g., "v1.0.0" or "1.0.0").
-func New(repo, current string, opts ...Option) *Updater {
+func New(owner, repo, current string, opts ...Option) *Updater {
 	u := &Updater{
+		owner:   owner,
 		repo:    repo,
 		current: current,
 		client: &http.Client{
@@ -93,7 +94,7 @@ func New(repo, current string, opts ...Option) *Updater {
 // if the current version is up-to-date, if the current version string is not
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.repo)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", u.owner, u.repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -133,8 +134,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 }
 
 // Check is a convenience function to check for updates in a single call.
-func Check(ctx context.Context, repo, current string, opts ...Option) (*Release, error) {
-	return New(repo, current, opts...).Check(ctx)
+func Check(ctx context.Context, owner, repo, current string, opts ...Option) (*Release, error) {
+	return New(owner, repo, current, opts...).Check(ctx)
 }
 
 // normalize ensures the version string has a "v" prefix, which is required by
