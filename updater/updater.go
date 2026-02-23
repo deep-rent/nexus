@@ -35,55 +35,33 @@ type Release struct {
 	Body    string    `json:"body"`
 }
 
+// Config holds the configuration for the Updater.
+type Config struct {
+	Owner     string        // GitHub repository owner (required).
+	Repo      string        // GitHub repository name (required).
+	Current   string        // Current version of the application (required).
+	UserAgent string        // User-Agent header (optional).
+	Client    *http.Client  // Custom HTTP client (optional).
+	Timeout   time.Duration // Request timeout (optional, defaults to 10s).
+}
+
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	owner     string       // GitHub repository owner.
-	repo      string       // GitHub repository name.
-	current   string       // Current version of the application.
-	userAgent string       // User-Agent header to send with requests.
-	client    *http.Client // HTTP client used for making requests.
+	cfg Config
 }
 
-// Option configures the Updater.
-type Option func(*Updater)
-
-// WithUserAgent sets the User-Agent header for requests.
-func WithUserAgent(agent string) Option {
-	return func(u *Updater) {
-		u.userAgent = agent
+// New creates a new Updater with the given configuration.
+func New(cfg Config) *Updater {
+	if cfg.Client == nil {
+		timeout := cfg.Timeout
+		if timeout == 0 {
+			timeout = 10 * time.Second
+		}
+		cfg.Client = &http.Client{
+			Timeout: timeout,
+		}
 	}
-}
-
-// WithClient sets a custom HTTP client.
-func WithClient(client *http.Client) Option {
-	return func(u *Updater) {
-		u.client = client
-	}
-}
-
-// WithTimeout sets the timeout for requests.
-func WithTimeout(timeout time.Duration) Option {
-	return func(u *Updater) {
-		u.client.Timeout = timeout
-	}
-}
-
-// New creates a new Updater for the specified repository and current version.
-//
-// current is the current version string of the application (e.g., "v1.0.0" or "1.0.0").
-func New(owner, repo, current string, opts ...Option) *Updater {
-	u := &Updater{
-		owner:   owner,
-		repo:    repo,
-		current: current,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-	}
-	for _, opt := range opts {
-		opt(u)
-	}
-	return u
+	return &Updater{cfg: cfg}
 }
 
 // Check queries the GitHub Releases API to determine if a newer version is
@@ -94,7 +72,7 @@ func New(owner, repo, current string, opts ...Option) *Updater {
 // if the current version is up-to-date, if the current version string is not
 // valid semantic version, or if the latest release is older or equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", u.owner, u.repo)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", u.cfg.Owner, u.cfg.Repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -102,11 +80,11 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	if u.userAgent != "" {
-		req.Header.Set("User-Agent", u.userAgent)
+	if u.cfg.UserAgent != "" {
+		req.Header.Set("User-Agent", u.cfg.UserAgent)
 	}
 
-	res, err := u.client.Do(req)
+	res, err := u.cfg.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
@@ -123,7 +101,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("failed to decode response body: %w", err)
 	}
 
-	vCurrent := normalize(u.current)
+	vCurrent := normalize(u.cfg.Current)
 	vLatest := normalize(rel.Version)
 
 	if semver.IsValid(vCurrent) && semver.Compare(vLatest, vCurrent) > 0 {
@@ -134,8 +112,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 }
 
 // Check is a convenience function to check for updates in a single call.
-func Check(ctx context.Context, owner, repo, current string, opts ...Option) (*Release, error) {
-	return New(owner, repo, current, opts...).Check(ctx)
+func Check(ctx context.Context, cfg Config) (*Release, error) {
+	return New(cfg).Check(ctx)
 }
 
 // normalize ensures the version string has a "v" prefix, which is required by
