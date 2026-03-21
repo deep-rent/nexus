@@ -384,11 +384,12 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		// A variable is "set" even if it is empty. We only trigger the strictly
 		// missing variable logic if 'ok' is false.
 		if !ok {
-			if opts.Default != "" {
+			switch {
+			case opts.Default != "":
 				val = opts.Default
-			} else if opts.Required {
+			case opts.Required:
 				return fmt.Errorf("required variable %q is not set", key)
-			} else {
+			default:
 				continue
 			}
 		} else if val == "" && opts.Default != "" {
