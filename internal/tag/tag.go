@@ -56,16 +56,18 @@ func (t *Tag) Opts() iter.Seq2[string, string] {
 			end := -1
 			inQuote := false
 			var q rune
+		scan:
 			for i, r := range rest {
-				if r == q {
+				switch {
+				case r == q:
 					inQuote = false
 					q = 0
-				} else if !inQuote && (r == '\'' || r == '"') {
+				case !inQuote && (r == '\'' || r == '"'):
 					inQuote = true
 					q = r
-				} else if !inQuote && r == ',' {
+				case !inQuote && r == ',':
 					end = i
-					break
+					break scan
 				}
 			}
 
