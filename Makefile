@@ -22,15 +22,13 @@ install-tools:
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 help:
-	@echo "Makefile for the project."
+	@echo "Available Targets:"
 	@echo ""
-	@echo "Targets:"
-	@echo ""
-	@echo "all: 		    Runs format, lint, and test."
-	@echo "format: 	        Formats the code."
-	@echo "lint: 		    Lints the code."
-	@echo "test: 		    Runs the tests."
-	@echo "install-tools: 	Installs the required tools."
-	@echo "help: 		    Shows this help message."
+	@echo "  all:            Runs format, lint, and test."
+	@echo "  format:         Formats the code."
+	@echo "  lint:           Lints the code."
+	@echo "  test:           Runs the tests."
+	@echo "  install-tools:  Installs the required tools."
+	@echo "  help:           Shows this help message."
 
 .DEFAULT_GOAL := help
