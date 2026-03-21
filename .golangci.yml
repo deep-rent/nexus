@@ -24,6 +24,9 @@ linters:
     - errname
     - nilerr
     - misspell
+    - gosec
+    - prealloc
+    - makezero
 
   settings:
     goheader:
