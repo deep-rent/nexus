@@ -38,7 +38,7 @@ func Binary(t testing.TB, src, dst string) string {
 	// Compile the current directory but execute the command inside the src
 	// directory. This ensures Go respects the module context of the target
 	// program.
-	cmd := exec.Command("go", "build", "-o", exe, ".")
+	cmd := exec.Command("go", "build", "-o", exe, ".") //nolint:gosec
 	cmd.Dir = src
 
 	if out, err := cmd.CombinedOutput(); err != nil {
