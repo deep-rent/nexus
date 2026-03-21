@@ -73,16 +73,16 @@ func New() UUIDv7 {
 
 	var u UUIDv7
 
-	// Fill the first 6 bytes with the timestamp (Big Endian).
-	u[0] = byte(ms >> 40)
-	u[1] = byte(ms >> 32)
-	u[2] = byte(ms >> 24)
-	u[3] = byte(ms >> 16)
-	u[4] = byte(ms >> 8)
-	u[5] = byte(ms)
-	// Fill bytes 6 and 7 with the version and sequence.
-	u[6] = 0x70 | byte(seq>>8)
-	u[7] = byte(seq)
+	// Fill the first 6 bytes with the timestamp (big endian style).
+	// Fill bytes 7 and 8 with the version and sequence.
+	u[0] = byte(ms >> 40)      //nolint:gosec
+	u[1] = byte(ms >> 32)      //nolint:gosec
+	u[2] = byte(ms >> 24)      //nolint:gosec
+	u[3] = byte(ms >> 16)      //nolint:gosec
+	u[4] = byte(ms >> 8)       //nolint:gosec
+	u[5] = byte(ms)            //nolint:gosec
+	u[6] = 0x70 | byte(seq>>8) //nolint:gosec
+	u[7] = byte(seq)           //nolint:gosec
 
 	// Fill bytes 8 to 15 with random data.
 	if _, err := io.ReadFull(rand.Reader, u[8:]); err != nil {
