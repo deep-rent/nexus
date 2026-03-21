@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package router provides a lightweight, JSON-centric wrapper around Go's
-// native http.ServeMux.
+// native [http.ServeMux].
 //
 // It simplifies building JSON APIs by offering a consolidated "Exchange" object
 // for handling requests and responses, standardized error formatting, and a
@@ -83,7 +83,7 @@ const (
 	MediaTypeForm = "application/x-www-form-urlencoded"
 )
 
-// ResponseWriter extends the standard http.ResponseWriter with introspection
+// ResponseWriter extends the standard [http.ResponseWriter] with introspection
 // capabilities.
 //
 // It allows handlers and middleware to check if the response headers have
@@ -96,12 +96,12 @@ type ResponseWriter interface {
 	// This indicates that the response is committed.
 	Closed() bool
 	// Unwrap returns the underlying http.ResponseWriter.
-	// This allows http.ResponseController to access features like Flush(),
+	// This allows [http.ResponseController] to access features like Flush(),
 	// Hijack(), and SetReadDeadline().
 	Unwrap() http.ResponseWriter
 }
 
-// NewResponseWriter wraps an http.ResponseWriter into a ResponseWriter.
+// NewResponseWriter wraps an [http.ResponseWriter] into a ResponseWriter.
 func NewResponseWriter(w http.ResponseWriter) ResponseWriter {
 	return &responseWriter{
 		ResponseWriter: w,
@@ -166,7 +166,7 @@ type Error struct {
 	Cause error `json:"-"`
 }
 
-// Error implements the generic error interface.
+// Error implements the standard [error] interface.
 func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
 }
@@ -255,7 +255,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 // ReadForm parses the request body as URL-encoded form data and returns the
 // values.
 //
-// Unlike the standard http.Request.FormValue(), this strictly accesses
+// Unlike the standard [http.Request.FormValue], this strictly accesses
 // the PostForm (body) only, ignoring URL query parameters. This is crucial
 // for security protocols like OAuth to prevent query parameter injection.
 func (e *Exchange) ReadForm() (url.Values, *Error) {
@@ -311,8 +311,12 @@ func (e *Exchange) Form(code int, v url.Values) error {
 	return err
 }
 
-// Status sends a response with the given status code and no body.
-// This is commonly used for HTTP 204 (No Content).
+// Status sends an HTTP response header with the provided status code.
+//
+// Note: Calling this method commits the response headers. You should not call
+// this method directly if you intend to write a body later (e.g., using JSON()
+// or Form()), as those methods will set the status code themselves. It is
+// primarily used for empty responses like HTTP 204 (No Content).
 func (e *Exchange) Status(code int) {
 	e.W.WriteHeader(code)
 }
@@ -431,8 +435,8 @@ func WithLogger(log *slog.Logger) Option {
 
 // Router represents an HTTP request router with middleware support.
 type Router struct {
-	// Mux is the underlying http.ServeMux. It is exposed to allow direct
-	// usage with http.ListenAndServe.
+	// Mux is the underlying [http.ServeMux]. It is exposed to allow direct
+	// usage with [http.ListenAndServe].
 	Mux          *http.ServeMux
 	mws          []middleware.Pipe
 	maxBytes     int64
@@ -453,9 +457,9 @@ func New(opts ...Option) *Router {
 	return r
 }
 
-// ServeHTTP satisfies the http.Handler interface, allowing the Router to be
+// ServeHTTP satisfies the [http.Handler] interface, allowing the Router to be
 // used directly with HTTP servers. It delegates request handling to the
-// underlying http.ServeMux.
+// underlying [http.ServeMux].
 func (r *Router) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	r.Mux.ServeHTTP(res, req)
 }
@@ -507,7 +511,7 @@ func (r *Router) HandleFunc(
 	r.Handle(pattern, HandlerFunc(fn), mws...)
 }
 
-// Mount registers a standard http.Handler (like http.FileServer) under a
+// Mount registers a standard [http.Handler] (like [http.FileServer]) under a
 // pattern.
 //
 // The handler will still be wrapped by the Router's global middleware,
