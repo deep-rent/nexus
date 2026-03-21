@@ -29,12 +29,12 @@ func TestBinary(t *testing.T) {
 
 	// Create a dummy go.mod so the directory is a valid Go module.
 	mod := []byte("module dummy\n\ngo 1.24\n")
-	err := os.WriteFile(filepath.Join(src, "go.mod"), mod, 0o644)
+	err := os.WriteFile(filepath.Join(src, "go.mod"), mod, 0o600)
 	require.NoError(t, err)
 
 	// Create the main package.
 	code := []byte("package main\nfunc main() {}\n")
-	err = os.WriteFile(filepath.Join(src, "main.go"), code, 0o644)
+	err = os.WriteFile(filepath.Join(src, "main.go"), code, 0o600)
 	require.NoError(t, err)
 
 	// Build the directory.
