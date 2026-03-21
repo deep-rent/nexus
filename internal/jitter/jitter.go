@@ -42,7 +42,7 @@ var _ Rand = (*rand.Rand)(nil)
 // seeded is a pre-seeded Rand instance for default use.
 // Note: Go 1.20+ auto-seeds the global RNG, which spares us from time-based
 // seeding.
-var seeded Rand = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
+var seeded Rand = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())) //nolint:gosec
 
 // Jitter applies subtractive random jitter to a duration.
 type Jitter struct {
