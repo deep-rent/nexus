@@ -369,7 +369,7 @@ func TestBuilderPanic(t *testing.T) {
 
 func read(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
+	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec
 	require.NoError(t, err)
 	return b
 }
