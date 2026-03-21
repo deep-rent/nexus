@@ -7,6 +7,7 @@ run:
     - jsonv2
   modules-download-mode: readonly
   allow-parallel-runners: true
+  timeout: 2m
 
 linters:
   enable:
