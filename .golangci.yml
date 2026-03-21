@@ -52,3 +52,12 @@ linters:
     gosec:
       excludes:
         - G104
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    gofumpt:
+      extra-rules: true
