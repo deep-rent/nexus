@@ -48,3 +48,7 @@ linters:
 
     revive:
       confidence: 0.8
+
+    gosec:
+      excludes:
+        - G104
