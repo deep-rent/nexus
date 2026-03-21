@@ -12,22 +12,22 @@ run:
 linters:
   default: none
   enable:
-    - goheader
     - errcheck
+    - errname
+    - errorlint
+    - gocritic
+    - goheader
+    - gosec
     - gosimple
     - govet
     - ineffassign
-    - staticcheck
-    - revive
-    - gocritic
-    - errorlint
-    - errname
-    - nilerr
-    - misspell
-    - gosec
-    - prealloc
     - makezero
+    - misspell
+    - nilerr
     - nolintlint
+    - prealloc
+    - revive
+    - staticcheck
 
   settings:
     goheader:
