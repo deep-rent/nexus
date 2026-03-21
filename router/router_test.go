@@ -500,7 +500,8 @@ func TestExchangeRedirectTo_Error(t *testing.T) {
 	err := e.RedirectTo("http://site.com/\nerror", nil, http.StatusFound)
 
 	require.Error(t, err)
-	x, ok := err.(*router.Error)
+	x := &router.Error{}
+	ok := errors.As(err, &x)
 	require.True(t, ok)
 	assert.Equal(t, router.ReasonServerError, x.Reason)
 }
