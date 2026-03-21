@@ -821,7 +821,8 @@ func TestUnmarshal(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := append(tc.opts, env.WithLookup(func(k string) (string, bool) {
+			opts := tc.opts
+			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
 				v, ok := tc.vars[k]
 				return v, ok
 			}))
@@ -978,7 +979,8 @@ func TestExpand(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := append(tc.opts, env.WithLookup(func(k string) (string, bool) {
+			opts := tc.opts
+			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
 				v, ok := tc.vars[k]
 				return v, ok
 			}))
