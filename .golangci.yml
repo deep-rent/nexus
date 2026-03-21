@@ -20,7 +20,6 @@ linters:
     - gosec
     - govet
     - ineffassign
-    - lll
     - makezero
     - misspell
     - nilerr
@@ -45,9 +44,6 @@ linters:
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
-
-    lll:
-      line-length: 80
 
     revive:
       confidence: 0.8
