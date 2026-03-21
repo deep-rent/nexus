@@ -21,9 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/updater"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/updater"
 )
 
 func TestNew(t *testing.T) {

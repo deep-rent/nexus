@@ -17,8 +17,9 @@ package snake_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/snake"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/deep-rent/nexus/internal/snake"
 )
 
 func TestToUpper(t *testing.T) {

@@ -18,8 +18,9 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/tag"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/deep-rent/nexus/internal/tag"
 )
 
 func TestParse(t *testing.T) {

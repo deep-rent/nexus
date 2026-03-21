@@ -195,7 +195,7 @@ func ParseLevel(s string) (level slog.Level, err error) {
 	if e := level.UnmarshalText([]byte(s)); e != nil {
 		err = fmt.Errorf("invalid log level %q", s)
 	}
-	return
+	return level, err
 }
 
 // ParseFormat converts a case-insensitive string into a Format.
@@ -204,13 +204,13 @@ func ParseFormat(s string) (format Format, err error) {
 	switch strings.ToLower(s) {
 	case "json":
 		format = FormatJSON
-		return
+		return format, err
 	case "text":
 		format = FormatText
-		return
+		return format, err
 	default:
 		err = fmt.Errorf("invalid log format %q", s)
-		return
+		return format, err
 	}
 }
 

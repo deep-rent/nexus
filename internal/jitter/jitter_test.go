@@ -18,8 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/jitter"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/deep-rent/nexus/internal/jitter"
 )
 
 type mockRand struct {

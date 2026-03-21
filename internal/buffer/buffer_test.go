@@ -17,8 +17,9 @@ package buffer_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/buffer"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/deep-rent/nexus/internal/buffer"
 )
 
 func TestPanicOnInvalidSize(t *testing.T) {

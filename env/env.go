@@ -189,9 +189,10 @@ func Unmarshal(v any, opts ...Option) error {
 // Expand substitutes environment variables in a string.
 //
 // It replaces references to environment variables in the formats ${KEY} or $KEY
-// with their corresponding values. A literal dollar sign can be escaped with $$.
-// If a referenced variable is not found in the environment, the function
-// returns an error. Its behavior can be adjusted through functional options.
+// with their corresponding values. A literal dollar sign can be escaped with $$
+// (double dollar sign). If a referenced variable is not found in the
+// environment, the function returns an error. Its behavior can be adjusted
+// through functional options.
 func Expand(s string, opts ...Option) (string, error) {
 	cfg := config{
 		Lookup: os.LookupEnv,
@@ -384,11 +385,12 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		// A variable is "set" even if it is empty. We only trigger the strictly
 		// missing variable logic if 'ok' is false.
 		if !ok {
-			if opts.Default != "" {
+			switch {
+			case opts.Default != "":
 				val = opts.Default
-			} else if opts.Required {
+			case opts.Required:
 				return fmt.Errorf("required variable %q is not set", key)
-			} else {
+			default:
 				continue
 			}
 		} else if val == "" && opts.Default != "" {

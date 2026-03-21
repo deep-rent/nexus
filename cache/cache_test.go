@@ -29,11 +29,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/scheduler"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type Resource struct {

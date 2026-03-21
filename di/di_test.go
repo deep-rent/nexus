@@ -22,21 +22,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/di"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/di"
 )
 
-type ServiceA struct{ ID int }
-type ServiceB struct{ DepA ServiceA }
-type ServiceC struct{ ID int }
-type ServiceD struct{ DepB ServiceB }
-type ServiceE struct{ DepC *ServiceC }
-type ServiceF struct{}
-type ServiceX struct{ DepY *ServiceY }
-type ServiceY struct{ DepX ServiceX }
-type I interface{ Work() }
-type serviceI struct{ done atomic.Bool }
+type (
+	ServiceA struct{ ID int }
+	ServiceB struct{ DepA ServiceA }
+	ServiceC struct{ ID int }
+	ServiceD struct{ DepB ServiceB }
+	ServiceE struct{ DepC *ServiceC }
+	ServiceF struct{}
+	ServiceX struct{ DepY *ServiceY }
+	ServiceY struct{ DepX ServiceX }
+	I        interface{ Work() }
+	serviceI struct{ done atomic.Bool }
+)
 
 func (c *serviceI) Work() { c.done.Store(true) }
 

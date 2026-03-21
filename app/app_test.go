@@ -24,9 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/app"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/app"
 )
 
 func TestRun_Success(t *testing.T) {
@@ -293,4 +294,35 @@ func TestRunAll_SignalShutdownAll(t *testing.T) {
 
 	assert.True(t, w1Canceled, "worker 1 should've received context cancellation")
 	assert.True(t, w2Canceled, "worker 2 should've received context cancellation")
+}
+
+func TestRunAll_ShutdownTimeoutOnCascadingError(t *testing.T) {
+	timeout := 20 * time.Millisecond
+	errDone := errors.New("worker 1 failed")
+
+	r1 := func(ctx context.Context) error {
+		return errDone
+	}
+
+	r2 := func(ctx context.Context) error {
+		<-ctx.Done()
+		time.Sleep(5 * timeout) // Stubbornly slow cleanup
+		return nil
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- app.RunAll(
+			[]app.Runnable{r1, r2},
+			app.WithTimeout(timeout),
+		)
+	}()
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "shutdown timed out")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("did not time out as expected")
+	}
 }

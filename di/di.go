@@ -501,7 +501,7 @@ func provide(
 		err = out[1].Interface().(error)
 	}
 
-	return
+	return instance, err
 }
 
 // Transient returns a Resolver that creates a new instance of the service

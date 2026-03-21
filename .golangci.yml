@@ -7,10 +7,26 @@ run:
     - jsonv2
   modules-download-mode: readonly
   allow-parallel-runners: true
+  timeout: 3m
 
 linters:
+  default: none
   enable:
+    - errcheck
+    - errname
+    - errorlint
+    - gocritic
     - goheader
+    - gosec
+    - govet
+    - ineffassign
+    - makezero
+    - misspell
+    - nilerr
+    - nolintlint
+    - prealloc
+    - revive
+    - staticcheck
 
   settings:
     goheader:
@@ -28,3 +44,22 @@ linters:
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
+
+    revive:
+      confidence: 0.8
+
+    gosec:
+      excludes:
+        - G104
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    gofumpt:
+      extra-rules: true
+
+    goimports:
+      local-prefixes: [github.com/deep-rent/nexus]

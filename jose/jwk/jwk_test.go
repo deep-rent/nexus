@@ -24,10 +24,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/deep-rent/nexus/jose/jwa"
-	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/jose/jwk"
 )
 
 type mockKey struct {
@@ -277,6 +278,7 @@ func TestWriteErrors(t *testing.T) {
 		})
 	}
 }
+
 func TestWriteSetErrors(t *testing.T) {
 	s := jwk.Singleton(&mockKey{alg: "XY99"})
 
@@ -367,7 +369,7 @@ func TestBuilderPanic(t *testing.T) {
 
 func read(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
+	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec
 	require.NoError(t, err)
 	return b
 }

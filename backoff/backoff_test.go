@@ -18,9 +18,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/internal/jitter"
-	"github.com/stretchr/testify/assert"
 )
 
 type mockRand struct{ val float64 }

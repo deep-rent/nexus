@@ -57,7 +57,6 @@ func NewPool(minSize, maxSize int) *Pool {
 
 // Get returns a reusable buffer slice.
 func (b *Pool) Get() []byte {
-	//nolint:errcheck // The type assertion is guaranteed to succeed.
 	return *b.pool.Get().(*[]byte)
 }
 

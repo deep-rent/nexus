@@ -77,6 +77,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/circl/sign/ed448"
+
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/scheduler"

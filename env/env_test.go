@@ -20,9 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/env"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/env"
 )
 
 type upperUnmarshaller string
@@ -152,7 +153,7 @@ type TIgnored struct {
 }
 
 type TUnexported struct {
-	v string // nolint:unused
+	v string //nolint:unused
 }
 
 type TCustomName struct {
@@ -820,7 +821,8 @@ func TestUnmarshal(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := append(tc.opts, env.WithLookup(func(k string) (string, bool) {
+			opts := tc.opts
+			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
 				v, ok := tc.vars[k]
 				return v, ok
 			}))
@@ -977,7 +979,8 @@ func TestExpand(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := append(tc.opts, env.WithLookup(func(k string) (string, bool) {
+			opts := tc.opts
+			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
 				v, ok := tc.vars[k]
 				return v, ok
 			}))

@@ -21,9 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/scheduler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/scheduler"
 )
 
 func TestAfter(t *testing.T) {

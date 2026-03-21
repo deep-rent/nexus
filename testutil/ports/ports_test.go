@@ -21,8 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/testutil/ports"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/testutil/ports"
 )
 
 func TestFree(t *testing.T) {

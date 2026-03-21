@@ -185,9 +185,11 @@ func (w *interceptor) Flush() {
 }
 
 // Ensure interceptor implements the necessary contracts.
-var _ http.ResponseWriter = (*interceptor)(nil)
-var _ http.Hijacker = (*interceptor)(nil)
-var _ http.Flusher = (*interceptor)(nil)
+var (
+	_ http.ResponseWriter = (*interceptor)(nil)
+	_ http.Hijacker       = (*interceptor)(nil)
+	_ http.Flusher        = (*interceptor)(nil)
+)
 
 // New creates a middleware Pipe that compresses HTTP responses using gzip
 // with the specified options.
