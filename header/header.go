@@ -175,15 +175,16 @@ func Accepts(s, key string) bool {
 
 	// Extract the major type (e.g., "text" from "text/html") for partial
 	// wildcards.
-	major, _, hasSlash := strings.Cut(key, "/")
+	major, _, has := strings.Cut(key, "/")
 
 	for k, q := range Preferences(s) {
 		var p int
-		if k == key {
+		switch {
+		case k == key:
 			p = 3 // Exact match (highest precedence)
-		} else if hasSlash && k == major+"/*" {
+		case has && k == major+"/*":
 			p = 2 // Partial wildcard match (e.g., "text/*")
-		} else if k == "*/*" || k == "*" {
+		case k == "*/*" || k == "*":
 			p = 1 // Global wildcard match
 		}
 
