@@ -491,7 +491,9 @@ func (r *Router) Handle(
 	})
 
 	// Combine global and local middleware.
-	local := append(r.mws, mws...)
+	local := make([]middleware.Pipe, 0, len(r.mws)+len(mws))
+	local = append(local, r.mws...)
+	local = append(local, mws...)
 	r.Mux.Handle(pattern, middleware.Chain(h, local...))
 }
 
