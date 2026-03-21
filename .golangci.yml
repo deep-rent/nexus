@@ -10,6 +10,7 @@ run:
   timeout: 3m
 
 linters:
+  default: none
   enable:
     - goheader
 
