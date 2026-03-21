@@ -18,7 +18,6 @@ linters:
     - gocritic
     - goheader
     - gosec
-    - gosimple
     - govet
     - ineffassign
     - makezero
