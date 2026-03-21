@@ -71,6 +71,7 @@ package cache
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -237,7 +238,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 
 	res, err := c.client.Do(req)
 	if err != nil {
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			c.logger.Error(
 				"HTTP request failed after retries",
 				slog.Any("error", err),
