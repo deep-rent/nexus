@@ -18,6 +18,12 @@ linters:
     - govet
     - ineffassign
     - staticcheck
+    - revive
+    - gocritic
+    - errorlint
+    - errname
+    - nilerr
+    - misspell
 
   settings:
     goheader:
