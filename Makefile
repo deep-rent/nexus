@@ -7,7 +7,7 @@ all: format lint test
 
 format:
 	@echo "Formatting..."
-	@gofmt -w .
+	@$(FLAGS) golangci-lint fmt $(PACKAGES)
 
 lint:
 	@echo "Linting..."
