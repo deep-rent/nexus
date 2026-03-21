@@ -194,12 +194,19 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 
 	cfg.logger.Info("Application started", slog.Int("components", len(runnables)))
 
+	failureCh := make(chan struct{}, 1)
 	for _, fn := range runnables {
 		g.Go(func() (err error) {
 			defer func() {
 				if r := recover(); r != nil {
 					stack := string(debug.Stack())
 					err = fmt.Errorf("application panic: %v\nstack: %s", r, stack)
+				}
+				if err != nil {
+					select {
+					case failureCh <- struct{}{}:
+					default:
+					}
 				}
 			}()
 			return fn(gCtx)
@@ -213,7 +220,7 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 
 	select {
 	case err := <-errCh:
-		// The application exited naturally or due to a failure in one component.
+		// The application exited naturally.
 		if err != nil {
 			return fmt.Errorf("application exited with error: %w", err)
 		}
@@ -224,20 +231,23 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 		// A signal was received (or parent context canceled).
 		cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
 
-		timer := time.NewTimer(cfg.timeout)
-		defer timer.Stop()
+	case <-failureCh:
+		// A component failed, triggering a shutdown of the others.
+		cfg.logger.Info("Component failure detected, initiating graceful shutdown")
+	}
 
-		select {
-		case err := <-errCh:
-			// If the error encountered is just "context canceled", we consider it a
-			// successful shutdown.
-			if err != nil && !errors.Is(err, context.Canceled) {
-				return fmt.Errorf("error during graceful shutdown: %w", err)
-			}
-			cfg.logger.Info("Shutdown completed successfully")
-			return nil
-		case <-timer.C:
-			return fmt.Errorf("shutdown timed out after %v", cfg.timeout)
+	timer := time.NewTimer(cfg.timeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-errCh:
+		// We consider context.Canceled as a natural byproduct of the shutdown.
+		if err != nil && !errors.Is(err, context.Canceled) {
+			return fmt.Errorf("application exited with error: %w", err)
 		}
+		cfg.logger.Info("Shutdown completed successfully")
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("shutdown timed out after %v", cfg.timeout)
 	}
 }
