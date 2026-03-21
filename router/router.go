@@ -52,6 +52,7 @@ package router
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -527,7 +528,8 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 			)
 			return
 		}
-		ae, ok := err.(*Error)
+		ae := &Error{}
+		ok := errors.As(err, &ae)
 		if !ok {
 			// Log the internal error details for debugging.
 			logger.Error("An internal server error occurred", slog.Any("err", err))
