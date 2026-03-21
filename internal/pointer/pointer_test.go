@@ -18,9 +18,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/pointer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/internal/pointer"
 )
 
 func TestAlloc(t *testing.T) {

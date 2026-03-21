@@ -19,8 +19,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/rotor"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/deep-rent/nexus/internal/rotor"
 )
 
 func TestNew(t *testing.T) {

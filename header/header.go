@@ -143,7 +143,7 @@ func Preferences(s string) iter.Seq2[string, float64] {
 				continue
 			}
 			params := strings.Split(part, ";")
-			var q = 1.0
+			q := 1.0
 			for i := 1; i < len(params); i++ {
 				p := strings.TrimSpace(params[i])
 				k, v, found := strings.Cut(p, "=")

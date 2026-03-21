@@ -21,9 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/uuid"
 )
 
 func TestNew_Structure(t *testing.T) {

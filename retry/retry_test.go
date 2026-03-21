@@ -28,10 +28,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/backoff"
-	"github.com/deep-rent/nexus/retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/backoff"
+	"github.com/deep-rent/nexus/retry"
 )
 
 type mockTrip struct {
@@ -92,6 +93,7 @@ func (m *mockBackoff) Next() time.Duration {
 	}
 	return 0
 }
+
 func (m *mockBackoff) Done() {
 	if m.done != nil {
 		m.done()
@@ -323,8 +325,10 @@ func TestTransport(t *testing.T) {
 
 	t.Run("non-rewindable body prevents retry", func(t *testing.T) {
 		mock := &mockRoundTripper{
-			trips: []mockTrip{{
-				res: newResponse(http.StatusServiceUnavailable, "fail")},
+			trips: []mockTrip{
+				{
+					res: newResponse(http.StatusServiceUnavailable, "fail"),
+				},
 			},
 		}
 		transport := retry.NewTransport(mock)

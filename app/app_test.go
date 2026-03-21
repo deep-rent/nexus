@@ -24,9 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/app"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/app"
 )
 
 func TestRun_Success(t *testing.T) {

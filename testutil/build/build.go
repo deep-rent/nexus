@@ -28,7 +28,7 @@ import (
 // the resulting executable to dst within a temporary directory. It returns the
 // absolute path to the compiled binary. The test framework automatically
 // removes the executable and its directory when the test completes.
-func Binary(t testing.TB, src string, dst string) string {
+func Binary(t testing.TB, src, dst string) string {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), dst)
 	if runtime.GOOS == "windows" {

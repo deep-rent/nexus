@@ -23,9 +23,10 @@ import (
 	"strings"
 	"testing"
 
-	mw "github.com/deep-rent/nexus/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	mw "github.com/deep-rent/nexus/middleware"
 )
 
 func TestChain(t *testing.T) {

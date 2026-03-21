@@ -20,9 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/env"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/env"
 )
 
 type upperUnmarshaller string

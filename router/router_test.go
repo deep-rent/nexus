@@ -23,9 +23,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/router"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/router"
 )
 
 // mockHandler implements router.Handler

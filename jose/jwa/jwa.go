@@ -229,7 +229,7 @@ var ES512 = newES("ES512", crypto.SHA512)
 // ed implements the EdDSA family of algorithms.
 type ed struct{}
 
-func (a *ed) Verify(key []byte, msg, sig []byte) bool {
+func (a *ed) Verify(key, msg, sig []byte) bool {
 	switch len(key) {
 	case ed448.PublicKeySize:
 		// Per RFC 8037, the JWS "EdDSA" algorithm corresponds to the "pure" EdDSA

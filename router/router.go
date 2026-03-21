@@ -484,7 +484,6 @@ func (r *Router) Handle(
 		}
 
 		err := handler.ServeHTTP(e)
-
 		if err != nil {
 			r.errorHandler(e, err)
 		}

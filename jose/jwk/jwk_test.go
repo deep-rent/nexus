@@ -24,10 +24,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/deep-rent/nexus/jose/jwa"
-	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/jose/jwk"
 )
 
 type mockKey struct {
@@ -277,6 +278,7 @@ func TestWriteErrors(t *testing.T) {
 		})
 	}
 }
+
 func TestWriteSetErrors(t *testing.T) {
 	s := jwk.Singleton(&mockKey{alg: "XY99"})
 

@@ -17,8 +17,9 @@ package quote_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/deep-rent/nexus/internal/quote"
 )
 
 func TestRemove(t *testing.T) {
