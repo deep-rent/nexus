@@ -35,10 +35,17 @@ const (
 type Driver interface {
 	// Init ensures the migration tracking table exists.
 	Init(ctx context.Context) error
-	// Applied returns all successfully applied migration versions in ascending order.
+	// Applied returns all successfully applied migration versions in ascending
+	// order.
 	Applied(ctx context.Context) ([]int64, error)
-	// Execute runs the migration payload and updates the tracking table in a single transaction.
-	Execute(ctx context.Context, version int64, direction Direction, payload string) error
+	// Execute runs the migration payload and updates the tracking table in a
+	// single transaction.
+	Execute(
+		ctx context.Context,
+		version int64,
+		direction Direction,
+		payload string,
+	) error
 	// Close cleans up driver resources.
 	Close() error
 }
@@ -174,12 +181,25 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	payload, err := fs.ReadFile(m.src, migration.Path)
 	if err != nil {
-		return fmt.Errorf("failed to read migration file %s: %w", migration.Path, err)
+		return fmt.Errorf(
+			"failed to read migration file %s: %w",
+			migration.Path,
+			err,
+		)
 	}
 
-	err = m.driver.Execute(ctx, migration.Version, migration.Direction, string(payload))
+	err = m.driver.Execute(
+		ctx,
+		migration.Version,
+		migration.Direction,
+		string(payload),
+	)
 	if err != nil {
-		return fmt.Errorf("migration %d failed: %w", migration.Version, err)
+		return fmt.Errorf(
+			"migration %d failed: %w",
+			migration.Version,
+			err,
+		)
 	}
 
 	return nil
