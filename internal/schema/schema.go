@@ -27,7 +27,6 @@ func PostgresParser(payload string) []string {
 	const customDelimiter = "-- nexus:split"
 	if strings.Contains(payload, customDelimiter) {
 		var stmts []string
-		// Use Go 1.24+ zero-allocation iterator
 		for s := range strings.SplitSeq(payload, customDelimiter) {
 			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				stmts = append(stmts, trimmed)
@@ -125,7 +124,7 @@ func PostgresParser(payload string) []string {
 					endIdx = j
 					break
 				}
-				if !((nc >= 'a' && nc <= 'z') || (nc >= 'A' && nc <= 'Z') || (nc >= '0' && nc <= '9') || nc == '_') {
+				if !isDollarQuoteTagChar(nc) {
 					break
 				}
 			}
@@ -162,4 +161,9 @@ func PostgresParser(payload string) []string {
 	}
 
 	return stmts
+}
+
+// isDollarQuoteTagChar checks if a byte is a valid character for a PostgreSQL dollar quote tag.
+func isDollarQuoteTagChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
