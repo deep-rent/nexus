@@ -123,6 +123,68 @@ func (m *Migrator) Down(ctx context.Context) error {
 	)
 }
 
+// MigrateTo applies or reverts migrations to reach the target version.
+func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
+	if err := m.driver.Init(ctx); err != nil {
+		return fmt.Errorf("failed to initialize driver: %w", err)
+	}
+
+	allFiles, err := m.parseFiles()
+	if err != nil {
+		return err
+	}
+
+	appliedVersions, err := m.driver.Applied(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied versions: %w", err)
+	}
+
+	appliedMap := make(map[int64]bool, len(appliedVersions))
+	for _, v := range appliedVersions {
+		appliedMap[v] = true
+	}
+
+	// Revert applied migrations strictly greater than targetVersion in descending
+	// order.
+	for i := len(appliedVersions) - 1; i >= 0; i-- {
+		v := appliedVersions[i]
+		if v > targetVersion {
+			found := false
+			for _, f := range allFiles {
+				if f.Version == v && f.Direction == Down {
+					if err := m.run(ctx, f); err != nil {
+						return err
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf(
+					"down migration file not found for version %d",
+					v,
+				)
+			}
+			appliedMap[v] = false
+		}
+	}
+
+	// Apply pending migrations less than or equal to targetVersion in ascending
+	// order.
+	for _, f := range allFiles {
+		if f.Direction == Up &&
+			f.Version <= targetVersion &&
+			!appliedMap[f.Version] {
+			if err := m.run(ctx, f); err != nil {
+				return err
+			}
+			appliedMap[f.Version] = true
+		}
+	}
+
+	return nil
+}
+
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 	allFiles, err := m.parseFiles()
