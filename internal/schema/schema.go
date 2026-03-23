@@ -19,11 +19,11 @@ import "strings"
 // Parser is a function that splits a SQL script into individual statements.
 type Parser func(payload string) []string
 
-// PostgresParser splits a PostgreSQL script into individual statements.
+// Postgres splits a PostgreSQL script into individual statements.
 // It safely splits by semicolons while ignoring those within comments,
 // string literals, identifiers, and PostgreSQL dollar quotes.
 // It also allows splitting by a custom delimiter "-- nexus:split".
-func PostgresParser(payload string) []string {
+func Postgres(payload string) []string {
 	const delim = "-- nexus:split"
 	if strings.Contains(payload, delim) {
 		var stmts []string

@@ -42,7 +42,7 @@ func New(db *sql.DB) *Driver {
 
 // Parser returns the PostgreSQL-specific statement parser.
 func (p *Driver) Parser() schema.Parser {
-	return schema.PostgresParser
+	return schema.Postgres
 }
 
 // Lock acquires a distributed lock via pg_advisory_lock.
