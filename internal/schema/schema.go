@@ -16,11 +16,14 @@ package schema
 
 import "strings"
 
-// Parse splits a SQL script into individual statements.
+// Parser is a function that splits a SQL script into individual statements.
+type Parser func(payload string) []string
+
+// PostgresParser splits a PostgreSQL script into individual statements.
 // It safely splits by semicolons while ignoring those within comments,
 // string literals, identifiers, and PostgreSQL dollar quotes.
 // It also allows splitting by a custom delimiter "-- nexus:split".
-func Parse(payload string) []string {
+func PostgresParser(payload string) []string {
 	if strings.Contains(payload, "-- nexus:split") {
 		var stmts []string
 		for _, s := range strings.Split(payload, "-- nexus:split") {

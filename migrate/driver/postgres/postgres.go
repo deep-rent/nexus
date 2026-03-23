@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/deep-rent/nexus/internal/schema"
 	"github.com/deep-rent/nexus/migrate"
 )
 
@@ -37,6 +38,11 @@ type Driver struct {
 // New creates a new PostgreSQL migration driver.
 func New(db *sql.DB) *Driver {
 	return &Driver{db: db}
+}
+
+// Parser returns the PostgreSQL-specific statement parser.
+func (p *Driver) Parser() schema.Parser {
+	return schema.PostgresParser
 }
 
 // Lock acquires a distributed lock via pg_advisory_lock.

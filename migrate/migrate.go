@@ -44,6 +44,8 @@ type Record struct {
 
 // Driver is the interface that database-specific backends must implement.
 type Driver interface {
+	// Parser returns a database-specific statement parser.
+	Parser() schema.Parser
 	// Init ensures the migration tracking table exists.
 	Init(ctx context.Context) error
 	// Lock acquires an exclusive lock to prevent concurrent migrations.
@@ -299,7 +301,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 
 	payloadStr := string(payload)
 	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx") && !strings.Contains(payloadStr, "-- no-transaction")
-	statements := schema.Parse(payloadStr)
+	statements := m.driver.Parser()(payloadStr)
 
 	err = m.driver.Execute(
 		ctx,
