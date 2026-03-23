@@ -17,21 +17,57 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/deep-rent/nexus/migrate"
 )
 
-const tableName = "migrations"
+const (
+	tableName = "migrations"
+	lockID    = 96281735 // Arbitrary unique identifier for pg_advisory_lock
+)
 
 // Driver implements migrate.Driver for PostgreSQL.
 type Driver struct {
-	db *sql.DB
+	db       *sql.DB
+	lockConn *sql.Conn
 }
 
 // New creates a new PostgreSQL migration driver.
 func New(db *sql.DB) *Driver {
 	return &Driver{db: db}
+}
+
+// Lock acquires a distributed lock via pg_advisory_lock.
+func (p *Driver) Lock(ctx context.Context) error {
+	if p.lockConn != nil {
+		return errors.New("already locked")
+	}
+	conn, err := p.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire database connection: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockID); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("failed to acquire advisory lock: %w", err)
+	}
+	p.lockConn = conn
+	return nil
+}
+
+// Unlock releases the distributed lock.
+func (p *Driver) Unlock(ctx context.Context) error {
+	if p.lockConn == nil {
+		return errors.New("not locked")
+	}
+	_, err := p.lockConn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", lockID)
+	errClose := p.lockConn.Close()
+	p.lockConn = nil
+	if err != nil {
+		return fmt.Errorf("failed to release advisory lock: %w", err)
+	}
+	return errClose
 }
 
 // Init creates the migrations tracking table if it doesn't already exist.

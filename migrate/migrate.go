@@ -35,6 +35,10 @@ const (
 type Driver interface {
 	// Init ensures the migration tracking table exists.
 	Init(ctx context.Context) error
+	// Lock acquires an exclusive lock to prevent concurrent migrations.
+	Lock(ctx context.Context) error
+	// Unlock releases the exclusive lock.
+	Unlock(ctx context.Context) error
 	// Applied returns all successfully applied migration versions in ascending
 	// order.
 	Applied(ctx context.Context) ([]int64, error)
@@ -75,6 +79,13 @@ func New(src fs.FS, driver Driver) *Migrator {
 
 // Up applies all pending migrations in ascending order.
 func (m *Migrator) Up(ctx context.Context) error {
+	if err := m.driver.Lock(ctx); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		_ = m.driver.Unlock(context.Background())
+	}()
+
 	if err := m.driver.Init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
@@ -94,6 +105,13 @@ func (m *Migrator) Up(ctx context.Context) error {
 
 // Down reverts the most recently applied migration.
 func (m *Migrator) Down(ctx context.Context) error {
+	if err := m.driver.Lock(ctx); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		_ = m.driver.Unlock(context.Background())
+	}()
+
 	if err := m.driver.Init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
@@ -126,6 +144,13 @@ func (m *Migrator) Down(ctx context.Context) error {
 
 // MigrateTo applies or reverts migrations to reach the target version.
 func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
+	if err := m.driver.Lock(ctx); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		_ = m.driver.Unlock(context.Background())
+	}()
+
 	if err := m.driver.Init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
