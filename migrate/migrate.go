@@ -110,7 +110,10 @@ func (m *Migrator) Down(ctx context.Context) error {
 		}
 	}
 
-	return fmt.Errorf("down migration file not found for version %d", lastApplied.Version)
+	return fmt.Errorf(
+		"down migration file not found for version %d",
+		lastApplied.Version,
+	)
 }
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
