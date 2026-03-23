@@ -16,6 +16,8 @@ package migrate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -31,6 +33,12 @@ const (
 	Down Direction = "down"
 )
 
+// Record represents a successfully applied migration stored in the database.
+type Record struct {
+	Version  int64
+	Checksum string
+}
+
 // Driver is the interface that database-specific backends must implement.
 type Driver interface {
 	// Init ensures the migration tracking table exists.
@@ -39,15 +47,16 @@ type Driver interface {
 	Lock(ctx context.Context) error
 	// Unlock releases the exclusive lock.
 	Unlock(ctx context.Context) error
-	// Applied returns all successfully applied migration versions in ascending
+	// Applied returns all successfully applied migration records in ascending
 	// order.
-	Applied(ctx context.Context) ([]int64, error)
+	Applied(ctx context.Context) ([]Record, error)
 	// Execute runs the migration statements and updates the tracking table.
 	// If useTx is true, all statements should be executed within a single transaction.
 	Execute(
 		ctx context.Context,
 		version int64,
 		direction Direction,
+		checksum string,
 		statements []string,
 		useTx bool,
 	) error
@@ -61,6 +70,7 @@ type Migration struct {
 	Description string
 	Direction   Direction
 	Path        string // Path in the fs.FS
+	Checksum    string // SHA-256 hash of the file contents
 }
 
 // Migrator orchestrates the execution of database migrations.
@@ -155,25 +165,20 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
 
-	allFiles, err := m.parseFiles()
+	appliedVersions, allFiles, err := m.loadAndValidate(ctx)
 	if err != nil {
 		return err
 	}
 
-	appliedVersions, err := m.driver.Applied(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get applied versions: %w", err)
-	}
-
 	appliedMap := make(map[int64]bool, len(appliedVersions))
 	for _, v := range appliedVersions {
-		appliedMap[v] = true
+		appliedMap[v.Version] = true
 	}
 
 	// Revert applied migrations strictly greater than targetVersion in descending
 	// order.
 	for i := len(appliedVersions) - 1; i >= 0; i-- {
-		v := appliedVersions[i]
+		v := appliedVersions[i].Version
 		if v > targetVersion {
 			found := false
 			for _, f := range allFiles {
@@ -213,19 +218,14 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
-	allFiles, err := m.parseFiles()
+	appliedVersions, allFiles, err := m.loadAndValidate(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	appliedVersions, err := m.driver.Applied(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get applied versions: %w", err)
-	}
-
 	appliedMap := make(map[int64]bool, len(appliedVersions))
 	for _, v := range appliedVersions {
-		appliedMap[v] = true
+		appliedMap[v.Version] = true
 	}
 
 	var pending []Migration
@@ -240,19 +240,14 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 
 // Applied returns a list of "Up" migrations that have already been executed.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
-	allFiles, err := m.parseFiles()
-	if err != nil {
-		return nil, err
-	}
-
-	appliedVersions, err := m.driver.Applied(ctx)
+	appliedVersions, allFiles, err := m.loadAndValidate(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	appliedMap := make(map[int64]bool, len(appliedVersions))
 	for _, v := range appliedVersions {
-		appliedMap[v] = true
+		appliedMap[v.Version] = true
 	}
 
 	var applied []Migration
@@ -284,6 +279,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		ctx,
 		migration.Version,
 		migration.Direction,
+		migration.Checksum,
 		statements,
 		useTx,
 	)
@@ -338,11 +334,19 @@ func (m *Migrator) parseFiles() ([]Migration, error) {
 			desc = baseParts[1]
 		}
 
+		payload, err := fs.ReadFile(m.src, p)
+		if err != nil {
+			return fmt.Errorf("failed to read migration file %s: %w", p, err)
+		}
+		hash := sha256.Sum256(payload)
+		checksum := hex.EncodeToString(hash[:])
+
 		migrations = append(migrations, Migration{
 			Version:     version,
 			Description: desc,
 			Direction:   Direction(directionStr),
 			Path:        p,
+			Checksum:    checksum,
 		})
 
 		return nil
@@ -357,6 +361,41 @@ func (m *Migrator) parseFiles() ([]Migration, error) {
 	})
 
 	return migrations, nil
+}
+
+// loadAndValidate reads applied records and available files, ensuring that
+// there are no missing files or checksum mismatches for previously applied
+// migrations.
+func (m *Migrator) loadAndValidate(ctx context.Context) ([]Record, []Migration, error) {
+	allFiles, err := m.parseFiles()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	appliedVersions, err := m.driver.Applied(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
+	}
+
+	upFiles := make(map[int64]Migration)
+	for _, f := range allFiles {
+		if f.Direction == Up {
+			upFiles[f.Version] = f
+		}
+	}
+
+	for _, a := range appliedVersions {
+		f, ok := upFiles[a.Version]
+		if !ok {
+			return nil, nil, fmt.Errorf("applied migration %d is missing from source files", a.Version)
+		}
+		// Accepts an empty checksum string in DB rows to safely handle backward compatibility.
+		if a.Checksum != "" && a.Checksum != f.Checksum {
+			return nil, nil, fmt.Errorf("checksum mismatch for migration %d: database has %s, file has %s", a.Version, a.Checksum, f.Checksum)
+		}
+	}
+
+	return appliedVersions, allFiles, nil
 }
 
 // ParseStatements splits a SQL script into individual statements.

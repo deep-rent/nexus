@@ -75,17 +75,24 @@ func (p *Driver) Init(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			version BIGINT PRIMARY KEY,
+			checksum VARCHAR(64) NOT NULL DEFAULT '',
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
 	`, tableName)
 
-	_, err := p.db.ExecContext(ctx, query)
+	if _, err := p.db.ExecContext(ctx, query); err != nil {
+		return err
+	}
+
+	// Ensure checksum column exists for backward compatibility of tracking table.
+	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS checksum VARCHAR(64) NOT NULL DEFAULT '';`, tableName)
+	_, err := p.db.ExecContext(ctx, alter)
 	return err
 }
 
-// Applied returns all successfully applied migration versions.
-func (p *Driver) Applied(ctx context.Context) ([]int64, error) {
-	query := fmt.Sprintf("SELECT version FROM %s ORDER BY version ASC", tableName)
+// Applied returns all successfully applied migration records.
+func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
+	query := fmt.Sprintf("SELECT version, checksum FROM %s ORDER BY version ASC", tableName)
 
 	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
@@ -95,20 +102,20 @@ func (p *Driver) Applied(ctx context.Context) ([]int64, error) {
 		_ = rows.Close()
 	}()
 
-	var versions []int64
+	var records []migrate.Record
 	for rows.Next() {
-		var version int64
-		if err := rows.Scan(&version); err != nil {
+		var rec migrate.Record
+		if err := rows.Scan(&rec.Version, &rec.Checksum); err != nil {
 			return nil, err
 		}
-		versions = append(versions, version)
+		records = append(records, rec)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	return versions, nil
+	return records, nil
 }
 
 type execer interface {
@@ -120,19 +127,21 @@ func (p *Driver) Execute(
 	ctx context.Context,
 	version int64,
 	direction migrate.Direction,
+	checksum string,
 	statements []string,
 	useTx bool,
 ) error {
 	if useTx {
-		return p.executeTx(ctx, version, direction, statements)
+		return p.executeTx(ctx, version, direction, checksum, statements)
 	}
-	return p.executeNoTx(ctx, version, direction, statements)
+	return p.executeNoTx(ctx, version, direction, checksum, statements)
 }
 
 func (p *Driver) executeTx(
 	ctx context.Context,
 	version int64,
 	direction migrate.Direction,
+	checksum string,
 	statements []string,
 ) error {
 	// Begin transaction
@@ -154,7 +163,7 @@ func (p *Driver) executeTx(
 	}
 
 	// 2. Update the tracking table safely
-	if err := p.record(ctx, tx, version, direction); err != nil {
+	if err := p.record(ctx, tx, version, direction, checksum); err != nil {
 		return err
 	}
 
@@ -170,6 +179,7 @@ func (p *Driver) executeNoTx(
 	ctx context.Context,
 	version int64,
 	direction migrate.Direction,
+	checksum string,
 	statements []string,
 ) error {
 	for _, stmt := range statements {
@@ -177,14 +187,14 @@ func (p *Driver) executeNoTx(
 			return fmt.Errorf("failed to execute migration statement: %w", err)
 		}
 	}
-	return p.record(ctx, p.db, version, direction)
+	return p.record(ctx, p.db, version, direction, checksum)
 }
 
-func (p *Driver) record(ctx context.Context, exec execer, version int64, direction migrate.Direction) error {
+func (p *Driver) record(ctx context.Context, exec execer, version int64, direction migrate.Direction, checksum string) error {
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", tableName)
-		if _, err := exec.ExecContext(ctx, query, version); err != nil {
+		query := fmt.Sprintf("INSERT INTO %s (version, checksum) VALUES ($1, $2)", tableName)
+		if _, err := exec.ExecContext(ctx, query, version, checksum); err != nil {
 			return fmt.Errorf("failed to record migration: %w", err)
 		}
 	case migrate.Down:
