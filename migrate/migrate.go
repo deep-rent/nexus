@@ -2,10 +2,8 @@ package migrate
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"sort"
 	"strconv"
 	"strings"
