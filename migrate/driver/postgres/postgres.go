@@ -87,18 +87,7 @@ func (p *Driver) Init(ctx context.Context) error {
 		);
 	`, tableName)
 
-	if _, err := p.db.ExecContext(ctx, query); err != nil {
-		return err
-	}
-
-	// Ensure checksum column exists for backward compatibility of tracking table.
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS checksum VARCHAR(64) NOT NULL DEFAULT '';`, tableName)
-	if _, err := p.db.ExecContext(ctx, alter); err != nil {
-		return err
-	}
-
-	alterDirty := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS dirty BOOLEAN NOT NULL DEFAULT false;`, tableName)
-	_, err := p.db.ExecContext(ctx, alterDirty)
+	_, err := p.db.ExecContext(ctx, query)
 	return err
 }
 
