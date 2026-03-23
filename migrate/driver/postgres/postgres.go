@@ -1,3 +1,17 @@
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package postgres
 
 import (
@@ -41,7 +55,9 @@ func (p *Driver) Applied(ctx context.Context) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var versions []int64
 	for rows.Next() {
@@ -62,10 +78,10 @@ func (p *Driver) Applied(ctx context.Context) ([]int64, error) {
 // Execute runs the migration payload and records the state in a single
 // transaction.
 func (p *Driver) Execute(
-  ctx context.Context,
-  version int64,
-  direction migrate.Direction,
-  payload string,
+	ctx context.Context,
+	version int64,
+	direction migrate.Direction,
+	payload string,
 ) error {
 	// Begin transaction
 	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -74,7 +90,9 @@ func (p *Driver) Execute(
 	}
 
 	// Ensure rollback on panic or early return
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	// 1. Execute the actual migration SQL
 	if _, err := tx.ExecContext(ctx, payload); err != nil {
@@ -82,12 +100,13 @@ func (p *Driver) Execute(
 	}
 
 	// 2. Update the tracking table safely using parameterized queries
-	if direction == migrate.Up {
+	switch direction {
+	case migrate.Up:
 		query := fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", tableName)
 		if _, err := tx.ExecContext(ctx, query, version); err != nil {
 			return fmt.Errorf("failed to record migration: %w", err)
 		}
-	} else if direction == migrate.Down {
+	case migrate.Down:
 		query := fmt.Sprintf("DELETE FROM %s WHERE version = $1", tableName)
 		if _, err := tx.ExecContext(ctx, query, version); err != nil {
 			return fmt.Errorf("failed to remove migration record: %w", err)
