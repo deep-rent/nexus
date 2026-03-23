@@ -75,13 +75,29 @@ func (p *Driver) Applied(ctx context.Context) ([]int64, error) {
 	return versions, nil
 }
 
-// Execute runs the migration payload and records the state in a single
-// transaction.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// Execute runs the migration statements and records the state.
 func (p *Driver) Execute(
 	ctx context.Context,
 	version int64,
 	direction migrate.Direction,
-	payload string,
+	statements []string,
+	useTx bool,
+) error {
+	if useTx {
+		return p.executeTx(ctx, version, direction, statements)
+	}
+	return p.executeNoTx(ctx, version, direction, statements)
+}
+
+func (p *Driver) executeTx(
+	ctx context.Context,
+	version int64,
+	direction migrate.Direction,
+	statements []string,
 ) error {
 	// Begin transaction
 	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -94,23 +110,16 @@ func (p *Driver) Execute(
 		_ = tx.Rollback()
 	}()
 
-	// 1. Execute the actual migration SQL
-	if _, err := tx.ExecContext(ctx, payload); err != nil {
-		return fmt.Errorf("failed to execute migration payload: %w", err)
+	// 1. Execute the actual migration SQL statements
+	for _, stmt := range statements {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("failed to execute migration statement: %w", err)
+		}
 	}
 
-	// 2. Update the tracking table safely using parameterized queries
-	switch direction {
-	case migrate.Up:
-		query := fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", tableName)
-		if _, err := tx.ExecContext(ctx, query, version); err != nil {
-			return fmt.Errorf("failed to record migration: %w", err)
-		}
-	case migrate.Down:
-		query := fmt.Sprintf("DELETE FROM %s WHERE version = $1", tableName)
-		if _, err := tx.ExecContext(ctx, query, version); err != nil {
-			return fmt.Errorf("failed to remove migration record: %w", err)
-		}
+	// 2. Update the tracking table safely
+	if err := p.record(ctx, tx, version, direction); err != nil {
+		return err
 	}
 
 	// Commit transaction
@@ -118,6 +127,36 @@ func (p *Driver) Execute(
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	return nil
+}
+
+func (p *Driver) executeNoTx(
+	ctx context.Context,
+	version int64,
+	direction migrate.Direction,
+	statements []string,
+) error {
+	for _, stmt := range statements {
+		if _, err := p.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("failed to execute migration statement: %w", err)
+		}
+	}
+	return p.record(ctx, p.db, version, direction)
+}
+
+func (p *Driver) record(ctx context.Context, exec execer, version int64, direction migrate.Direction) error {
+	switch direction {
+	case migrate.Up:
+		query := fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", tableName)
+		if _, err := exec.ExecContext(ctx, query, version); err != nil {
+			return fmt.Errorf("failed to record migration: %w", err)
+		}
+	case migrate.Down:
+		query := fmt.Sprintf("DELETE FROM %s WHERE version = $1", tableName)
+		if _, err := exec.ExecContext(ctx, query, version); err != nil {
+			return fmt.Errorf("failed to remove migration record: %w", err)
+		}
+	}
 	return nil
 }
 
