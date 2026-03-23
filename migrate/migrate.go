@@ -37,7 +37,7 @@ const (
 
 // Record represents a successfully applied migration stored in the database.
 type Record struct {
-	Version  int64
+	Version  uint64
 	Checksum string
 	Dirty    bool
 }
@@ -56,12 +56,12 @@ type Driver interface {
 	// order.
 	Applied(ctx context.Context) ([]Record, error)
 	// Force sets the database to the specified version and clears the dirty state.
-	Force(ctx context.Context, version int64) error
+	Force(ctx context.Context, version uint64) error
 	// Execute runs the migration statements and updates the tracking table.
 	// If useTx is true, all statements should be executed within a single transaction.
 	Execute(
 		ctx context.Context,
-		version int64,
+		version uint64,
 		direction Direction,
 		checksum string,
 		statements []string,
@@ -73,7 +73,7 @@ type Driver interface {
 
 // Migration represents a parsed migration file.
 type Migration struct {
-	Version     int64
+	Version     uint64
 	Description string
 	Direction   Direction
 	Path        string // Path in the fs.FS
@@ -161,7 +161,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 
 // Force manually sets the database to the specified version and clears the dirty
 // flag. It should be used to resolve a dirty state after human intervention.
-func (m *Migrator) Force(ctx context.Context, version int64) error {
+func (m *Migrator) Force(ctx context.Context, version uint64) error {
 	if err := m.driver.Lock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
@@ -181,7 +181,7 @@ func (m *Migrator) Force(ctx context.Context, version int64) error {
 }
 
 // MigrateTo applies or reverts migrations to reach the target version.
-func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
+func (m *Migrator) MigrateTo(ctx context.Context, targetVersion uint64) error {
 	if err := m.driver.Lock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
@@ -198,7 +198,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
 		return err
 	}
 
-	appliedMap := make(map[int64]bool, len(appliedVersions))
+	appliedMap := make(map[uint64]bool, len(appliedVersions))
 	for _, v := range appliedVersions {
 		appliedMap[v.Version] = true
 	}
@@ -251,7 +251,7 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 		return nil, err
 	}
 
-	appliedMap := make(map[int64]bool, len(appliedVersions))
+	appliedMap := make(map[uint64]bool, len(appliedVersions))
 	for _, v := range appliedVersions {
 		appliedMap[v.Version] = true
 	}
@@ -273,7 +273,7 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 		return nil, err
 	}
 
-	appliedMap := make(map[int64]bool, len(appliedVersions))
+	appliedMap := make(map[uint64]bool, len(appliedVersions))
 	for _, v := range appliedVersions {
 		appliedMap[v.Version] = true
 	}
@@ -352,7 +352,7 @@ func (m *Migrator) parseFiles() ([]Migration, error) {
 			return fmt.Errorf("missing version in file: %s", name)
 		}
 
-		version, err := strconv.ParseInt(baseParts[0], 10, 64)
+		version, err := strconv.ParseUint(baseParts[0], 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid version %q in file: %s", baseParts[0], name)
 		}
@@ -405,7 +405,7 @@ func (m *Migrator) loadAndValidate(ctx context.Context) ([]Record, []Migration, 
 		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
 	}
 
-	upFiles := make(map[int64]Migration)
+	upFiles := make(map[uint64]Migration)
 	for _, f := range allFiles {
 		if f.Direction == Up {
 			upFiles[f.Version] = f

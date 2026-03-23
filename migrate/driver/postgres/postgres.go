@@ -120,7 +120,7 @@ func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 }
 
 // Force sets the database to the specified version and clears the dirty flag.
-func (p *Driver) Force(ctx context.Context, version int64) error {
+func (p *Driver) Force(ctx context.Context, version uint64) error {
 	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -143,7 +143,7 @@ func (p *Driver) Force(ctx context.Context, version int64) error {
 // Execute runs the migration statements and records the state.
 func (p *Driver) Execute(
 	ctx context.Context,
-	version int64,
+	version uint64,
 	direction migrate.Direction,
 	checksum string,
 	statements []string,
@@ -213,7 +213,7 @@ func (p *Driver) executeNoTx(
 	return nil
 }
 
-func (p *Driver) setDirty(ctx context.Context, version int64, direction migrate.Direction, checksum string) error {
+func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate.Direction, checksum string) error {
 	switch direction {
 	case migrate.Up:
 		query := fmt.Sprintf("INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true", tableName)
@@ -229,7 +229,7 @@ func (p *Driver) setDirty(ctx context.Context, version int64, direction migrate.
 	return nil
 }
 
-func (p *Driver) clearDirty(ctx context.Context, version int64, direction migrate.Direction) error {
+func (p *Driver) clearDirty(ctx context.Context, version uint64, direction migrate.Direction) error {
 	switch direction {
 	case migrate.Up:
 		query := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", tableName)
