@@ -24,10 +24,10 @@ type Parser func(payload string) []string
 // string literals, identifiers, and PostgreSQL dollar quotes.
 // It also allows splitting by a custom delimiter "-- nexus:split".
 func PostgresParser(payload string) []string {
-	const customDelimiter = "-- nexus:split"
-	if strings.Contains(payload, customDelimiter) {
+	const delim = "-- nexus:split"
+	if strings.Contains(payload, delim) {
 		var stmts []string
-		for s := range strings.SplitSeq(payload, customDelimiter) {
+		for s := range strings.SplitSeq(payload, delim) {
 			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				stmts = append(stmts, trimmed)
 			}
@@ -39,11 +39,11 @@ func PostgresParser(payload string) []string {
 	length := len(payload)
 	start := 0
 
-	inString := false
-	inIdentifier := false
+	inQuotes := false
+	inId := false
 	inLineComment := false
 	blockCommentDepth := 0
-	var dollarQuote string
+	var dq string
 
 	// Iterate over bytes zero-alloc. Safe for UTF-8 since structural
 	// characters are all ASCII and won't match multi-byte sequence parts.
@@ -71,35 +71,35 @@ func PostgresParser(payload string) []string {
 		}
 
 		// 3. PostgreSQL Dollar Quotes
-		if dollarQuote != "" {
-			if c == '$' && strings.HasPrefix(payload[i:], dollarQuote) {
-				i += len(dollarQuote) - 1
-				dollarQuote = ""
+		if dq != "" {
+			if c == '$' && strings.HasPrefix(payload[i:], dq) {
+				i += len(dq) - 1
+				dq = ""
 			}
 			continue
 		}
 
 		// 4. Single-quoted strings
-		if inString {
+		if inQuotes {
 			if c == '\'' {
 				// Allow escaping by doubling the quote
 				if i+1 < length && payload[i+1] == '\'' {
 					i++
 				} else {
-					inString = false
+					inQuotes = false
 				}
 			}
 			continue
 		}
 
 		// 5. Double-quoted identifiers
-		if inIdentifier {
+		if inId {
 			if c == '"' {
 				// Allow escaping by doubling the quote
 				if i+1 < length && payload[i+1] == '"' {
 					i++
 				} else {
-					inIdentifier = false
+					inId = false
 				}
 			}
 			continue
@@ -124,22 +124,22 @@ func PostgresParser(payload string) []string {
 					endIdx = j
 					break
 				}
-				if !isDollarQuoteTagChar(nc) {
+				if !isTagChar(nc) {
 					break
 				}
 			}
 			if endIdx != -1 {
-				dollarQuote = payload[i : endIdx+1]
+				dq = payload[i : endIdx+1]
 				i = endIdx
 				continue
 			}
 		}
 		if c == '\'' {
-			inString = true
+			inQuotes = true
 			continue
 		}
 		if c == '"' {
-			inIdentifier = true
+			inId = true
 			continue
 		}
 
@@ -163,7 +163,7 @@ func PostgresParser(payload string) []string {
 	return stmts
 }
 
-// isDollarQuoteTagChar checks if a byte is a valid character for a PostgreSQL dollar quote tag.
-func isDollarQuoteTagChar(c byte) bool {
+// isTagChar checks if a byte is a valid character for a PostgreSQL dollar quote tag.
+func isTagChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
