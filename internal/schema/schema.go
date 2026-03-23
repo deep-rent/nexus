@@ -24,9 +24,11 @@ type Parser func(payload string) []string
 // string literals, identifiers, and PostgreSQL dollar quotes.
 // It also allows splitting by a custom delimiter "-- nexus:split".
 func PostgresParser(payload string) []string {
-	if strings.Contains(payload, "-- nexus:split") {
+	const customDelimiter = "-- nexus:split"
+	if strings.Contains(payload, customDelimiter) {
 		var stmts []string
-		for _, s := range strings.Split(payload, "-- nexus:split") {
+		// Use Go 1.24+ zero-allocation iterator
+		for s := range strings.SplitSeq(payload, customDelimiter) {
 			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				stmts = append(stmts, trimmed)
 			}
@@ -35,10 +37,8 @@ func PostgresParser(payload string) []string {
 	}
 
 	var stmts []string
-	var buf strings.Builder
-
-	runes := []rune(payload)
-	length := len(runes)
+	length := len(payload)
+	start := 0
 
 	inString := false
 	inIdentifier := false
@@ -46,13 +46,14 @@ func PostgresParser(payload string) []string {
 	blockCommentDepth := 0
 	var dollarQuote string
 
+	// Iterate over bytes zero-alloc. Safe for UTF-8 since structural
+	// characters are all ASCII and won't match multi-byte sequence parts.
 	for i := 0; i < length; i++ {
-		r := runes[i]
+		c := payload[i]
 
 		// 1. Line Comments
 		if inLineComment {
-			buf.WriteRune(r)
-			if r == '\n' {
+			if c == '\n' {
 				inLineComment = false
 			}
 			continue
@@ -60,49 +61,30 @@ func PostgresParser(payload string) []string {
 
 		// 2. Block Comments (supports nesting)
 		if blockCommentDepth > 0 {
-			buf.WriteRune(r)
-			if r == '/' && i+1 < length && runes[i+1] == '*' {
-				buf.WriteRune('*')
-				i++
+			if c == '/' && i+1 < length && payload[i+1] == '*' {
 				blockCommentDepth++
-			} else if r == '*' && i+1 < length && runes[i+1] == '/' {
-				buf.WriteRune('/')
 				i++
+			} else if c == '*' && i+1 < length && payload[i+1] == '/' {
 				blockCommentDepth--
+				i++
 			}
 			continue
 		}
 
 		// 3. PostgreSQL Dollar Quotes
 		if dollarQuote != "" {
-			buf.WriteRune(r)
-			if r == '$' {
-				match := true
-				tagRunes := []rune(dollarQuote)
-				for j := 1; j < len(tagRunes); j++ {
-					if i+j >= length || runes[i+j] != tagRunes[j] {
-						match = false
-						break
-					}
-				}
-				if match {
-					for j := 1; j < len(tagRunes); j++ {
-						buf.WriteRune(runes[i+j])
-					}
-					i += len(tagRunes) - 1
-					dollarQuote = ""
-				}
+			if c == '$' && strings.HasPrefix(payload[i:], dollarQuote) {
+				i += len(dollarQuote) - 1
+				dollarQuote = ""
 			}
 			continue
 		}
 
 		// 4. Single-quoted strings
 		if inString {
-			buf.WriteRune(r)
-			if r == '\'' {
+			if c == '\'' {
 				// Allow escaping by doubling the quote
-				if i+1 < length && runes[i+1] == '\'' {
-					buf.WriteRune('\'')
+				if i+1 < length && payload[i+1] == '\'' {
 					i++
 				} else {
 					inString = false
@@ -113,10 +95,9 @@ func PostgresParser(payload string) []string {
 
 		// 5. Double-quoted identifiers
 		if inIdentifier {
-			buf.WriteRune(r)
-			if r == '"' {
-				if i+1 < length && runes[i+1] == '"' {
-					buf.WriteRune('"')
+			if c == '"' {
+				// Allow escaping by doubling the quote
+				if i+1 < length && payload[i+1] == '"' {
 					i++
 				} else {
 					inIdentifier = false
@@ -126,67 +107,58 @@ func PostgresParser(payload string) []string {
 		}
 
 		// 6. Lookahead for new state changes
-		if r == '-' && i+1 < length && runes[i+1] == '-' {
+		if c == '-' && i+1 < length && payload[i+1] == '-' {
 			inLineComment = true
-			buf.WriteRune(r)
-			buf.WriteRune('-')
 			i++
 			continue
 		}
-		if r == '/' && i+1 < length && runes[i+1] == '*' {
+		if c == '/' && i+1 < length && payload[i+1] == '*' {
 			blockCommentDepth++
-			buf.WriteRune(r)
-			buf.WriteRune('*')
 			i++
 			continue
 		}
-		if r == '$' {
+		if c == '$' {
 			endIdx := -1
 			for j := i + 1; j < length; j++ {
-				if runes[j] == '$' {
+				nc := payload[j]
+				if nc == '$' {
 					endIdx = j
 					break
 				}
-				if !((runes[j] >= 'a' && runes[j] <= 'z') || (runes[j] >= 'A' && runes[j] <= 'Z') || (runes[j] >= '0' && runes[j] <= '9') || runes[j] == '_') {
+				if !((nc >= 'a' && nc <= 'z') || (nc >= 'A' && nc <= 'Z') || (nc >= '0' && nc <= '9') || nc == '_') {
 					break
 				}
 			}
 			if endIdx != -1 {
-				dollarQuote = string(runes[i : endIdx+1])
-				for j := i; j <= endIdx; j++ {
-					buf.WriteRune(runes[j])
-				}
+				dollarQuote = payload[i : endIdx+1]
 				i = endIdx
 				continue
 			}
 		}
-		if r == '\'' {
+		if c == '\'' {
 			inString = true
-			buf.WriteRune(r)
 			continue
 		}
-		if r == '"' {
+		if c == '"' {
 			inIdentifier = true
-			buf.WriteRune(r)
 			continue
 		}
 
 		// 7. Statement boundary detection
-		if r == ';' {
-			stmt := strings.TrimSpace(buf.String())
-			if stmt != "" {
+		if c == ';' {
+			if stmt := strings.TrimSpace(payload[start:i]); stmt != "" {
 				stmts = append(stmts, stmt)
 			}
-			buf.Reset()
+			start = i + 1
 			continue
 		}
-
-		buf.WriteRune(r)
 	}
 
 	// Flush remaining buffer
-	if stmt := strings.TrimSpace(buf.String()); stmt != "" {
-		stmts = append(stmts, stmt)
+	if start < length {
+		if stmt := strings.TrimSpace(payload[start:]); stmt != "" {
+			stmts = append(stmts, stmt)
+		}
 	}
 
 	return stmts
