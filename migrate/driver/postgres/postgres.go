@@ -76,6 +76,7 @@ func (p *Driver) Init(ctx context.Context) error {
 		CREATE TABLE IF NOT EXISTS %s (
 			version BIGINT PRIMARY KEY,
 			checksum VARCHAR(64) NOT NULL DEFAULT '',
+			dirty BOOLEAN NOT NULL DEFAULT false,
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
 	`, tableName)
@@ -86,13 +87,18 @@ func (p *Driver) Init(ctx context.Context) error {
 
 	// Ensure checksum column exists for backward compatibility of tracking table.
 	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS checksum VARCHAR(64) NOT NULL DEFAULT '';`, tableName)
-	_, err := p.db.ExecContext(ctx, alter)
+	if _, err := p.db.ExecContext(ctx, alter); err != nil {
+		return err
+	}
+
+	alterDirty := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS dirty BOOLEAN NOT NULL DEFAULT false;`, tableName)
+	_, err := p.db.ExecContext(ctx, alterDirty)
 	return err
 }
 
 // Applied returns all successfully applied migration records.
 func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
-	query := fmt.Sprintf("SELECT version, checksum FROM %s ORDER BY version ASC", tableName)
+	query := fmt.Sprintf("SELECT version, checksum, dirty FROM %s ORDER BY version ASC", tableName)
 
 	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
@@ -105,7 +111,7 @@ func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	var records []migrate.Record
 	for rows.Next() {
 		var rec migrate.Record
-		if err := rows.Scan(&rec.Version, &rec.Checksum); err != nil {
+		if err := rows.Scan(&rec.Version, &rec.Checksum, &rec.Dirty); err != nil {
 			return nil, err
 		}
 		records = append(records, rec)
@@ -118,8 +124,25 @@ func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	return records, nil
 }
 
-type execer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+// Force sets the database to the specified version and clears the dirty flag.
+func (p *Driver) Force(ctx context.Context, version int64) error {
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	queryUpdate := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", tableName)
+	if _, err := tx.ExecContext(ctx, queryUpdate, version); err != nil {
+		return fmt.Errorf("failed to clear dirty flag: %w", err)
+	}
+
+	queryDelete := fmt.Sprintf("DELETE FROM %s WHERE version > $1", tableName)
+	if _, err := tx.ExecContext(ctx, queryDelete, version); err != nil {
+		return fmt.Errorf("failed to delete newer versions: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // Execute runs the migration statements and records the state.
@@ -131,17 +154,30 @@ func (p *Driver) Execute(
 	statements []string,
 	useTx bool,
 ) error {
-	if useTx {
-		return p.executeTx(ctx, version, direction, checksum, statements)
+	if err := p.setDirty(ctx, version, direction, checksum); err != nil {
+		return fmt.Errorf("failed to mark migration as dirty: %w", err)
 	}
-	return p.executeNoTx(ctx, version, direction, checksum, statements)
+
+	var err error
+	if useTx {
+		err = p.executeTx(ctx, statements)
+	} else {
+		err = p.executeNoTx(ctx, statements)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if err := p.clearDirty(ctx, version, direction); err != nil {
+		return fmt.Errorf("failed to clear dirty state: %w", err)
+	}
+
+	return nil
 }
 
 func (p *Driver) executeTx(
 	ctx context.Context,
-	version int64,
-	direction migrate.Direction,
-	checksum string,
 	statements []string,
 ) error {
 	// Begin transaction
@@ -162,11 +198,6 @@ func (p *Driver) executeTx(
 		}
 	}
 
-	// 2. Update the tracking table safely
-	if err := p.record(ctx, tx, version, direction, checksum); err != nil {
-		return err
-	}
-
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
@@ -177,9 +208,6 @@ func (p *Driver) executeTx(
 
 func (p *Driver) executeNoTx(
 	ctx context.Context,
-	version int64,
-	direction migrate.Direction,
-	checksum string,
 	statements []string,
 ) error {
 	for _, stmt := range statements {
@@ -187,19 +215,35 @@ func (p *Driver) executeNoTx(
 			return fmt.Errorf("failed to execute migration statement: %w", err)
 		}
 	}
-	return p.record(ctx, p.db, version, direction, checksum)
+	return nil
 }
 
-func (p *Driver) record(ctx context.Context, exec execer, version int64, direction migrate.Direction, checksum string) error {
+func (p *Driver) setDirty(ctx context.Context, version int64, direction migrate.Direction, checksum string) error {
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf("INSERT INTO %s (version, checksum) VALUES ($1, $2)", tableName)
-		if _, err := exec.ExecContext(ctx, query, version, checksum); err != nil {
-			return fmt.Errorf("failed to record migration: %w", err)
+		query := fmt.Sprintf("INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true", tableName)
+		if _, err := p.db.ExecContext(ctx, query, version, checksum); err != nil {
+			return fmt.Errorf("failed to mark migration as dirty: %w", err)
+		}
+	case migrate.Down:
+		query := fmt.Sprintf("UPDATE %s SET dirty = true WHERE version = $1", tableName)
+		if _, err := p.db.ExecContext(ctx, query, version); err != nil {
+			return fmt.Errorf("failed to mark migration as dirty: %w", err)
+		}
+	}
+	return nil
+}
+
+func (p *Driver) clearDirty(ctx context.Context, version int64, direction migrate.Direction) error {
+	switch direction {
+	case migrate.Up:
+		query := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", tableName)
+		if _, err := p.db.ExecContext(ctx, query, version); err != nil {
+			return fmt.Errorf("failed to clear dirty state: %w", err)
 		}
 	case migrate.Down:
 		query := fmt.Sprintf("DELETE FROM %s WHERE version = $1", tableName)
-		if _, err := exec.ExecContext(ctx, query, version); err != nil {
+		if _, err := p.db.ExecContext(ctx, query, version); err != nil {
 			return fmt.Errorf("failed to remove migration record: %w", err)
 		}
 	}

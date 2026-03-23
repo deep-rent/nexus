@@ -37,6 +37,7 @@ const (
 type Record struct {
 	Version  int64
 	Checksum string
+	Dirty    bool
 }
 
 // Driver is the interface that database-specific backends must implement.
@@ -50,6 +51,8 @@ type Driver interface {
 	// Applied returns all successfully applied migration records in ascending
 	// order.
 	Applied(ctx context.Context) ([]Record, error)
+	// Force sets the database to the specified version and clears the dirty state.
+	Force(ctx context.Context, version int64) error
 	// Execute runs the migration statements and updates the tracking table.
 	// If useTx is true, all statements should be executed within a single transaction.
 	Execute(
@@ -150,6 +153,27 @@ func (m *Migrator) Down(ctx context.Context) error {
 		"down migration file not found for version %d",
 		lastApplied.Version,
 	)
+}
+
+// Force manually sets the database to the specified version and clears the dirty
+// flag. It should be used to resolve a dirty state after human intervention.
+func (m *Migrator) Force(ctx context.Context, version int64) error {
+	if err := m.driver.Lock(ctx); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		_ = m.driver.Unlock(context.Background())
+	}()
+
+	if err := m.driver.Init(ctx); err != nil {
+		return fmt.Errorf("failed to initialize driver: %w", err)
+	}
+
+	if err := m.driver.Force(ctx, version); err != nil {
+		return fmt.Errorf("failed to force version: %w", err)
+	}
+
+	return nil
 }
 
 // MigrateTo applies or reverts migrations to reach the target version.
@@ -385,6 +409,9 @@ func (m *Migrator) loadAndValidate(ctx context.Context) ([]Record, []Migration, 
 	}
 
 	for _, a := range appliedVersions {
+		if a.Dirty {
+			return nil, nil, fmt.Errorf("database is dirty at version %d; manual intervention required", a.Version)
+		}
 		f, ok := upFiles[a.Version]
 		if !ok {
 			return nil, nil, fmt.Errorf("applied migration %d is missing from source files", a.Version)
