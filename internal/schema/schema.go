@@ -14,7 +14,11 @@
 
 package schema
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/deep-rent/nexus/internal/ascii"
+)
 
 // Parser is a function that splits a SQL script into individual statements.
 type Parser func(payload string) []string
@@ -124,7 +128,7 @@ func Postgres(payload string) []string {
 					endIdx = j
 					break
 				}
-				if !isTagChar(nc) {
+				if !ascii.IsWord(rune(nc)) {
 					break
 				}
 			}
@@ -161,9 +165,4 @@ func Postgres(payload string) []string {
 	}
 
 	return stmts
-}
-
-// isTagChar checks if a byte is a valid character for a PostgreSQL dollar quote tag.
-func isTagChar(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
