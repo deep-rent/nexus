@@ -14,33 +14,19 @@
 
 package ascii
 
-func IsUpper(c rune) bool {
-	return c >= 'A' && c <= 'Z'
-}
+func IsUpper(c rune) bool { return c >= 'A' && c <= 'Z' }
 
-func IsLower(c rune) bool {
-	return c >= 'a' && c <= 'z'
-}
+func IsLower(c rune) bool { return c >= 'a' && c <= 'z' }
 
-func IsDigit(c rune) bool {
-	return c >= '0' && c <= '9'
-}
+func IsDigit(c rune) bool { return c >= '0' && c <= '9' }
 
-func IsAlpha(c rune) bool {
-	return IsUpper(c) || IsLower(c)
-}
+func IsAlpha(c rune) bool { return IsUpper(c) || IsLower(c) }
 
-func IsAlphaNum(c rune) bool {
-	return IsAlpha(c) || IsDigit(c)
-}
+func IsAlphaNum(c rune) bool { return IsAlpha(c) || IsDigit(c) }
 
-func IsWord(c rune) bool {
-	return IsAlphaNum(c) || c == '_'
-}
+func IsWord(c rune) bool { return IsAlphaNum(c) || c == '_' }
 
-func IsSlug(c rune) bool {
-	return IsAlphaNum(c) || c == '-'
-}
+func IsSlug(c rune) bool { return IsAlphaNum(c) || c == '-' }
 
 // ToLower converts an uppercase ASCII rune to lowercase.
 // If the rune is not an uppercase letter, it is returned unchanged.
