@@ -18,7 +18,6 @@ package snake
 
 import (
 	"strings"
-	"unicode"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )
@@ -27,13 +26,13 @@ import (
 //
 // For example, "fooBar" is converted to "FOO_BAR", and so is "FOOBar". Note
 // that digits do not induce transitions, so "foo1" becomes "FOO1".
-func ToUpper(s string) string { return transform(s, unicode.ToUpper) }
+func ToUpper(s string) string { return transform(s, ascii.ToUpper) }
 
 // ToLower converts a camelCase string to a lowercase snake_case string.
 //
 // For example, "fooBar" is converted to "foo_bar", and so is "FOOBar". Note
 // that digits do not induce transitions, so "foo1" becomes "FOO1".
-func ToLower(s string) string { return transform(s, unicode.ToLower) }
+func ToLower(s string) string { return transform(s, ascii.ToLower) }
 
 // transform is a helper function that performs the actual text conversion.
 func transform(s string, toCase func(rune) rune) string {
