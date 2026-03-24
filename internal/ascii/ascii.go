@@ -30,14 +30,14 @@ func IsAlpha(c rune) bool {
 	return IsUpper(c) || IsLower(c)
 }
 
-func IsAlphaNumeric(c rune) bool {
+func IsAlphaNum(c rune) bool {
 	return IsAlpha(c) || IsDigit(c)
 }
 
 func IsWord(c rune) bool {
-	return IsAlphaNumeric(c) || c == '_'
+	return IsAlphaNum(c) || c == '_'
 }
 
 func IsSlug(c rune) bool {
-	return IsAlphaNumeric(c) || c == '-'
+	return IsAlphaNum(c) || c == '-'
 }
