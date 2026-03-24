@@ -41,3 +41,21 @@ func IsWord(c rune) bool {
 func IsSlug(c rune) bool {
 	return IsAlphaNum(c) || c == '-'
 }
+
+// ToLower converts an uppercase ASCII rune to lowercase.
+// If the rune is not an uppercase letter, it is returned unchanged.
+func ToLower(c rune) rune {
+	if IsUpper(c) {
+		return c + ('a' - 'A')
+	}
+	return c
+}
+
+// ToUpper converts a lowercase ASCII rune to uppercase.
+// If the rune is not a lowercase letter, it is returned unchanged.
+func ToUpper(c rune) rune {
+	if IsLower(c) {
+		return c - ('a' - 'A')
+	}
+	return c
+}
