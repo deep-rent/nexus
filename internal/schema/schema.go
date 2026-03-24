@@ -21,53 +21,53 @@ import (
 )
 
 // Parser is a function that splits a SQL script into individual statements.
-type Parser func(payload string) []string
+type Parser func(script string) []string
 
 // Postgres splits a PostgreSQL script into individual statements.
 // It safely splits by semicolons while ignoring those within comments,
 // string literals, identifiers, and PostgreSQL dollar quotes.
 // It also allows splitting by a custom delimiter "-- nexus:split".
-func Postgres(payload string) []string {
+func Postgres(script string) []string {
 	const delim = "-- nexus:split"
-	if strings.Contains(payload, delim) {
+	if strings.Contains(script, delim) {
 		var stmts []string
-		for s := range strings.SplitSeq(payload, delim) {
-			if trimmed := strings.TrimSpace(s); trimmed != "" {
-				stmts = append(stmts, trimmed)
+		for s := range strings.SplitSeq(script, delim) {
+			if t := strings.TrimSpace(s); t != "" {
+				stmts = append(stmts, t)
 			}
 		}
 		return stmts
 	}
 
 	var stmts []string
-	length := len(payload)
+	n := len(script)
 	start := 0
 
 	inQuotes := false
 	inId := false
-	inLineComment := false
+	inComment := false
 	blockCommentDepth := 0
-	var dq string
+	var q string
 
 	// Iterate over bytes zero-alloc. Safe for UTF-8 since structural
 	// characters are all ASCII and won't match multi-byte sequence parts.
-	for i := 0; i < length; i++ {
-		c := payload[i]
+	for i := 0; i < n; i++ {
+		c := script[i]
 
 		// 1. Line Comments
-		if inLineComment {
+		if inComment {
 			if c == '\n' {
-				inLineComment = false
+				inComment = false
 			}
 			continue
 		}
 
 		// 2. Block Comments (supports nesting)
 		if blockCommentDepth > 0 {
-			if c == '/' && i+1 < length && payload[i+1] == '*' {
+			if c == '/' && i+1 < n && script[i+1] == '*' {
 				blockCommentDepth++
 				i++
-			} else if c == '*' && i+1 < length && payload[i+1] == '/' {
+			} else if c == '*' && i+1 < n && script[i+1] == '/' {
 				blockCommentDepth--
 				i++
 			}
@@ -75,10 +75,10 @@ func Postgres(payload string) []string {
 		}
 
 		// 3. PostgreSQL Dollar Quotes
-		if dq != "" {
-			if c == '$' && strings.HasPrefix(payload[i:], dq) {
-				i += len(dq) - 1
-				dq = ""
+		if q != "" {
+			if c == '$' && strings.HasPrefix(script[i:], q) {
+				i += len(q) - 1
+				q = ""
 			}
 			continue
 		}
@@ -87,7 +87,7 @@ func Postgres(payload string) []string {
 		if inQuotes {
 			if c == '\'' {
 				// Allow escaping by doubling the quote
-				if i+1 < length && payload[i+1] == '\'' {
+				if i+1 < n && script[i+1] == '\'' {
 					i++
 				} else {
 					inQuotes = false
@@ -100,7 +100,7 @@ func Postgres(payload string) []string {
 		if inId {
 			if c == '"' {
 				// Allow escaping by doubling the quote
-				if i+1 < length && payload[i+1] == '"' {
+				if i+1 < n && script[i+1] == '"' {
 					i++
 				} else {
 					inId = false
@@ -110,31 +110,31 @@ func Postgres(payload string) []string {
 		}
 
 		// 6. Lookahead for new state changes
-		if c == '-' && i+1 < length && payload[i+1] == '-' {
-			inLineComment = true
+		if c == '-' && i+1 < n && script[i+1] == '-' {
+			inComment = true
 			i++
 			continue
 		}
-		if c == '/' && i+1 < length && payload[i+1] == '*' {
+		if c == '/' && i+1 < n && script[i+1] == '*' {
 			blockCommentDepth++
 			i++
 			continue
 		}
 		if c == '$' {
-			endIdx := -1
-			for j := i + 1; j < length; j++ {
-				nc := payload[j]
+			end := -1
+			for j := i + 1; j < n; j++ {
+				nc := script[j]
 				if nc == '$' {
-					endIdx = j
+					end = j
 					break
 				}
 				if !ascii.IsWord(rune(nc)) {
 					break
 				}
 			}
-			if endIdx != -1 {
-				dq = payload[i : endIdx+1]
-				i = endIdx
+			if end != -1 {
+				q = script[i : end+1]
+				i = end
 				continue
 			}
 		}
@@ -149,7 +149,7 @@ func Postgres(payload string) []string {
 
 		// 7. Statement boundary detection
 		if c == ';' {
-			if stmt := strings.TrimSpace(payload[start:i]); stmt != "" {
+			if stmt := strings.TrimSpace(script[start:i]); stmt != "" {
 				stmts = append(stmts, stmt)
 			}
 			start = i + 1
@@ -157,9 +157,9 @@ func Postgres(payload string) []string {
 		}
 	}
 
-	// Flush remaining buffer
-	if start < length {
-		if stmt := strings.TrimSpace(payload[start:]); stmt != "" {
+	// Flush the remaining buffer
+	if start < n {
+		if stmt := strings.TrimSpace(script[start:]); stmt != "" {
 			stmts = append(stmts, stmt)
 		}
 	}
