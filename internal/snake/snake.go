@@ -19,6 +19,8 @@ package snake
 import (
 	"strings"
 	"unicode"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 // ToUpper converts a camelCase string to an uppercase SNAKE_CASE string.
@@ -42,14 +44,14 @@ func transform(s string, toCase func(rune) rune) string {
 		// Insert an underscore before a capital letter or digit.
 		if i != 0 {
 			q := runes[i-1]
-			if (unicode.IsLower(q) &&
+			if (ascii.IsLower(q) &&
 				// Case 1: Lowercase to uppercase/digit transition ("myVar", "myVar1").
-				(unicode.IsUpper(r) || unicode.IsDigit(r))) ||
-				(unicode.IsUpper(q) &&
+				(ascii.IsUpper(r) || ascii.IsDigit(r))) ||
+				(ascii.IsUpper(q) &&
 					// Case 2: Acronym to new word transition ("MYVar").
-					unicode.IsUpper(r) &&
+					ascii.IsUpper(r) &&
 					i+1 < len(runes) &&
-					unicode.IsLower(runes[i+1])) {
+					ascii.IsLower(runes[i+1])) {
 				b.WriteRune('_')
 			}
 		}
