@@ -113,9 +113,11 @@ func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	var records []migrate.Record
 	for rows.Next() {
 		var rec migrate.Record
-		if err := rows.Scan(&rec.Version, &rec.Checksum, &rec.Dirty); err != nil {
+		var checksum []byte
+		if err := rows.Scan(&rec.Version, &checksum, &rec.Dirty); err != nil {
 			return nil, err
 		}
+		copy(rec.Checksum[:], checksum)
 		records = append(records, rec)
 	}
 
@@ -213,7 +215,7 @@ func (p *Driver) setDirty(
 	ctx context.Context,
 	version uint64,
 	direction migrate.Direction,
-	checksum []byte,
+	checksum [32]byte,
 ) error {
 	switch direction {
 	case migrate.Up:
@@ -221,7 +223,7 @@ func (p *Driver) setDirty(
 			ctx,
 			querySetDirtyUp,
 			version,
-			checksum,
+			checksum[:],
 		); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}

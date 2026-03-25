@@ -61,7 +61,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			Description: desc,
 			Direction:   direction,
 			Path:        p,
-			Checksum:    hash[:],
+			Checksum:    hash,
 			Content:     payload,
 			Tx:          tx,
 		})

@@ -15,7 +15,6 @@
 package migrate
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -34,7 +33,7 @@ const (
 // Record represents a successfully applied migration stored in the database.
 type Record struct {
 	Version  uint64
-	Checksum []byte
+	Checksum [32]byte
 	Dirty    bool
 }
 
@@ -73,7 +72,7 @@ type Source interface {
 type Script struct {
 	Version    uint64
 	Direction  Direction
-	Checksum   []byte
+	Checksum   [32]byte
 	Statements []string
 	Tx         bool
 }
@@ -84,7 +83,7 @@ type Migration struct {
 	Description string
 	Direction   Direction
 	Path        string // Path in the fs.FS
-	Checksum    []byte // SHA-256 hash of the content
+	Checksum    [32]byte // SHA-256 hash of the content
 	Content     []byte // Raw file content
 	Tx          bool   // Whether to run the migration in a transaction
 }
@@ -264,7 +263,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 	if err != nil {
 		return err
 	}
-	applied := toTable(records)
+	applied := toLookup(records)
 
 	// Revert applied migrations strictly greater than the target version in
 	// descending order.
@@ -313,7 +312,7 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 	if err != nil {
 		return nil, err
 	}
-	applied := toTable(records)
+	applied := toLookup(records)
 
 	var pending []Migration
 	for _, f := range files {
@@ -331,7 +330,7 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 	if err != nil {
 		return nil, err
 	}
-	appliedMap := toTable(recs)
+	appliedMap := toLookup(recs)
 
 	var applied []Migration
 	for _, f := range files {
@@ -351,13 +350,13 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		"direction", migration.Direction,
 		"description", migration.Description,
 	)
-	statements := m.driver.Parser()(migration.Content)
+	stmts := m.driver.Parser()(migration.Content)
 
 	err := m.driver.Execute(ctx, Script{
 		Version:    migration.Version,
 		Direction:  migration.Direction,
 		Checksum:   migration.Checksum,
-		Statements: statements,
+		Statements: stmts,
 		Tx:         migration.Tx,
 	})
 	if err != nil {
@@ -373,8 +372,8 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	return nil
 }
 
-// toTable converts a slice of migration records to a map for quick lookups.
-func toTable(records []Record) map[uint64]bool {
+// toLookup converts a slice of migration records to a map for quick lookups.
+func toLookup(records []Record) map[uint64]bool {
 	table := make(map[uint64]bool, len(records))
 	for _, r := range records {
 		table[r.Version] = true
@@ -416,9 +415,10 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 				a.Version,
 			)
 		}
-		// Accepts an empty checksum slice in DB rows to safely handle backward
+		// Accepts an empty checksum array in DB rows to safely handle backward
 		// compatibility.
-		if len(a.Checksum) > 0 && !bytes.Equal(a.Checksum, f.Checksum) {
+		var emptyChecksum [32]byte
+		if a.Checksum != emptyChecksum && a.Checksum != f.Checksum {
 			return nil, nil, fmt.Errorf(
 				"checksum mismatch for migration %d: database has %x, file has %x",
 				a.Version,
