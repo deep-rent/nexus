@@ -20,37 +20,52 @@ import (
 	"github.com/deep-rent/nexus/internal/ascii"
 )
 
-// Parser is a function that splits a SQL script into individual statements.
+// Parser is a function that splits a raw SQL script into a slice of individual
+// executable statements. Implementations should handle database-specific syntax
+// rules to ensure statements are not prematurely split.
 type Parser func(script []byte) []string
 
-// Postgres splits a PostgreSQL script into individual statements.
-// It safely splits by semicolons while ignoring those within comments,
-// string literals, identifiers, and PostgreSQL dollar quotes.
+// Postgres is a Parser implementation tailored for PostgreSQL scripts.
+// It safely splits the script by semicolons (';'), while strictly ignoring
+// semicolons that appear within:
+//   - Single-line comments ("-- ...")
+//   - Multi-line block comments ("/* ... */"), supporting nested blocks.
+//   - Single-quoted string literals ('...')
+//   - Double-quoted identifiers ("...")
+//   - PostgreSQL dollar-quoted strings ($tag$...$tag$).
 func Postgres(script []byte) []string {
 	p := &postgres{script: script}
 	return p.parse()
 }
 
-// postgres holds the state for parsing a SQL script.
+// postgres holds the internal state machine for parsing a PostgreSQL script.
 type postgres struct {
-	script []byte   //
-	i      int      // Cursor position
-	start  int      //
-	stmts  []string //
+	script []byte   // The raw SQL script being parsed.
+	i      int      // The current cursor position (byte index) in the script.
+	start  int      // The byte index where the current statement begins.
+	stmts  []string // The collected slice of individual statements.
 
-	inSingleQuotes    bool   // Cursor is positioned within a singly quoted string
-	inDoubleQuotes    bool   // Cursor is positioned within a doubly quoted string
-	inComment         bool   // Cursor is positioned inside a line comment
-	blockCommentDepth int    //
-	dollarQuoteTag    []byte //
+	inSingleQuotes bool // True if the cursor is within a single-quoted string.
+	inDoubleQuotes bool // True if the cursor is within a double-quoted string.
+	inComment      bool // True if the cursor is within a single-line comment.
+
+	// Tracks the nesting depth of multi-line block comments.
+	blockCommentDepth int
+
+	// The active dollar-quote tag (e.g., "$BODY$") if currently inside one.
+	dollarQuoteTag []byte
 }
 
+// parse iterates through the script byte-by-byte, updating the state machine
+// and splitting statements when a valid, top-level semicolon is encountered.
 func (p *postgres) parse() []string {
 	n := len(p.script)
 	for p.i < n {
 		c := p.script[p.i]
 
-		// The order of checks is important.
+		// The order of checks is important. Mutually exclusive states are processed
+		// in a strict priority to correctly handle nesting (e.g., a quote inside a
+		// comment).
 		switch {
 		case p.inComment:
 			if c == '\n' {
@@ -103,11 +118,14 @@ func (p *postgres) parse() []string {
 		p.i++
 	}
 
-	p.flush() // Add the last statement if it's not terminated by a semicolon.
+	// Add the last statement if the script does not end with a semicolon.
+	p.flush()
 	return p.stmts
 }
 
-// dollar scans for dollar quotes.
+// dollar scans ahead to parse a PostgreSQL dollar-quote tag (e.g., "$tag$").
+// If a valid tag is found, it updates the state to track the active
+// dollar-quote.
 func (p *postgres) dollar(n int) {
 	end := -1
 	for j := p.i + 1; j < n; j++ {
@@ -126,6 +144,9 @@ func (p *postgres) dollar(n int) {
 	}
 }
 
+// flush extracts the current statement from the script buffer, trims any
+// surrounding whitespace, and appends it to the results list if it is not
+// empty. It then advances the start index to prepare for the next statement.
 func (p *postgres) flush() {
 	if stmt := bytes.TrimSpace(p.script[p.start:p.i]); len(stmt) > 0 {
 		p.stmts = append(p.stmts, string(stmt))
