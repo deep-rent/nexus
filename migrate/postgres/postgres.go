@@ -155,23 +155,23 @@ func (p *Driver) Execute(
 
 	var err error
 	if useTx {
-		err = p.executeTx(ctx, statements)
+		err = p.execTx(ctx, statements)
 	} else {
-		err = p.executeNoTx(ctx, statements)
+		err = p.exec(ctx, statements)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	if err := p.clearDirty(ctx, version, direction); err != nil {
+	if err := p.setClean(ctx, version, direction); err != nil {
 		return fmt.Errorf("failed to clear dirty state: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Driver) executeTx(
+func (p *Driver) execTx(
 	ctx context.Context,
 	statements []string,
 ) error {
@@ -201,7 +201,7 @@ func (p *Driver) executeTx(
 	return nil
 }
 
-func (p *Driver) executeNoTx(
+func (p *Driver) exec(
 	ctx context.Context,
 	statements []string,
 ) error {
@@ -229,7 +229,7 @@ func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate
 	return nil
 }
 
-func (p *Driver) clearDirty(ctx context.Context, version uint64, direction migrate.Direction) error {
+func (p *Driver) setClean(ctx context.Context, version uint64, direction migrate.Direction) error {
 	switch direction {
 	case migrate.Up:
 		query := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", table)
