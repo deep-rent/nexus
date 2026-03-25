@@ -17,7 +17,6 @@ package migrate
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -128,25 +127,23 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // New creates a new Migrator instance.
-func New(opts ...Option) (*Migrator, error) {
+func New(opts ...Option) *Migrator {
 	m := &Migrator{
 		logger: slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(m)
 	}
-
 	if m.source == nil {
-		return nil, errors.New("migrate: source is required")
+		panic("migrate: source is required")
 	}
 	if m.driver == nil {
-		return nil, errors.New("migrate: driver is required")
+		panic("migrate: driver is required")
 	}
 	if m.logger == nil {
 		m.logger = slog.Default()
 	}
-
-	return m, nil
+	return m
 }
 
 // Up applies all pending migrations in ascending order.
