@@ -84,40 +84,51 @@ func (s *Source) List() ([]migrate.Migration, error) {
 // Expected format: <version>_<description>.<direction>.sql
 func parseFilename(name string) (version uint64, description string, direction migrate.Direction, tx, ok bool) {
 	tx = true // Default to using a transaction
-	if !strings.HasSuffix(name, ".sql") {
+
+	base, found := strings.CutSuffix(name, ".sql")
+	if !found {
 		return 0, "", "", false, false
 	}
 
-	parts := strings.Split(name[:len(name)-4], ".")
-	if len(parts) != 2 {
+	// Split direction from the rest of the base name.
+	// Using LastIndexByte is more robust than Split if description contains dots.
+	lastDotIdx := strings.LastIndexByte(base, '.')
+	if lastDotIdx <= 0 { // Must have content before the dot.
 		return 0, "", "", false, false
 	}
+	dirStr := base[lastDotIdx+1:]
+	base = base[:lastDotIdx]
 
-	dirStr := parts[1]
-	if dirStr != string(migrate.Up) && dirStr != string(migrate.Down) {
-		return 0, "", "", false, false
+	// Validate direction.
+	switch dirStr {
+	case string(migrate.Up):
+		direction = migrate.Up
+	case string(migrate.Down):
+		direction = migrate.Down
+	default:
+		return 0, "", "", false, false // Invalid direction.
 	}
-	direction = migrate.Direction(dirStr)
 
-	base := parts[0]
-	if strings.HasSuffix(base, "_notx") {
+	// Check for _notx suffix.
+	if base, found = strings.CutSuffix(base, "_notx"); found {
 		tx = false
-		base = base[:len(base)-len("_notx")]
 	}
 
-	baseParts := strings.SplitN(base, "_", 2)
-	if len(baseParts) < 1 {
-		return 0, "", "", false, false
+	// Split version from description.
+	versionStr, desc, _ := strings.Cut(base, "_")
+	if versionStr == "" {
+		return 0, "", "", false, false // No version found.
 	}
 
-	v, err := strconv.ParseUint(baseParts[0], 10, 64)
+	// Parse version.
+	v, err := strconv.ParseUint(versionStr, 10, 64)
 	if err != nil {
-		return 0, "", "", false, false
+		return 0, "", "", false, false // Invalid version number.
 	}
 	version = v
 
-	if len(baseParts) > 1 {
-		description = strings.ReplaceAll(baseParts[1], "_", " ")
-	}
+	// Finalize description.
+	description = strings.ReplaceAll(desc, "_", " ")
+
 	return version, description, direction, tx, true
 }
