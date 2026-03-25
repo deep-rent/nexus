@@ -17,6 +17,7 @@ package migrate
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -94,12 +95,38 @@ type Migrator struct {
 	driver Driver
 }
 
-// New creates a new Migrator instance.
-func New(source Source, driver Driver) *Migrator {
-	return &Migrator{
-		source: source,
-		driver: driver,
+// Option configures a Migrator instance.
+type Option func(*Migrator)
+
+// WithSource sets the migration source.
+func WithSource(source Source) Option {
+	return func(m *Migrator) {
+		m.source = source
 	}
+}
+
+// WithDriver sets the database driver.
+func WithDriver(driver Driver) Option {
+	return func(m *Migrator) {
+		m.driver = driver
+	}
+}
+
+// New creates a new Migrator instance.
+func New(opts ...Option) (*Migrator, error) {
+	m := &Migrator{}
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	if m.source == nil {
+		return nil, errors.New("migrate: source is required")
+	}
+	if m.driver == nil {
+		return nil, errors.New("migrate: driver is required")
+	}
+
+	return m, nil
 }
 
 // Up applies all pending migrations in ascending order.
