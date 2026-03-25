@@ -35,8 +35,8 @@ func New(fs fs.FS) *Source {
 	return &Source{fs: fs}
 }
 
-// ListMigrations reads and validates the fs.FS, returning sorted migrations.
-func (s *Source) ListMigrations() ([]migrate.Migration, error) {
+// List reads and validates the fs.FS, returning sorted migrations.
+func (s *Source) List() ([]migrate.Migration, error) {
 	var migrations []migrate.Migration
 
 	err := fs.WalkDir(s.fs, ".", func(p string, d fs.DirEntry, err error) error {

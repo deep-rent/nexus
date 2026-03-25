@@ -64,10 +64,10 @@ type Driver interface {
 
 // Source provides migrations.
 type Source interface {
-	// ListMigrations returns a list of all available migrations, sorted by version.
-	// The implementation is responsible for reading migration files and calculating
-	// their checksums.
-	ListMigrations() ([]Migration, error)
+	// List returns a list of all available migrations, sorted by version.
+	// The implementation is responsible for reading migration files and
+	// calculating their checksums.
+	List() ([]Migration, error)
 }
 
 // Script holds the parameters required to execute a migration.
@@ -200,7 +200,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 	lastApplied := appliedMigrations[len(appliedMigrations)-1]
 
 	// We need the corresponding 'down' file for this version
-	allFiles, err := m.source.ListMigrations()
+	allFiles, err := m.source.List()
 	if err != nil {
 		return err
 	}
@@ -370,7 +370,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 // load loads applied records and available files, ensuring that there are no
 // missing files or checksum mismatches for previously applied migrations.
 func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migration, error) {
-	allFiles, err := m.source.ListMigrations()
+	allFiles, err := m.source.List()
 	if err != nil {
 		return nil, nil, nil, err
 	}
