@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package checksum provides helper functions for generating cryptographic hashes.
-// It is designed to simplify the creation of standard checksums for data
-// integrity verification and comparison.
+// Package checksum provides helper functions for generating cryptographic
+// hashes. It is designed to simplify the creation of standard checksums for
+// data integrity verification and comparison.
 package checksum
 
 import (
@@ -22,6 +22,8 @@ import (
 	"encoding/hex"
 )
 
+// Bytes calculates the SHA-256 hash of the provided byte slice.
+// It returns the resulting checksum as a lowercase, hex-encoded string.
 func Bytes(data []byte) string {
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
