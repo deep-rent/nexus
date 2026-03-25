@@ -81,7 +81,7 @@ func (p *Driver) Init(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			version BIGINT PRIMARY KEY,
-			checksum VARCHAR(64) NOT NULL DEFAULT '',
+			checksum BYTEA NOT NULL DEFAULT '\x',
 			dirty BOOLEAN NOT NULL DEFAULT false,
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
@@ -206,7 +206,7 @@ func (p *Driver) exec(
 	return nil
 }
 
-func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate.Direction, checksum string) error {
+func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate.Direction, checksum []byte) error {
 	switch direction {
 	case migrate.Up:
 		query := fmt.Sprintf("INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true", table)

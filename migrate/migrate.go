@@ -15,9 +15,9 @@
 package migrate
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -38,7 +38,7 @@ const (
 // Record represents a successfully applied migration stored in the database.
 type Record struct {
 	Version  uint64
-	Checksum string
+	Checksum []byte
 	Dirty    bool
 }
 
@@ -69,7 +69,7 @@ type Driver interface {
 type ExecuteParams struct {
 	Version    uint64
 	Direction  Direction
-	Checksum   string
+	Checksum   []byte
 	Statements []string
 	UseTx      bool
 }
@@ -80,7 +80,7 @@ type Migration struct {
 	Description string
 	Direction   Direction
 	Path        string // Path in the fs.FS
-	Checksum    string // SHA-256 hash of the file contents
+	Checksum    []byte // SHA-256 hash of the file contents
 }
 
 // Migrator orchestrates the execution of database migrations.
@@ -355,14 +355,13 @@ func (m *Migrator) read() ([]Migration, error) {
 			return fmt.Errorf("failed to read migration file %s: %w", p, err)
 		}
 		hash := sha256.Sum256(payload)
-		checksum := hex.EncodeToString(hash[:])
 
 		migrations = append(migrations, Migration{
 			Version:     version,
 			Description: desc,
 			Direction:   Direction(directionStr),
 			Path:        p,
-			Checksum:    checksum,
+			Checksum:    hash[:],
 		})
 
 		return nil
@@ -418,11 +417,11 @@ func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migra
 				a.Version,
 			)
 		}
-		// Accepts an empty checksum string in DB rows to safely handle backward
+		// Accepts an empty checksum slice in DB rows to safely handle backward
 		// compatibility.
-		if a.Checksum != "" && a.Checksum != f.Checksum {
+		if len(a.Checksum) > 0 && !bytes.Equal(a.Checksum, f.Checksum) {
 			return nil, nil, nil, fmt.Errorf(
-				"checksum mismatch for migration %d: database has %s, file has %s",
+				"checksum mismatch for migration %d: database has %x, file has %x",
 				a.Version,
 				a.Checksum,
 				f.Checksum,
