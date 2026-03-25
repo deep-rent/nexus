@@ -189,25 +189,25 @@ func (m *Migrator) Down(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
 
-	appliedMigrations, err := m.Applied(ctx)
+	applied, err := m.Applied(ctx)
 	if err != nil {
 		return err
 	}
-	if len(appliedMigrations) == 0 {
+	if len(applied) == 0 {
 		m.logger.Info("No applied migrations to revert")
 		return nil
 	}
 	// Get the last applied migration to revert
-	lastApplied := appliedMigrations[len(appliedMigrations)-1]
+	last := applied[len(applied)-1]
 
 	// We need the corresponding 'down' file for this version
-	allFiles, err := m.source.List()
+	files, err := m.source.List()
 	if err != nil {
 		return err
 	}
 
-	for _, f := range allFiles {
-		if f.Version == lastApplied.Version && f.Direction == Down {
+	for _, f := range files {
+		if f.Version == last.Version && f.Direction == Down {
 			err := m.run(ctx, f)
 			if err == nil {
 				m.logger.Info("Migration reverted successfully", "version", f.Version)
@@ -217,7 +217,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 	}
 	return fmt.Errorf(
 		"down migration file not found for version %d",
-		lastApplied.Version,
+		last.Version,
 	)
 }
 
@@ -257,19 +257,19 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
 
-	appliedVersions, allFiles, err := m.load(ctx)
+	applied, files, err := m.load(ctx)
 	if err != nil {
 		return err
 	}
-	appliedMap := toAppliedMap(appliedVersions)
+	appliedMap := toAppliedMap(applied)
 
 	// Revert applied migrations strictly greater than the target version in
 	// descending order.
-	for i := len(appliedVersions) - 1; i >= 0; i-- {
-		v := appliedVersions[i].Version
+	for i := len(applied) - 1; i >= 0; i-- {
+		v := applied[i].Version
 		if v > target {
 			found := false
-			for _, f := range allFiles {
+			for _, f := range files {
 				if f.Version == v && f.Direction == Down {
 					if err := m.run(ctx, f); err != nil {
 						return err
@@ -290,7 +290,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 
 	// Apply pending migrations less than or equal to the target version in
 	// ascending order.
-	for _, f := range allFiles {
+	for _, f := range files {
 		if f.Direction == Up &&
 			f.Version <= target &&
 			!appliedMap[f.Version] {
@@ -306,14 +306,14 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
-	appliedRecs, allFiles, err := m.load(ctx)
+	recs, files, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	appliedMap := toAppliedMap(appliedRecs)
+	appliedMap := toAppliedMap(recs)
 
 	var pending []Migration
-	for _, f := range allFiles {
+	for _, f := range files {
 		if f.Direction == Up && !appliedMap[f.Version] {
 			pending = append(pending, f)
 		}
@@ -324,14 +324,14 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 
 // Applied returns a list of "Up" migrations that have already been executed.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
-	appliedRecs, allFiles, err := m.load(ctx)
+	recs, files, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	appliedMap := toAppliedMap(appliedRecs)
+	appliedMap := toAppliedMap(recs)
 
 	var applied []Migration
-	for _, f := range allFiles {
+	for _, f := range files {
 		if f.Direction == Up && appliedMap[f.Version] {
 			applied = append(applied, f)
 		}
@@ -382,31 +382,31 @@ func toAppliedMap(records []Record) map[uint64]bool {
 // load loads applied records and available files, ensuring that there are no
 // missing files or checksum mismatches for previously applied migrations.
 func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
-	allFiles, err := m.source.List()
+	files, err := m.source.List()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	appliedVersions, err := m.driver.Applied(ctx)
+	applied, err := m.driver.Applied(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
 	}
 
-	upFiles := make(map[uint64]Migration)
-	for _, f := range allFiles {
+	ups := make(map[uint64]Migration)
+	for _, f := range files {
 		if f.Direction == Up {
-			upFiles[f.Version] = f
+			ups[f.Version] = f
 		}
 	}
 
-	for _, a := range appliedVersions {
+	for _, a := range applied {
 		if a.Dirty {
 			return nil, nil, fmt.Errorf(
 				"database is dirty at version %d; manual intervention required",
 				a.Version,
 			)
 		}
-		f, ok := upFiles[a.Version]
+		f, ok := ups[a.Version]
 		if !ok {
 			return nil, nil, fmt.Errorf(
 				"applied migration %d is missing from source files",
@@ -425,5 +425,5 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 		}
 	}
 
-	return appliedVersions, allFiles, nil
+	return applied, files, nil
 }
