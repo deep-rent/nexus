@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Release](https://img.shields.io/github/v/release/deep-rent/nexus?label=Release)](https://pkg.go.dev/github.com/deep-rent/nexus)
 
-Nexus is a Go application framework primarily developed for internal use. We have transitioned it to an open-source project to support and provide ongoing maintenance for the community-driven projects that rely on it.
+Nexus is a Go-based application framework primarily developed for internal use. We have transitioned it to an open-source project to support and provide ongoing maintenance for the community-driven projects that rely on it.
 
 ---
 
