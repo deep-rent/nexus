@@ -103,21 +103,27 @@ type Option func(*Migrator)
 // WithSource sets the migration source.
 func WithSource(source Source) Option {
 	return func(m *Migrator) {
-		m.source = source
+		if source != nil {
+			m.source = source
+		}
 	}
 }
 
 // WithDriver sets the database driver.
 func WithDriver(driver Driver) Option {
 	return func(m *Migrator) {
-		m.driver = driver
+		if driver != nil {
+			m.driver = driver
+		}
 	}
 }
 
 // WithLogger sets the logger for the migrator.
 func WithLogger(logger *slog.Logger) Option {
 	return func(m *Migrator) {
-		m.logger = logger
+		if logger != nil {
+			m.logger = logger
+		}
 	}
 }
 
@@ -257,16 +263,16 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
 
-	applied, files, err := m.load(ctx)
+	records, files, err := m.load(ctx)
 	if err != nil {
 		return err
 	}
-	appliedMap := toAppliedMap(applied)
+	applied := toTable(records)
 
 	// Revert applied migrations strictly greater than the target version in
 	// descending order.
-	for i := len(applied) - 1; i >= 0; i-- {
-		v := applied[i].Version
+	for i := len(records) - 1; i >= 0; i-- {
+		v := records[i].Version
 		if v > target {
 			found := false
 			for _, f := range files {
@@ -284,7 +290,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 					v,
 				)
 			}
-			appliedMap[v] = false
+			applied[v] = false
 		}
 	}
 
@@ -293,11 +299,11 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 	for _, f := range files {
 		if f.Direction == Up &&
 			f.Version <= target &&
-			!appliedMap[f.Version] {
+			!applied[f.Version] {
 			if err := m.run(ctx, f); err != nil {
 				return err
 			}
-			appliedMap[f.Version] = true
+			applied[f.Version] = true
 		}
 	}
 
@@ -306,15 +312,15 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
-	recs, files, err := m.load(ctx)
+	records, files, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	appliedMap := toAppliedMap(recs)
+	applied := toTable(records)
 
 	var pending []Migration
 	for _, f := range files {
-		if f.Direction == Up && !appliedMap[f.Version] {
+		if f.Direction == Up && !applied[f.Version] {
 			pending = append(pending, f)
 		}
 	}
@@ -328,7 +334,7 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 	if err != nil {
 		return nil, err
 	}
-	appliedMap := toAppliedMap(recs)
+	appliedMap := toTable(recs)
 
 	var applied []Migration
 	for _, f := range files {
@@ -370,13 +376,13 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	return nil
 }
 
-// toAppliedMap converts a slice of migration records to a map for quick lookups.
-func toAppliedMap(records []Record) map[uint64]bool {
-	appliedMap := make(map[uint64]bool, len(records))
+// toTable converts a slice of migration records to a map for quick lookups.
+func toTable(records []Record) map[uint64]bool {
+	table := make(map[uint64]bool, len(records))
 	for _, r := range records {
-		appliedMap[r.Version] = true
+		table[r.Version] = true
 	}
-	return appliedMap
+	return table
 }
 
 // load loads applied records and available files, ensuring that there are no
