@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/deep-rent/nexus/internal/schema"
 )
@@ -88,23 +89,11 @@ type Migration struct {
 	Content     []byte // Raw file content
 }
 
-// Logger is a simple logging interface compatible with slog.Logger.
-type Logger interface {
-	Info(msg string, args ...any)
-	Error(msg string, args ...any)
-}
-
-// noopLogger is a logger that does nothing.
-type noopLogger struct{}
-
-func (l *noopLogger) Info(msg string, args ...any)  {}
-func (l *noopLogger) Error(msg string, args ...any) {}
-
 // Migrator orchestrates the execution of database migrations.
 type Migrator struct {
 	source Source
 	driver Driver
-	logger Logger
+	logger *slog.Logger
 }
 
 // Option configures a Migrator instance.
@@ -125,7 +114,7 @@ func WithDriver(driver Driver) Option {
 }
 
 // WithLogger sets the logger for the migrator.
-func WithLogger(logger Logger) Option {
+func WithLogger(logger *slog.Logger) Option {
 	return func(m *Migrator) {
 		m.logger = logger
 	}
@@ -134,7 +123,7 @@ func WithLogger(logger Logger) Option {
 // New creates a new Migrator instance.
 func New(opts ...Option) (*Migrator, error) {
 	m := &Migrator{
-		logger: &noopLogger{},
+		logger: slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -147,7 +136,7 @@ func New(opts ...Option) (*Migrator, error) {
 		return nil, errors.New("migrate: driver is required")
 	}
 	if m.logger == nil {
-		m.logger = &noopLogger{}
+		m.logger = slog.Default()
 	}
 
 	return m, nil
