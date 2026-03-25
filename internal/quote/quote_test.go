@@ -178,3 +178,27 @@ func TestSingle(t *testing.T) {
 		})
 	}
 }
+
+func TestIs(t *testing.T) {
+	type test struct {
+		name string
+		in   rune
+		want bool
+	}
+
+	tests := []test{
+		{"double quote", '"', true},
+		{"single quote", '\'', true},
+		{"backtick", '`', false},
+		{"letter", 'a', false},
+		{"space", ' ', false},
+		{"null rune", '\x00', false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Is(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
