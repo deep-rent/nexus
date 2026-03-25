@@ -141,30 +141,23 @@ func (p *Driver) Force(ctx context.Context, version uint64) error {
 }
 
 // Execute runs the migration statements and records the state.
-func (p *Driver) Execute(
-	ctx context.Context,
-	version uint64,
-	direction migrate.Direction,
-	checksum string,
-	statements []string,
-	useTx bool,
-) error {
-	if err := p.setDirty(ctx, version, direction, checksum); err != nil {
+func (p *Driver) Execute(ctx context.Context, params migrate.ExecuteParams) error {
+	if err := p.setDirty(ctx, params.Version, params.Direction, params.Checksum); err != nil {
 		return fmt.Errorf("failed to mark migration as dirty: %w", err)
 	}
 
 	var err error
-	if useTx {
-		err = p.execTx(ctx, statements)
+	if params.UseTx {
+		err = p.execTx(ctx, params.Statements)
 	} else {
-		err = p.exec(ctx, statements)
+		err = p.exec(ctx, params.Statements)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	if err := p.setClean(ctx, version, direction); err != nil {
+	if err := p.setClean(ctx, params.Version, params.Direction); err != nil {
 		return fmt.Errorf("failed to clear dirty state: %w", err)
 	}
 
