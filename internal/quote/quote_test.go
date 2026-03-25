@@ -110,3 +110,71 @@ func TestHas(t *testing.T) {
 		})
 	}
 }
+
+func TestWrap(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		q    rune
+		want string
+	}
+
+	tests := []test{
+		{"wrap with double quote", "hello", '"', `"hello"`},
+		{"wrap with single quote", "world", '\'', `'world'`},
+		{"wrap empty string", "", '"', `""`},
+		{"wrap with arbitrary rune", "test", '|', `|test|`},
+		{"wrap string already containing quotes", `"hello"`, '\'', `'"hello"'`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Wrap(tc.in, tc.q)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDouble(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want string
+	}
+
+	tests := []test{
+		{"standard string", "hello", `"hello"`},
+		{"empty string", "", `""`},
+		{"string with spaces", "hello world", `"hello world"`},
+		{"string already double quoted", `"hello"`, `""hello""`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Double(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSingle(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want string
+	}
+
+	tests := []test{
+		{"standard string", "hello", `'hello'`},
+		{"empty string", "", `''`},
+		{"string with spaces", "hello world", `'hello world'`},
+		{"string already single quoted", `'hello'`, `''hello''`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Single(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
