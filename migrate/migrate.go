@@ -256,10 +256,11 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
 
-	appliedVersions, appliedMap, allFiles, err := m.load(ctx)
+	appliedVersions, allFiles, err := m.load(ctx)
 	if err != nil {
 		return err
 	}
+	appliedMap := toAppliedMap(appliedVersions)
 
 	// Revert applied migrations strictly greater than the target version in
 	// descending order.
@@ -304,10 +305,11 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
-	_, appliedMap, allFiles, err := m.load(ctx)
+	appliedRecs, allFiles, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
+	appliedMap := toAppliedMap(appliedRecs)
 
 	var pending []Migration
 	for _, f := range allFiles {
@@ -321,10 +323,11 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 
 // Applied returns a list of "Up" migrations that have already been executed.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
-	_, appliedMap, allFiles, err := m.load(ctx)
+	appliedRecs, allFiles, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
+	appliedMap := toAppliedMap(appliedRecs)
 
 	var applied []Migration
 	for _, f := range allFiles {
@@ -367,22 +370,26 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	return nil
 }
 
+// toAppliedMap converts a slice of migration records to a map for quick lookups.
+func toAppliedMap(records []Record) map[uint64]bool {
+	appliedMap := make(map[uint64]bool, len(records))
+	for _, r := range records {
+		appliedMap[r.Version] = true
+	}
+	return appliedMap
+}
+
 // load loads applied records and available files, ensuring that there are no
 // missing files or checksum mismatches for previously applied migrations.
-func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migration, error) {
+func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 	allFiles, err := m.source.List()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	appliedVersions, err := m.driver.Applied(ctx)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
-	}
-
-	appliedMap := make(map[uint64]bool, len(appliedVersions))
-	for _, a := range appliedVersions {
-		appliedMap[a.Version] = true
+		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
 	}
 
 	upFiles := make(map[uint64]Migration)
@@ -394,14 +401,14 @@ func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migra
 
 	for _, a := range appliedVersions {
 		if a.Dirty {
-			return nil, nil, nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"database is dirty at version %d; manual intervention required",
 				a.Version,
 			)
 		}
 		f, ok := upFiles[a.Version]
 		if !ok {
-			return nil, nil, nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"applied migration %d is missing from source files",
 				a.Version,
 			)
@@ -409,7 +416,7 @@ func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migra
 		// Accepts an empty checksum slice in DB rows to safely handle backward
 		// compatibility.
 		if len(a.Checksum) > 0 && !bytes.Equal(a.Checksum, f.Checksum) {
-			return nil, nil, nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"checksum mismatch for migration %d: database has %x, file has %x",
 				a.Version,
 				a.Checksum,
@@ -418,5 +425,5 @@ func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migra
 		}
 	}
 
-	return appliedVersions, appliedMap, allFiles, nil
+	return appliedVersions, allFiles, nil
 }
