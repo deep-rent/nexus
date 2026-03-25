@@ -43,6 +43,8 @@ const (
 	querySetDirtyUp    = "INSERT INTO " + table + " (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true"
 	querySetDirtyDown  = "UPDATE " + table + " SET dirty = true WHERE version = $1"
 	queryDeleteVersion = "DELETE FROM " + table + " WHERE version = $1"
+	queryLock          = "SELECT pg_advisory_lock($1)"
+	queryUnlock        = "SELECT pg_advisory_unlock($1)"
 )
 
 // Driver implements migrate.Driver for PostgreSQL.
@@ -70,7 +72,7 @@ func (p *Driver) Lock(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to acquire database connection: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", tableLock); err != nil {
+	if _, err := conn.ExecContext(ctx, queryLock, tableLock); err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("failed to acquire advisory lock: %w", err)
 	}
@@ -83,13 +85,13 @@ func (p *Driver) Unlock(ctx context.Context) error {
 	if p.lock == nil {
 		return errors.New("not locked")
 	}
-	_, err := p.lock.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", tableLock)
-	errClose := p.lock.Close()
+	_, err := p.lock.ExecContext(ctx, queryUnlock, tableLock)
+	e := p.lock.Close()
 	p.lock = nil
 	if err != nil {
 		return fmt.Errorf("failed to release advisory lock: %w", err)
 	}
-	return errClose
+	return e
 }
 
 // Init creates the migrations tracking table if it doesn't already exist.
@@ -126,7 +128,9 @@ func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 
 // Force sets the database to the specified version and clears the dirty flag.
 func (p *Driver) Force(ctx context.Context, version uint64) error {
-	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -145,18 +149,25 @@ func (p *Driver) Force(ctx context.Context, version uint64) error {
 
 // Execute runs the migration statements and records the state.
 func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
-	if err := p.setDirty(ctx, script.Version, script.Direction, script.Checksum); err != nil {
+	if err := p.setDirty(
+		ctx,
+		script.Version,
+		script.Direction,
+		script.Checksum,
+	); err != nil {
 		return fmt.Errorf("failed to mark migration as dirty: %w", err)
 	}
 
 	if script.Tx {
-		tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+		tx, err := p.db.BeginTx(ctx, &sql.TxOptions{
+			Isolation: sql.LevelSerializable,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
 		defer func() { _ = tx.Rollback() }()
 
-		if err := p.executeStatements(ctx, tx, script.Statements); err != nil {
+		if err := p.exec(ctx, tx, script.Statements); err != nil {
 			return err
 		}
 
@@ -164,7 +175,7 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 	} else {
-		if err := p.executeStatements(ctx, p.db, script.Statements); err != nil {
+		if err := p.exec(ctx, p.db, script.Statements); err != nil {
 			return err
 		}
 	}
@@ -177,11 +188,19 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 
 // executor is an interface satisfied by both *sql.DB and *sql.Tx.
 type executor interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	ExecContext(
+		ctx context.Context,
+		query string,
+		args ...any,
+	) (sql.Result, error)
 }
 
-// executeStatements runs a series of SQL statements using the provided executor.
-func (p *Driver) executeStatements(ctx context.Context, exec executor, statements []string) error {
+// exec runs a series of SQL statements using the provided executor.
+func (p *Driver) exec(
+	ctx context.Context,
+	exec executor,
+	statements []string,
+) error {
 	for _, stmt := range statements {
 		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("failed to execute migration statement: %w", err)
@@ -190,28 +209,54 @@ func (p *Driver) executeStatements(ctx context.Context, exec executor, statement
 	return nil
 }
 
-func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate.Direction, checksum []byte) error {
+func (p *Driver) setDirty(
+	ctx context.Context,
+	version uint64,
+	direction migrate.Direction,
+	checksum []byte,
+) error {
 	switch direction {
 	case migrate.Up:
-		if _, err := p.db.ExecContext(ctx, querySetDirtyUp, version, checksum); err != nil {
+		if _, err := p.db.ExecContext(
+			ctx,
+			querySetDirtyUp,
+			version,
+			checksum,
+		); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	case migrate.Down:
-		if _, err := p.db.ExecContext(ctx, querySetDirtyDown, version); err != nil {
+		if _, err := p.db.ExecContext(
+			ctx,
+			querySetDirtyDown,
+			version,
+		); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	}
 	return nil
 }
 
-func (p *Driver) setClean(ctx context.Context, version uint64, direction migrate.Direction) error {
+func (p *Driver) setClean(
+	ctx context.Context,
+	version uint64,
+	direction migrate.Direction,
+) error {
 	switch direction {
 	case migrate.Up:
-		if _, err := p.db.ExecContext(ctx, queryClearDirty, version); err != nil {
+		if _, err := p.db.ExecContext(
+			ctx,
+			queryClearDirty,
+			version,
+		); err != nil {
 			return fmt.Errorf("failed to clear dirty state: %w", err)
 		}
 	case migrate.Down:
-		if _, err := p.db.ExecContext(ctx, queryDeleteVersion, version); err != nil {
+		if _, err := p.db.ExecContext(
+			ctx,
+			queryDeleteVersion,
+			version,
+		); err != nil {
 			return fmt.Errorf("failed to remove migration record: %w", err)
 		}
 	}
