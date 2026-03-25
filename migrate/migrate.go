@@ -17,11 +17,7 @@ package migrate
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"io/fs"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/deep-rent/nexus/internal/schema"
@@ -65,6 +61,14 @@ type Driver interface {
 	Close() error
 }
 
+// Source provides migrations.
+type Source interface {
+	// ListMigrations returns a list of all available migrations, sorted by version.
+	// The implementation is responsible for reading migration files and calculating
+	// their checksums.
+	ListMigrations() ([]Migration, error)
+}
+
 // Script holds the parameters required to execute a migration.
 type Script struct {
 	Version    uint64
@@ -80,19 +84,20 @@ type Migration struct {
 	Description string
 	Direction   Direction
 	Path        string // Path in the fs.FS
-	Checksum    []byte // SHA-256 hash of the file contents
+	Checksum    []byte // SHA-256 hash of the content
+	Content     []byte // Raw file content
 }
 
 // Migrator orchestrates the execution of database migrations.
 type Migrator struct {
-	src    fs.FS
+	source Source
 	driver Driver
 }
 
 // New creates a new Migrator instance.
-func New(src fs.FS, driver Driver) *Migrator {
+func New(source Source, driver Driver) *Migrator {
 	return &Migrator{
-		src:    src,
+		source: source,
 		driver: driver,
 	}
 }
@@ -145,7 +150,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 	lastApplied := appliedMigrations[len(appliedMigrations)-1]
 
 	// We need the corresponding 'down' file for this version
-	allFiles, err := m.read()
+	allFiles, err := m.source.ListMigrations()
 	if err != nil {
 		return err
 	}
@@ -279,20 +284,11 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 
 // run reads the migration payload and executes it via the driver.
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
-	payload, err := fs.ReadFile(m.src, migration.Path)
-	if err != nil {
-		return fmt.Errorf(
-			"failed to read migration file %s: %w",
-			migration.Path,
-			err,
-		)
-	}
-
-	payloadStr := string(payload)
+	payloadStr := string(migration.Content)
 	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx")
 	statements := m.driver.Parser()(payloadStr)
 
-	err = m.driver.Execute(ctx, Script{
+	err := m.driver.Execute(ctx, Script{
 		Version:    migration.Version,
 		Direction:  migration.Direction,
 		Checksum:   migration.Checksum,
@@ -310,78 +306,10 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	return nil
 }
 
-// read reads and validates the fs.FS, returning sorted migrations.
-func (m *Migrator) read() ([]Migration, error) {
-	var migrations []Migration
-
-	err := fs.WalkDir(m.src, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-
-		name := d.Name()
-		if !strings.HasSuffix(name, ".sql") {
-			return nil // Skip non-SQL files
-		}
-
-		// Expected format: <version>_<description>.<direction>.sql
-		parts := strings.Split(name, ".")
-		if len(parts) != 3 {
-			return fmt.Errorf("invalid migration file format: %s", name)
-		}
-
-		directionStr := parts[1]
-		if directionStr != string(Up) && directionStr != string(Down) {
-			return fmt.Errorf("invalid direction %q in file: %s", directionStr, name)
-		}
-
-		baseParts := strings.SplitN(parts[0], "_", 2)
-		if len(baseParts) < 1 {
-			return fmt.Errorf("missing version in file: %s", name)
-		}
-
-		version, err := strconv.ParseUint(baseParts[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid version %q in file: %s", baseParts[0], name)
-		}
-
-		desc := ""
-		if len(baseParts) > 1 {
-			desc = baseParts[1]
-		}
-
-		payload, err := fs.ReadFile(m.src, p)
-		if err != nil {
-			return fmt.Errorf("failed to read migration file %s: %w", p, err)
-		}
-		hash := sha256.Sum256(payload)
-
-		migrations = append(migrations, Migration{
-			Version:     version,
-			Description: desc,
-			Direction:   Direction(directionStr),
-			Path:        p,
-			Checksum:    hash[:],
-		})
-
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to read migration directory: %w", err)
-	}
-
-	// Sort mathematically by version
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
-	})
-
-	return migrations, nil
-}
-
 // load loads applied records and available files, ensuring that there are no
 // missing files or checksum mismatches for previously applied migrations.
 func (m *Migrator) load(ctx context.Context) ([]Record, map[uint64]bool, []Migration, error) {
-	allFiles, err := m.read()
+	allFiles, err := m.source.ListMigrations()
 	if err != nil {
 		return nil, nil, nil, err
 	}
