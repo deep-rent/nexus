@@ -45,7 +45,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		}
 
 		name := d.Name()
-		version, desc, direction, ok := parseFilename(name)
+		version, desc, direction, ok := parse(name)
 		if !ok {
 			return nil // Skip files that don't match the migration format
 		}
@@ -79,9 +79,14 @@ func (s *Source) List() ([]migrate.Migration, error) {
 	return migrations, nil
 }
 
-// parseFilename extracts migration details from a filename.
+// parse extracts migration details from a filename.
 // Expected format: <version>_<description>.<direction>.sql
-func parseFilename(name string) (version uint64, description string, direction migrate.Direction, ok bool) {
+func parse(name string) (
+	version uint64,
+	description string,
+	direction migrate.Direction,
+	ok bool,
+) {
 	if !strings.HasSuffix(name, ".sql") {
 		return 0, "", "", false
 	}
