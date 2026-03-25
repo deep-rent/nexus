@@ -45,16 +45,16 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		}
 
 		name := d.Name()
-		version, desc, direction, tx, ok := parseFilename(name)
+		version, desc, direction, tx, ok := parse(name)
 		if !ok {
 			return nil // Skip files that don't match the migration format
 		}
 
-		payload, err := fs.ReadFile(s.fs, p)
+		content, err := fs.ReadFile(s.fs, p)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", p, err)
 		}
-		hash := sha256.Sum256(payload)
+		hash := sha256.Sum256(content)
 
 		migrations = append(migrations, migrate.Migration{
 			Version:     version,
@@ -62,7 +62,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			Direction:   direction,
 			Path:        p,
 			Checksum:    hash,
-			Content:     payload,
+			Content:     content,
 			Tx:          tx,
 		})
 
@@ -72,63 +72,74 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		return nil, fmt.Errorf("failed to read migration directory: %w", err)
 	}
 
-	// Sort mathematically by version
+	// Sort by version in ascending order (old to new).
 	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
+		m1 := migrations[i]
+		m2 := migrations[j]
+		return m1.Version < m2.Version
 	})
 
 	return migrations, nil
 }
 
-// parseFilename extracts migration details from a filename.
+// parse extracts migration details from a filename.
 // Expected format: <version>_<description>.<direction>.sql
-func parseFilename(name string) (version uint64, description string, direction migrate.Direction, tx, ok bool) {
+func parse(name string) (
+	version uint64,
+	desc string,
+	direction migrate.Direction,
+	tx bool,
+	ok bool,
+) {
 	tx = true // Default to using a transaction
-
 	base, found := strings.CutSuffix(name, ".sql")
 	if !found {
 		return 0, "", "", false, false
 	}
 
 	// Split direction from the rest of the base name.
-	// Using LastIndexByte is more robust than Split if description contains dots.
-	lastDotIdx := strings.LastIndexByte(base, '.')
-	if lastDotIdx <= 0 { // Must have content before the dot.
-		return 0, "", "", false, false
+	dot := strings.LastIndexByte(base, '.')
+	if dot <= 0 {
+		return 0, "", "", false, false // Invalid format
 	}
-	dirStr := base[lastDotIdx+1:]
-	base = base[:lastDotIdx]
+	base = base[:dot]
 
-	// Validate direction.
-	switch dirStr {
+	// Validate the direction.
+	switch base[dot+1:] {
 	case string(migrate.Up):
 		direction = migrate.Up
 	case string(migrate.Down):
 		direction = migrate.Down
 	default:
-		return 0, "", "", false, false // Invalid direction.
+		return 0, "", "", false, false // Illegal direction
 	}
 
-	// Check for _notx suffix.
+	// Optionally disable transactional execution.
 	if base, found = strings.CutSuffix(base, "_notx"); found {
 		tx = false
 	}
 
 	// Split version from description.
-	versionStr, desc, _ := strings.Cut(base, "_")
-	if versionStr == "" {
-		return 0, "", "", false, false // No version found.
+	vs, ds, found := strings.Cut(base, "_")
+	if !found {
+		return 0, "", "", false, false // Invalid format
+	}
+	if vs == "" {
+		return 0, "", "", false, false // Empty version
+	}
+	if ds == "" {
+		return 0, "", "", false, false // Empty description
 	}
 
-	// Parse version.
-	v, err := strconv.ParseUint(versionStr, 10, 64)
+	// Parse the version number.
+	v, err := strconv.ParseUint(vs, 10, 64)
 	if err != nil {
-		return 0, "", "", false, false // Invalid version number.
+		return 0, "", "", false, false // Version is not a number
 	}
+
 	version = v
+	// Finalize the description.
+	desc = strings.ReplaceAll(ds, "_", " ")
 
-	// Finalize description.
-	description = strings.ReplaceAll(desc, "_", " ")
-
-	return version, description, direction, tx, true
+	return version, desc, direction, tx, true
 }
