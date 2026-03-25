@@ -15,25 +15,25 @@
 package schema
 
 import (
-	"strings"
+	"bytes"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 // Parser is a function that splits a SQL script into individual statements.
-type Parser func(script string) []string
+type Parser func(script []byte) []string
 
 // Postgres splits a PostgreSQL script into individual statements.
 // It safely splits by semicolons while ignoring those within comments,
 // string literals, identifiers, and PostgreSQL dollar quotes.
 // It also allows splitting by a custom delimiter "-- nexus:split".
-func Postgres(script string) []string {
-	const delim = "-- nexus:split"
-	if strings.Contains(script, delim) {
+func Postgres(script []byte) []string {
+	delim := []byte("-- nexus:split")
+	if bytes.Contains(script, delim) {
 		var stmts []string
-		for s := range strings.SplitSeq(script, delim) {
-			if t := strings.TrimSpace(s); t != "" {
-				stmts = append(stmts, t)
+		for s := range bytes.SplitSeq(script, delim) {
+			if t := bytes.TrimSpace(s); len(t) > 0 {
+				stmts = append(stmts, string(t))
 			}
 		}
 		return stmts
@@ -45,7 +45,7 @@ func Postgres(script string) []string {
 
 // postgresParser holds the state for parsing a SQL script.
 type postgresParser struct {
-	script string
+	script []byte
 	pos    int
 	start  int
 	stmts  []string
@@ -54,7 +54,7 @@ type postgresParser struct {
 	inDoubleQuotes    bool
 	inLineComment     bool
 	blockCommentDepth int
-	dollarQuoteTag    string
+	dollarQuoteTag    []byte
 }
 
 func (p *postgresParser) parse() []string {
@@ -76,10 +76,10 @@ func (p *postgresParser) parse() []string {
 				p.blockCommentDepth--
 				p.pos++
 			}
-		case p.dollarQuoteTag != "":
-			if c == '$' && strings.HasPrefix(p.script[p.pos:], p.dollarQuoteTag) {
+		case len(p.dollarQuoteTag) > 0:
+			if c == '$' && bytes.HasPrefix(p.script[p.pos:], p.dollarQuoteTag) {
 				p.pos += len(p.dollarQuoteTag) - 1
-				p.dollarQuoteTag = ""
+				p.dollarQuoteTag = nil
 			}
 		case p.inSingleQuotes:
 			if c == '\'' {
@@ -138,8 +138,8 @@ func (p *postgresParser) scanDollarQuote(n int) {
 }
 
 func (p *postgresParser) flush() {
-	if stmt := strings.TrimSpace(p.script[p.start:p.pos]); stmt != "" {
-		p.stmts = append(p.stmts, stmt)
+	if stmt := bytes.TrimSpace(p.script[p.start:p.pos]); len(stmt) > 0 {
+		p.stmts = append(p.stmts, string(stmt))
 	}
 	p.start = p.pos + 1
 }

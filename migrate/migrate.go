@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/deep-rent/nexus/internal/schema"
 )
@@ -356,9 +355,8 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		"direction", migration.Direction,
 		"description", migration.Description,
 	)
-	payloadStr := string(migration.Content)
-	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx")
-	statements := m.driver.Parser()(payloadStr)
+	useTx := !bytes.Contains(migration.Content, []byte("-- nexus:no-tx"))
+	statements := m.driver.Parser()(migration.Content)
 
 	err := m.driver.Execute(ctx, Script{
 		Version:    migration.Version,
