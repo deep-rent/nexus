@@ -79,7 +79,7 @@ func (p *postgres) parse() []string {
 			if c == '\n' {
 				p.inComment = false
 			}
-		case p.depth > 0:
+		case p.depth > 0: // Inside a block comment, possibly nested
 			if c == '/' && p.i+1 < n && p.script[p.i+1] == '*' {
 				p.depth++
 				p.i++
@@ -87,7 +87,7 @@ func (p *postgres) parse() []string {
 				p.depth--
 				p.i++
 			}
-		case len(p.tag) > 0:
+		case len(p.tag) != 0: // Inside a section surrounded by dollar-quote tags
 			if c == '$' && bytes.HasPrefix(p.script[p.i:], p.tag) {
 				p.i += len(p.tag) - 1
 				p.tag = nil
@@ -156,7 +156,7 @@ func (p *postgres) dollar(n int) {
 // surrounding whitespace, and appends it to the results list if it is not
 // empty. It then advances the start index to prepare for the next statement.
 func (p *postgres) flush() {
-	if stmt := bytes.TrimSpace(p.script[p.start:p.i]); len(stmt) > 0 {
+	if stmt := bytes.TrimSpace(p.script[p.start:p.i]); len(stmt) != 0 {
 		p.stmts = append(p.stmts, string(stmt))
 	}
 	p.start = p.i + 1
