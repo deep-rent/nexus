@@ -59,10 +59,9 @@ type postgres struct {
 	inComment      bool // True if the cursor is within a single-line comment.
 
 	// Tracks the nesting depth of multi-line block comments.
-	blockCommentDepth int
-
+	depth int
 	// The active dollar-quote tag (e.g., "$BODY$") if currently inside one.
-	dollarQuoteTag []byte
+	tag []byte
 }
 
 // parse iterates through the script byte-by-byte, updating the state machine
@@ -80,18 +79,18 @@ func (p *postgres) parse() []string {
 			if c == '\n' {
 				p.inComment = false
 			}
-		case p.blockCommentDepth > 0:
+		case p.depth > 0:
 			if c == '/' && p.i+1 < n && p.script[p.i+1] == '*' {
-				p.blockCommentDepth++
+				p.depth++
 				p.i++
 			} else if c == '*' && p.i+1 < n && p.script[p.i+1] == '/' {
-				p.blockCommentDepth--
+				p.depth--
 				p.i++
 			}
-		case len(p.dollarQuoteTag) > 0:
-			if c == '$' && bytes.HasPrefix(p.script[p.i:], p.dollarQuoteTag) {
-				p.i += len(p.dollarQuoteTag) - 1
-				p.dollarQuoteTag = nil
+		case len(p.tag) > 0:
+			if c == '$' && bytes.HasPrefix(p.script[p.i:], p.tag) {
+				p.i += len(p.tag) - 1
+				p.tag = nil
 			}
 		case p.inSingleQuotes:
 			if c == '\'' {
@@ -113,7 +112,7 @@ func (p *postgres) parse() []string {
 			p.inComment = true
 			p.i++
 		case c == '/' && p.i+1 < n && p.script[p.i+1] == '*':
-			p.blockCommentDepth++
+			p.depth++
 			p.i++
 		case c == '$':
 			p.dollar(n)
@@ -148,7 +147,7 @@ func (p *postgres) dollar(n int) {
 		}
 	}
 	if end != -1 {
-		p.dollarQuoteTag = p.script[p.i : end+1]
+		p.tag = p.script[p.i : end+1]
 		p.i = end
 	}
 }
