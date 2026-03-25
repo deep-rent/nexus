@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package checksum provides helper functions for generating cryptographic hashes.
+// It is designed to simplify the creation of standard checksums for data
+// integrity verification and comparison.
 package checksum
 
 import (
