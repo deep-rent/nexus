@@ -62,7 +62,7 @@ func (t *Tag) Opts() iter.Seq2[string, string] {
 				case r == q:
 					inQuote = false
 					q = 0
-				case !inQuote && (r == '\'' || r == '"'):
+				case !inQuote && quote.Is(r):
 					inQuote = true
 					q = r
 				case !inQuote && r == ',':
