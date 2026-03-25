@@ -32,9 +32,9 @@ const (
 const (
 	queryInit = `
 		CREATE TABLE IF NOT EXISTS ` + table + ` (
-			version BIGINT PRIMARY KEY,
-			checksum BYTEA NOT NULL DEFAULT '\x',
-			dirty BOOLEAN NOT NULL DEFAULT false,
+			version    BIGINT PRIMARY KEY,
+			checksum   BYTEA NOT NULL DEFAULT '\x',
+			dirty      BOOLEAN NOT NULL DEFAULT false,
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);`
 	queryApplied       = "SELECT version, checksum, dirty FROM " + table + " ORDER BY version ASC"
