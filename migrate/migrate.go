@@ -314,32 +314,32 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 	}
 	applied := toLookup(records)
 
-	var pending []Migration
+	var out []Migration
 	for _, f := range files {
 		if f.Direction == Up && !applied[f.Version] {
-			pending = append(pending, f)
+			out = append(out, f)
 		}
 	}
 
-	return pending, nil
+	return out, nil
 }
 
 // Applied returns a list of "Up" migrations that have already been executed.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
-	recs, files, err := m.load(ctx)
+	records, files, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	appliedMap := toLookup(recs)
+	applied := toLookup(records)
 
-	var applied []Migration
+	var out []Migration
 	for _, f := range files {
-		if f.Direction == Up && appliedMap[f.Version] {
-			applied = append(applied, f)
+		if f.Direction == Up && applied[f.Version] {
+			out = append(out, f)
 		}
 	}
 
-	return applied, nil
+	return out, nil
 }
 
 // run reads the migration payload and executes it via the driver.
