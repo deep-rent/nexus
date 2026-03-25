@@ -48,3 +48,16 @@ func RemoveAll(s string) string {
 	}
 	return s
 }
+
+// Has returns true if the string is surrounded by a matching pair
+// of single or double quotes.
+func Has(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	switch s[0] {
+	case '"', '\'':
+		return s[len(s)-1] == s[0]
+	}
+	return false
+}
