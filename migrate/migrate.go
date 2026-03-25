@@ -55,10 +55,12 @@ type Driver interface {
 	// Applied returns all successfully applied migration records in ascending
 	// order.
 	Applied(ctx context.Context) ([]Record, error)
-	// Force sets the database to the specified version and clears the dirty state.
+	// Force sets the database to the specified version and clears the dirty
+	// state.
 	Force(ctx context.Context, version uint64) error
 	// Execute runs the migration statements and updates the tracking table.
-	// If useTx is true, all statements should be executed within a single transaction.
+	// If useTx is true, all statements should be executed within a single
+	// transaction.
 	Execute(
 		ctx context.Context,
 		version uint64,
@@ -159,8 +161,9 @@ func (m *Migrator) Down(ctx context.Context) error {
 	)
 }
 
-// Force manually sets the database to the specified version and clears the dirty
-// flag. It should be used to resolve a dirty state after human intervention.
+// Force manually sets the database to the specified version and clears the
+// dirty flag. It should be used to resolve a dirty state after human
+// intervention.
 func (m *Migrator) Force(ctx context.Context, version uint64) error {
 	if err := m.driver.Lock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
@@ -181,7 +184,7 @@ func (m *Migrator) Force(ctx context.Context, version uint64) error {
 }
 
 // MigrateTo applies or reverts migrations to reach the target version.
-func (m *Migrator) MigrateTo(ctx context.Context, targetVersion uint64) error {
+func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 	if err := m.driver.Lock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
@@ -203,11 +206,11 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion uint64) error {
 		appliedMap[v.Version] = true
 	}
 
-	// Revert applied migrations strictly greater than targetVersion in descending
-	// order.
+	// Revert applied migrations strictly greater than the target version in
+	// descending order.
 	for i := len(appliedVersions) - 1; i >= 0; i-- {
 		v := appliedVersions[i].Version
-		if v > targetVersion {
+		if v > target {
 			found := false
 			for _, f := range allFiles {
 				if f.Version == v && f.Direction == Down {
@@ -228,11 +231,11 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion uint64) error {
 		}
 	}
 
-	// Apply pending migrations less than or equal to targetVersion in ascending
-	// order.
+	// Apply pending migrations less than or equal to the target version in
+	// ascending order.
 	for _, f := range allFiles {
 		if f.Direction == Up &&
-			f.Version <= targetVersion &&
+			f.Version <= target &&
 			!appliedMap[f.Version] {
 			if err := m.run(ctx, f); err != nil {
 				return err
@@ -413,15 +416,27 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 
 	for _, a := range appliedVersions {
 		if a.Dirty {
-			return nil, nil, fmt.Errorf("database is dirty at version %d; manual intervention required", a.Version)
+			return nil, nil, fmt.Errorf(
+				"database is dirty at version %d; manual intervention required",
+				a.Version,
+			)
 		}
 		f, ok := upFiles[a.Version]
 		if !ok {
-			return nil, nil, fmt.Errorf("applied migration %d is missing from source files", a.Version)
+			return nil, nil, fmt.Errorf(
+				"applied migration %d is missing from source files",
+				a.Version,
+			)
 		}
-		// Accepts an empty checksum string in DB rows to safely handle backward compatibility.
+		// Accepts an empty checksum string in DB rows to safely handle backward
+		// compatibility.
 		if a.Checksum != "" && a.Checksum != f.Checksum {
-			return nil, nil, fmt.Errorf("checksum mismatch for migration %d: database has %s, file has %s", a.Version, a.Checksum, f.Checksum)
+			return nil, nil, fmt.Errorf(
+				"checksum mismatch for migration %d: database has %s, file has %s",
+				a.Version,
+				a.Checksum,
+				f.Checksum,
+			)
 		}
 	}
 
