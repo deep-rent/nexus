@@ -415,10 +415,7 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 				a.Version,
 			)
 		}
-		// Accepts an empty checksum array in DB rows to safely handle backward
-		// compatibility.
-		var emptyChecksum [32]byte
-		if a.Checksum != emptyChecksum && a.Checksum != f.Checksum {
+		if a.Checksum != f.Checksum {
 			return nil, nil, fmt.Errorf(
 				"checksum mismatch for migration %d: database has %x, file has %x",
 				a.Version,
