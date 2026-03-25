@@ -35,3 +35,16 @@ func Remove(s string) string {
 	// Return the original string if no matching quotes are found.
 	return s
 }
+
+// RemoveAll strips all layers of surrounding quotes from a string,
+// regardless of quote type mixing (e.g., "'hello'" becomes hello).
+func RemoveAll(s string) string {
+	for {
+		unquoted := Remove(s)
+		if unquoted == s {
+			break
+		}
+		s = unquoted
+	}
+	return s
+}
