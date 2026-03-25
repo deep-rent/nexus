@@ -79,13 +79,13 @@ type Script struct {
 
 // Migration represents a parsed migration file.
 type Migration struct {
-	Version     uint64
-	Description string
-	Direction   Direction
-	Path        string // Path in the fs.FS
-	Checksum    [32]byte // SHA-256 hash of the content
-	Content     []byte // Raw file content
-	Tx          bool   // Whether to run the migration in a transaction
+	Version     uint64    //
+	Description string    //
+	Direction   Direction //
+	Path        string    // Path in the fs.FS
+	Checksum    [32]byte  // SHA-256 hash of the content
+	Content     []byte    // Raw file content
+	Tx          bool      // Whether to run the migration in a transaction
 }
 
 // Migrator orchestrates the execution of database migrations.
