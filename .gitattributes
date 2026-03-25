@@ -4,6 +4,7 @@
 *.json     text
 *.md       text diff=markdown
 *.sh       text eol=lf
+*.sql      text linguist-vendored
 *.svg      text
 *.yaml     text
 *.yml      text
