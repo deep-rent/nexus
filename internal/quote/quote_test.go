@@ -53,3 +53,31 @@ func TestRemove(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveAll(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want string
+	}
+
+	tests := []test{
+		{"single layer double", `"hello"`, "hello"},
+		{"single layer single", `'hello'`, "hello"},
+		{"nested mixed quotes", `"'hello'"`, "hello"},
+		{"deeply nested mixed quotes", `'"'"hello"'"'`, "hello"},
+		{"nested same quotes", `""hello""`, "hello"},
+		{"unmatched inner quote", `"he'llo"`, "he'llo"},
+		{"mismatched outer layer", `"hello'`, `"hello'`},
+		{"no quotes", "hello", "hello"},
+		{"empty string", "", ""},
+		{"only quotes stripped to empty", `""''""`, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.RemoveAll(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
