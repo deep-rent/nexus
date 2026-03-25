@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package schema provides utilities for parsing and manipulating database
+// schema definitions and migration scripts.
+//
+// Its primary responsibility is to safely split raw SQL scripts into individual
+// statements so they can be executed sequentially by a database driver.
+// The parsing logic is designed to be aware of database-specific syntax,
+// such as string literals, comments, and dollar-quoted strings in PostgreSQL,
+// to prevent false positives when splitting on statement terminators like
+// semicolons.
 package schema
 
 import (
