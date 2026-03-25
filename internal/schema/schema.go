@@ -39,12 +39,12 @@ func Postgres(script []byte) []string {
 		return stmts
 	}
 
-	p := &postgresParser{script: script}
+	p := &postgres{script: script}
 	return p.parse()
 }
 
-// postgresParser holds the state for parsing a SQL script.
-type postgresParser struct {
+// postgres holds the state for parsing a SQL script.
+type postgres struct {
 	script []byte
 	pos    int
 	start  int
@@ -57,7 +57,7 @@ type postgresParser struct {
 	dollarQuoteTag    []byte
 }
 
-func (p *postgresParser) parse() []string {
+func (p *postgres) parse() []string {
 	n := len(p.script)
 	for p.pos < n {
 		c := p.script[p.pos]
@@ -119,7 +119,7 @@ func (p *postgresParser) parse() []string {
 	return p.stmts
 }
 
-func (p *postgresParser) scanDollarQuote(n int) {
+func (p *postgres) scanDollarQuote(n int) {
 	end := -1
 	for j := p.pos + 1; j < n; j++ {
 		nc := p.script[j]
@@ -137,7 +137,7 @@ func (p *postgresParser) scanDollarQuote(n int) {
 	}
 }
 
-func (p *postgresParser) flush() {
+func (p *postgres) flush() {
 	if stmt := bytes.TrimSpace(p.script[p.start:p.pos]); len(stmt) > 0 {
 		p.stmts = append(p.stmts, string(stmt))
 	}
