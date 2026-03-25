@@ -74,3 +74,6 @@ func Double(s string) string { return Wrap(s, '"') }
 
 // Single wraps a string in single quotes.
 func Single(s string) string { return Wrap(s, '\'') }
+
+// Is checks if the given rune is a single or double quote character.
+func Is(c rune) bool { return c == '"' || c == '\'' }
