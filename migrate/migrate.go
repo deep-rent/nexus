@@ -142,7 +142,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 	lastApplied := appliedMigrations[len(appliedMigrations)-1]
 
 	// We need the corresponding 'down' file for this version
-	allFiles, err := m.parseFiles()
+	allFiles, err := m.read()
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion uint64) error {
 		return fmt.Errorf("failed to initialize driver: %w", err)
 	}
 
-	appliedVersions, allFiles, err := m.loadAndValidate(ctx)
+	appliedVersions, allFiles, err := m.load(ctx)
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion uint64) error {
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
-	appliedVersions, allFiles, err := m.loadAndValidate(ctx)
+	appliedVersions, allFiles, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 
 // Applied returns a list of "Up" migrations that have already been executed.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
-	appliedVersions, allFiles, err := m.loadAndValidate(ctx)
+	appliedVersions, allFiles, err := m.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	}
 
 	payloadStr := string(payload)
-	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx") && !strings.Contains(payloadStr, "-- no-transaction")
+	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx")
 	statements := m.driver.Parser()(payloadStr)
 
 	err = m.driver.Execute(
@@ -322,8 +322,8 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	return nil
 }
 
-// parseFiles reads and validates the fs.FS, returning sorted migrations.
-func (m *Migrator) parseFiles() ([]Migration, error) {
+// read reads and validates the fs.FS, returning sorted migrations.
+func (m *Migrator) read() ([]Migration, error) {
 	var migrations []Migration
 
 	err := fs.WalkDir(m.src, ".", func(p string, d fs.DirEntry, err error) error {
@@ -391,11 +391,10 @@ func (m *Migrator) parseFiles() ([]Migration, error) {
 	return migrations, nil
 }
 
-// loadAndValidate reads applied records and available files, ensuring that
-// there are no missing files or checksum mismatches for previously applied
-// migrations.
-func (m *Migrator) loadAndValidate(ctx context.Context) ([]Record, []Migration, error) {
-	allFiles, err := m.parseFiles()
+// load loads applied records and available files, ensuring that there are no
+// missing files or checksum mismatches for previously applied migrations.
+func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
+	allFiles, err := m.read()
 	if err != nil {
 		return nil, nil, err
 	}
