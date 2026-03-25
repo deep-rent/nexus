@@ -26,19 +26,7 @@ type Parser func(script []byte) []string
 // Postgres splits a PostgreSQL script into individual statements.
 // It safely splits by semicolons while ignoring those within comments,
 // string literals, identifiers, and PostgreSQL dollar quotes.
-// It also allows splitting by a custom delimiter "-- nexus:split".
 func Postgres(script []byte) []string {
-	delim := []byte("-- nexus:split")
-	if bytes.Contains(script, delim) {
-		var stmts []string
-		for s := range bytes.SplitSeq(script, delim) {
-			if t := bytes.TrimSpace(s); len(t) > 0 {
-				stmts = append(stmts, string(t))
-			}
-		}
-		return stmts
-	}
-
 	p := &postgres{script: script}
 	return p.parse()
 }
