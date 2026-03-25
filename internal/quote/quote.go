@@ -61,3 +61,16 @@ func Has(s string) bool {
 	}
 	return false
 }
+
+// Wrap surrounds the given string with the specified quote character.
+// Note: It does not escape existing quotes inside the string.
+func Wrap(s string, q rune) string {
+	r := string(q)
+	return r + s + r
+}
+
+// Double wraps a string in double quotes.
+func Double(s string) string { return Wrap(s, '"') }
+
+// Single wraps a string in single quotes.
+func Single(s string) string { return Wrap(s, '\'') }
