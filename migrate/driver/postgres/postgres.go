@@ -29,6 +29,22 @@ const (
 	tableLock = 145242119    // Arbitrary unique identifier for pg_advisory_lock
 )
 
+const (
+	queryInit = `
+		CREATE TABLE IF NOT EXISTS ` + table + ` (
+			version BIGINT PRIMARY KEY,
+			checksum BYTEA NOT NULL DEFAULT '\x',
+			dirty BOOLEAN NOT NULL DEFAULT false,
+			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		);`
+	queryApplied       = "SELECT version, checksum, dirty FROM " + table + " ORDER BY version ASC"
+	queryClearDirty    = "UPDATE " + table + " SET dirty = false WHERE version = $1"
+	queryDeleteNewer   = "DELETE FROM " + table + " WHERE version > $1"
+	querySetDirtyUp    = "INSERT INTO " + table + " (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true"
+	querySetDirtyDown  = "UPDATE " + table + " SET dirty = true WHERE version = $1"
+	queryDeleteVersion = "DELETE FROM " + table + " WHERE version = $1"
+)
+
 // Driver implements migrate.Driver for PostgreSQL.
 type Driver struct {
 	db   *sql.DB
@@ -78,24 +94,13 @@ func (p *Driver) Unlock(ctx context.Context) error {
 
 // Init creates the migrations tracking table if it doesn't already exist.
 func (p *Driver) Init(ctx context.Context) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			version BIGINT PRIMARY KEY,
-			checksum BYTEA NOT NULL DEFAULT '\x',
-			dirty BOOLEAN NOT NULL DEFAULT false,
-			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-		);
-	`, table)
-
-	_, err := p.db.ExecContext(ctx, query)
+	_, err := p.db.ExecContext(ctx, queryInit)
 	return err
 }
 
 // Applied returns all successfully applied migration records.
 func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
-	query := fmt.Sprintf("SELECT version, checksum, dirty FROM %s ORDER BY version ASC", table)
-
-	rows, err := p.db.QueryContext(ctx, query)
+	rows, err := p.db.QueryContext(ctx, queryApplied)
 	if err != nil {
 		return nil, err
 	}
@@ -127,13 +132,11 @@ func (p *Driver) Force(ctx context.Context, version uint64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	queryUpdate := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", table)
-	if _, err := tx.ExecContext(ctx, queryUpdate, version); err != nil {
+	if _, err := tx.ExecContext(ctx, queryClearDirty, version); err != nil {
 		return fmt.Errorf("failed to clear dirty flag: %w", err)
 	}
 
-	queryDelete := fmt.Sprintf("DELETE FROM %s WHERE version > $1", table)
-	if _, err := tx.ExecContext(ctx, queryDelete, version); err != nil {
+	if _, err := tx.ExecContext(ctx, queryDeleteNewer, version); err != nil {
 		return fmt.Errorf("failed to delete newer versions: %w", err)
 	}
 
@@ -190,13 +193,11 @@ func (p *Driver) executeStatements(ctx context.Context, exec executor, statement
 func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate.Direction, checksum []byte) error {
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf("INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true", table)
-		if _, err := p.db.ExecContext(ctx, query, version, checksum); err != nil {
+		if _, err := p.db.ExecContext(ctx, querySetDirtyUp, version, checksum); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	case migrate.Down:
-		query := fmt.Sprintf("UPDATE %s SET dirty = true WHERE version = $1", table)
-		if _, err := p.db.ExecContext(ctx, query, version); err != nil {
+		if _, err := p.db.ExecContext(ctx, querySetDirtyDown, version); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	}
@@ -206,13 +207,11 @@ func (p *Driver) setDirty(ctx context.Context, version uint64, direction migrate
 func (p *Driver) setClean(ctx context.Context, version uint64, direction migrate.Direction) error {
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", table)
-		if _, err := p.db.ExecContext(ctx, query, version); err != nil {
+		if _, err := p.db.ExecContext(ctx, queryClearDirty, version); err != nil {
 			return fmt.Errorf("failed to clear dirty state: %w", err)
 		}
 	case migrate.Down:
-		query := fmt.Sprintf("DELETE FROM %s WHERE version = $1", table)
-		if _, err := p.db.ExecContext(ctx, query, version); err != nil {
+		if _, err := p.db.ExecContext(ctx, queryDeleteVersion, version); err != nil {
 			return fmt.Errorf("failed to remove migration record: %w", err)
 		}
 	}
