@@ -45,7 +45,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		}
 
 		name := d.Name()
-		version, desc, direction, ok := parse(name)
+		version, desc, direction, tx, ok := parseFilename(name)
 		if !ok {
 			return nil // Skip files that don't match the migration format
 		}
@@ -63,6 +63,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			Path:        p,
 			Checksum:    hash[:],
 			Content:     payload,
+			Tx:          tx,
 		})
 
 		return nil
@@ -79,42 +80,44 @@ func (s *Source) List() ([]migrate.Migration, error) {
 	return migrations, nil
 }
 
-// parse extracts migration details from a filename.
+// parseFilename extracts migration details from a filename.
 // Expected format: <version>_<description>.<direction>.sql
-func parse(name string) (
-	version uint64,
-	description string,
-	direction migrate.Direction,
-	ok bool,
-) {
+func parseFilename(name string) (version uint64, description string, direction migrate.Direction, tx, ok bool) {
+	tx = true // Default to using a transaction
 	if !strings.HasSuffix(name, ".sql") {
-		return 0, "", "", false
+		return 0, "", "", false, false
 	}
 
 	parts := strings.Split(name[:len(name)-4], ".")
 	if len(parts) != 2 {
-		return 0, "", "", false
+		return 0, "", "", false, false
 	}
 
 	dirStr := parts[1]
 	if dirStr != string(migrate.Up) && dirStr != string(migrate.Down) {
-		return 0, "", "", false
+		return 0, "", "", false, false
 	}
 	direction = migrate.Direction(dirStr)
 
-	baseParts := strings.SplitN(parts[0], "_", 2)
+	base := parts[0]
+	if strings.HasSuffix(base, "_notx") {
+		tx = false
+		base = base[:len(base)-len("_notx")]
+	}
+
+	baseParts := strings.SplitN(base, "_", 2)
 	if len(baseParts) < 1 {
-		return 0, "", "", false
+		return 0, "", "", false, false
 	}
 
 	v, err := strconv.ParseUint(baseParts[0], 10, 64)
 	if err != nil {
-		return 0, "", "", false
+		return 0, "", "", false, false
 	}
 	version = v
 
 	if len(baseParts) > 1 {
 		description = strings.ReplaceAll(baseParts[1], "_", " ")
 	}
-	return version, description, direction, true
+	return version, description, direction, tx, true
 }

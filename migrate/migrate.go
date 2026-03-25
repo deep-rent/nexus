@@ -87,6 +87,7 @@ type Migration struct {
 	Path        string // Path in the fs.FS
 	Checksum    []byte // SHA-256 hash of the content
 	Content     []byte // Raw file content
+	Tx          bool   // Whether to run the migration in a transaction
 }
 
 // Migrator orchestrates the execution of database migrations.
@@ -347,7 +348,6 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		"direction", migration.Direction,
 		"description", migration.Description,
 	)
-	useTx := !bytes.Contains(migration.Content, []byte("-- nexus:no-tx"))
 	statements := m.driver.Parser()(migration.Content)
 
 	err := m.driver.Execute(ctx, Script{
@@ -355,7 +355,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		Direction:  migration.Direction,
 		Checksum:   migration.Checksum,
 		Statements: statements,
-		Tx:         useTx,
+		Tx:         migration.Tx,
 	})
 	if err != nil {
 		err = fmt.Errorf(
