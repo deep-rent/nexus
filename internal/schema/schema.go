@@ -33,64 +33,64 @@ func Postgres(script []byte) []string {
 
 // postgres holds the state for parsing a SQL script.
 type postgres struct {
-	script []byte
-	pos    int
-	start  int
-	stmts  []string
+	script []byte   //
+	i      int      // Cursor position
+	start  int      //
+	stmts  []string //
 
-	inSingleQuotes    bool
-	inDoubleQuotes    bool
-	inLineComment     bool
-	blockCommentDepth int
-	dollarQuoteTag    []byte
+	inSingleQuotes    bool   // Cursor is positioned within a singly quoted string
+	inDoubleQuotes    bool   // Cursor is positioned within a doubly quoted string
+	inComment         bool   // Cursor is positioned inside a line comment
+	blockCommentDepth int    //
+	dollarQuoteTag    []byte //
 }
 
 func (p *postgres) parse() []string {
 	n := len(p.script)
-	for p.pos < n {
-		c := p.script[p.pos]
+	for p.i < n {
+		c := p.script[p.i]
 
 		// The order of checks is important.
 		switch {
-		case p.inLineComment:
+		case p.inComment:
 			if c == '\n' {
-				p.inLineComment = false
+				p.inComment = false
 			}
 		case p.blockCommentDepth > 0:
-			if c == '/' && p.pos+1 < n && p.script[p.pos+1] == '*' {
+			if c == '/' && p.i+1 < n && p.script[p.i+1] == '*' {
 				p.blockCommentDepth++
-				p.pos++
-			} else if c == '*' && p.pos+1 < n && p.script[p.pos+1] == '/' {
+				p.i++
+			} else if c == '*' && p.i+1 < n && p.script[p.i+1] == '/' {
 				p.blockCommentDepth--
-				p.pos++
+				p.i++
 			}
 		case len(p.dollarQuoteTag) > 0:
-			if c == '$' && bytes.HasPrefix(p.script[p.pos:], p.dollarQuoteTag) {
-				p.pos += len(p.dollarQuoteTag) - 1
+			if c == '$' && bytes.HasPrefix(p.script[p.i:], p.dollarQuoteTag) {
+				p.i += len(p.dollarQuoteTag) - 1
 				p.dollarQuoteTag = nil
 			}
 		case p.inSingleQuotes:
 			if c == '\'' {
-				if p.pos+1 < n && p.script[p.pos+1] == '\'' {
-					p.pos++ // Skip escaped quote
+				if p.i+1 < n && p.script[p.i+1] == '\'' {
+					p.i++ // Skip escaped quote
 				} else {
 					p.inSingleQuotes = false
 				}
 			}
 		case p.inDoubleQuotes:
 			if c == '"' {
-				if p.pos+1 < n && p.script[p.pos+1] == '"' {
-					p.pos++ // Skip escaped quote
+				if p.i+1 < n && p.script[p.i+1] == '"' {
+					p.i++ // Skip escaped quote
 				} else {
 					p.inDoubleQuotes = false
 				}
 			}
-		case c == '-' && p.pos+1 < n && p.script[p.pos+1] == '-':
-			p.inLineComment = true
-			p.pos++
-		case c == '/' && p.pos+1 < n && p.script[p.pos+1] == '*':
+		case c == '-' && p.i+1 < n && p.script[p.i+1] == '-':
+			p.inComment = true
+			p.i++
+		case c == '/' && p.i+1 < n && p.script[p.i+1] == '*':
 			p.blockCommentDepth++
-			p.pos++
+			p.i++
 		case c == '$':
 			p.scanDollarQuote(n)
 		case c == '\'':
@@ -100,7 +100,7 @@ func (p *postgres) parse() []string {
 		case c == ';':
 			p.flush()
 		}
-		p.pos++
+		p.i++
 	}
 
 	p.flush() // Add the last statement if it's not terminated by a semicolon.
@@ -109,7 +109,7 @@ func (p *postgres) parse() []string {
 
 func (p *postgres) scanDollarQuote(n int) {
 	end := -1
-	for j := p.pos + 1; j < n; j++ {
+	for j := p.i + 1; j < n; j++ {
 		nc := p.script[j]
 		if nc == '$' {
 			end = j
@@ -120,14 +120,14 @@ func (p *postgres) scanDollarQuote(n int) {
 		}
 	}
 	if end != -1 {
-		p.dollarQuoteTag = p.script[p.pos : end+1]
-		p.pos = end
+		p.dollarQuoteTag = p.script[p.i : end+1]
+		p.i = end
 	}
 }
 
 func (p *postgres) flush() {
-	if stmt := bytes.TrimSpace(p.script[p.start:p.pos]); len(stmt) > 0 {
+	if stmt := bytes.TrimSpace(p.script[p.start:p.i]); len(stmt) > 0 {
 		p.stmts = append(p.stmts, string(stmt))
 	}
-	p.start = p.pos + 1
+	p.start = p.i + 1
 }
