@@ -60,18 +60,18 @@ type Driver interface {
 	Force(ctx context.Context, version uint64) error
 	// Execute runs the migration statements and updates the tracking table.
 	// The behavior of the execution is dictated by the provided ExecuteParams.
-	Execute(ctx context.Context, params ExecuteParams) error
+	Execute(ctx context.Context, script Script) error
 	// Close cleans up driver resources.
 	Close() error
 }
 
-// ExecuteParams holds the parameters required to execute a migration.
-type ExecuteParams struct {
+// Script holds the parameters required to execute a migration.
+type Script struct {
 	Version    uint64
 	Direction  Direction
 	Checksum   []byte
 	Statements []string
-	UseTx      bool
+	Tx         bool
 }
 
 // Migration represents a parsed migration file.
@@ -292,12 +292,12 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx")
 	statements := m.driver.Parser()(payloadStr)
 
-	err = m.driver.Execute(ctx, ExecuteParams{
+	err = m.driver.Execute(ctx, Script{
 		Version:    migration.Version,
 		Direction:  migration.Direction,
 		Checksum:   migration.Checksum,
 		Statements: statements,
-		UseTx:      useTx,
+		Tx:         useTx,
 	})
 	if err != nil {
 		return fmt.Errorf(
