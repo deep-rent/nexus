@@ -188,8 +188,8 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 	return nil
 }
 
-// executor is an interface satisfied by both *sql.DB and *sql.Tx.
-type executor interface {
+// runner is an interface satisfied by both *sql.DB and *sql.Tx.
+type runner interface {
 	ExecContext(
 		ctx context.Context,
 		query string,
@@ -200,11 +200,11 @@ type executor interface {
 // exec runs a series of SQL statements using the provided executor.
 func (p *Driver) exec(
 	ctx context.Context,
-	exec executor,
+	run runner,
 	statements []string,
 ) error {
 	for _, stmt := range statements {
-		if _, err := exec.ExecContext(ctx, stmt); err != nil {
+		if _, err := run.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("failed to execute migration statement: %w", err)
 		}
 	}
