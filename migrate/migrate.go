@@ -89,10 +89,23 @@ type Migration struct {
 	Content     []byte // Raw file content
 }
 
+// Logger is a simple logging interface compatible with slog.Logger.
+type Logger interface {
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
+// noopLogger is a logger that does nothing.
+type noopLogger struct{}
+
+func (l *noopLogger) Info(msg string, args ...any)  {}
+func (l *noopLogger) Error(msg string, args ...any) {}
+
 // Migrator orchestrates the execution of database migrations.
 type Migrator struct {
 	source Source
 	driver Driver
+	logger Logger
 }
 
 // Option configures a Migrator instance.
@@ -112,9 +125,18 @@ func WithDriver(driver Driver) Option {
 	}
 }
 
+// WithLogger sets the logger for the migrator.
+func WithLogger(logger Logger) Option {
+	return func(m *Migrator) {
+		m.logger = logger
+	}
+}
+
 // New creates a new Migrator instance.
 func New(opts ...Option) (*Migrator, error) {
-	m := &Migrator{}
+	m := &Migrator{
+		logger: &noopLogger{},
+	}
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -124,6 +146,9 @@ func New(opts ...Option) (*Migrator, error) {
 	}
 	if m.driver == nil {
 		return nil, errors.New("migrate: driver is required")
+	}
+	if m.logger == nil {
+		m.logger = &noopLogger{}
 	}
 
 	return m, nil
@@ -147,11 +172,18 @@ func (m *Migrator) Up(ctx context.Context) error {
 		return err
 	}
 
+	if len(pending) == 0 {
+		m.logger.Info("Migrations are up to date")
+		return nil
+	}
+
+	m.logger.Info("Applying pending migrations", "count", len(pending))
 	for _, p := range pending {
 		if err := m.run(ctx, p); err != nil {
 			return err
 		}
 	}
+	m.logger.Info("All migrations applied successfully")
 	return nil
 }
 
@@ -169,10 +201,13 @@ func (m *Migrator) Down(ctx context.Context) error {
 	}
 
 	appliedMigrations, err := m.Applied(ctx)
-	if err != nil || len(appliedMigrations) == 0 {
-		return err // Either an error or nothing to revert
+	if err != nil {
+		return err
 	}
-
+	if len(appliedMigrations) == 0 {
+		m.logger.Info("No applied migrations to revert")
+		return nil
+	}
 	// Get the last applied migration to revert
 	lastApplied := appliedMigrations[len(appliedMigrations)-1]
 
@@ -184,10 +219,13 @@ func (m *Migrator) Down(ctx context.Context) error {
 
 	for _, f := range allFiles {
 		if f.Version == lastApplied.Version && f.Direction == Down {
-			return m.run(ctx, f)
+			err := m.run(ctx, f)
+			if err == nil {
+				m.logger.Info("Migration reverted successfully", "version", f.Version)
+			}
+			return err
 		}
 	}
-
 	return fmt.Errorf(
 		"down migration file not found for version %d",
 		lastApplied.Version,
@@ -213,6 +251,7 @@ func (m *Migrator) Force(ctx context.Context, version uint64) error {
 		return fmt.Errorf("failed to force version: %w", err)
 	}
 
+	m.logger.Info("Successfully forced version", "version", version)
 	return nil
 }
 
@@ -311,6 +350,12 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 
 // run reads the migration payload and executes it via the driver.
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
+	m.logger.Info(
+		"Running migration",
+		"version", migration.Version,
+		"direction", migration.Direction,
+		"description", migration.Description,
+	)
 	payloadStr := string(migration.Content)
 	useTx := !strings.Contains(payloadStr, "-- nexus:no-tx")
 	statements := m.driver.Parser()(payloadStr)
@@ -323,13 +368,15 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		Tx:         useTx,
 	})
 	if err != nil {
-		return fmt.Errorf(
+		err = fmt.Errorf(
 			"migration %d failed: %w",
 			migration.Version,
 			err,
 		)
+		m.logger.Error(err.Error())
+		return err
 	}
-
+	m.logger.Info("Migration completed", "version", migration.Version)
 	return nil
 }
 

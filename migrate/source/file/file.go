@@ -45,34 +45,9 @@ func (s *Source) ListMigrations() ([]migrate.Migration, error) {
 		}
 
 		name := d.Name()
-		if !strings.HasSuffix(name, ".sql") {
-			return nil // Skip non-SQL files
-		}
-
-		// Expected format: <version>_<description>.<direction>.sql
-		parts := strings.Split(name, ".")
-		if len(parts) != 3 {
-			return fmt.Errorf("invalid migration file format: %s", name)
-		}
-
-		directionStr := parts[1]
-		if directionStr != string(migrate.Up) && directionStr != string(migrate.Down) {
-			return fmt.Errorf("invalid direction %q in file: %s", directionStr, name)
-		}
-
-		baseParts := strings.SplitN(parts[0], "_", 2)
-		if len(baseParts) < 1 {
-			return fmt.Errorf("missing version in file: %s", name)
-		}
-
-		version, err := strconv.ParseUint(baseParts[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid version %q in file: %s", baseParts[0], name)
-		}
-
-		desc := ""
-		if len(baseParts) > 1 {
-			desc = baseParts[1]
+		version, desc, direction, ok := parseFilename(name)
+		if !ok {
+			return nil // Skip files that don't match the migration format
 		}
 
 		payload, err := fs.ReadFile(s.fs, p)
@@ -84,7 +59,7 @@ func (s *Source) ListMigrations() ([]migrate.Migration, error) {
 		migrations = append(migrations, migrate.Migration{
 			Version:     version,
 			Description: desc,
-			Direction:   migrate.Direction(directionStr),
+			Direction:   direction,
 			Path:        p,
 			Checksum:    hash[:],
 			Content:     payload,
@@ -102,4 +77,39 @@ func (s *Source) ListMigrations() ([]migrate.Migration, error) {
 	})
 
 	return migrations, nil
+}
+
+// parseFilename extracts migration details from a filename.
+// Expected format: <version>_<description>.<direction>.sql
+func parseFilename(name string) (version uint64, description string, direction migrate.Direction, ok bool) {
+	if !strings.HasSuffix(name, ".sql") {
+		return 0, "", "", false
+	}
+
+	parts := strings.Split(name[:len(name)-4], ".")
+	if len(parts) != 2 {
+		return 0, "", "", false
+	}
+
+	dirStr := parts[1]
+	if dirStr != string(migrate.Up) && dirStr != string(migrate.Down) {
+		return 0, "", "", false
+	}
+	direction = migrate.Direction(dirStr)
+
+	baseParts := strings.SplitN(parts[0], "_", 2)
+	if len(baseParts) < 1 {
+		return 0, "", "", false
+	}
+
+	v, err := strconv.ParseUint(baseParts[0], 10, 64)
+	if err != nil {
+		return 0, "", "", false
+	}
+	version = v
+
+	if len(baseParts) > 1 {
+		description = strings.ReplaceAll(baseParts[1], "_", " ")
+	}
+	return version, description, direction, true
 }

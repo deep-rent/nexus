@@ -39,130 +39,107 @@ func Postgres(script string) []string {
 		return stmts
 	}
 
-	var stmts []string
-	n := len(script)
-	start := 0
+	p := &postgresParser{script: script}
+	return p.parse()
+}
 
-	inQuotes := false
-	inId := false
-	inComment := false
-	blockCommentDepth := 0
-	var q string
+// postgresParser holds the state for parsing a SQL script.
+type postgresParser struct {
+	script string
+	pos    int
+	start  int
+	stmts  []string
 
-	// Iterate over bytes zero-alloc. Safe for UTF-8 since structural
-	// characters are all ASCII and won't match multi-byte sequence parts.
-	for i := 0; i < n; i++ {
-		c := script[i]
+	inSingleQuotes    bool
+	inDoubleQuotes    bool
+	inLineComment     bool
+	blockCommentDepth int
+	dollarQuoteTag    string
+}
 
-		// 1. Line Comments
-		if inComment {
+func (p *postgresParser) parse() []string {
+	n := len(p.script)
+	for p.pos < n {
+		c := p.script[p.pos]
+
+		// The order of checks is important.
+		switch {
+		case p.inLineComment:
 			if c == '\n' {
-				inComment = false
+				p.inLineComment = false
 			}
-			continue
-		}
-
-		// 2. Block Comments (supports nesting)
-		if blockCommentDepth > 0 {
-			if c == '/' && i+1 < n && script[i+1] == '*' {
-				blockCommentDepth++
-				i++
-			} else if c == '*' && i+1 < n && script[i+1] == '/' {
-				blockCommentDepth--
-				i++
+		case p.blockCommentDepth > 0:
+			if c == '/' && p.pos+1 < n && p.script[p.pos+1] == '*' {
+				p.blockCommentDepth++
+				p.pos++
+			} else if c == '*' && p.pos+1 < n && p.script[p.pos+1] == '/' {
+				p.blockCommentDepth--
+				p.pos++
 			}
-			continue
-		}
-
-		// 3. PostgreSQL Dollar Quotes
-		if q != "" {
-			if c == '$' && strings.HasPrefix(script[i:], q) {
-				i += len(q) - 1
-				q = ""
+		case p.dollarQuoteTag != "":
+			if c == '$' && strings.HasPrefix(p.script[p.pos:], p.dollarQuoteTag) {
+				p.pos += len(p.dollarQuoteTag) - 1
+				p.dollarQuoteTag = ""
 			}
-			continue
-		}
-
-		// 4. Single-quoted strings
-		if inQuotes {
+		case p.inSingleQuotes:
 			if c == '\'' {
-				// Allow escaping by doubling the quote
-				if i+1 < n && script[i+1] == '\'' {
-					i++
+				if p.pos+1 < n && p.script[p.pos+1] == '\'' {
+					p.pos++ // Skip escaped quote
 				} else {
-					inQuotes = false
+					p.inSingleQuotes = false
 				}
 			}
-			continue
-		}
-
-		// 5. Double-quoted identifiers
-		if inId {
+		case p.inDoubleQuotes:
 			if c == '"' {
-				// Allow escaping by doubling the quote
-				if i+1 < n && script[i+1] == '"' {
-					i++
+				if p.pos+1 < n && p.script[p.pos+1] == '"' {
+					p.pos++ // Skip escaped quote
 				} else {
-					inId = false
+					p.inDoubleQuotes = false
 				}
 			}
-			continue
+		case c == '-' && p.pos+1 < n && p.script[p.pos+1] == '-':
+			p.inLineComment = true
+			p.pos++
+		case c == '/' && p.pos+1 < n && p.script[p.pos+1] == '*':
+			p.blockCommentDepth++
+			p.pos++
+		case c == '$':
+			p.scanDollarQuote(n)
+		case c == '\'':
+			p.inSingleQuotes = true
+		case c == '"':
+			p.inDoubleQuotes = true
+		case c == ';':
+			p.flush()
 		}
-
-		// 6. Lookahead for new state changes
-		if c == '-' && i+1 < n && script[i+1] == '-' {
-			inComment = true
-			i++
-			continue
-		}
-		if c == '/' && i+1 < n && script[i+1] == '*' {
-			blockCommentDepth++
-			i++
-			continue
-		}
-		if c == '$' {
-			end := -1
-			for j := i + 1; j < n; j++ {
-				nc := script[j]
-				if nc == '$' {
-					end = j
-					break
-				}
-				if !ascii.IsWord(rune(nc)) {
-					break
-				}
-			}
-			if end != -1 {
-				q = script[i : end+1]
-				i = end
-				continue
-			}
-		}
-		if c == '\'' {
-			inQuotes = true
-			continue
-		}
-		if c == '"' {
-			inId = true
-			continue
-		}
-
-		// 7. Statement boundary detection
-		if c == ';' {
-			if stmt := strings.TrimSpace(script[start:i]); stmt != "" {
-				stmts = append(stmts, stmt)
-			}
-			start = i + 1
-			continue
-		}
+		p.pos++
 	}
 
-	// Flush the remaining buffer
-	if start < n {
-		if stmt := strings.TrimSpace(script[start:]); stmt != "" {
-			stmts = append(stmts, stmt)
+	p.flush() // Add the last statement if it's not terminated by a semicolon.
+	return p.stmts
+}
+
+func (p *postgresParser) scanDollarQuote(n int) {
+	end := -1
+	for j := p.pos + 1; j < n; j++ {
+		nc := p.script[j]
+		if nc == '$' {
+			end = j
+			break
+		}
+		if !ascii.IsWord(rune(nc)) {
+			break
 		}
 	}
+	if end != -1 {
+		p.dollarQuoteTag = p.script[p.pos : end+1]
+		p.pos = end
+	}
+}
 
-	return stmts
+func (p *postgresParser) flush() {
+	if stmt := strings.TrimSpace(p.script[p.start:p.pos]); stmt != "" {
+		p.stmts = append(p.stmts, stmt)
+	}
+	p.start = p.pos + 1
 }

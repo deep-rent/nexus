@@ -146,60 +146,41 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 		return fmt.Errorf("failed to mark migration as dirty: %w", err)
 	}
 
-	var err error
 	if script.Tx {
-		err = p.execTx(ctx, script.Statements)
-	} else {
-		err = p.exec(ctx, script.Statements)
-	}
+		tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
 
-	if err != nil {
-		return err
+		if err := p.executeStatements(ctx, tx, script.Statements); err != nil {
+			return err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+	} else {
+		if err := p.executeStatements(ctx, p.db, script.Statements); err != nil {
+			return err
+		}
 	}
 
 	if err := p.setClean(ctx, script.Version, script.Direction); err != nil {
 		return fmt.Errorf("failed to clear dirty state: %w", err)
 	}
-
 	return nil
 }
 
-func (p *Driver) execTx(
-	ctx context.Context,
-	statements []string,
-) error {
-	// Begin transaction
-	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	// Ensure rollback on panic or early return
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	// 1. Execute the actual migration SQL statements
-	for _, stmt := range statements {
-		if _, err := tx.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("failed to execute migration statement: %w", err)
-		}
-	}
-
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+// executor is an interface satisfied by both *sql.DB and *sql.Tx.
+type executor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-func (p *Driver) exec(
-	ctx context.Context,
-	statements []string,
-) error {
+// executeStatements runs a series of SQL statements using the provided executor.
+func (p *Driver) executeStatements(ctx context.Context, exec executor, statements []string) error {
 	for _, stmt := range statements {
-		if _, err := p.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("failed to execute migration statement: %w", err)
 		}
 	}
