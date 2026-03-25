@@ -31,8 +31,8 @@ const (
 
 // Driver implements migrate.Driver for PostgreSQL.
 type Driver struct {
-	db       *sql.DB
-	lockConn *sql.Conn
+	db   *sql.DB
+	lock *sql.Conn
 }
 
 // New creates a new PostgreSQL migration driver.
@@ -47,7 +47,7 @@ func (p *Driver) Parser() schema.Parser {
 
 // Lock acquires a distributed lock via pg_advisory_lock.
 func (p *Driver) Lock(ctx context.Context) error {
-	if p.lockConn != nil {
+	if p.lock != nil {
 		return errors.New("already locked")
 	}
 	conn, err := p.db.Conn(ctx)
@@ -58,18 +58,18 @@ func (p *Driver) Lock(ctx context.Context) error {
 		_ = conn.Close()
 		return fmt.Errorf("failed to acquire advisory lock: %w", err)
 	}
-	p.lockConn = conn
+	p.lock = conn
 	return nil
 }
 
 // Unlock releases the distributed lock.
 func (p *Driver) Unlock(ctx context.Context) error {
-	if p.lockConn == nil {
+	if p.lock == nil {
 		return errors.New("not locked")
 	}
-	_, err := p.lockConn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", tableLock)
-	errClose := p.lockConn.Close()
-	p.lockConn = nil
+	_, err := p.lock.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", tableLock)
+	errClose := p.lock.Close()
+	p.lock = nil
 	if err != nil {
 		return fmt.Errorf("failed to release advisory lock: %w", err)
 	}
