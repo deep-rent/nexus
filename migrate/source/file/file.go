@@ -124,11 +124,8 @@ func parse(name string) (
 	if !found {
 		return 0, "", "", false, false // Invalid format
 	}
-	if vs == "" {
-		return 0, "", "", false, false // Empty version
-	}
-	if ds == "" {
-		return 0, "", "", false, false // Empty description
+	if vs == "" || ds == "" {
+		return 0, "", "", false, false // Empty version or description
 	}
 
 	// Parse the version number.
