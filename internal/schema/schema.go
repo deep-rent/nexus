@@ -92,7 +92,7 @@ func (p *postgres) parse() []string {
 			p.blockCommentDepth++
 			p.i++
 		case c == '$':
-			p.scanDollarQuote(n)
+			p.dollar(n)
 		case c == '\'':
 			p.inSingleQuotes = true
 		case c == '"':
@@ -107,7 +107,8 @@ func (p *postgres) parse() []string {
 	return p.stmts
 }
 
-func (p *postgres) scanDollarQuote(n int) {
+// dollar scans for dollar quotes.
+func (p *postgres) dollar(n int) {
 	end := -1
 	for j := p.i + 1; j < n; j++ {
 		nc := p.script[j]
