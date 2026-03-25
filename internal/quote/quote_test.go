@@ -81,3 +81,32 @@ func TestRemoveAll(t *testing.T) {
 		})
 	}
 }
+
+func TestHas(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want bool
+	}
+
+	tests := []test{
+		{"double quoted", `"hello"`, true},
+		{"single quoted", `'hello'`, true},
+		{"empty double quotes", `""`, true},
+		{"empty single quotes", `''`, true},
+		{"mismatched quotes", `"hello'`, false},
+		{"missing end quote", `"hello`, false},
+		{"missing start quote", `hello"`, false},
+		{"no quotes", `hello`, false},
+		{"single char", `"`, false},
+		{"empty string", ``, false},
+		{"quote inside", `he"llo`, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Has(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
