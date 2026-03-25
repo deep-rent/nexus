@@ -23,7 +23,8 @@ import (
 )
 
 // Bytes calculates the SHA-256 hash of the provided byte slice.
-// It returns the resulting checksum as a lowercase, hex-encoded string.
+// It returns the resulting checksum as a lowercase, 64-character hex-encoded
+// string.
 func Bytes(data []byte) string {
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
