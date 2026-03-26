@@ -31,7 +31,6 @@
 package file
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"strconv"
@@ -120,18 +119,14 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			return fmt.Errorf("failed to read migration file %s: %w", path, err)
 		}
 
-		// Calculate the SHA-256 checksum of the raw file content to ensure
-		// integrity during future migration runs.
-		hash := sha256.Sum256(content)
-
 		migrations = append(migrations, migrate.Migration{
 			Version:     version,
 			Description: desc,
 			Direction:   direction,
 			Path:        path,
-			Checksum:    hash,
 			Content:     content,
 			Tx:          tx,
+			// The migrator handles checksum computation.
 		})
 
 		return nil

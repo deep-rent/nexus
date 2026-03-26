@@ -18,6 +18,7 @@ package migrate
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -174,13 +175,19 @@ func (m *Migrator) lock(
 	return fn(ctx)
 }
 
-// files fetches all available migrations from the source and strictly sorts
-// them using the domain rules defined in Migration.Compare.
+// files fetches all available migrations from the source, calculates their
+// cryptographic checksums, and strictly sorts them using the domain rules.
 func (m *Migrator) files() ([]Migration, error) {
 	files, err := m.source.List()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list source files: %w", err)
 	}
+
+	// The Migrator owns the integrity rules, so it calculates the checksums.
+	for i := range files {
+		files[i].Checksum = sha256.Sum256(files[i].Content)
+	}
+
 	slices.SortFunc(files, Migration.Compare)
 	return files, nil
 }
