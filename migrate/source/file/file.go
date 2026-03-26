@@ -160,6 +160,15 @@ func (s *Source) List() ([]migrate.SourceFile, error) {
 // Ensure Source satisfies the migrate.Source interface.
 var _ migrate.Source = (*Source)(nil)
 
+var (
+	errExtension          = errors.New("extension mismatch")
+	errMissingDirection   = errors.New("missing direction segment")
+	errIllegalDirection   = errors.New("illegal direction")
+	errMissingSeparator   = errors.New("missing underscore separator")
+	errInvalidDescription = errors.New("invalid description")
+	errInvalidVersion     = errors.New("invalid version")
+)
+
 // parse returns an error explaining why a file does not match the strict
 // format.
 func (s *Source) parse(name string) (
@@ -172,12 +181,12 @@ func (s *Source) parse(name string) (
 	tx = true
 	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
-		return 0, "", "", false, errors.New("extension mismatch")
+		return 0, "", "", false, errExtension
 	}
 
 	dot := strings.LastIndexByte(base, '.')
 	if dot <= 0 {
-		return 0, "", "", false, errors.New("missing direction segment")
+		return 0, "", "", false, errMissingDirection
 	}
 
 	s2 := base[dot+1:]
@@ -193,22 +202,27 @@ func (s *Source) parse(name string) (
 	case string(migrate.Down):
 		direction = migrate.Down
 	default:
-		return 0, "", "", false, errors.New("illegal direction")
+		return 0, "", "", false, errIllegalDirection
 	}
 
 	base = base[:dot]
 
 	s0, s1, found := strings.Cut(base, "_")
 	if !found {
-		return 0, "", "", false, errors.New("missing underscore separator")
+		return 0, "", "", false, errMissingSeparator
 	}
-	if s0 == "" || s1 == "" {
-		return 0, "", "", false, errors.New("empty version or description")
+
+	if s0 == "" {
+		return 0, "", "", false, errInvalidVersion
+	}
+
+	if s1 == "" {
+		return 0, "", "", false, errInvalidDescription
 	}
 
 	v, parseErr := strconv.ParseUint(s0, 10, 64)
 	if parseErr != nil {
-		return 0, "", "", false, errors.New("version is not numeric")
+		return 0, "", "", false, errInvalidVersion
 	}
 
 	version = v
