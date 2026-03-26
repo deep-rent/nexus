@@ -25,9 +25,11 @@ import (
 	"github.com/deep-rent/nexus/migrate"
 )
 
+const DefaultExtension = ".sql"
+
 // Source implements migrate.Source for a standard fs.FS.
 type Source struct {
-	fs  fs.FS
+	dir fs.FS
 	ext string
 }
 
@@ -49,10 +51,10 @@ func WithExtension(ext string) Option {
 }
 
 // New creates a new Source instance.
-func New(fs fs.FS, opts ...Option) *Source {
+func New(dir fs.FS, opts ...Option) *Source {
 	s := &Source{
-		fs:  fs,
-		ext: ".sql",
+		dir: dir,
+		ext: DefaultExtension,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -64,7 +66,11 @@ func New(fs fs.FS, opts ...Option) *Source {
 func (s *Source) List() ([]migrate.Migration, error) {
 	var migrations []migrate.Migration
 
-	err := fs.WalkDir(s.fs, ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(s.dir, ".", func(
+		path string,
+		d fs.DirEntry,
+		err error,
+	) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -75,10 +81,12 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			return nil // Skip files that don't match the migration format
 		}
 
-		content, err := fs.ReadFile(s.fs, path)
+		content, err := fs.ReadFile(s.dir, path)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", path, err)
 		}
+
+		// Calculate the file checksum.
 		hash := sha256.Sum256(content)
 
 		migrations = append(migrations, migrate.Migration{
@@ -127,11 +135,10 @@ func (s *Source) parse(name string) (
 	if dot <= 0 {
 		return 0, "", "", false, false // Invalid format
 	}
-	dirStr := base[dot+1:]
 	base = base[:dot]
 
 	// Validate the direction.
-	switch dirStr {
+	switch base[dot+1:] {
 	case string(migrate.Up):
 		direction = migrate.Up
 	case string(migrate.Down):
