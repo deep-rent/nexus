@@ -114,11 +114,7 @@ func New(dir fs.FS, opts ...Option) *Source {
 func (s *Source) List() ([]migrate.SourceFile, error) {
 	var migrations []migrate.SourceFile
 
-	err := fs.WalkDir(s.dir, ".", func(
-		path string,
-		d fs.DirEntry,
-		err error,
-	) error {
+	fn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -149,7 +145,9 @@ func (s *Source) List() ([]migrate.SourceFile, error) {
 		})
 
 		return nil
-	})
+	}
+
+	err := fs.WalkDir(s.dir, ".", fn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read migration directory: %w", err)
 	}
@@ -181,12 +179,12 @@ func (s *Source) parse(name string) (
 	tx = true
 	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
-		return 0, "", "", false, errExtension
+		return 0, "", -1, false, errExtension
 	}
 
 	dot := strings.LastIndexByte(base, '.')
 	if dot <= 0 {
-		return 0, "", "", false, errMissingDirection
+		return 0, "", -1, false, errMissingDirection
 	}
 
 	s2 := base[dot+1:]
@@ -197,32 +195,32 @@ func (s *Source) parse(name string) (
 	}
 
 	switch s2 {
-	case string(migrate.Up):
+	case "up":
 		direction = migrate.Up
-	case string(migrate.Down):
+	case "down":
 		direction = migrate.Down
 	default:
-		return 0, "", "", false, errIllegalDirection
+		return 0, "", 0, false, errIllegalDirection
 	}
 
 	base = base[:dot]
 
 	s0, s1, found := strings.Cut(base, "_")
 	if !found {
-		return 0, "", "", false, errMissingSeparator
+		return 0, "", 0, false, errMissingSeparator
 	}
 
 	if s0 == "" {
-		return 0, "", "", false, errInvalidVersion
+		return 0, "", 0, false, errInvalidVersion
 	}
 
 	if s1 == "" {
-		return 0, "", "", false, errInvalidDescription
+		return 0, "", 0, false, errInvalidDescription
 	}
 
-	v, parseErr := strconv.ParseUint(s0, 10, 64)
-	if parseErr != nil {
-		return 0, "", "", false, errInvalidVersion
+	v, e := strconv.ParseUint(s0, 10, 64)
+	if e != nil {
+		return 0, "", 0, false, errInvalidVersion
 	}
 
 	version = v

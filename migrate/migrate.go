@@ -28,12 +28,24 @@ import (
 )
 
 // Direction indicates whether a migration is being applied or reverted.
-type Direction string
+type Direction int
 
 const (
-	Up   Direction = "up"
-	Down Direction = "down"
+	Up Direction = iota
+	Down
 )
+
+// String implements the fmt.Stringer interface.
+func (d Direction) String() string {
+	switch d {
+	case Up:
+		return "up"
+	case Down:
+		return "down"
+	default:
+		return "unknown"
+	}
+}
 
 // Record represents a successfully applied migration stored in the database.
 type Record struct {
@@ -380,8 +392,8 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	m.logger.Info(
 		"Running migration",
 		slog.Uint64("version", migration.Version),
-		slog.Any("direction", migration.Direction),
 		slog.String("description", migration.Description),
+		slog.String("direction", migration.Direction.String()),
 	)
 
 	stmts := m.driver.Parser()(migration.Content)
