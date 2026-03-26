@@ -31,7 +31,6 @@
 package file
 
 import (
-	"cmp"
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
@@ -146,16 +145,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		return nil, fmt.Errorf("failed to read migration directory: %w", err)
 	}
 
-	// Sort migrations primarily by version (ascending) and secondarily
-	// by direction to guarantee a completely deterministic order.
-	slices.SortFunc(migrations, func(a, b migrate.Migration) int {
-		if df := cmp.Compare(a.Version, b.Version); df != 0 {
-			return df
-		} else {
-			return cmp.Compare(a.Direction, b.Direction)
-		}
-	})
-
+	slices.SortFunc(migrations, migrate.Migration.Compare)
 	return migrations, nil
 }
 

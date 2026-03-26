@@ -15,6 +15,7 @@
 package migrate
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -79,13 +80,28 @@ type Script struct {
 
 // Migration represents a parsed migration file.
 type Migration struct {
-	Version     uint64    //
-	Description string    //
-	Direction   Direction //
-	Path        string    // Path in the fs.FS
+	Version     uint64    // Unique sequence number of the migration
+	Description string    // A human-readable description of the migration
+	Direction   Direction // Indicates if this is an "up" or "down" migration
+	Path        string    // Path identifier within the source
 	Checksum    [32]byte  // SHA-256 hash of the content
-	Content     []byte    // Raw file content
-	Tx          bool      // Whether to run the migration in a transaction
+	Content     []byte    // Raw SQL content of the migration file
+	Tx          bool      // Indicates whether to run in a transaction
+}
+
+// Compare returns an integer comparing two migrations to establish a strict
+// ordering. The result will be 0 if m == other, -1 if m < other, and +1 if
+// m > other.
+//
+// Migrations are ordered primarily by version in ascending order. If two
+// migrations share the same version, they are secondarily ordered by direction
+// (alphabetically, so "down" comes before "up") to guarantee deterministic
+// sorting.
+func (m Migration) Compare(other Migration) int {
+	if n := cmp.Compare(m.Version, other.Version); n != 0 {
+		return n
+	}
+	return cmp.Compare(m.Direction, other.Direction)
 }
 
 // Migrator orchestrates the execution of database migrations.
