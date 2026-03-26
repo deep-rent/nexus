@@ -156,8 +156,14 @@ func DefaultPolicy() Policy {
 	}
 }
 
+// transport wraps an underlying http.RoundTripper to provide automatic
+// request retries.
+//
+// It intercepts outgoing HTTP requests and, upon failure or specific
+// status codes defined by the policy, re-executes the request after
+// a calculated delay.
 type transport struct {
-	next    http.RoundTripper
+	next    http.RoundTripper // The underlying sender
 	policy  Policy
 	backoff backoff.Strategy
 	logger  *slog.Logger
@@ -273,6 +279,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
+// Ensure transport satisfies the http.RoundTripper interface.
 var _ http.RoundTripper = (*transport)(nil)
 
 // NewTransport creates and returns a new retrying http.RoundTripper. It wraps
@@ -301,6 +308,7 @@ func NewTransport(
 	}
 }
 
+// config holds the configuration parameters supplied via functional options.
 type config struct {
 	policy  Policy
 	limit   int
