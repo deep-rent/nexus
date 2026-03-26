@@ -34,7 +34,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -98,10 +97,6 @@ func New(dir fs.FS, opts ...Option) *Source {
 // List reads the underlying file system, parses all files matching the
 // configured extension, calculates their SHA-256 checksums, and returns
 // a complete list of valid migrations.
-//
-// The returned slice is strictly sorted by Version in ascending order.
-// If multiple files share the same version (e.g., an 'up' and a 'down' file),
-// they are secondarily sorted by Direction to ensure deterministic output.
 func (s *Source) List() ([]migrate.Migration, error) {
 	var migrations []migrate.Migration
 
@@ -145,7 +140,6 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		return nil, fmt.Errorf("failed to read migration directory: %w", err)
 	}
 
-	slices.SortFunc(migrations, migrate.Migration.Compare)
 	return migrations, nil
 }
 

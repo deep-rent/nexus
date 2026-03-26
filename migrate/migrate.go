@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package migrate provides the core orchestration logic for database migrations.
 package migrate
 
 import (
@@ -19,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/deep-rent/nexus/internal/schema"
 )
@@ -40,32 +42,21 @@ type Record struct {
 
 // Driver is the interface that database-specific backends must implement.
 type Driver interface {
-	// Parser returns a database-specific statement parser.
 	Parser() schema.Parser
-	// Init ensures the migration tracking table exists.
 	Init(ctx context.Context) error
-	// Lock acquires an exclusive lock to prevent concurrent migrations.
 	Lock(ctx context.Context) error
-	// Unlock releases the exclusive lock.
 	Unlock(ctx context.Context) error
-	// Applied returns all successfully applied migration records in ascending
-	// order.
 	Applied(ctx context.Context) ([]Record, error)
-	// Force sets the database to the specified version and clears the dirty
-	// state.
 	Force(ctx context.Context, version uint64) error
-	// Execute runs the migration statements and updates the tracking table.
-	// The behavior of the execution is dictated by the provided ExecuteParams.
 	Execute(ctx context.Context, script Script) error
-	// Close cleans up driver resources.
 	Close() error
 }
 
 // Source provides migrations.
 type Source interface {
-	// List returns a list of all available migrations, sorted by version.
+	// List returns a list of all available migrations.
 	// The implementation is responsible for reading migration files and
-	// calculating their checksums.
+	// calculating their checksums. The Migrator will handle sorting.
 	List() ([]Migration, error)
 }
 
@@ -141,8 +132,9 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// New creates a new Migrator instance.
-func New(opts ...Option) *Migrator {
+// New creates a new Migrator instance. It returns an error if the required
+// dependencies (Source and Driver) are not provided.
+func New(opts ...Option) (*Migrator, error) {
 	m := &Migrator{
 		logger: slog.Default(),
 	}
@@ -150,179 +142,176 @@ func New(opts ...Option) *Migrator {
 		opt(m)
 	}
 	if m.source == nil {
-		panic("migrate: source is required")
+		return nil, fmt.Errorf("migrate: source is required")
 	}
 	if m.driver == nil {
-		panic("migrate: driver is required")
+		return nil, fmt.Errorf("migrate: driver is required")
 	}
-	if m.logger == nil {
-		m.logger = slog.Default()
+	return m, nil
+}
+
+// lock is a helper that acquires the driver lock, ensures the tracking table is
+// initialized, executes the provided function, and guarantees the lock is
+// released afterward.
+func (m *Migrator) lock(
+	ctx context.Context,
+	fn func(context.Context) error,
+) error {
+	if err := m.driver.Lock(ctx); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	return m
+
+	defer func() {
+		if err := m.driver.Unlock(context.Background()); err != nil {
+			m.logger.Error("Failed to release lock", slog.Any("error", err))
+		}
+	}()
+
+	if err := m.driver.Init(ctx); err != nil {
+		return fmt.Errorf("failed to initialize driver: %w", err)
+	}
+
+	return fn(ctx)
+}
+
+// files fetches all available migrations from the source and strictly sorts
+// them using the domain rules defined in Migration.Compare.
+func (m *Migrator) files() ([]Migration, error) {
+	files, err := m.source.List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list source files: %w", err)
+	}
+	slices.SortFunc(files, Migration.Compare)
+	return files, nil
 }
 
 // Up applies all pending migrations in ascending order.
 func (m *Migrator) Up(ctx context.Context) error {
-	if err := m.driver.Lock(ctx); err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
-	}
-	defer func() {
-		_ = m.driver.Unlock(context.Background())
-	}()
-
-	if err := m.driver.Init(ctx); err != nil {
-		return fmt.Errorf("failed to initialize driver: %w", err)
-	}
-
-	pending, err := m.Pending(ctx)
-	if err != nil {
-		return err
-	}
-
-	if len(pending) == 0 {
-		m.logger.Info("Migrations are up to date")
-		return nil
-	}
-
-	m.logger.Info("Applying pending migrations", slog.Int("count", len(pending)))
-	for _, p := range pending {
-		if err := m.run(ctx, p); err != nil {
+	return m.lock(ctx, func(ctx context.Context) error {
+		pending, err := m.Pending(ctx)
+		if err != nil {
 			return err
 		}
-	}
-	m.logger.Info("All migrations applied successfully")
-	return nil
+
+		if len(pending) == 0 {
+			m.logger.Info("Migrations are up to date")
+			return nil
+		}
+
+		m.logger.Info(
+			"Applying pending migrations",
+			slog.Int("count", len(pending)),
+		)
+		for _, p := range pending {
+			if err := m.run(ctx, p); err != nil {
+				return err
+			}
+		}
+		m.logger.Info("All migrations applied successfully")
+		return nil
+	})
 }
 
 // Down reverts the most recently applied migration.
 func (m *Migrator) Down(ctx context.Context) error {
-	if err := m.driver.Lock(ctx); err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
-	}
-	defer func() {
-		_ = m.driver.Unlock(context.Background())
-	}()
-
-	if err := m.driver.Init(ctx); err != nil {
-		return fmt.Errorf("failed to initialize driver: %w", err)
-	}
-
-	applied, err := m.Applied(ctx)
-	if err != nil {
-		return err
-	}
-	if len(applied) == 0 {
-		m.logger.Info("No applied migrations to revert")
-		return nil
-	}
-	// Get the last applied migration to revert
-	last := applied[len(applied)-1]
-
-	// We need the corresponding 'down' file for this version
-	files, err := m.source.List()
-	if err != nil {
-		return err
-	}
-
-	for _, f := range files {
-		if f.Version == last.Version && f.Direction == Down {
-			err := m.run(ctx, f)
-			if err == nil {
-				m.logger.Info(
-					"Migration reverted successfully",
-					slog.Uint64("version", f.Version),
-				)
-			}
+	return m.lock(ctx, func(ctx context.Context) error {
+		applied, err := m.Applied(ctx)
+		if err != nil {
 			return err
 		}
-	}
-	return fmt.Errorf(
-		"down migration file not found for version %d",
-		last.Version,
-	)
+		if len(applied) == 0 {
+			m.logger.Info("No applied migrations to revert")
+			return nil
+		}
+
+		// Get the last applied migration to revert
+		last := applied[len(applied)-1]
+
+		// Fetch and strictly sort files
+		files, err := m.files()
+		if err != nil {
+			return err
+		}
+
+		for _, f := range files {
+			if f.Version == last.Version && f.Direction == Down {
+				err := m.run(ctx, f)
+				if err == nil {
+					m.logger.Info(
+						"Migration reverted successfully",
+						slog.Uint64("version", f.Version),
+					)
+				}
+				return err
+			}
+		}
+		return fmt.Errorf(
+			"down migration file not found for version %d",
+			last.Version,
+		)
+	})
 }
 
 // Force manually sets the database to the specified version and clears the
 // dirty flag. It should be used to resolve a dirty state after human
 // intervention.
 func (m *Migrator) Force(ctx context.Context, version uint64) error {
-	if err := m.driver.Lock(ctx); err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
-	}
-	defer func() {
-		_ = m.driver.Unlock(context.Background())
-	}()
-
-	if err := m.driver.Init(ctx); err != nil {
-		return fmt.Errorf("failed to initialize driver: %w", err)
-	}
-
-	if err := m.driver.Force(ctx, version); err != nil {
-		return fmt.Errorf("failed to force version: %w", err)
-	}
-
-	m.logger.Info("Successfully forced version", slog.Uint64("version", version))
-	return nil
+	return m.lock(ctx, func(ctx context.Context) error {
+		if err := m.driver.Force(ctx, version); err != nil {
+			return fmt.Errorf("failed to force version: %w", err)
+		}
+		m.logger.Info(
+			"Successfully forced migration version",
+			slog.Uint64("version", version),
+		)
+		return nil
+	})
 }
 
 // MigrateTo applies or reverts migrations to reach the target version.
 func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
-	if err := m.driver.Lock(ctx); err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
-	}
-	defer func() {
-		_ = m.driver.Unlock(context.Background())
-	}()
+	return m.lock(ctx, func(ctx context.Context) error {
+		records, files, err := m.load(ctx)
+		if err != nil {
+			return err
+		}
+		applied := toLookup(records)
 
-	if err := m.driver.Init(ctx); err != nil {
-		return fmt.Errorf("failed to initialize driver: %w", err)
-	}
-
-	records, files, err := m.load(ctx)
-	if err != nil {
-		return err
-	}
-	applied := toLookup(records)
-
-	// Revert applied migrations strictly greater than the target version in
-	// descending order.
-	for i := len(records) - 1; i >= 0; i-- {
-		v := records[i].Version
-		if v > target {
-			found := false
-			for _, f := range files {
-				if f.Version == v && f.Direction == Down {
-					if err := m.run(ctx, f); err != nil {
-						return err
+		// Revert applied migrations strictly greater than the target version in
+		// descending order.
+		for i := len(records) - 1; i >= 0; i-- {
+			v := records[i].Version
+			if v > target {
+				found := false
+				for _, f := range files {
+					if f.Version == v && f.Direction == Down {
+						if err := m.run(ctx, f); err != nil {
+							return err
+						}
+						found = true
+						break
 					}
-					found = true
-					break
 				}
+				if !found {
+					return fmt.Errorf("down migration file not found for version %d", v)
+				}
+				applied[v] = false
 			}
-			if !found {
-				return fmt.Errorf(
-					"down migration file not found for version %d",
-					v,
-				)
-			}
-			applied[v] = false
 		}
-	}
 
-	// Apply pending migrations less than or equal to the target version in
-	// ascending order.
-	for _, f := range files {
-		if f.Direction == Up &&
-			f.Version <= target &&
-			!applied[f.Version] {
-			if err := m.run(ctx, f); err != nil {
-				return err
+		// Apply pending migrations less than or equal to the target version in
+		// ascending order.
+		for _, f := range files {
+			if f.Direction == Up && f.Version <= target && !applied[f.Version] {
+				if err := m.run(ctx, f); err != nil {
+					return err
+				}
+				applied[f.Version] = true
 			}
-			applied[f.Version] = true
 		}
-	}
 
-	return nil
+		return nil
+	})
 }
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
@@ -365,10 +354,11 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	m.logger.Info(
 		"Running migration",
-		"version", migration.Version,
-		"direction", migration.Direction,
-		"description", migration.Description,
+		slog.Uint64("version", migration.Version),
+		slog.Any("direction", migration.Direction),
+		slog.String("description", migration.Description),
 	)
+
 	stmts := m.driver.Parser()(migration.Content)
 
 	err := m.driver.Execute(ctx, Script{
@@ -379,14 +369,11 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		Tx:         migration.Tx,
 	})
 	if err != nil {
-		err = fmt.Errorf(
-			"migration %d failed: %w",
-			migration.Version,
-			err,
-		)
+		err = fmt.Errorf("migration %d failed: %w", migration.Version, err)
 		m.logger.Error(err.Error())
 		return err
 	}
+
 	m.logger.Info(
 		"Migration completed",
 		slog.Uint64("version", migration.Version),
@@ -397,7 +384,8 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 // load loads applied records and available files, ensuring that there are no
 // missing files or checksum mismatches for previously applied migrations.
 func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
-	files, err := m.source.List()
+	// Fetch and strictly sort files
+	files, err := m.files()
 	if err != nil {
 		return nil, nil, err
 	}
