@@ -49,6 +49,7 @@ const (
 type config struct {
 	table  string
 	schema string
+	lockID *int64
 	logger *slog.Logger
 }
 
@@ -72,6 +73,15 @@ func WithSchema(name string) Option {
 		if name != "" {
 			c.schema = name
 		}
+	}
+}
+
+// WithLockID sets a static identifier for the PostgreSQL advisory lock.
+// If not provided, a random 64-bit identifier is securely generated.
+// This is primarily intended for testing lock contention.
+func WithLockID(id int64) Option {
+	return func(c *config) {
+		c.lockID = &id
 	}
 }
 
@@ -121,12 +131,16 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 		logger: cfg.logger,
 	}
 
-	// Generate a random identifier for the table lock.
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return nil, fmt.Errorf("failed to generate random lock ID: %w", err)
+	if cfg.lockID != nil {
+		d.lockID = *cfg.lockID
+	} else {
+		// Generate a random identifier for the table lock.
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return nil, fmt.Errorf("failed to generate random lock ID: %w", err)
+		}
+		d.lockID = int64(binary.BigEndian.Uint64(b[:]))
 	}
-	d.lockID = int64(binary.BigEndian.Uint64(b[:]))
 
 	return d, nil
 }
