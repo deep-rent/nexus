@@ -321,7 +321,7 @@ func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
 	d.logger.Info(
 		"Executing migration",
 		slog.Uint64("version", script.Version),
-		slog.String("direction", string(script.Direction)),
+		slog.String("direction", script.Direction.String()),
 	)
 
 	if err := d.setDirty(
