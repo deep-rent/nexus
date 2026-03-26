@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package postgres provides a PostgreSQL-specific driver for the migrate package.
+//
+// Its primary responsibility is to execute database migrations, manage
+// the state of applied migrations, and ensure concurrent safety using
+// PostgreSQL advisory locks. The driver supports configurable schema and
+// table names for state tracking, structured logging, and transactional
+// execution of migration scripts.
 package postgres
 
 import (
@@ -30,21 +37,24 @@ import (
 )
 
 const (
-	DefaultTable  = "migrations"
+	// DefaultTable is the default name for the migration tracking table.
+	DefaultTable = "migrations"
+	// DefaultSchema is the default PostgreSQL schema where the tracking table
+	// resides.
 	DefaultSchema = "public"
 )
 
-// config holds the options for the PostgreSQL driver.
+// config holds the internal configuration options for the PostgreSQL driver.
 type config struct {
 	table  string
 	schema string
 	logger *slog.Logger
 }
 
-// Option configures a PostgreSQL Driver.
+// Option configures a PostgreSQL Driver instance.
 type Option func(*config)
 
-// WithTable sets the name of the migration tracking table.
+// WithTable sets a custom name for the migration tracking table.
 func WithTable(name string) Option {
 	return func(c *config) {
 		if name != "" {
@@ -53,7 +63,7 @@ func WithTable(name string) Option {
 	}
 }
 
-// WithSchema sets the database schema for the tracking table.
+// WithSchema sets a custom database schema for the tracking table.
 func WithSchema(name string) Option {
 	return func(c *config) {
 		if name != "" {
@@ -62,7 +72,7 @@ func WithSchema(name string) Option {
 	}
 }
 
-// WithLogger sets the logger for the driver.
+// WithLogger injects a structured logger to record driver operations.
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
@@ -71,7 +81,9 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// Driver implements migrate.Driver for PostgreSQL.
+// Driver implements the migrate.Driver interface for PostgreSQL.
+// It manages the database connection, distributed locks, and the execution
+// of migration statements.
 type Driver struct {
 	db     *sql.DB
 	lock   *sql.Conn
@@ -82,7 +94,10 @@ type Driver struct {
 	logger *slog.Logger
 }
 
-// New creates a new PostgreSQL migration driver with the provided options.
+// New creates a new PostgreSQL migration driver using the provided database
+// connection and options. It generates a unique cryptographic identifier
+// to be used for advisory locks to prevent concurrent migration conflicts.
+// It returns an error if the lock identifier generation fails.
 func New(db *sql.DB, opts ...Option) (*Driver, error) {
 	cfg := &config{
 		table:  DefaultTable,
@@ -112,12 +127,16 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 	return d, nil
 }
 
-// Parser returns the PostgreSQL-specific statement parser.
+// Parser returns the PostgreSQL-specific statement parser from the schema
+// package. This parser safely splits scripts while ignoring semicolons inside
+// string literals, comments, and dollar-quoted blocks.
 func (d *Driver) Parser() schema.Parser {
 	return schema.Postgres
 }
 
-// Lock acquires a distributed lock via pg_advisory_lock.
+// Lock acquires an exclusive distributed lock using pg_advisory_lock.
+// This prevents multiple migrator instances from running concurrently on the
+// same database. It holds a dedicated connection for the duration of the lock.
 func (d *Driver) Lock(ctx context.Context) error {
 	if d.lock != nil {
 		return errors.New("already locked")
@@ -148,7 +167,8 @@ func (d *Driver) Lock(ctx context.Context) error {
 	return nil
 }
 
-// Unlock releases the distributed lock.
+// Unlock releases the exclusive distributed lock acquired via
+// pg_advisory_unlock and returns the dedicated connection back to the pool.
 func (d *Driver) Unlock(ctx context.Context) error {
 	if d.lock == nil {
 		return errors.New("not locked")
@@ -171,7 +191,9 @@ func (d *Driver) Unlock(ctx context.Context) error {
 	return e
 }
 
-// Init creates the migrations tracking table if it doesn't already exist.
+// Init ensures that the tracking table exists in the target schema.
+// It creates the table with columns for version, checksum, dirty state,
+// and application timestamp if it is not already present.
 func (d *Driver) Init(ctx context.Context) error {
 	d.logger.Debug(
 		"Initializing migration table if missing",
@@ -191,7 +213,8 @@ func (d *Driver) Init(ctx context.Context) error {
 	return err
 }
 
-// Applied returns all successfully applied migration records.
+// Applied retrieves all successfully applied migration records from the
+// database, ordered by their version in ascending order.
 func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	d.logger.Debug("Fetching applied migrations")
 	query := fmt.Sprintf(
@@ -227,7 +250,11 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	return records, nil
 }
 
-// Force sets the database to the specified version and clears the dirty flag.
+// Force manually sets the database to the specified version.
+// It clears the dirty flag for the target version and deletes any migration
+// records with a version strictly greater than the target. This is typically
+// used to recover from a dirty database state after human intervention.
+// It operates within a serializable transaction.
 func (d *Driver) Force(ctx context.Context, version uint64) error {
 	d.logger.Info("Forcing database version", slog.Uint64("version", version))
 
@@ -261,7 +288,17 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 	return tx.Commit()
 }
 
-// Execute runs the migration statements and records the state.
+// Execute runs the provided migration script against the database.
+//
+// It performs a three-step process:
+//  1. Marks the target migration version as dirty in the tracking table.
+//  2. Executes the parsed statements sequentially (optionally within a
+//     transaction).
+//  3. Clears the dirty state or removes the record (depending on the direction)
+//     upon success.
+//
+// If an error occurs during execution, the database remains marked as dirty
+// to prevent further automated migrations until the issue is manually resolved.
 func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
 	d.logger.Info(
 		"Executing migration",
@@ -312,7 +349,8 @@ func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
 	return nil
 }
 
-// runner is an interface satisfied by both *sql.DB and *sql.Tx.
+// runner is an interface satisfied by both *sql.DB and *sql.Tx, allowing
+// statements to be executed either transactionally or non-transactionally.
 type runner interface {
 	ExecContext(
 		ctx context.Context,
@@ -321,7 +359,8 @@ type runner interface {
 	) (sql.Result, error)
 }
 
-// exec runs a series of SQL statements using the provided executor.
+// exec iterates through a slice of SQL statements and runs them sequentially
+// using the provided runner.
 func (d *Driver) exec(
 	ctx context.Context,
 	run runner,
@@ -336,6 +375,9 @@ func (d *Driver) exec(
 	return nil
 }
 
+// setDirty records a migration attempt in the tracking table, flagging it as
+// incomplete. For upward migrations, it inserts a new row or updates an
+// existing one. For downward migrations, it updates the existing row.
 func (d *Driver) setDirty(
 	ctx context.Context,
 	version uint64,
@@ -375,6 +417,9 @@ func (d *Driver) setDirty(
 	return nil
 }
 
+// setClean finalizes a successful migration by removing the dirty state.
+// For upward migrations, it sets the dirty boolean to false. For downward
+// migrations, it entirely removes the version record from the tracking table.
 func (d *Driver) setClean(
 	ctx context.Context,
 	version uint64,
@@ -411,13 +456,14 @@ func (d *Driver) setClean(
 	return nil
 }
 
-// Close closes the underlying database connection.
+// Close gracefully closes the underlying database connection.
 func (d *Driver) Close() error {
 	d.logger.Debug("Closing database driver")
 	return d.db.Close()
 }
 
-// escape safely escapes PostgreSQL identifiers.
+// escape safely wraps PostgreSQL identifiers in double quotes, escaping any
+// internal double quotes to prevent syntax errors or injection vectors.
 func escape(s string) string {
 	return quote.Double(strings.ReplaceAll(s, `"`, `""`))
 }
