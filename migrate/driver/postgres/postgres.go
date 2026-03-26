@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/deep-rent/nexus/internal/schema"
 	"github.com/deep-rent/nexus/migrate"
 )
@@ -96,7 +98,7 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 		db:     db,
 		table:  cfg.table,
 		schema: cfg.schema,
-		ident:  fmt.Sprintf("%s.%s", cfg.schema, cfg.table),
+		ident:  fmt.Sprintf("%s.%s", escape(cfg.schema), escape(cfg.table)),
 		logger: cfg.logger,
 	}
 
@@ -413,4 +415,9 @@ func (d *Driver) setClean(
 func (d *Driver) Close() error {
 	d.logger.Debug("Closing database driver")
 	return d.db.Close()
+}
+
+// escape safely escapes PostgreSQL identifiers.
+func escape(s string) string {
+	return quote.Double(strings.ReplaceAll(s, `"`, `""`))
 }
