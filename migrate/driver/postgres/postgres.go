@@ -96,7 +96,7 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 		db:     db,
 		table:  cfg.table,
 		schema: cfg.schema,
-		ident:  fmt.Sprintf(`"%s"."%s"`, cfg.schema, cfg.table),
+		ident:  fmt.Sprintf("%s.%s", cfg.schema, cfg.table),
 		logger: cfg.logger,
 	}
 
@@ -132,7 +132,12 @@ func (d *Driver) Lock(ctx context.Context) error {
 		"SELECT pg_advisory_lock($1)",
 		d.lockID,
 	); err != nil {
-		_ = conn.Close()
+		if e := conn.Close(); e != nil {
+			d.logger.Error(
+				"Failed to close connection after lock failure",
+				slog.Any("error", e),
+			)
+		}
 		return fmt.Errorf("failed to acquire advisory lock: %w", err)
 	}
 
@@ -173,12 +178,12 @@ func (d *Driver) Init(ctx context.Context) error {
 	)
 
 	query := fmt.Sprintf(`
-    CREATE TABLE IF NOT EXISTS %s (
-      version    BIGINT PRIMARY KEY,
-      checksum   BYTEA NOT NULL DEFAULT '\x',
-      dirty      BOOLEAN NOT NULL DEFAULT false,
-      applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );`, d.ident)
+		CREATE TABLE IF NOT EXISTS %s (
+			version    BIGINT PRIMARY KEY,
+			checksum   BYTEA NOT NULL DEFAULT '\x',
+			dirty      BOOLEAN NOT NULL DEFAULT false,
+			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		);`, d.ident)
 
 	_, err := d.db.ExecContext(ctx, query)
 	return err
@@ -197,7 +202,9 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 		return nil, err
 	}
 	defer func() {
-		_ = rows.Close()
+		if e := rows.Close(); e != nil {
+			d.logger.Error("Failed to close rows", slog.Any("error", e))
+		}
 	}()
 
 	var records []migrate.Record
@@ -229,12 +236,8 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
-		err = tx.Rollback()
-		if err != nil {
-			d.logger.Error(
-				"Failed to rollback transaction",
-				slog.Any("error", err),
-			)
+		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
+			d.logger.Error("Failed to rollback transaction", slog.Any("error", e))
 		}
 	}()
 
@@ -282,12 +285,8 @@ func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
 		defer func() {
-			err = tx.Rollback()
-			if err != nil {
-				d.logger.Error(
-					"Failed to rollback transaction",
-					slog.Any("error", err),
-				)
+			if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
+				d.logger.Error("Failed to rollback transaction", slog.Any("error", e))
 			}
 		}()
 
