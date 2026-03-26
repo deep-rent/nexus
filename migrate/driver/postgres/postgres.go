@@ -32,32 +32,39 @@ const (
 	DefaultSchema = "public"
 )
 
+// config holds the options for the PostgreSQL driver.
+type config struct {
+	table  string
+	schema string
+	logger *slog.Logger
+}
+
 // Option configures a PostgreSQL Driver.
-type Option func(*Driver)
+type Option func(*config)
 
 // WithTable sets the name of the migration tracking table.
 func WithTable(name string) Option {
-	return func(d *Driver) {
+	return func(c *config) {
 		if name != "" {
-			d.table = name
+			c.table = name
 		}
 	}
 }
 
 // WithSchema sets the database schema for the tracking table.
 func WithSchema(name string) Option {
-	return func(d *Driver) {
+	return func(c *config) {
 		if name != "" {
-			d.schema = name
+			c.schema = name
 		}
 	}
 }
 
 // WithLogger sets the logger for the driver.
 func WithLogger(logger *slog.Logger) Option {
-	return func(d *Driver) {
+	return func(c *config) {
 		if logger != nil {
-			d.logger = logger
+			c.logger = logger
 		}
 	}
 }
@@ -68,21 +75,29 @@ type Driver struct {
 	lock   *sql.Conn
 	table  string
 	schema string
+	ident  string
 	lockID int64
 	logger *slog.Logger
 }
 
 // New creates a new PostgreSQL migration driver with the provided options.
 func New(db *sql.DB, opts ...Option) (*Driver, error) {
-	d := &Driver{
-		db:     db,
+	cfg := &config{
 		table:  DefaultTable,
 		schema: DefaultSchema,
 		logger: slog.Default(),
 	}
 
 	for _, opt := range opts {
-		opt(d)
+		opt(cfg)
+	}
+
+	d := &Driver{
+		db:     db,
+		table:  cfg.table,
+		schema: cfg.schema,
+		ident:  fmt.Sprintf(`"%s"."%s"`, cfg.schema, cfg.table),
+		logger: cfg.logger,
 	}
 
 	// Generate a random identifier for the table lock.
@@ -93,11 +108,6 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 	d.lockID = int64(binary.BigEndian.Uint64(b[:]))
 
 	return d, nil
-}
-
-// ident returns the safely quoted schema and table name.
-func (d *Driver) ident() string {
-	return fmt.Sprintf(`"%s"."%s"`, d.schema, d.table)
 }
 
 // Parser returns the PostgreSQL-specific statement parser.
@@ -156,14 +166,19 @@ func (d *Driver) Unlock(ctx context.Context) error {
 
 // Init creates the migrations tracking table if it doesn't already exist.
 func (d *Driver) Init(ctx context.Context) error {
-	d.logger.Debug("Initializing migration table if missing")
+	d.logger.Debug(
+		"Initializing migration table if missing",
+		slog.String("name", d.table),
+		slog.String("schema", d.schema),
+	)
+
 	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			version    BIGINT PRIMARY KEY,
-			checksum   BYTEA NOT NULL DEFAULT '\x',
-			dirty      BOOLEAN NOT NULL DEFAULT false,
-			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-		);`, d.ident())
+    CREATE TABLE IF NOT EXISTS %s (
+      version    BIGINT PRIMARY KEY,
+      checksum   BYTEA NOT NULL DEFAULT '\x',
+      dirty      BOOLEAN NOT NULL DEFAULT false,
+      applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`, d.ident)
 
 	_, err := d.db.ExecContext(ctx, query)
 	return err
@@ -174,7 +189,7 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	d.logger.Debug("Fetching applied migrations")
 	query := fmt.Sprintf(
 		"SELECT version, checksum, dirty FROM %s ORDER BY version ASC",
-		d.ident(),
+		d.ident,
 	)
 
 	rows, err := d.db.QueryContext(ctx, query)
@@ -213,19 +228,27 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		err = tx.Rollback()
+		if err != nil {
+			d.logger.Error(
+				"Failed to rollback transaction",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
 	var query string
 
 	query = fmt.Sprintf(
 		"UPDATE %s SET dirty = false WHERE version = $1",
-		d.ident(),
+		d.ident,
 	)
 	if _, err := tx.ExecContext(ctx, query, version); err != nil {
 		return fmt.Errorf("failed to clear dirty flag: %w", err)
 	}
 
-	query = fmt.Sprintf("DELETE FROM %s WHERE version > $1", d.ident())
+	query = fmt.Sprintf("DELETE FROM %s WHERE version > $1", d.ident)
 	if _, err := tx.ExecContext(ctx, query, version); err != nil {
 		return fmt.Errorf("failed to delete newer versions: %w", err)
 	}
@@ -258,7 +281,15 @@ func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer func() { _ = tx.Rollback() }()
+		defer func() {
+			err = tx.Rollback()
+			if err != nil {
+				d.logger.Error(
+					"Failed to rollback transaction",
+					slog.Any("error", err),
+				)
+			}
+		}()
 
 		if err := d.exec(ctx, tx, script.Statements); err != nil {
 			return err
@@ -317,7 +348,7 @@ func (d *Driver) setDirty(
 		query := fmt.Sprintf(
 			"INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) "+
 				"ON CONFLICT (version) DO UPDATE SET dirty = true",
-			d.ident(),
+			d.ident,
 		)
 		if _, err := d.db.ExecContext(
 			ctx,
@@ -330,7 +361,7 @@ func (d *Driver) setDirty(
 	case migrate.Down:
 		query := fmt.Sprintf(
 			"UPDATE %s SET dirty = true WHERE version = $1",
-			d.ident(),
+			d.ident,
 		)
 		if _, err := d.db.ExecContext(
 			ctx,
@@ -354,7 +385,7 @@ func (d *Driver) setClean(
 	case migrate.Up:
 		query := fmt.Sprintf(
 			"UPDATE %s SET dirty = false WHERE version = $1",
-			d.ident(),
+			d.ident,
 		)
 		if _, err := d.db.ExecContext(
 			ctx,
@@ -366,7 +397,7 @@ func (d *Driver) setClean(
 	case migrate.Down:
 		query := fmt.Sprintf(
 			"DELETE FROM %s WHERE version = $1",
-			d.ident(),
+			d.ident,
 		)
 		if _, err := d.db.ExecContext(
 			ctx,
