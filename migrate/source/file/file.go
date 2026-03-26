@@ -31,8 +31,10 @@
 package file
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -47,7 +49,8 @@ const (
 
 // config holds the internal configuration options for the file source.
 type config struct {
-	ext string
+	ext    string
+	logger *slog.Logger
 }
 
 // Option configures a Source instance.
@@ -68,11 +71,22 @@ func WithExtension(ext string) Option {
 	}
 }
 
+// WithLogger injects a structured logger to record file parsing skipped files.
+// Nil values are ignored, falling back to slog.Default().
+func WithLogger(logger *slog.Logger) Option {
+	return func(c *config) {
+		if logger != nil {
+			c.logger = logger
+		}
+	}
+}
+
 // Source implements the migrate.Source interface for an fs.FS.
 // It scans the file system to discover and parse migration files.
 type Source struct {
-	dir fs.FS  // File system containing the migration scripts
-	ext string // File extension used to filter relevant scripts
+	dir    fs.FS  // File system containing the migration scripts
+	ext    string // File extension used to filter relevant scripts
+	logger *slog.Logger
 }
 
 // New creates a new Source instance that reads from the provided fs.FS.
@@ -80,7 +94,8 @@ type Source struct {
 // expected file extension.
 func New(dir fs.FS, opts ...Option) *Source {
 	cfg := &config{
-		ext: DefaultExtension,
+		ext:    DefaultExtension,
+		logger: slog.Default(),
 	}
 
 	for _, opt := range opts {
@@ -88,15 +103,16 @@ func New(dir fs.FS, opts ...Option) *Source {
 	}
 
 	return &Source{
-		dir: dir,
-		ext: cfg.ext,
+		dir:    dir,
+		ext:    cfg.ext,
+		logger: cfg.logger,
 	}
 }
 
 // List reads the underlying file system, parses all files matching the
 // configured extension, and returns a complete list of valid migrations.
-func (s *Source) List() ([]migrate.Migration, error) {
-	var migrations []migrate.Migration
+func (s *Source) List() ([]migrate.SourceFile, error) {
+	var migrations []migrate.SourceFile
 
 	err := fs.WalkDir(s.dir, ".", func(
 		path string,
@@ -108,9 +124,14 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		}
 
 		name := d.Name()
-		version, desc, direction, tx, ok := s.parse(name)
-		if !ok {
-			return nil // Skip files that don't match the expected migration format
+		version, desc, direction, tx, skipped := s.parse(name)
+		if skipped != nil {
+			s.logger.Debug(
+				"Skipping migration file",
+				slog.String("name", name),
+				slog.String("reason", skipped.Error()),
+			)
+			return nil // Skip files that don't match the naming convention
 		}
 
 		content, err := fs.ReadFile(s.dir, path)
@@ -118,14 +139,13 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			return fmt.Errorf("failed to read migration file %s: %w", path, err)
 		}
 
-		migrations = append(migrations, migrate.Migration{
+		migrations = append(migrations, migrate.SourceFile{
 			Version:     version,
 			Description: desc,
 			Direction:   direction,
 			Path:        path,
 			Content:     content,
 			Tx:          tx,
-			// The migrator handles checksum computation.
 		})
 
 		return nil
@@ -137,74 +157,62 @@ func (s *Source) List() ([]migrate.Migration, error) {
 	return migrations, nil
 }
 
-// parse attempts to extract migration details from a filename.
-//
-// Expected format: <version>_<description>.<direction>[_notx]<extension>
-//
-// Returns ok=false if the filename does not match the strict format, allowing
-// the caller to gracefully skip unrelated files (like READMEs or local config).
+// Ensure Source satisfies the migrate.Source interface.
+var _ migrate.Source = (*Source)(nil)
+
+// parse returns an error explaining why a file does not match the strict
+// format.
 func (s *Source) parse(name string) (
 	version uint64,
 	desc string,
 	direction migrate.Direction,
 	tx bool,
-	ok bool,
+	err error,
 ) {
-	tx = true // Migrations run inside a transaction by default
+	tx = true
 	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
-		return 0, "", "", false, false
+		return 0, "", "", false, errors.New("extension mismatch")
 	}
 
-	// Split the direction segment from the rest of the base name.
 	dot := strings.LastIndexByte(base, '.')
 	if dot <= 0 {
-		return 0, "", "", false, false // Missing period
+		return 0, "", "", false, errors.New("missing direction segment")
 	}
 
 	s2 := base[dot+1:]
 
-	// Check if transactional execution was explicitly disabled via the
-	// _notx suffix.
 	if disabled, found := strings.CutSuffix(s2, "_notx"); found {
 		tx = false
 		s2 = disabled
 	}
 
-	// Validate the direction.
 	switch s2 {
 	case string(migrate.Up):
 		direction = migrate.Up
 	case string(migrate.Down):
 		direction = migrate.Down
 	default:
-		return 0, "", "", false, false // Illegal direction
+		return 0, "", "", false, errors.New("illegal direction")
 	}
 
 	base = base[:dot]
 
-	// Split the version from the description.
-	// Cut splits at the *first* instance of the separator, allowing descriptions
-	// to safely contain additional underscores.
 	s0, s1, found := strings.Cut(base, "_")
 	if !found {
-		return 0, "", "", false, false // Missing underscore
+		return 0, "", "", false, errors.New("missing underscore separator")
 	}
 	if s0 == "" || s1 == "" {
-		return 0, "", "", false, false // Empty version or description
+		return 0, "", "", false, errors.New("empty version or description")
 	}
 
-	// Parse the version string into an unsigned integer.
-	v, err := strconv.ParseUint(s0, 10, 64)
-	if err != nil {
-		return 0, "", "", false, false // Version is not numeric
+	v, parseErr := strconv.ParseUint(s0, 10, 64)
+	if parseErr != nil {
+		return 0, "", "", false, errors.New("version is not numeric")
 	}
 
 	version = v
-
-	// Finalize the description by converting remaining underscores to spaces
-	// to make it human-readable for logging.
 	desc = strings.ReplaceAll(s1, "_", " ")
 
-	return version, desc, direction, tx, true
+	return version, desc, direction, tx, nil
 }

@@ -56,10 +56,19 @@ type Driver interface {
 
 // Source provides migrations.
 type Source interface {
-	// List returns a list of all available migrations.
-	// The implementation is responsible for reading migration files and
-	// calculating their checksums. The Migrator will handle sorting.
-	List() ([]Migration, error)
+	// List returns a list of all available migration files.
+	// The Migrator will handle hashing the content and sorting the results.
+	List() ([]SourceFile, error)
+}
+
+// SourceFile represents an unhashed migration script retrieved from a Source.
+type SourceFile struct {
+	Version     uint64    // Unique sequence number
+	Description string    // Human-readable description
+	Direction   Direction // "up" or "down"
+	Path        string    // Path identifier within the source
+	Content     []byte    // Raw SQL content
+	Tx          bool      // Indicates whether to run in a transaction
 }
 
 // Script holds the parameters required to execute a migration.
@@ -177,20 +186,28 @@ func (m *Migrator) lock(
 }
 
 // files fetches all available migrations from the source, calculates their
-// cryptographic checksums, and strictly sorts them using the domain rules.
+// cryptographic checksums, maps them to domain objects, and strictly sorts them.
 func (m *Migrator) files() ([]Migration, error) {
 	files, err := m.source.List()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list source files: %w", err)
 	}
 
-	// The Migrator owns the integrity rules, so it calculates the checksums.
-	for i := range files {
-		files[i].Checksum = sha256.Sum256(files[i].Content)
+	var migrations []Migration
+	for _, raw := range files {
+		migrations = append(migrations, Migration{
+			Version:     raw.Version,
+			Description: raw.Description,
+			Direction:   raw.Direction,
+			Path:        raw.Path,
+			Checksum:    sha256.Sum256(raw.Content),
+			Content:     raw.Content,
+			Tx:          raw.Tx,
+		})
 	}
 
-	slices.SortFunc(files, Migration.Compare)
-	return files, nil
+	slices.SortFunc(migrations, Migration.Compare)
+	return migrations, nil
 }
 
 // Up applies all pending migrations in ascending order.
