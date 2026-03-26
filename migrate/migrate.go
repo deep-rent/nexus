@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package migrate provides the core orchestration logic for database migrations.
+// Package migrate provides the core orchestration logic for database
+// migrations.
 package migrate
 
 import (
@@ -377,7 +378,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	})
 	if err != nil {
 		err = fmt.Errorf("migration %d failed: %w", migration.Version, err)
-		m.logger.Error(err.Error())
+		m.logger.Error("Migration failed", slog.Any("error", err))
 		return err
 	}
 
