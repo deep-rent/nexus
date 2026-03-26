@@ -31,10 +31,11 @@
 package file
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -147,13 +148,12 @@ func (s *Source) List() ([]migrate.Migration, error) {
 
 	// Sort migrations primarily by version (ascending) and secondarily
 	// by direction to guarantee a completely deterministic order.
-	sort.Slice(migrations, func(i, j int) bool {
-		m1 := migrations[i]
-		m2 := migrations[j]
-		if m1.Version == m2.Version {
-			return m1.Direction < m2.Direction
+	slices.SortFunc(migrations, func(a, b migrate.Migration) int {
+		if df := cmp.Compare(a.Version, b.Version); df != 0 {
+			return df
+		} else {
+			return cmp.Compare(a.Direction, b.Direction)
 		}
-		return m1.Version < m2.Version
 	})
 
 	return migrations, nil
