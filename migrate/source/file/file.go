@@ -25,9 +25,9 @@
 //	<version>_<description>.<direction>[_notx]<extension>
 //
 // Examples of valid filenames:
-//   - 1_create_users_table.up.sql
-//   - 1_create_users_table.down.sql
-//   - 0002_add_concurrent_index.up_notx.sql
+//   - 00001_create_users_table.up.sql
+//   - 00001_create_users_table.down.sql
+//   - 00002_add_concurrent_index.up_notx.sql
 package file
 
 import (
@@ -145,8 +145,8 @@ func (s *Source) List() ([]migrate.Migration, error) {
 		return nil, fmt.Errorf("failed to read migration directory: %w", err)
 	}
 
-	// Sort migrations primarily by Version (ascending) and secondarily
-	// by Direction to guarantee a completely deterministic order.
+	// Sort migrations primarily by version (ascending) and secondarily
+	// by direction to guarantee a completely deterministic order.
 	sort.Slice(migrations, func(i, j int) bool {
 		m1 := migrations[i]
 		m2 := migrations[j]
