@@ -168,7 +168,7 @@ func (m *Migrator) Up(ctx context.Context) error {
 		return nil
 	}
 
-	m.logger.Info("Applying pending migrations", "count", len(pending))
+	m.logger.Info("Applying pending migrations", slog.Int("count", len(pending)))
 	for _, p := range pending {
 		if err := m.run(ctx, p); err != nil {
 			return err
@@ -212,7 +212,10 @@ func (m *Migrator) Down(ctx context.Context) error {
 		if f.Version == last.Version && f.Direction == Down {
 			err := m.run(ctx, f)
 			if err == nil {
-				m.logger.Info("Migration reverted successfully", "version", f.Version)
+				m.logger.Info(
+					"Migration reverted successfully",
+					slog.Uint64("version", f.Version),
+				)
 			}
 			return err
 		}
@@ -242,7 +245,7 @@ func (m *Migrator) Force(ctx context.Context, version uint64) error {
 		return fmt.Errorf("failed to force version: %w", err)
 	}
 
-	m.logger.Info("Successfully forced version", "version", version)
+	m.logger.Info("Successfully forced version", slog.Uint64("version", version))
 	return nil
 }
 
@@ -368,17 +371,11 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		m.logger.Error(err.Error())
 		return err
 	}
-	m.logger.Info("Migration completed", "version", migration.Version)
+	m.logger.Info(
+		"Migration completed",
+		slog.Uint64("version", migration.Version),
+	)
 	return nil
-}
-
-// toLookup converts a slice of migration records to a map for quick lookups.
-func toLookup(records []Record) map[uint64]bool {
-	table := make(map[uint64]bool, len(records))
-	for _, r := range records {
-		table[r.Version] = true
-	}
-	return table
 }
 
 // load loads applied records and available files, ensuring that there are no
@@ -426,4 +423,13 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 	}
 
 	return applied, files, nil
+}
+
+// toLookup converts a slice of migration records to a map for quick lookups.
+func toLookup(records []Record) map[uint64]bool {
+	applied := make(map[uint64]bool, len(records))
+	for _, r := range records {
+		applied[r.Version] = true
+	}
+	return applied
 }
