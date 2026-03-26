@@ -27,32 +27,57 @@ import (
 
 // Source implements migrate.Source for a standard fs.FS.
 type Source struct {
-	fs fs.FS
+	fs  fs.FS
+	ext string
+}
+
+// Option configures a Source.
+type Option func(*Source)
+
+// WithExtension sets the file extension for migration files.
+// The default is ".sql". It automatically adds a leading dot if missing.
+func WithExtension(ext string) Option {
+	return func(s *Source) {
+		if ext == "" {
+			return
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		s.ext = ext
+	}
 }
 
 // New creates a new Source instance.
-func New(fs fs.FS) *Source {
-	return &Source{fs: fs}
+func New(fs fs.FS, opts ...Option) *Source {
+	s := &Source{
+		fs:  fs,
+		ext: ".sql",
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // List reads and validates the fs.FS, returning sorted migrations.
 func (s *Source) List() ([]migrate.Migration, error) {
 	var migrations []migrate.Migration
 
-	err := fs.WalkDir(s.fs, ".", func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(s.fs, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
 
 		name := d.Name()
-		version, desc, direction, tx, ok := Parse(name)
+		version, desc, direction, tx, ok := s.parse(name)
 		if !ok {
 			return nil // Skip files that don't match the migration format
 		}
 
-		content, err := fs.ReadFile(s.fs, p)
+		content, err := fs.ReadFile(s.fs, path)
 		if err != nil {
-			return fmt.Errorf("failed to read migration file %s: %w", p, err)
+			return fmt.Errorf("failed to read migration file %s: %w", path, err)
 		}
 		hash := sha256.Sum256(content)
 
@@ -60,7 +85,7 @@ func (s *Source) List() ([]migrate.Migration, error) {
 			Version:     version,
 			Description: desc,
 			Direction:   direction,
-			Path:        p,
+			Path:        path,
 			Checksum:    hash,
 			Content:     content,
 			Tx:          tx,
@@ -82,9 +107,9 @@ func (s *Source) List() ([]migrate.Migration, error) {
 	return migrations, nil
 }
 
-// Parse extracts migration details from a filename.
+// parse extracts migration details from a filename.
 // Expected format: <version>_<description>.<direction>.sql
-func Parse(name string) (
+func (s *Source) parse(name string) (
 	version uint64,
 	desc string,
 	direction migrate.Direction,
@@ -92,7 +117,7 @@ func Parse(name string) (
 	ok bool,
 ) {
 	tx = true // Default to using a transaction
-	base, found := strings.CutSuffix(name, ".sql")
+	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
 		return 0, "", "", false, false
 	}
@@ -102,10 +127,11 @@ func Parse(name string) (
 	if dot <= 0 {
 		return 0, "", "", false, false // Invalid format
 	}
+	dirStr := base[dot+1:]
 	base = base[:dot]
 
 	// Validate the direction.
-	switch base[dot+1:] {
+	switch dirStr {
 	case string(migrate.Up):
 		direction = migrate.Up
 	case string(migrate.Down):
