@@ -123,7 +123,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 		return errors.New("already locked")
 	}
 
-	d.logger.Debug("Acquiring advisory lock", slog.Int64("lock_id", d.lockID))
+	d.logger.Debug("Acquiring advisory lock", slog.Int64("id", d.lockID))
 	conn, err := d.db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to acquire database connection: %w", err)
@@ -154,7 +154,7 @@ func (d *Driver) Unlock(ctx context.Context) error {
 		return errors.New("not locked")
 	}
 
-	d.logger.Debug("Releasing advisory lock", slog.Int64("lock_id", d.lockID))
+	d.logger.Debug("Releasing advisory lock", slog.Int64("id", d.lockID))
 	_, err := d.lock.ExecContext(
 		ctx,
 		"SELECT pg_advisory_unlock($1)",
@@ -328,7 +328,7 @@ func (d *Driver) exec(
 	statements []string,
 ) error {
 	for i, stmt := range statements {
-		d.logger.Debug("Executing statement", slog.Int("statement_index", i+1))
+		d.logger.Debug("Executing statement", slog.Int("index", i+1))
 		if _, err := run.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("failed to execute migration statement: %w", err)
 		}
