@@ -16,7 +16,9 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -25,69 +27,123 @@ import (
 )
 
 const (
-	table     = "migrations" // Name of the tracking table
-	tableLock = 145242119    // Arbitrary unique identifier for pg_advisory_lock
+	DefaultTable  = "migrations"
+	DefaultSchema = "public"
 )
 
-const (
-	queryInit = `
-		CREATE TABLE IF NOT EXISTS ` + table + ` (
+// Option configures a PostgreSQL Driver.
+type Option func(*Driver)
+
+// WithTable sets the name of the migration tracking table.
+func WithTable(name string) Option {
+	return func(d *Driver) {
+		if name != "" {
+			d.tableName = name
+		}
+	}
+}
+
+// WithSchema sets the database schema for the tracking table.
+func WithSchema(name string) Option {
+	return func(d *Driver) {
+		if name != "" {
+			d.schemaName = name
+		}
+	}
+}
+
+// Driver implements migrate.Driver for PostgreSQL.
+type Driver struct {
+	db         *sql.DB
+	lock       *sql.Conn
+	tableName  string
+	schemaName string
+	lockID     int64
+
+	// Pre-compiled, instance-specific queries
+	qCreate       string
+	qApplied      string
+	qSetClean     string
+	qDeleteNewer  string
+	qSetDirtyUp   string
+	qSetDirtyDown string
+	qDelete       string
+}
+
+// New creates a new PostgreSQL migration driver with the provided options.
+func New(db *sql.DB, opts ...Option) (*Driver, error) {
+	d := &Driver{
+		db:         db,
+		tableName:  DefaultTable,
+		schemaName: DefaultSchema,
+	}
+
+	for _, opt := range opts {
+		opt(d)
+	}
+
+	// Generate a secure, random 64-bit identifier for pg_advisory_lock
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return nil, fmt.Errorf("failed to generate random lock ID: %w", err)
+	}
+	d.lockID = int64(binary.BigEndian.Uint64(b[:]))
+
+	d.init()
+	return d, nil
+}
+
+// init formats the necessary SQL statements using the configured
+// schema and table identifiers, safely quoting them to prevent syntax errors.
+func (d *Driver) init() {
+	ident := fmt.Sprintf(`"%s"."%s"`, d.schemaName, d.tableName)
+
+	d.qCreate = fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
 			version    BIGINT PRIMARY KEY,
 			checksum   BYTEA NOT NULL DEFAULT '\x',
 			dirty      BOOLEAN NOT NULL DEFAULT false,
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-		);`
-	queryApplied       = "SELECT version, checksum, dirty FROM " + table + " ORDER BY version ASC"
-	queryClearDirty    = "UPDATE " + table + " SET dirty = false WHERE version = $1"
-	queryDeleteNewer   = "DELETE FROM " + table + " WHERE version > $1"
-	querySetDirtyUp    = "INSERT INTO " + table + " (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true"
-	querySetDirtyDown  = "UPDATE " + table + " SET dirty = true WHERE version = $1"
-	queryDeleteVersion = "DELETE FROM " + table + " WHERE version = $1"
-	queryLock          = "SELECT pg_advisory_lock($1)"
-	queryUnlock        = "SELECT pg_advisory_unlock($1)"
-)
+		);`, ident)
 
-// Driver implements migrate.Driver for PostgreSQL.
-type Driver struct {
-	db   *sql.DB
-	lock *sql.Conn
-}
-
-// New creates a new PostgreSQL migration driver.
-func New(db *sql.DB) *Driver {
-	return &Driver{db: db}
+	d.qApplied = fmt.Sprintf("SELECT version, checksum, dirty FROM %s ORDER BY version ASC", ident)
+	d.qDelete = fmt.Sprintf("DELETE FROM %s WHERE version = $1", ident)
+	d.qDeleteNewer = fmt.Sprintf("DELETE FROM %s WHERE version > $1", ident)
+	d.qSetClean = fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", ident)
+	d.qSetDirtyUp = fmt.Sprintf("INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) ON CONFLICT (version) DO UPDATE SET dirty = true", ident)
+	d.qSetDirtyDown = fmt.Sprintf("UPDATE %s SET dirty = true WHERE version = $1", ident)
 }
 
 // Parser returns the PostgreSQL-specific statement parser.
-func (p *Driver) Parser() schema.Parser {
+func (d *Driver) Parser() schema.Parser {
 	return schema.Postgres
 }
 
 // Lock acquires a distributed lock via pg_advisory_lock.
-func (p *Driver) Lock(ctx context.Context) error {
-	if p.lock != nil {
+func (d *Driver) Lock(ctx context.Context) error {
+	if d.lock != nil {
 		return errors.New("already locked")
 	}
-	conn, err := p.db.Conn(ctx)
+	conn, err := d.db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to acquire database connection: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, queryLock, tableLock); err != nil {
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", d.lockID); err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("failed to acquire advisory lock: %w", err)
 	}
-	p.lock = conn
+	d.lock = conn
 	return nil
 }
 
 // Unlock releases the distributed lock.
-func (p *Driver) Unlock(ctx context.Context) error {
-	if p.lock == nil {
+func (d *Driver) Unlock(ctx context.Context) error {
+	if d.lock == nil {
 		return errors.New("not locked")
 	}
-	_, err := p.lock.ExecContext(ctx, queryUnlock, tableLock)
-	e := p.lock.Close()
-	p.lock = nil
+	_, err := d.lock.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", d.lockID)
+	e := d.lock.Close()
+	d.lock = nil
 	if err != nil {
 		return fmt.Errorf("failed to release advisory lock: %w", err)
 	}
@@ -95,14 +151,14 @@ func (p *Driver) Unlock(ctx context.Context) error {
 }
 
 // Init creates the migrations tracking table if it doesn't already exist.
-func (p *Driver) Init(ctx context.Context) error {
-	_, err := p.db.ExecContext(ctx, queryInit)
+func (d *Driver) Init(ctx context.Context) error {
+	_, err := d.db.ExecContext(ctx, d.qCreate)
 	return err
 }
 
 // Applied returns all successfully applied migration records.
-func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
-	rows, err := p.db.QueryContext(ctx, queryApplied)
+func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
+	rows, err := d.db.QueryContext(ctx, d.qApplied)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +185,8 @@ func (p *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 }
 
 // Force sets the database to the specified version and clears the dirty flag.
-func (p *Driver) Force(ctx context.Context, version uint64) error {
-	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{
+func (d *Driver) Force(ctx context.Context, version uint64) error {
+	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 	})
 	if err != nil {
@@ -138,11 +194,11 @@ func (p *Driver) Force(ctx context.Context, version uint64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, queryClearDirty, version); err != nil {
+	if _, err := tx.ExecContext(ctx, d.qSetClean, version); err != nil {
 		return fmt.Errorf("failed to clear dirty flag: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, queryDeleteNewer, version); err != nil {
+	if _, err := tx.ExecContext(ctx, d.qDeleteNewer, version); err != nil {
 		return fmt.Errorf("failed to delete newer versions: %w", err)
 	}
 
@@ -150,8 +206,8 @@ func (p *Driver) Force(ctx context.Context, version uint64) error {
 }
 
 // Execute runs the migration statements and records the state.
-func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
-	if err := p.setDirty(
+func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
+	if err := d.setDirty(
 		ctx,
 		script.Version,
 		script.Direction,
@@ -161,7 +217,7 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 	}
 
 	if script.Tx {
-		tx, err := p.db.BeginTx(ctx, &sql.TxOptions{
+		tx, err := d.db.BeginTx(ctx, &sql.TxOptions{
 			Isolation: sql.LevelSerializable,
 		})
 		if err != nil {
@@ -169,7 +225,7 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 		}
 		defer func() { _ = tx.Rollback() }()
 
-		if err := p.exec(ctx, tx, script.Statements); err != nil {
+		if err := d.exec(ctx, tx, script.Statements); err != nil {
 			return err
 		}
 
@@ -177,12 +233,12 @@ func (p *Driver) Execute(ctx context.Context, script migrate.Script) error {
 			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 	} else {
-		if err := p.exec(ctx, p.db, script.Statements); err != nil {
+		if err := d.exec(ctx, d.db, script.Statements); err != nil {
 			return err
 		}
 	}
 
-	if err := p.setClean(ctx, script.Version, script.Direction); err != nil {
+	if err := d.setClean(ctx, script.Version, script.Direction); err != nil {
 		return fmt.Errorf("failed to clear dirty state: %w", err)
 	}
 	return nil
@@ -198,7 +254,7 @@ type runner interface {
 }
 
 // exec runs a series of SQL statements using the provided executor.
-func (p *Driver) exec(
+func (d *Driver) exec(
 	ctx context.Context,
 	run runner,
 	statements []string,
@@ -211,7 +267,7 @@ func (p *Driver) exec(
 	return nil
 }
 
-func (p *Driver) setDirty(
+func (d *Driver) setDirty(
 	ctx context.Context,
 	version uint64,
 	direction migrate.Direction,
@@ -219,18 +275,18 @@ func (p *Driver) setDirty(
 ) error {
 	switch direction {
 	case migrate.Up:
-		if _, err := p.db.ExecContext(
+		if _, err := d.db.ExecContext(
 			ctx,
-			querySetDirtyUp,
+			d.qSetDirtyUp,
 			version,
 			checksum[:],
 		); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	case migrate.Down:
-		if _, err := p.db.ExecContext(
+		if _, err := d.db.ExecContext(
 			ctx,
-			querySetDirtyDown,
+			d.qSetDirtyDown,
 			version,
 		); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
@@ -239,24 +295,24 @@ func (p *Driver) setDirty(
 	return nil
 }
 
-func (p *Driver) setClean(
+func (d *Driver) setClean(
 	ctx context.Context,
 	version uint64,
 	direction migrate.Direction,
 ) error {
 	switch direction {
 	case migrate.Up:
-		if _, err := p.db.ExecContext(
+		if _, err := d.db.ExecContext(
 			ctx,
-			queryClearDirty,
+			d.qSetClean,
 			version,
 		); err != nil {
 			return fmt.Errorf("failed to clear dirty state: %w", err)
 		}
 	case migrate.Down:
-		if _, err := p.db.ExecContext(
+		if _, err := d.db.ExecContext(
 			ctx,
-			queryDeleteVersion,
+			d.qDelete,
 			version,
 		); err != nil {
 			return fmt.Errorf("failed to remove migration record: %w", err)
@@ -266,6 +322,6 @@ func (p *Driver) setClean(
 }
 
 // Close closes the underlying database connection.
-func (p *Driver) Close() error {
-	return p.db.Close()
+func (d *Driver) Close() error {
+	return d.db.Close()
 }
