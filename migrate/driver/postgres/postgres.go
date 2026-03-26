@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package postgres provides a PostgreSQL-specific driver for the migrate package.
+// Package postgres provides a PostgreSQL-specific driver for the migrate
+// package.
 //
 // Its primary responsibility is to execute database migrations, manage
 // the state of applied migrations, and ensure concurrent safety using
@@ -55,6 +56,7 @@ type config struct {
 type Option func(*config)
 
 // WithTable sets a custom name for the migration tracking table.
+// Empty string values are ignored.
 func WithTable(name string) Option {
 	return func(c *config) {
 		if name != "" {
@@ -64,6 +66,7 @@ func WithTable(name string) Option {
 }
 
 // WithSchema sets a custom database schema for the tracking table.
+// Empty string values are ignored.
 func WithSchema(name string) Option {
 	return func(c *config) {
 		if name != "" {
@@ -73,6 +76,7 @@ func WithSchema(name string) Option {
 }
 
 // WithLogger injects a structured logger to record driver operations.
+// Nil values are ignored, falling back to slog.Default().
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
@@ -85,13 +89,13 @@ func WithLogger(logger *slog.Logger) Option {
 // It manages the database connection, distributed locks, and the execution
 // of migration statements.
 type Driver struct {
-	db     *sql.DB
-	lock   *sql.Conn
-	table  string
-	schema string
-	ident  string
-	lockID int64
-	logger *slog.Logger
+	db     *sql.DB      // Underlying database connection pool
+	lock   *sql.Conn    // Dedicated connection held while the lock is active
+	table  string       // Unquoted name of the migration tracking table
+	schema string       // Unquoted database schema containing the tracking table
+	ident  string       // Precomputed schema and table identifier
+	lockID int64        // Random integer used for the lock
+	logger *slog.Logger // Logger for recording driver operations
 }
 
 // New creates a new PostgreSQL migration driver using the provided database
@@ -113,7 +117,7 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 		db:     db,
 		table:  cfg.table,
 		schema: cfg.schema,
-		ident:  fmt.Sprintf("%s.%s", escape(cfg.schema), escape(cfg.table)),
+		ident:  ident(cfg.schema, cfg.table),
 		logger: cfg.logger,
 	}
 
@@ -202,12 +206,12 @@ func (d *Driver) Init(ctx context.Context) error {
 	)
 
 	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			version    BIGINT PRIMARY KEY,
-			checksum   BYTEA NOT NULL DEFAULT '\x',
-			dirty      BOOLEAN NOT NULL DEFAULT false,
-			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-		);`, d.ident)
+    CREATE TABLE IF NOT EXISTS %s (
+      version    BIGINT PRIMARY KEY,
+      checksum   BYTEA NOT NULL DEFAULT '\x',
+      dirty      BOOLEAN NOT NULL DEFAULT false,
+      applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`, d.ident)
 
 	_, err := d.db.ExecContext(ctx, query)
 	return err
@@ -460,6 +464,14 @@ func (d *Driver) setClean(
 func (d *Driver) Close() error {
 	d.logger.Debug("Closing database driver")
 	return d.db.Close()
+}
+
+// ident assembles a fully qualified, safely quoted PostgreSQL identifier by
+// combining a schema name and a table name.
+//
+// Example output: "public"."migrations"
+func ident(schema, table string) string {
+	return fmt.Sprintf("%s.%s", escape(schema), escape(table))
 }
 
 // escape safely wraps PostgreSQL identifiers in double quotes, escaping any
