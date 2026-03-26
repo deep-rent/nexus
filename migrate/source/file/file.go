@@ -69,10 +69,10 @@ func WithExtension(ext string) Option {
 }
 
 // Source implements the migrate.Source interface for an fs.FS.
-// It scans the file system to discover, parse, and hash migration files.
+// It scans the file system to discover and parse migration files.
 type Source struct {
-	dir fs.FS  // The file system containing the migration scripts.
-	ext string // The file extension used to filter relevant scripts.
+	dir fs.FS  // File system containing the migration scripts
+	ext string // File extension used to filter relevant scripts
 }
 
 // New creates a new Source instance that reads from the provided fs.FS.
@@ -94,8 +94,7 @@ func New(dir fs.FS, opts ...Option) *Source {
 }
 
 // List reads the underlying file system, parses all files matching the
-// configured extension, calculates their SHA-256 checksums, and returns
-// a complete list of valid migrations.
+// configured extension, and returns a complete list of valid migrations.
 func (s *Source) List() ([]migrate.Migration, error) {
 	var migrations []migrate.Migration
 
