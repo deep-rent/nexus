@@ -245,12 +245,12 @@ func TestController_Run(t *testing.T) {
 			} else {
 				s.Config.Handler = h
 			}
-			var logBuf bytes.Buffer
-			log := slog.New(slog.NewTextHandler(&logBuf, nil))
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
 			c := cache.NewController(s.URL, tc.mapper,
 				cache.WithMinInterval(minInt),
 				cache.WithMaxInterval(maxInt),
-				cache.WithLogger(log),
+				cache.WithLogger(logger),
 				cache.WithRetryOptions(retry.WithAttemptLimit(1)),
 			)
 			d := c.Run(context.Background())
@@ -269,7 +269,7 @@ func TestController_Run(t *testing.T) {
 			assert.Equal(t, tc.wantOK, ok)
 			assert.Equal(t, tc.wantResource, res)
 			if tc.wantLogs != "" {
-				assert.Contains(t, logBuf.String(), tc.wantLogs)
+				assert.Contains(t, buf.String(), tc.wantLogs)
 			}
 			if tc.wantOK {
 				select {

@@ -425,10 +425,10 @@ func WithErrorHandler(h ErrorHandler) Option {
 // WithLogger updates the default error handler to use the given logger. If not
 // set, the Router defaults to using slog.Default(). A nil value will be
 // ignored.
-func WithLogger(log *slog.Logger) Option {
+func WithLogger(logger *slog.Logger) Option {
 	return func(r *Router) {
-		if log != nil {
-			r.errorHandler = defaultErrorHandler(log)
+		if logger != nil {
+			r.errorHandler = defaultErrorHandler(logger)
 		}
 	}
 }

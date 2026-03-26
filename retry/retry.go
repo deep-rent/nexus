@@ -345,10 +345,10 @@ func WithBackoff(strategy backoff.Strategy) Option {
 
 // WithLogger sets the logger for debug messages. If not provided,
 // slog.Default() is used. A nil value is ignored.
-func WithLogger(log *slog.Logger) Option {
+func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
-		if log != nil {
-			c.logger = log
+		if logger != nil {
+			c.logger = logger
 		}
 	}
 }
