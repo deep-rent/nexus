@@ -111,8 +111,8 @@ func New(dir fs.FS, opts ...Option) *Source {
 
 // List reads the underlying file system, parses all files matching the
 // configured extension, and returns a complete list of valid migrations.
-func (s *Source) List() ([]migrate.SourceFile, error) {
-	var migrations []migrate.SourceFile
+func (s *Source) List() ([]migrate.SourceScript, error) {
+	var scripts []migrate.SourceScript
 
 	fn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -123,11 +123,11 @@ func (s *Source) List() ([]migrate.SourceFile, error) {
 		version, desc, direction, tx, skipped := s.parse(name)
 		if skipped != nil {
 			s.logger.Debug(
-				"Skipping migration file",
+				"Skipping file in migration directory",
 				slog.String("name", name),
 				slog.String("reason", skipped.Error()),
 			)
-			return nil // Skip files that don't match the naming convention
+			return nil // Ignore files that don't match the naming convention
 		}
 
 		content, err := fs.ReadFile(s.dir, path)
@@ -135,7 +135,7 @@ func (s *Source) List() ([]migrate.SourceFile, error) {
 			return fmt.Errorf("failed to read migration file %s: %w", path, err)
 		}
 
-		migrations = append(migrations, migrate.SourceFile{
+		scripts = append(scripts, migrate.SourceScript{
 			Version:     version,
 			Description: desc,
 			Direction:   direction,
@@ -152,12 +152,13 @@ func (s *Source) List() ([]migrate.SourceFile, error) {
 		return nil, fmt.Errorf("failed to read migration directory: %w", err)
 	}
 
-	return migrations, nil
+	return scripts, nil
 }
 
 // Ensure Source satisfies the migrate.Source interface.
 var _ migrate.Source = (*Source)(nil)
 
+// Errors returned by the parse function.
 var (
 	errExtension          = errors.New("extension mismatch")
 	errMissingDirection   = errors.New("missing direction segment")

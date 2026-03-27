@@ -198,6 +198,7 @@ func (d *Driver) Unlock(ctx context.Context) error {
 		"SELECT pg_advisory_unlock($1)",
 		d.lockID,
 	)
+
 	e := d.lock.Close()
 	d.lock = nil
 
@@ -317,7 +318,7 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 //
 // If an error occurs during execution, the database remains marked as dirty
 // to prevent further automated migrations until the issue is manually resolved.
-func (d *Driver) Execute(ctx context.Context, script migrate.Script) error {
+func (d *Driver) Execute(ctx context.Context, script migrate.ParsedScript) error {
 	d.logger.Info(
 		"Executing migration",
 		slog.Uint64("version", script.Version),

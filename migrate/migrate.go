@@ -62,7 +62,7 @@ type Driver interface {
 	Unlock(ctx context.Context) error
 	Applied(ctx context.Context) ([]Record, error)
 	Force(ctx context.Context, version uint64) error
-	Execute(ctx context.Context, script Script) error
+	Execute(ctx context.Context, script ParsedScript) error
 	Close() error
 }
 
@@ -70,11 +70,11 @@ type Driver interface {
 type Source interface {
 	// List returns a list of all available migration files.
 	// The Migrator will handle hashing the content and sorting the results.
-	List() ([]SourceFile, error)
+	List() ([]SourceScript, error)
 }
 
-// SourceFile represents an unhashed migration script retrieved from a Source.
-type SourceFile struct {
+// SourceScript represents an unhashed migration script retrieved from a Source.
+type SourceScript struct {
 	Version     uint64    // Unique sequence number
 	Description string    // Human-readable description
 	Direction   Direction // "up" or "down"
@@ -83,8 +83,8 @@ type SourceFile struct {
 	Tx          bool      // Indicates whether to run in a transaction
 }
 
-// Script holds the parameters required to execute a migration.
-type Script struct {
+// ParsedScript holds the parameters required to execute a migration.
+type ParsedScript struct {
 	Version    uint64
 	Direction  Direction
 	Checksum   [32]byte
@@ -398,7 +398,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 
 	stmts := m.driver.Parser()(migration.Content)
 
-	err := m.driver.Execute(ctx, Script{
+	err := m.driver.Execute(ctx, ParsedScript{
 		Version:    migration.Version,
 		Direction:  migration.Direction,
 		Checksum:   migration.Checksum,
