@@ -221,12 +221,12 @@ func (d *Driver) Init(ctx context.Context) error {
 	)
 
 	query := fmt.Sprintf(`
-    CREATE TABLE IF NOT EXISTS %s (
-      version    BIGINT PRIMARY KEY,
-      checksum   BYTEA NOT NULL DEFAULT '\x',
-      dirty      BOOLEAN NOT NULL DEFAULT false,
-      applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );`, d.ident)
+		CREATE TABLE IF NOT EXISTS %s (
+			version    BIGINT PRIMARY KEY,
+			checksum   BYTEA NOT NULL DEFAULT '\x',
+			dirty      BOOLEAN NOT NULL DEFAULT false,
+			applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		);`, d.ident)
 
 	_, err := d.db.ExecContext(ctx, query)
 	return err
@@ -269,6 +269,32 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	return records, nil
 }
 
+// withTx is an internal helper that manages the boilerplate of executing
+// a serializable transaction, ensuring safe rollback or commit.
+func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
+			d.logger.Error("Failed to rollback transaction", slog.Any("error", e))
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
 // Force manually sets the database to the specified version.
 // It clears the dirty flag for the target version and deletes any migration
 // records with a version strictly greater than the target. This is typically
@@ -277,34 +303,19 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 func (d *Driver) Force(ctx context.Context, version uint64) error {
 	d.logger.Info("Forcing database version", slog.Uint64("version", version))
 
-	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelSerializable,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
-			d.logger.Error("Failed to rollback transaction", slog.Any("error", e))
+	return d.withTx(ctx, func(tx *sql.Tx) error {
+		queryClean := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", d.ident)
+		if _, err := tx.ExecContext(ctx, queryClean, version); err != nil {
+			return fmt.Errorf("failed to clear dirty flag: %w", err)
 		}
-	}()
 
-	var query string
+		queryDelete := fmt.Sprintf("DELETE FROM %s WHERE version > $1", d.ident)
+		if _, err := tx.ExecContext(ctx, queryDelete, version); err != nil {
+			return fmt.Errorf("failed to delete newer versions: %w", err)
+		}
 
-	query = fmt.Sprintf(
-		"UPDATE %s SET dirty = false WHERE version = $1",
-		d.ident,
-	)
-	if _, err := tx.ExecContext(ctx, query, version); err != nil {
-		return fmt.Errorf("failed to clear dirty flag: %w", err)
-	}
-
-	query = fmt.Sprintf("DELETE FROM %s WHERE version > $1", d.ident)
-	if _, err := tx.ExecContext(ctx, query, version); err != nil {
-		return fmt.Errorf("failed to delete newer versions: %w", err)
-	}
-
-	return tx.Commit()
+		return nil
+	})
 }
 
 // Execute runs the provided migration script against the database.
@@ -318,7 +329,10 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 //
 // If an error occurs during execution, the database remains marked as dirty
 // to prevent further automated migrations until the issue is manually resolved.
-func (d *Driver) Execute(ctx context.Context, script migrate.ParsedScript) error {
+func (d *Driver) Execute(
+	ctx context.Context,
+	script migrate.ParsedScript,
+) error {
 	d.logger.Info(
 		"Executing migration",
 		slog.Uint64("version", script.Version),
@@ -336,24 +350,11 @@ func (d *Driver) Execute(ctx context.Context, script migrate.ParsedScript) error
 
 	if script.Tx {
 		d.logger.Debug("Running migration in transaction")
-		tx, err := d.db.BeginTx(ctx, &sql.TxOptions{
-			Isolation: sql.LevelSerializable,
+		err := d.withTx(ctx, func(tx *sql.Tx) error {
+			return d.exec(ctx, tx, script.Statements)
 		})
 		if err != nil {
-			return fmt.Errorf("failed to begin transaction: %w", err)
-		}
-		defer func() {
-			if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
-				d.logger.Error("Failed to rollback transaction", slog.Any("error", e))
-			}
-		}()
-
-		if err := d.exec(ctx, tx, script.Statements); err != nil {
 			return err
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 	} else {
 		d.logger.Debug("Running migration without transaction")
@@ -388,7 +389,7 @@ func (d *Driver) exec(
 	for i, stmt := range statements {
 		d.logger.Debug("Executing statement", slog.Int("index", i+1))
 		if _, err := run.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("failed to execute migration statement: %w", err)
+			return fmt.Errorf("statement %d failed: %w", i+1, err)
 		}
 	}
 	return nil
