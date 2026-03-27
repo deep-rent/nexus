@@ -20,6 +20,17 @@
 // PostgreSQL advisory locks. The driver supports configurable schema and
 // table names for state tracking, structured logging, and transactional
 // execution of migration scripts.
+//
+// Example usage:
+//
+//	db, _ := sql.Open("postgres", "postgres://user:pass@localhost:5432/db")
+//	driver, err := postgres.New(db,
+//	    postgres.WithSchema("public"),
+//	    postgres.WithTable("schema_migrations"),
+//	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 package postgres
 
 import (
