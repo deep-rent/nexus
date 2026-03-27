@@ -42,6 +42,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/deep-rent/nexus/internal/schema"
@@ -58,10 +59,12 @@ const (
 
 // config holds the internal configuration options for the PostgreSQL driver.
 type config struct {
-	table  string
-	schema string
-	lockID *int64
-	logger *slog.Logger
+	table       string
+	schema      string
+	lockID      *int64
+	lockTimeout time.Duration
+	stmtTimeout time.Duration
+	logger      *slog.Logger
 }
 
 // Option configures a PostgreSQL Driver instance.
@@ -96,6 +99,22 @@ func WithLockID(id int64) Option {
 	}
 }
 
+// WithLockTimeout sets the maximum duration to wait when attempting to acquire
+// the advisory lock. If 0, it waits indefinitely (the default behavior).
+func WithLockTimeout(timeout time.Duration) Option {
+	return func(c *config) {
+		c.lockTimeout = timeout
+	}
+}
+
+// WithStatementTimeout sets a maximum duration for individual migration
+// statements to execute. If 0, no timeout is applied (the default behavior).
+func WithStatementTimeout(timeout time.Duration) Option {
+	return func(c *config) {
+		c.stmtTimeout = timeout
+	}
+}
+
 // WithLogger injects a structured logger to record driver operations.
 // Nil values are ignored, falling back to slog.Default().
 func WithLogger(logger *slog.Logger) Option {
@@ -110,13 +129,15 @@ func WithLogger(logger *slog.Logger) Option {
 // It manages the database connection, distributed locks, and the execution
 // of migration statements.
 type Driver struct {
-	db     *sql.DB      // Underlying database connection pool
-	lock   *sql.Conn    // Dedicated connection held while the lock is active
-	table  string       // Unquoted name of the migration tracking table
-	schema string       // Unquoted database schema containing the tracking table
-	ident  string       // Precomputed schema and table identifier
-	lockID int64        // Random integer used for the lock
-	logger *slog.Logger // Logger for recording driver operations
+	db          *sql.DB       // Underlying database connection pool
+	lock        *sql.Conn     // Dedicated connection held while locked
+	table       string        // Unquoted name of the tracking table
+	schema      string        // Unquoted database schema containing the table
+	ident       string        // Precomputed schema and table identifier
+	lockID      int64         // Random integer used for the lock
+	lockTimeout time.Duration // Max time to wait for lock acquisition
+	stmtTimeout time.Duration // Max time per individual SQL statement
+	logger      *slog.Logger  // Logger for recording driver operations
 }
 
 // New creates a new PostgreSQL migration driver using the provided database
@@ -135,11 +156,13 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 	}
 
 	d := &Driver{
-		db:     db,
-		table:  cfg.table,
-		schema: cfg.schema,
-		ident:  ident(cfg.schema, cfg.table),
-		logger: cfg.logger,
+		db:          db,
+		table:       cfg.table,
+		schema:      cfg.schema,
+		ident:       ident(cfg.schema, cfg.table),
+		lockTimeout: cfg.lockTimeout,
+		stmtTimeout: cfg.stmtTimeout,
+		logger:      cfg.logger,
 	}
 
 	if cfg.lockID != nil {
@@ -166,6 +189,7 @@ func (d *Driver) Parser() schema.Parser {
 // Lock acquires an exclusive distributed lock using pg_advisory_lock.
 // This prevents multiple migrator instances from running concurrently on the
 // same database. It holds a dedicated connection for the duration of the lock.
+// It respects the configured lock timeout, ensuring it fails fast if blocked.
 func (d *Driver) Lock(ctx context.Context) error {
 	if d.lock != nil {
 		return errors.New("already locked")
@@ -175,6 +199,13 @@ func (d *Driver) Lock(ctx context.Context) error {
 	conn, err := d.db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to acquire database connection: %w", err)
+	}
+
+	// Apply lock timeout if configured
+	if d.lockTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.lockTimeout)
+		defer cancel()
 	}
 
 	if _, err := conn.ExecContext(
@@ -315,12 +346,16 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 	d.logger.Info("Forcing database version", slog.Uint64("version", version))
 
 	return d.withTx(ctx, func(tx *sql.Tx) error {
-		queryClean := fmt.Sprintf("UPDATE %s SET dirty = false WHERE version = $1", d.ident)
-		if _, err := tx.ExecContext(ctx, queryClean, version); err != nil {
+		queryUpdate := fmt.Sprintf(
+			"UPDATE %s SET dirty = false WHERE version = $1", d.ident,
+		)
+		if _, err := tx.ExecContext(ctx, queryUpdate, version); err != nil {
 			return fmt.Errorf("failed to clear dirty flag: %w", err)
 		}
 
-		queryDelete := fmt.Sprintf("DELETE FROM %s WHERE version > $1", d.ident)
+		queryDelete := fmt.Sprintf(
+			"DELETE FROM %s WHERE version > $1", d.ident,
+		)
 		if _, err := tx.ExecContext(ctx, queryDelete, version); err != nil {
 			return fmt.Errorf("failed to delete newer versions: %w", err)
 		}
@@ -362,14 +397,14 @@ func (d *Driver) Execute(
 	if script.Tx {
 		d.logger.Debug("Running migration in transaction")
 		err := d.withTx(ctx, func(tx *sql.Tx) error {
-			return d.exec(ctx, tx, script.Statements)
+			return d.execAll(ctx, tx, script.Statements)
 		})
 		if err != nil {
 			return err
 		}
 	} else {
 		d.logger.Debug("Running migration without transaction")
-		if err := d.exec(ctx, d.db, script.Statements); err != nil {
+		if err := d.execAll(ctx, d.db, script.Statements); err != nil {
 			return err
 		}
 	}
@@ -390,20 +425,35 @@ type runner interface {
 	) (sql.Result, error)
 }
 
-// exec iterates through a slice of SQL statements and runs them sequentially
+// execAll iterates through a slice of SQL statements and runs them sequentially
 // using the provided runner.
-func (d *Driver) exec(
+// execAll iterates through a slice of SQL statements and runs them sequentially
+// using the provided runner.
+func (d *Driver) execAll(
 	ctx context.Context,
 	run runner,
 	statements []string,
 ) error {
 	for i, stmt := range statements {
 		d.logger.Debug("Executing statement", slog.Int("index", i+1))
-		if _, err := run.ExecContext(ctx, stmt); err != nil {
+		if err := d.execOne(ctx, run, stmt); err != nil {
 			return fmt.Errorf("statement %d failed: %w", i+1, err)
 		}
 	}
 	return nil
+}
+
+// execOne isolates the execution of a single statement so that the context
+// cancellation (defer cancel()) fires immediately after the statement finishes,
+// preventing resource leaks in the loop.
+func (d *Driver) execOne(ctx context.Context, run runner, stmt string) error {
+	if d.stmtTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.stmtTimeout)
+		defer cancel()
+	}
+	_, err := run.ExecContext(ctx, stmt)
+	return err
 }
 
 // setDirty records a migration attempt in the tracking table, flagging it as
