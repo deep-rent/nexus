@@ -142,6 +142,7 @@ func (m Migration) Compare(other Migration) int {
 type Migrator struct {
 	source Source
 	driver Driver
+	dryRun bool // Determines if execution should be skipped
 	logger *slog.Logger
 }
 
@@ -163,6 +164,14 @@ func WithDriver(driver Driver) Option {
 		if driver != nil {
 			m.driver = driver
 		}
+	}
+}
+
+// WithDryRun enables a mode where the Migrator computes the checksums and
+// logs the parsed statements without executing them against the database.
+func WithDryRun(enabled bool) Option {
+	return func(m *Migrator) {
+		m.dryRun = enabled
 	}
 }
 
@@ -402,6 +411,7 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 }
 
 // run reads the migration payload and executes it via the driver.
+// If dry run is enabled, it logs the statements and skips execution.
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	m.logger.Info(
 		"Running migration",
@@ -412,6 +422,21 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 
 	parse := m.driver.Parser()
 	stmts := parse(migration.Content)
+
+	if m.dryRun {
+		m.logger.Info(
+			"Dry run: skipping execution",
+			slog.Int("statements", len(stmts)),
+		)
+		for i, stmt := range stmts {
+			m.logger.Debug(
+				"Dry run statement",
+				slog.Int("index", i+1),
+				slog.String("query", stmt),
+			)
+		}
+		return nil
+	}
 
 	err := m.driver.Execute(ctx, ParsedScript{
 		Version:    migration.Version,
