@@ -24,10 +24,14 @@
 //
 //	<version>_<description>.<direction>[_notx]<extension>
 //
-// Examples of valid filenames:
-//   - 00001_create_users_table.up.sql
-//   - 00001_create_users_table.down.sql
-//   - 00002_add_concurrent_index.up_notx.sql
+// Example Usage:
+//
+//	// Using an embedded filesystem
+//	//go:embed sql/*.sql
+//	var fs embed.FS
+//
+//	src := file.New(fs, file.WithExtension(".sql"), file.WithLogger(myLogger))
+//	migrations, err := src.List()
 package file
 
 import (
@@ -84,9 +88,9 @@ func WithLogger(logger *slog.Logger) Option {
 // Source implements the migrate.Source interface for an fs.FS.
 // It scans the file system to discover and parse migration files.
 type Source struct {
-	dir    fs.FS  // File system containing the migration scripts
-	ext    string // File extension used to filter relevant scripts
-	logger *slog.Logger
+	dir    fs.FS        // File system containing the migration scripts
+	ext    string       // File extension used to filter relevant scripts
+	logger *slog.Logger // Logger used for debugging missed conventions
 }
 
 // New creates a new Source instance that reads from the provided fs.FS.
@@ -132,7 +136,7 @@ func (s *Source) List() ([]migrate.SourceScript, error) {
 
 		content, err := fs.ReadFile(s.dir, path)
 		if err != nil {
-			return fmt.Errorf("failed to read migration file %s: %w", path, err)
+			return fmt.Errorf("failed to read migration file %q: %w", path, err)
 		}
 
 		scripts = append(scripts, migrate.SourceScript{
@@ -149,7 +153,7 @@ func (s *Source) List() ([]migrate.SourceScript, error) {
 
 	err := fs.WalkDir(s.dir, ".", fn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read migration directory: %w", err)
+		return nil, fmt.Errorf("failed to traverse migration directory: %w", err)
 	}
 
 	return scripts, nil
@@ -168,8 +172,7 @@ var (
 	errInvalidVersion     = errors.New("invalid version")
 )
 
-// parse returns an error explaining why a file does not match the strict
-// format.
+// parse returns an error explaining why a file does not match the strict format.
 func (s *Source) parse(name string) (
 	version uint64,
 	desc string,
