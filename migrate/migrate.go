@@ -13,7 +13,28 @@
 // limitations under the License.
 
 // Package migrate provides the core orchestration logic for database
-// migrations.
+// migrations. It manages the loading, sorting, verification, and execution
+// of migration files against a database driver.
+//
+// Example usage:
+//
+//	src := file.New(os.DirFS("./migrations"))
+//	drv, err := postgres.New(db)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	m, err := migrate.New(
+//	    migrate.WithSource(src),
+//	    migrate.WithDriver(drv),
+//	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	if err := m.Up(context.Background()); err != nil {
+//	    log.Fatal("Migration failed:", err)
+//	}
 package migrate
 
 import (
@@ -66,7 +87,7 @@ type Driver interface {
 	Close() error
 }
 
-// Source provides migrations.
+// Source provides migrations from an external system (e.g., filesystem).
 type Source interface {
 	// List returns a list of all available migration files.
 	// The Migrator will handle hashing the content and sorting the results.
@@ -77,7 +98,7 @@ type Source interface {
 type SourceScript struct {
 	Version     uint64    // Unique sequence number
 	Description string    // Human-readable description
-	Direction   Direction // "up" or "down"
+	Direction   Direction // Up or Down
 	Path        string    // Path identifier within the source
 	Content     []byte    // Raw SQL content
 	Tx          bool      // Indicates whether to run in a transaction
@@ -92,7 +113,7 @@ type ParsedScript struct {
 	Tx         bool
 }
 
-// Migration represents a parsed migration file.
+// Migration represents a fully parsed and hashed migration file.
 type Migration struct {
 	Version     uint64    // Unique sequence number of the migration
 	Description string    // A human-readable description of the migration
@@ -109,8 +130,7 @@ type Migration struct {
 //
 // Migrations are ordered primarily by version in ascending order. If two
 // migrations share the same version, they are secondarily ordered by direction
-// (alphabetically, so "down" comes before "up") to guarantee deterministic
-// sorting.
+// (so "up" comes before "down") to guarantee deterministic sorting.
 func (m Migration) Compare(other Migration) int {
 	if n := cmp.Compare(m.Version, other.Version); n != 0 {
 		return n
@@ -205,7 +225,7 @@ func (m *Migrator) files() ([]Migration, error) {
 		return nil, fmt.Errorf("failed to list source files: %w", err)
 	}
 
-	var migrations []Migration
+	migrations := make([]Migration, 0, len(files))
 	for _, raw := range files {
 		migrations = append(migrations, Migration{
 			Version:     raw.Version,
@@ -222,10 +242,27 @@ func (m *Migrator) files() ([]Migration, error) {
 	return migrations, nil
 }
 
+// filter is a helper to fetch either pending or applied migrations.
+func (m *Migrator) filter(ctx context.Context, up bool) ([]Migration, error) {
+	records, files, err := m.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	applied := toLookup(records)
+
+	out := make([]Migration, 0, len(files))
+	for _, f := range files {
+		if f.Direction == Up && applied[f.Version] == up {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
 // Up applies all pending migrations in ascending order.
 func (m *Migrator) Up(ctx context.Context) error {
-	return m.lock(ctx, func(ctx context.Context) error {
-		pending, err := m.Pending(ctx)
+	return m.lock(ctx, func(lockedCtx context.Context) error {
+		pending, err := m.Pending(lockedCtx)
 		if err != nil {
 			return err
 		}
@@ -240,7 +277,7 @@ func (m *Migrator) Up(ctx context.Context) error {
 			slog.Int("count", len(pending)),
 		)
 		for _, p := range pending {
-			if err := m.run(ctx, p); err != nil {
+			if err := m.run(lockedCtx, p); err != nil {
 				return err
 			}
 		}
@@ -251,8 +288,8 @@ func (m *Migrator) Up(ctx context.Context) error {
 
 // Down reverts the most recently applied migration.
 func (m *Migrator) Down(ctx context.Context) error {
-	return m.lock(ctx, func(ctx context.Context) error {
-		applied, err := m.Applied(ctx)
+	return m.lock(ctx, func(lockedCtx context.Context) error {
+		applied, err := m.Applied(lockedCtx)
 		if err != nil {
 			return err
 		}
@@ -264,7 +301,6 @@ func (m *Migrator) Down(ctx context.Context) error {
 		// Get the last applied migration to revert
 		last := applied[len(applied)-1]
 
-		// Fetch and strictly sort files
 		files, err := m.files()
 		if err != nil {
 			return err
@@ -272,7 +308,7 @@ func (m *Migrator) Down(ctx context.Context) error {
 
 		for _, f := range files {
 			if f.Version == last.Version && f.Direction == Down {
-				err := m.run(ctx, f)
+				err := m.run(lockedCtx, f)
 				if err == nil {
 					m.logger.Info(
 						"Migration reverted successfully",
@@ -293,8 +329,8 @@ func (m *Migrator) Down(ctx context.Context) error {
 // dirty flag. It should be used to resolve a dirty state after human
 // intervention.
 func (m *Migrator) Force(ctx context.Context, version uint64) error {
-	return m.lock(ctx, func(ctx context.Context) error {
-		if err := m.driver.Force(ctx, version); err != nil {
+	fn := func(c context.Context) error {
+		if err := m.driver.Force(c, version); err != nil {
 			return fmt.Errorf("failed to force version: %w", err)
 		}
 		m.logger.Info(
@@ -302,13 +338,15 @@ func (m *Migrator) Force(ctx context.Context, version uint64) error {
 			slog.Uint64("version", version),
 		)
 		return nil
-	})
+	}
+
+	return m.lock(ctx, fn)
 }
 
 // MigrateTo applies or reverts migrations to reach the target version.
 func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
-	return m.lock(ctx, func(ctx context.Context) error {
-		records, files, err := m.load(ctx)
+	fn := func(c context.Context) error {
+		records, files, err := m.load(c)
 		if err != nil {
 			return err
 		}
@@ -322,7 +360,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 				found := false
 				for _, f := range files {
 					if f.Version == v && f.Direction == Down {
-						if err := m.run(ctx, f); err != nil {
+						if err := m.run(c, f); err != nil {
 							return err
 						}
 						found = true
@@ -340,7 +378,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 		// ascending order.
 		for _, f := range files {
 			if f.Direction == Up && f.Version <= target && !applied[f.Version] {
-				if err := m.run(ctx, f); err != nil {
+				if err := m.run(c, f); err != nil {
 					return err
 				}
 				applied[f.Version] = true
@@ -348,43 +386,19 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 		}
 
 		return nil
-	})
+	}
+
+	return m.lock(ctx, fn)
 }
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
-	records, files, err := m.load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	applied := toLookup(records)
-
-	var out []Migration
-	for _, f := range files {
-		if f.Direction == Up && !applied[f.Version] {
-			out = append(out, f)
-		}
-	}
-
-	return out, nil
+	return m.filter(ctx, false)
 }
 
 // Applied returns a list of "Up" migrations that have already been executed.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
-	records, files, err := m.load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	applied := toLookup(records)
-
-	var out []Migration
-	for _, f := range files {
-		if f.Direction == Up && applied[f.Version] {
-			out = append(out, f)
-		}
-	}
-
-	return out, nil
+	return m.filter(ctx, true)
 }
 
 // run reads the migration payload and executes it via the driver.
@@ -396,7 +410,8 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 		slog.String("direction", migration.Direction.String()),
 	)
 
-	stmts := m.driver.Parser()(migration.Content)
+	parse := m.driver.Parser()
+	stmts := parse(migration.Content)
 
 	err := m.driver.Execute(ctx, ParsedScript{
 		Version:    migration.Version,
@@ -421,7 +436,6 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 // load loads applied records and available files, ensuring that there are no
 // missing files or checksum mismatches for previously applied migrations.
 func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
-	// Fetch and strictly sort files
 	files, err := m.files()
 	if err != nil {
 		return nil, nil, err
@@ -432,7 +446,8 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
 	}
 
-	ups := make(map[uint64]Migration)
+	// Pre-allocate to prevent dynamic resizing
+	ups := make(map[uint64]Migration, len(files))
 	for _, f := range files {
 		if f.Direction == Up {
 			ups[f.Version] = f
