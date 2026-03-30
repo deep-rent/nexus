@@ -43,11 +43,11 @@ func HTTP(url string, timeout time.Duration) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return health.StatusSick, err
+			return health.StatusSick, fmt.Errorf("http get %s: %w", url, err)
 		}
 		res, err := client.Do(req)
 		if err != nil {
-			return health.StatusSick, err
+			return health.StatusSick, fmt.Errorf("http get %s: %w", url, err)
 		}
 		defer func() {
 			_ = res.Body.Close()
@@ -56,8 +56,10 @@ func HTTP(url string, timeout time.Duration) health.CheckFunc {
 		if res.StatusCode >= 200 && res.StatusCode < 400 {
 			return health.StatusHealthy, nil
 		}
-		err = fmt.Errorf("unexpected status code: %d", res.StatusCode)
-		return health.StatusSick, err
+		return health.StatusSick, fmt.Errorf(
+			"http get %s: unexpected status code: %d",
+			url, res.StatusCode,
+		)
 	}
 }
 
