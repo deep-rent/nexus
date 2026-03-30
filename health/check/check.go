@@ -143,10 +143,10 @@ func DNS(host string) health.CheckFunc {
 	}
 }
 
-// From converts a simple function that returns an error into a health check
+// Wrap converts a simple function that returns an error into a health check
 // callback. The resulting check is not context-aware and will ignore the
 // context passed during execution.
-func From(fn func() error) health.CheckFunc {
+func Wrap(fn func() error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := fn(); err != nil {
 			return health.StatusSick, err
@@ -155,10 +155,10 @@ func From(fn func() error) health.CheckFunc {
 	}
 }
 
-// Contextual converts a context-aware function into a health check callback.
+// WrapContext converts a context-aware function into a health check callback.
 // This is used for custom checks that need to respect timeouts or
 // cancellation signals.
-func Contextual(fn func(context.Context) error) health.CheckFunc {
+func WrapContext(fn func(context.Context) error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := fn(ctx); err != nil {
 			return health.StatusSick, err
