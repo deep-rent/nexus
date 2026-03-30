@@ -315,68 +315,72 @@ func (m *Migrator) filter(ctx context.Context, up bool) ([]Migration, error) {
 
 // Up applies all pending migrations in ascending order.
 func (m *Migrator) Up(ctx context.Context) error {
-	return m.lock(ctx, func(lockedCtx context.Context) error {
-		pending, err := m.Pending(lockedCtx)
-		if err != nil {
+	return m.lock(ctx, m.up)
+}
+
+func (m *Migrator) up(ctx context.Context) error {
+	pending, err := m.Pending(ctx)
+	if err != nil {
+		return err
+	}
+
+	if len(pending) == 0 {
+		m.logger.Info("Migrations are up to date")
+		return nil
+	}
+
+	m.logger.Info(
+		"Applying pending migrations",
+		slog.Int("count", len(pending)),
+	)
+	for _, p := range pending {
+		if err := m.run(ctx, p); err != nil {
 			return err
 		}
-
-		if len(pending) == 0 {
-			m.logger.Info("Migrations are up to date")
-			return nil
-		}
-
-		m.logger.Info(
-			"Applying pending migrations",
-			slog.Int("count", len(pending)),
-		)
-		for _, p := range pending {
-			if err := m.run(lockedCtx, p); err != nil {
-				return err
-			}
-		}
-		m.logger.Info("All migrations applied successfully")
-		return nil
-	})
+	}
+	m.logger.Info("All migrations applied successfully")
+	return nil
 }
 
 // Down reverts the most recently applied migration.
 func (m *Migrator) Down(ctx context.Context) error {
-	return m.lock(ctx, func(lockedCtx context.Context) error {
-		applied, err := m.Applied(lockedCtx)
-		if err != nil {
-			return err
-		}
-		if len(applied) == 0 {
-			m.logger.Info("No applied migrations to revert")
-			return nil
-		}
+	return m.lock(ctx, m.down)
+}
 
-		// Get the last applied migration to revert
-		last := applied[len(applied)-1]
+func (m *Migrator) down(ctx context.Context) error {
+	applied, err := m.Applied(ctx)
+	if err != nil {
+		return err
+	}
+	if len(applied) == 0 {
+		m.logger.Info("No applied migrations to revert")
+		return nil
+	}
 
-		files, err := m.files()
-		if err != nil {
-			return err
-		}
+	// Get the last applied migration to revert.
+	last := applied[len(applied)-1]
 
-		for _, f := range files {
-			if f.Version == last.Version && f.Direction == Down {
-				err := m.run(lockedCtx, f)
-				if err == nil {
-					m.logger.Info(
-						"Migration reverted successfully",
-						slog.Uint64("version", f.Version),
-					)
-				}
-				return err
+	files, err := m.files()
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		if f.Version == last.Version && f.Direction == Down {
+			err := m.run(ctx, f)
+			if err == nil {
+				m.logger.Info(
+					"Migration reverted successfully",
+					slog.Uint64("version", f.Version),
+				)
 			}
+			return err
 		}
-		return fmt.Errorf(
-			"down migration file not found for version %d",
-			last.Version,
-		)
-	})
+	}
+	return fmt.Errorf(
+		"down migration file not found for version %d",
+		last.Version,
+	)
 }
 
 // Force manually sets the database to the specified version and clears the
@@ -516,7 +520,6 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
 	}
 
-	// Pre-allocate to prevent dynamic resizing
 	ups := make(map[uint64]Migration, len(files))
 	for _, f := range files {
 		if f.Direction == Up {
