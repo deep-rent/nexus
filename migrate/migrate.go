@@ -48,11 +48,13 @@ import (
 	"github.com/deep-rent/nexus/internal/schema"
 )
 
-// Direction indicates whether a migration is being applied or reverted.
+// Direction signals whether a migration is being applied or reverted.
 type Direction int
 
 const (
+	// Up indicates a migration that applies changes to the database schema.
 	Up Direction = iota
+	// Down indicates a migration that undoes changes made by an Up migration.
 	Down
 )
 
@@ -70,20 +72,41 @@ func (d Direction) String() string {
 
 // Record represents a successfully applied migration stored in the database.
 type Record struct {
-	Version  uint64
+	// Version is the unique sequence number of the applied migration.
+	Version uint64
+	// Checksum is the SHA-256 hash of the migration's content, used to detect
+	// tampering or accidental modification of historical migration files.
 	Checksum [32]byte
-	Dirty    bool
+	// Dirty indicates if the migration failed mid-execution, leaving the
+	// database in a potentially inconsistent state that requires manual
+	// intervention.
+	Dirty bool
 }
 
 // Driver is the interface that database-specific backends must implement.
+// It abstracts all direct database interactions, locking mechanisms, and
+// state tracking away from the core migration logic.
 type Driver interface {
+	// Parser returns a database-specific statement parser to safely split
+	// raw SQL scripts into individual executable statements.
 	Parser() schema.Parser
+	// Init ensures the migration tracking table exists in the database.
 	Init(ctx context.Context) error
+	// Lock acquires an exclusive, distributed lock to prevent concurrent
+	// migrator instances from causing race conditions.
 	Lock(ctx context.Context) error
+	// Unlock releases the exclusive distributed lock.
 	Unlock(ctx context.Context) error
+	// Applied returns all successfully applied migration records from the
+	// tracking table, ordered by version in ascending order.
 	Applied(ctx context.Context) ([]Record, error)
+	// Force sets the database to the specified version and clears the dirty
+	// state, effectively ignoring any migrations past that point.
 	Force(ctx context.Context, version uint64) error
+	// Execute runs the parsed migration statements and records the state update
+	// within the tracking table.
 	Execute(ctx context.Context, script ParsedScript) error
+	// Close cleans up driver resources and closes database connections.
 	Close() error
 }
 
@@ -96,32 +119,57 @@ type Source interface {
 
 // SourceScript represents an unhashed migration script retrieved from a Source.
 type SourceScript struct {
-	Version     uint64    // Unique sequence number
-	Description string    // Human-readable description
-	Direction   Direction // Up or Down
-	Path        string    // Path identifier within the source
-	Content     []byte    // Raw SQL content
-	Tx          bool      // Indicates whether to run in a transaction
+	// Version is the unique sequence number of the migration.
+	Version uint64
+	// Description is a human-readable summary of the migration's intent.
+	Description string
+	// Direction indicates whether this script applies (Up) or reverts (Down)
+	// changes.
+	Direction Direction
+	// Path is the location identifier of the script within the source.
+	Path string
+	// Content contains the raw, unparsed SQL script.
+	Content []byte
+	// Tx specifies whether the script should be executed within a transaction.
+	Tx bool
 }
 
 // ParsedScript holds the parameters required to execute a migration.
 type ParsedScript struct {
-	Version    uint64
-	Direction  Direction
-	Checksum   [32]byte
+	// Version is the unique sequence number of the migration.
+	Version uint64
+	// Direction indicates whether this script applies (Up) or reverts (Down)
+	// changes.
+	Direction Direction
+	// Checksum is the cryptographic hash of the original script content.
+	Checksum [32]byte
+	// Statements contains the individually parsed SQL statements ready for
+	// execution.
 	Statements []string
-	Tx         bool
+	// Tx specifies whether the statements should be executed within a
+	// transaction.
+	Tx bool
 }
 
 // Migration represents a fully parsed and hashed migration file.
 type Migration struct {
-	Version     uint64    // Unique sequence number of the migration
-	Description string    // A human-readable description of the migration
-	Direction   Direction // Indicates if this is an "up" or "down" migration
-	Path        string    // Path identifier within the source
-	Checksum    [32]byte  // SHA-256 hash of the content
-	Content     []byte    // Raw SQL content of the migration file
-	Tx          bool      // Indicates whether to run in a transaction
+	// Version is the unique sequence number of the migration.
+	Version uint64
+	// Description is a human-readable description of the migration.
+	Description string
+	// Direction indicates whether this script applies (Up) or reverts (Down)
+	// changes.
+	Direction Direction
+	// Path is the location identifier of the script within the source from which
+	// the migration stems.
+	Path string
+	// Checksum is the SHA-256 hash of the content.
+	Checksum [32]byte
+	// Content is the raw SQL content of the migration, which can contain multiple
+	// statements.
+	Content []byte
+	// Tx indicates whether to run all statements together in a transaction.
+	Tx bool
 }
 
 // Compare returns an integer comparing two migrations to establish a strict
@@ -150,20 +198,18 @@ type Migrator struct {
 type Option func(*Migrator)
 
 // WithSource sets the migration source.
+// This option is mandatory.
 func WithSource(source Source) Option {
 	return func(m *Migrator) {
-		if source != nil {
-			m.source = source
-		}
+		m.source = source
 	}
 }
 
 // WithDriver sets the database driver.
+// This option is mandatory.
 func WithDriver(driver Driver) Option {
 	return func(m *Migrator) {
-		if driver != nil {
-			m.driver = driver
-		}
+		m.driver = driver
 	}
 }
 
@@ -176,6 +222,7 @@ func WithDryRun(enabled bool) Option {
 }
 
 // WithLogger sets the logger for the migrator.
+// A nil value will be ignored.
 func WithLogger(logger *slog.Logger) Option {
 	return func(m *Migrator) {
 		if logger != nil {
@@ -227,7 +274,8 @@ func (m *Migrator) lock(
 }
 
 // files fetches all available migrations from the source, calculates their
-// cryptographic checksums, maps them to domain objects, and strictly sorts them.
+// cryptographic checksums, maps them to domain objects, and strictly sorts
+// them.
 func (m *Migrator) files() ([]Migration, error) {
 	files, err := m.source.List()
 	if err != nil {
