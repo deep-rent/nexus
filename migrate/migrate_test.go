@@ -32,14 +32,14 @@ func TestNewMigrator(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		m := migrate.New(
 			migrate.WithSource(sourcemock.NewSource()),
-			migrate.WithDriver(drivermock.NewDriver()),
+			migrate.WithDriver(drivermock.New()),
 		)
 		require.NotNil(t, m)
 	})
 
 	t.Run("panic missing source", func(t *testing.T) {
 		assert.PanicsWithValue(t, "migrate: source is required", func() {
-			migrate.New(migrate.WithDriver(drivermock.NewDriver()))
+			migrate.New(migrate.WithDriver(drivermock.New()))
 		})
 	})
 
@@ -67,7 +67,7 @@ func TestMigrator_Up(t *testing.T) {
 				Content:   up2,
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		err := m.Up(context.Background())
@@ -89,7 +89,7 @@ func TestMigrator_Up(t *testing.T) {
 				Content:   up,
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
@@ -99,7 +99,7 @@ func TestMigrator_Up(t *testing.T) {
 	})
 
 	t.Run("error locked", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.LockErr = errors.New("lock failed")
 		m := migrate.New(
 			migrate.WithSource(sourcemock.NewSource()),
@@ -112,7 +112,7 @@ func TestMigrator_Up(t *testing.T) {
 	})
 
 	t.Run("error init fails", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.InitErr = errors.New("table creation failed")
 		m := migrate.New(
 			migrate.WithSource(sourcemock.NewSource()),
@@ -132,7 +132,7 @@ func TestMigrator_Up(t *testing.T) {
 				Content:   []byte("err"),
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.ExecuteErr = errors.New("syntax error")
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
@@ -143,7 +143,7 @@ func TestMigrator_Up(t *testing.T) {
 
 	t.Run("error missing source file", func(t *testing.T) {
 		src := sourcemock.NewSource() // Empty
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{
 			Version:  1,
 			Checksum: sha256.Sum256([]byte("old content")),
@@ -166,7 +166,7 @@ func TestMigrator_Up(t *testing.T) {
 				Content:   newContent,
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{
 			Version:  1,
 			Checksum: sha256.Sum256(oldContent),
@@ -187,7 +187,7 @@ func TestMigrator_Up(t *testing.T) {
 				Content:   content,
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{
 			Version:  1,
 			Checksum: sha256.Sum256(content),
@@ -218,7 +218,7 @@ func TestMigrator_Down(t *testing.T) {
 				Content:   down,
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
@@ -232,7 +232,7 @@ func TestMigrator_Down(t *testing.T) {
 
 	t.Run("success no applied migrations", func(t *testing.T) {
 		src := sourcemock.NewSource()
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		err := m.Down(context.Background())
@@ -249,7 +249,7 @@ func TestMigrator_Down(t *testing.T) {
 				Content:   content,
 			},
 		)
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
@@ -261,7 +261,7 @@ func TestMigrator_Down(t *testing.T) {
 
 func TestMigrator_Force(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		m := migrate.New(
 			migrate.WithSource(sourcemock.NewSource()),
 			migrate.WithDriver(drv),
@@ -273,7 +273,7 @@ func TestMigrator_Force(t *testing.T) {
 	})
 
 	t.Run("error driver fails", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.ForceErr = errors.New("db disconnected")
 		m := migrate.New(
 			migrate.WithSource(sourcemock.NewSource()),
@@ -316,7 +316,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 	)
 
 	t.Run("apply pending", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
@@ -329,7 +329,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 	})
 
 	t.Run("revert applied", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
 		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(content2)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
@@ -345,7 +345,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 	})
 
 	t.Run("error missing down script during revert", func(t *testing.T) {
-		drv := drivermock.NewDriver()
+		drv := drivermock.New()
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
 		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(content2)})
 		drv.Set(migrate.Record{Version: 3, Checksum: sha256.Sum256(content4)})
@@ -381,7 +381,7 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 		},
 	)
 
-	drv := drivermock.NewDriver()
+	drv := drivermock.New()
 	drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
 
 	m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
@@ -407,7 +407,7 @@ func TestMigrator_DryRun(t *testing.T) {
 			Content:   content,
 		},
 	)
-	drv := drivermock.NewDriver()
+	drv := drivermock.New()
 	m := migrate.New(
 		migrate.WithSource(src),
 		migrate.WithDriver(drv),

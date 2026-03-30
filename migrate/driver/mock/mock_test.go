@@ -27,7 +27,7 @@ import (
 )
 
 func TestNewDriver(t *testing.T) {
-	d := mock.NewDriver()
+	d := mock.New()
 	require.NotNil(t, d)
 	require.NotNil(t, d.State())
 	require.NotNil(t, d.ParserFunc)
@@ -40,14 +40,14 @@ func TestNewDriver(t *testing.T) {
 
 func TestDriver_Init(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		err := d.Init(context.Background())
 		assert.NoError(t, err)
 		assert.True(t, d.IsInit)
 	})
 
 	t.Run("error", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		expected := errors.New("init failed")
 		d.InitErr = expected
 		err := d.Init(context.Background())
@@ -58,14 +58,14 @@ func TestDriver_Init(t *testing.T) {
 
 func TestDriver_Lock(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		err := d.Lock(context.Background())
 		assert.NoError(t, err)
 		assert.True(t, d.IsLocked)
 	})
 
 	t.Run("error injected", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		expected := errors.New("lock failed")
 		d.LockErr = expected
 		err := d.Lock(context.Background())
@@ -74,7 +74,7 @@ func TestDriver_Lock(t *testing.T) {
 	})
 
 	t.Run("already locked", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		err := d.Lock(context.Background())
 		require.NoError(t, err)
 
@@ -85,7 +85,7 @@ func TestDriver_Lock(t *testing.T) {
 
 func TestDriver_Unlock(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		d.IsLocked = true
 		err := d.Unlock(context.Background())
 		assert.NoError(t, err)
@@ -93,7 +93,7 @@ func TestDriver_Unlock(t *testing.T) {
 	})
 
 	t.Run("error injected", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		d.IsLocked = true
 		expected := errors.New("unlock failed")
 		d.UnlockErr = expected
@@ -103,7 +103,7 @@ func TestDriver_Unlock(t *testing.T) {
 	})
 
 	t.Run("not locked", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		err := d.Unlock(context.Background())
 		assert.EqualError(t, err, "mock: not locked")
 	})
@@ -111,7 +111,7 @@ func TestDriver_Unlock(t *testing.T) {
 
 func TestDriver_Applied(t *testing.T) {
 	t.Run("success sorted", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		d.Set(migrate.Record{Version: 3})
 		d.Set(migrate.Record{Version: 1})
 		d.Set(migrate.Record{Version: 2})
@@ -125,7 +125,7 @@ func TestDriver_Applied(t *testing.T) {
 	})
 
 	t.Run("error", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		expected := errors.New("applied failed")
 		d.AppliedErr = expected
 		records, err := d.Applied(context.Background())
@@ -136,7 +136,7 @@ func TestDriver_Applied(t *testing.T) {
 
 func TestDriver_Force(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		d.Set(migrate.Record{Version: 1, Dirty: false})
 		d.Set(migrate.Record{Version: 2, Dirty: true})
 		d.Set(migrate.Record{Version: 3, Dirty: false})
@@ -153,7 +153,7 @@ func TestDriver_Force(t *testing.T) {
 	})
 
 	t.Run("error", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		expected := errors.New("force failed")
 		d.ForceErr = expected
 		err := d.Force(context.Background(), 1)
@@ -233,7 +233,7 @@ func TestDriver_Execute(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			d := mock.NewDriver()
+			d := mock.New()
 			if tc.setup != nil {
 				tc.setup(d)
 			}
@@ -255,14 +255,14 @@ func TestDriver_Execute(t *testing.T) {
 
 func TestDriver_Close(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		err := d.Close()
 		assert.NoError(t, err)
 		assert.True(t, d.IsClosed)
 	})
 
 	t.Run("error", func(t *testing.T) {
-		d := mock.NewDriver()
+		d := mock.New()
 		expected := errors.New("close failed")
 		d.CloseErr = expected
 		err := d.Close()

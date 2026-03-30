@@ -56,8 +56,8 @@ type Driver struct {
 	CloseErr   error
 }
 
-// NewDriver creates a new in-memory Driver with an empty state.
-func NewDriver() *Driver {
+// New creates a new in-memory Driver with an empty state.
+func New() *Driver {
 	return &Driver{
 		records: make(map[uint64]migrate.Record),
 		// Provide a dummy parser that just returns the raw script as a single
