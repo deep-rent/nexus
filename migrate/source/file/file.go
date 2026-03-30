@@ -30,7 +30,7 @@
 //	//go:embed sql/*.sql
 //	var fs embed.FS
 //
-//	src := file.New(fs, file.WithExtension(".sql"), file.WithLogger(myLogger))
+//	src := file.New(fs, file.WithExtension(".sql"), file.WithLogger(logger))
 //	migrations, err := src.List()
 package file
 
@@ -111,6 +111,17 @@ func New(dir fs.FS, opts ...Option) *Source {
 		ext:    cfg.ext,
 		logger: cfg.logger,
 	}
+}
+
+// Directory returns the underlying file system used by the source.
+func (s *Source) Directory() fs.FS {
+	return s.dir
+}
+
+// Extension returns the configured file extension used to identify
+// migration scripts.
+func (s *Source) Extension() string {
+	return s.ext
 }
 
 // List reads the underlying file system, parses all files matching the
