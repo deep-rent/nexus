@@ -115,7 +115,8 @@ func NewMonitor() *Monitor {
 }
 
 // Register adds a new health check with a minimum delay (TTL) between
-// consecutive executions.
+// consecutive executions. If a check under the given name already exists, it
+// will be replaced.
 func (m *Monitor) Register(name string, ttl time.Duration, fn CheckFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -124,6 +125,14 @@ func (m *Monitor) Register(name string, ttl time.Duration, fn CheckFunc) {
 		fn:   fn,
 		ttl:  ttl,
 	}
+}
+
+// Unregister removes a health check by name. If the check does not exist,
+// this is a no-op.
+func (m *Monitor) Unregister(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.checks, name)
 }
 
 // run runs all registered checks concurrently and compiles the overall status
