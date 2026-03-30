@@ -19,10 +19,7 @@
 // Example usage:
 //
 //	src := file.New(os.DirFS("./migrations"))
-//	drv, err := postgres.New(db)
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
+//	drv := postgres.New(db)
 //
 //	m := migrate.New(
 //	    migrate.WithSource(src),

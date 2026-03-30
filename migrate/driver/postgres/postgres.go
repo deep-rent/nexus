@@ -24,13 +24,10 @@
 // Example usage:
 //
 //	db, _ := sql.Open("postgres", "postgres://user:pass@localhost:5432/db")
-//	driver, err := postgres.New(db,
+//	driver := postgres.New(db,
 //	    postgres.WithSchema("public"),
-//	    postgres.WithTable("schema_migrations"),
+//	    postgres.WithTable("migrations"),
 //	)
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
 package postgres
 
 import (
@@ -143,8 +140,8 @@ type Driver struct {
 // New creates a new PostgreSQL migration driver using the provided database
 // connection and options. It generates a unique cryptographic identifier
 // to be used for advisory locks to prevent concurrent migration conflicts.
-// It returns an error if the lock identifier generation fails.
-func New(db *sql.DB, opts ...Option) (*Driver, error) {
+// It panics if the lock identifier generation fails.
+func New(db *sql.DB, opts ...Option) *Driver {
 	cfg := &config{
 		table:  DefaultTable,
 		schema: DefaultSchema,
@@ -171,12 +168,12 @@ func New(db *sql.DB, opts ...Option) (*Driver, error) {
 		// Generate a random identifier for the table lock.
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err != nil {
-			return nil, fmt.Errorf("failed to generate random lock ID: %w", err)
+			panic(fmt.Sprintf("postgres: failed to generate random lock ID: %v", err))
 		}
 		d.lockID = int64(binary.BigEndian.Uint64(b[:]))
 	}
 
-	return d, nil
+	return d
 }
 
 // Parser returns the PostgreSQL-specific statement parser from the schema
