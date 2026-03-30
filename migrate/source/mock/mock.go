@@ -24,7 +24,11 @@ import (
 // It allows you to pre-define the list of scripts and optionally inject an
 // error to test failure paths.
 type Source struct {
+	// Scripts should be treated as read-only after initialization.
 	Scripts []migrate.SourceScript
+
+	// Injectable errors for testing failure paths:
+
 	ListErr error
 }
 
