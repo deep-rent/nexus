@@ -163,10 +163,10 @@ func TestPostgres_TestData(t *testing.T) {
 
 func BenchmarkPostgres_Simple(b *testing.B) {
 	script := []byte("SELECT 1; SELECT 2; SELECT 3;")
-	b.ResetTimer()
+
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = schema.Postgres(script)
 	}
 }
@@ -178,10 +178,23 @@ func BenchmarkPostgres_Complex(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
+		_ = schema.Postgres(script)
+	}
+}
+
+func BenchmarkPostgres_Massive(b *testing.B) {
+	var script []byte
+	stmt := []byte("INSERT INTO users (email) VALUES ('test@example.com');\n")
+	for range 10000 {
+		script = append(script, stmt...)
+	}
+
+	b.ReportAllocs()
+
+	for b.Loop() {
 		_ = schema.Postgres(script)
 	}
 }
