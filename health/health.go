@@ -194,3 +194,10 @@ func (m *Monitor) Ready() router.HandlerFunc {
 func (m *Monitor) Handler() router.HandlerFunc {
 	return m.Ready()
 }
+
+// Mount registers the standard health check endpoints on the provided router.
+func (m *Monitor) Mount(r *router.Router) {
+	r.HandleFunc("GET /health", m.Handler())
+	r.HandleFunc("GET /health/live", m.Live())
+	r.HandleFunc("GET /health/ready", m.Ready())
+}
