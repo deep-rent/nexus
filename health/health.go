@@ -12,6 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package health provides a registry and HTTP handlers for application health
+// monitoring. It allows for the registration of pluggable health checks with
+// built-in TTL-based caching to prevent overloading downstream dependencies.
+//
+// Basic Usage:
+//
+//	monitor := health.NewMonitor()
+//
+//	// Register a check with a 5-second minimum delay between executions.
+//	monitor.Register("database", 5*time.Second, check.Ping(db))
+//
+//	// Mount the standard endpoints (/health, /health/live, /health/ready)
+//	// to a nexus router.
+//	monitor.Mount(r)
 package health
 
 import (
