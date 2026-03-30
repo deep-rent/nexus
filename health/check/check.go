@@ -90,11 +90,20 @@ func DNS(host string) health.CheckFunc {
 	}
 }
 
-// Custom turns any function returning an error into a health check callback.
-func Custom(fn func() error) health.CheckFunc {
+// From turns any error-returning function into a health check.
+func From(fn func() error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
-		err := fn()
-		if err != nil {
+		if err := fn(); err != nil {
+			return health.StatusSick, err
+		}
+		return health.StatusHealthy, nil
+	}
+}
+
+// Contextual allows for custom checks that are aware of the request context.
+func Contextual(fn func(context.Context) error) health.CheckFunc {
+	return func(ctx context.Context) (health.Status, error) {
+		if err := fn(ctx); err != nil {
 			return health.StatusSick, err
 		}
 		return health.StatusHealthy, nil
