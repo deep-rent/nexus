@@ -160,3 +160,28 @@ func TestPostgres_TestData(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkPostgres_Simple(b *testing.B) {
+	script := []byte("SELECT 1; SELECT 2; SELECT 3;")
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_ = schema.Postgres(script)
+	}
+}
+
+func BenchmarkPostgres_Complex(b *testing.B) {
+	path := filepath.Join("testdata", "00002_audit_triggers.up.sql")
+	script, err := os.ReadFile(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_ = schema.Postgres(script)
+	}
+}
