@@ -173,6 +173,10 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 // from killing the pod.
 func (m *Monitor) Live() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]Status{"status": StatusHealthy})
 	}
 }
@@ -181,6 +185,10 @@ func (m *Monitor) Live() http.HandlerFunc {
 // Returns HTTP 503 if any dependency is sick.
 func (m *Monitor) Ready() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		overall, results := m.run(r.Context())
 
 		code := http.StatusOK
