@@ -38,18 +38,39 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 	}
 }
 
-// HTTP performs a GET request to the specified URL.
-func HTTP(url string, timeout time.Duration) health.CheckFunc {
-	client := &http.Client{Timeout: timeout}
+// HTTP performs a GET request to the specified URL using the provided client.
+// If the client is nil, a default internal client is used.
+// If neither the client nor the request context has a timeout, it defaults to
+// 10 seconds.
+func HTTP(client *http.Client, url string) health.CheckFunc {
+	const timeout = 10 * time.Second
+
+	if client == nil {
+		client = http.DefaultClient
+	}
+
 	return func(ctx context.Context) (health.Status, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return health.StatusSick, fmt.Errorf("http get %s: %w", url, err)
+		child := ctx
+
+		// If the client has no timeout set, we enforce a fallback timeout
+		// specifically for this check execution using the context.
+		// We only do this if the incoming context doesn't already have a deadline.
+		if _, deadline := ctx.Deadline(); !deadline && client.Timeout == 0 {
+			var cancel context.CancelFunc
+			child, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
 		}
+
+		req, err := http.NewRequestWithContext(child, http.MethodGet, url, nil)
+		if err != nil {
+			return health.StatusSick, fmt.Errorf("http: request %s: %w", url, err)
+		}
+
 		res, err := client.Do(req)
 		if err != nil {
-			return health.StatusSick, fmt.Errorf("http get %s: %w", url, err)
+			return health.StatusSick, fmt.Errorf("http: get %s: %w", url, err)
 		}
+
 		defer func() {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
@@ -58,8 +79,9 @@ func HTTP(url string, timeout time.Duration) health.CheckFunc {
 		if res.StatusCode >= 200 && res.StatusCode < 400 {
 			return health.StatusHealthy, nil
 		}
+
 		return health.StatusSick, fmt.Errorf(
-			"http get %s: unexpected status code: %d",
+			"http: get %s: unexpected status code: %d",
 			url, res.StatusCode,
 		)
 	}
