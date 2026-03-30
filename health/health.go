@@ -122,7 +122,7 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 	}
 	m.mu.RUnlock()
 
-	results := make(map[string]Result)
+	results := make(map[string]Result, len(checks))
 	overall := StatusHealthy
 
 	var wg sync.WaitGroup
