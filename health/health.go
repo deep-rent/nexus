@@ -17,6 +17,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -52,7 +53,7 @@ type check struct {
 
 // execute runs the check or returns the cached result if the TTL hasn't
 // expired.
-func (c *check) execute(ctx context.Context) Result {
+func (c *check) execute(ctx context.Context) (res Result) {
 	c.mu.RLock()
 	if time.Since(c.last.Timestamp) < c.ttl {
 		res := c.last
@@ -67,6 +68,17 @@ func (c *check) execute(ctx context.Context) Result {
 	if time.Since(c.last.Timestamp) < c.ttl {
 		return c.last
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			c.last = Result{
+				Status:    StatusSick,
+				Error:     fmt.Sprintf("health check panicked: %v", r),
+				Timestamp: time.Now(),
+			}
+			res = c.last
+		}
+	}()
 
 	status, err := c.fn(ctx)
 	msg := ""
