@@ -53,9 +53,9 @@ type check struct {
 	last Result
 }
 
-// execute runs the check or returns the cached result if the TTL hasn't
+// run executes the check or returns the cached result if the TTL hasn't
 // expired.
-func (c *check) execute(ctx context.Context) (res Result) {
+func (c *check) run(ctx context.Context) (res Result) {
 	c.mu.RLock()
 	if time.Since(c.last.Timestamp) < c.ttl {
 		res := c.last
@@ -146,7 +146,7 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 		wg.Add(1)
 		go func(current *check) {
 			defer wg.Done()
-			res := current.execute(ctx)
+			res := current.run(ctx)
 
 			mu.Lock()
 			results[current.name] = res
