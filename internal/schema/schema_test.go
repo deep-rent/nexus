@@ -15,9 +15,12 @@
 package schema_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/internal/schema"
 )
@@ -119,6 +122,41 @@ func TestPostgres(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := schema.Postgres([]byte(tc.script))
 			assert.Equal(t, tc.want, actual)
+		})
+	}
+}
+
+func TestPostgres_TestData(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+		want int // Expected number of statements
+	}{
+		{
+			name: "initial schema",
+			file: "00001_initial_schema.up.sql",
+			want: 6,
+		},
+		{
+			name: "audit triggers",
+			file: "00002_audit_triggers.up.sql",
+			want: 3,
+		},
+		{
+			name: "concurrent indexes",
+			file: "00003_concurrent_indexes.up_notx.sql",
+			want: 3,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join("testdata", tc.file)
+			content, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			actual := schema.Postgres(content)
+			assert.Len(t, actual, tc.want)
 		})
 	}
 }
