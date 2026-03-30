@@ -43,20 +43,19 @@ type CheckFunc func(ctx context.Context) (Status, error)
 
 // check wraps a registered check with its caching state and mutex.
 type check struct {
-	name     string
-	fn       CheckFunc
-	ttl      time.Duration
-	mu       sync.RWMutex
-	lastRes  Result
-	lastExec time.Time
+	name string
+	fn   CheckFunc
+	ttl  time.Duration
+	mu   sync.RWMutex
+	last Result
 }
 
 // execute runs the check or returns the cached result if the TTL hasn't
 // expired.
 func (c *check) execute(ctx context.Context) Result {
 	c.mu.RLock()
-	if time.Since(c.lastExec) < c.ttl {
-		res := c.lastRes
+	if time.Since(c.last.Timestamp) < c.ttl {
+		res := c.last
 		c.mu.RUnlock()
 		return res
 	}
@@ -65,8 +64,8 @@ func (c *check) execute(ctx context.Context) Result {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Double-check the cache after acquiring the write lock.
-	if time.Since(c.lastExec) < c.ttl {
-		return c.lastRes
+	if time.Since(c.last.Timestamp) < c.ttl {
+		return c.last
 	}
 
 	status, err := c.fn(ctx)
@@ -80,13 +79,12 @@ func (c *check) execute(ctx context.Context) Result {
 		}
 	}
 
-	c.lastRes = Result{
+	c.last = Result{
 		Status:    status,
 		Error:     msg,
 		Timestamp: time.Now(),
 	}
-	c.lastExec = c.lastRes.Timestamp
-	return c.lastRes
+	return c.last
 }
 
 // Monitor manages health checks and provides HTTP handlers.
@@ -132,12 +130,12 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 
 	for _, c := range checks {
 		wg.Add(1)
-		go func(chk *check) {
+		go func(current *check) {
 			defer wg.Done()
-			res := chk.execute(ctx)
+			res := current.execute(ctx)
 
 			mu.Lock()
-			results[chk.name] = res
+			results[current.name] = res
 			if res.Status == StatusSick {
 				overall = StatusSick
 			} else if res.Status == StatusDegraded && overall == StatusHealthy {
