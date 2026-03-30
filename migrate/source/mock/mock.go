@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package mock provides an in-memory implementation of the migrate.Source
+// interface designed strictly for unit testing.
 package mock
 
 import (
