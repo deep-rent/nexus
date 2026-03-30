@@ -101,13 +101,14 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 			_ = res.Body.Close()
 		}()
 
-		if res.StatusCode >= 200 && res.StatusCode < 400 {
+		code := res.StatusCode
+		if code >= http.StatusOK && code < http.StatusBadRequest {
 			return health.StatusHealthy, nil
 		}
 
 		return health.StatusSick, fmt.Errorf(
 			"http: get %s: unexpected status code: %d",
-			url, res.StatusCode,
+			url, code,
 		)
 	}
 }
