@@ -34,6 +34,7 @@ const (
 )
 
 // Result holds the outcome of a health check execution.
+// TODO: Update to encoding/json/v2
 type Result struct {
 	Status    Status    `json:"status"`
 	Error     string    `json:"error,omitempty"`
