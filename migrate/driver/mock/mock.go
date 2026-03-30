@@ -167,19 +167,23 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 
 // Execute simulates running a migration script. If ExecuteErr is set, it
 // correctly simulates a failure by leaving the target version in a dirty state.
-func (d *Driver) Execute(ctx context.Context, script migrate.ParsedScript) error {
+func (d *Driver) Execute(
+	ctx context.Context,
+	script migrate.ParsedScript,
+) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.ExecuteErr != nil {
-		// Simulate the dirty state left behind by a failed migration
-		if script.Direction == migrate.Up {
+		// Simulate the dirty state left behind by a failed migration.
+		switch script.Direction {
+		case migrate.Up:
 			d.records[script.Version] = migrate.Record{
 				Version:  script.Version,
 				Checksum: script.Checksum,
 				Dirty:    true,
 			}
-		} else if script.Direction == migrate.Down {
+		case migrate.Down:
 			if rec, ok := d.records[script.Version]; ok {
 				rec.Dirty = true
 				d.records[script.Version] = rec
@@ -189,13 +193,14 @@ func (d *Driver) Execute(ctx context.Context, script migrate.ParsedScript) error
 	}
 
 	// Simulate successful execution.
-	if script.Direction == migrate.Up {
+	switch script.Direction {
+	case migrate.Up:
 		d.records[script.Version] = migrate.Record{
 			Version:  script.Version,
 			Checksum: script.Checksum,
 			Dirty:    false,
 		}
-	} else if script.Direction == migrate.Down {
+	case migrate.Down:
 		delete(d.records, script.Version)
 	}
 
