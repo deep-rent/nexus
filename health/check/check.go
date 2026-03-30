@@ -17,6 +17,7 @@ package check
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -50,6 +51,7 @@ func HTTP(url string, timeout time.Duration) health.CheckFunc {
 			return health.StatusSick, fmt.Errorf("http get %s: %w", url, err)
 		}
 		defer func() {
+			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 		}()
 
