@@ -24,24 +24,33 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
-// Status represents the operational state of a dependency.
+// Status enumerates the operational states of a dependency.
 type Status string
 
 const (
-	StatusHealthy  Status = "healthy"
+	// StatusHealthy indicates the dependency is functioning normally.
+	StatusHealthy Status = "healthy"
+	// StatusDegraded indicates the dependency is functioning but with
+	// issues (e.g., high latency).
 	StatusDegraded Status = "degraded"
-	StatusSick     Status = "sick"
+	// StatusSick indicates the dependency is non-functional.
+	StatusSick Status = "sick"
 )
 
 // Result holds the outcome of a health check execution.
 // TODO: Update to encoding/json/v2
 type Result struct {
-	Status    Status    `json:"status"`
-	Error     string    `json:"error,omitempty"`
+	// Status is the state of the check.
+	Status Status `json:"status"`
+	// Error contains a descriptive error message if the check failed.
+	Error string `json:"error,omitempty"`
+	// Timestamp records when this check was actually executed.
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// CheckFunc is the signature for a pluggable health check.
+// CheckFunc defines the signature for a pluggable health check. It receives
+// the request context to allow for cancellation and should return the
+// perceived Status and an error if applicable.
 type CheckFunc func(ctx context.Context) (Status, error)
 
 // check wraps a registered check with its caching state and mutex.
@@ -54,7 +63,7 @@ type check struct {
 }
 
 // run executes the check or returns the cached result if the TTL hasn't
-// expired.
+// expired. It protects against panics in the callback.
 func (c *check) run(ctx context.Context) (res Result) {
 	c.mu.RLock()
 	if time.Since(c.last.Timestamp) < c.ttl {
@@ -101,7 +110,8 @@ func (c *check) run(ctx context.Context) (res Result) {
 	return c.last
 }
 
-// Monitor manages health checks and provides HTTP handlers.
+// Monitor manages the registry of health checks and provides the
+// router-compatible handlers. It is safe for concurrent use.
 type Monitor struct {
 	mu     sync.RWMutex
 	checks map[string]*check
@@ -114,9 +124,13 @@ func NewMonitor() *Monitor {
 	}
 }
 
-// Register adds a new health check with a minimum delay (TTL) between
-// consecutive executions. If a check under the given name already exists, it
-// will be replaced.
+// Register adds a new health check to the monitor.
+//
+// The ttl parameter specifies the minimum time that must elapse between
+// consecutive invocations of the check function; during this window, the
+// cached result is returned.
+//
+// If a check with the given name already exists, it is replaced
 func (m *Monitor) Register(name string, ttl time.Duration, fn CheckFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -172,17 +186,18 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 	return overall, results
 }
 
-// Live indicates whether the application process is running.
-// It does not evaluate external dependencies to prevent orchestration loops
-// from killing the pod.
+// Live returns a handler that indicates if the application process is alive.
+// It always returns StatusHealthy and HTTP 200 without checking dependencies,
+// serving as a basic liveness probe to detect process hangs.
 func (m *Monitor) Live() router.HandlerFunc {
 	return func(e *router.Exchange) error {
 		return e.JSON(http.StatusOK, map[string]Status{"status": StatusHealthy})
 	}
 }
 
-// Ready evaluates checks to determine if the app can serve traffic.
-// Returns HTTP 503 if any dependency is sick.
+// Ready returns a handler that evaluates all registered checks.
+// It returns HTTP 503 (Service Unavailable) if any check results in
+// StatusSick. Otherwise, it returns HTTP 200.
 func (m *Monitor) Ready() router.HandlerFunc {
 	return func(e *router.Exchange) error {
 		overall, results := m.run(e.Context())
@@ -199,13 +214,17 @@ func (m *Monitor) Ready() router.HandlerFunc {
 	}
 }
 
-// Handler provides the exact same detailed breakdown as readiness,
-// but is intended for operational dashboards and monitoring scrapers.
+// Handler is an alias for Ready. It provides a detailed JSON breakdown
+// of all checks, suitable for monitoring scrapers and dashboards.
 func (m *Monitor) Handler() router.HandlerFunc {
 	return m.Ready()
 }
 
-// Mount registers the standard health check endpoints on the provided router.
+// Mount registers the standard health check routes on the provided router.
+// It exposes:
+//   - GET /health: Detailed summary of all checks.
+//   - GET /health/live: Shallow liveness probe.
+//   - GET /health/ready: Deep readiness probe.
 func (m *Monitor) Mount(r *router.Router) {
 	r.HandleFunc("GET /health", m.Handler())
 	r.HandleFunc("GET /health/live", m.Live())
