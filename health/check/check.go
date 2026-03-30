@@ -89,3 +89,14 @@ func DNS(host string) health.CheckFunc {
 		return health.StatusHealthy, nil
 	}
 }
+
+// Custom turns any function returning an error into a health check callback.
+func Custom(fn func() error) health.CheckFunc {
+	return func(ctx context.Context) (health.Status, error) {
+		err := fn()
+		if err != nil {
+			return health.StatusSick, err
+		}
+		return health.StatusHealthy, nil
+	}
+}
