@@ -13,3 +13,323 @@
 // limitations under the License.
 
 package migrate_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/deep-rent/nexus/migrate"
+	drivermock "github.com/deep-rent/nexus/migrate/driver/mock"
+	sourcemock "github.com/deep-rent/nexus/migrate/source/mock"
+)
+
+func TestNewMigrator(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		m := migrate.New(
+			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithDriver(drivermock.NewDriver()),
+		)
+		require.NotNil(t, m)
+	})
+
+	t.Run("panic missing source", func(t *testing.T) {
+		assert.PanicsWithValue(t, "migrate: source is required", func() {
+			migrate.New(migrate.WithDriver(drivermock.NewDriver()))
+		})
+	})
+
+	t.Run("panic missing driver", func(t *testing.T) {
+		assert.PanicsWithValue(t, "migrate: driver is required", func() {
+			migrate.New(migrate.WithSource(sourcemock.NewSource()))
+		})
+	})
+}
+
+func TestMigrator_Up(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		up1 := []byte("CREATE TABLE users;")
+		up2 := []byte("CREATE TABLE posts;")
+
+		src := sourcemock.NewSource(
+			migrate.SourceScript{Version: 1, Direction: migrate.Up, Content: up1},
+			migrate.SourceScript{Version: 2, Direction: migrate.Up, Content: up2},
+		)
+		drv := drivermock.NewDriver()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(context.Background())
+		assert.NoError(t, err)
+
+		state := drv.State()
+		assert.Len(t, state, 2)
+		assert.Equal(t, sha256.Sum256(up1), state[1].Checksum)
+		assert.Equal(t, sha256.Sum256(up2), state[2].Checksum)
+	})
+
+	t.Run("success up to date", func(t *testing.T) {
+		up := []byte("CREATE TABLE users;")
+		src := sourcemock.NewSource(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   up,
+			},
+		)
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("error locked", func(t *testing.T) {
+		drv := drivermock.NewDriver()
+		drv.LockErr = errors.New("lock failed")
+		m := migrate.New(
+			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithDriver(drv),
+		)
+
+		err := m.Up(context.Background())
+		assert.ErrorContains(t, err, "failed to acquire lock")
+	})
+
+	t.Run("error execution", func(t *testing.T) {
+		src := sourcemock.NewSource(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   []byte("err"),
+			},
+		)
+		drv := drivermock.NewDriver()
+		drv.ExecuteErr = errors.New("syntax error")
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(context.Background())
+		assert.ErrorContains(t, err, "migration 1 failed")
+	})
+
+	t.Run("error checksum mismatch", func(t *testing.T) {
+		oldContent := []byte("old content")
+		newContent := []byte("new content")
+		src := sourcemock.NewSource(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   newContent,
+			},
+		)
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{
+			Version:  1,
+			Checksum: sha256.Sum256(oldContent),
+		})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(context.Background())
+		assert.ErrorContains(t, err, "checksum mismatch")
+	})
+
+	t.Run("error dirty state", func(t *testing.T) {
+		content := []byte("content")
+		src := sourcemock.NewSource(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   content,
+			},
+		)
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{
+			Version:  1,
+			Checksum: sha256.Sum256(content),
+			Dirty:    true,
+		})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(context.Background())
+		assert.ErrorContains(t, err, "database is dirty at version 1")
+	})
+}
+
+func TestMigrator_Down(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		up := []byte("CREATE")
+		down := []byte("DROP TABLE users;")
+
+		src := sourcemock.NewSource(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   up,
+			},
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Down,
+				Content:   down,
+			},
+		)
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Down(context.Background())
+		assert.NoError(t, err)
+
+		state := drv.State()
+		assert.Empty(t, state)
+	})
+
+	t.Run("success no applied migrations", func(t *testing.T) {
+		src := sourcemock.NewSource()
+		drv := drivermock.NewDriver()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Down(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("error missing down script", func(t *testing.T) {
+		src := sourcemock.NewSource(
+			migrate.SourceScript{Version: 1, Direction: migrate.Up, Content: []byte("CREATE")},
+		)
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256([]byte("CREATE"))})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Down(context.Background())
+		assert.ErrorContains(t, err, "down migration file not found")
+	})
+}
+
+func TestMigrator_Force(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		drv := drivermock.NewDriver()
+		m := migrate.New(
+			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithDriver(drv),
+		)
+
+		err := m.Force(context.Background(), 5)
+		assert.NoError(t, err)
+	})
+
+	t.Run("error driver fails", func(t *testing.T) {
+		drv := drivermock.NewDriver()
+		drv.ForceErr = errors.New("db disconnected")
+		m := migrate.New(
+			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithDriver(drv),
+		)
+
+		err := m.Force(context.Background(), 5)
+		assert.ErrorContains(t, err, "failed to force version")
+	})
+}
+
+func TestMigrator_MigrateTo(t *testing.T) {
+	up1 := []byte("CREATE t1")
+	up2 := []byte("CREATE t2")
+	down2 := []byte("DROP t2")
+	up3 := []byte("CREATE t3")
+
+	src := sourcemock.NewSource(
+		migrate.SourceScript{Version: 1, Direction: migrate.Up, Content: up1},
+		migrate.SourceScript{Version: 2, Direction: migrate.Up, Content: up2},
+		migrate.SourceScript{Version: 2, Direction: migrate.Down, Content: down2},
+		migrate.SourceScript{Version: 3, Direction: migrate.Up, Content: up3},
+	)
+
+	t.Run("apply pending", func(t *testing.T) {
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up1)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.MigrateTo(context.Background(), 3)
+		assert.NoError(t, err)
+
+		state := drv.State()
+		assert.Len(t, state, 3)
+	})
+
+	t.Run("revert applied", func(t *testing.T) {
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up1)})
+		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(up2)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.MigrateTo(context.Background(), 1)
+		assert.NoError(t, err)
+
+		state := drv.State()
+		assert.Len(t, state, 1)
+		_, ok := state[1]
+		assert.True(t, ok)
+	})
+
+	t.Run("error missing down script during revert", func(t *testing.T) {
+		drv := drivermock.NewDriver()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up1)})
+		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(up2)})
+		drv.Set(migrate.Record{Version: 3, Checksum: sha256.Sum256(up3)})
+
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.MigrateTo(context.Background(), 2)
+		assert.ErrorContains(t, err, "down migration file not found for version 3")
+	})
+}
+
+func TestMigrator_Pending_And_Applied(t *testing.T) {
+	content1 := []byte("1")
+	content2 := []byte("2")
+	content3 := []byte("3")
+
+	src := sourcemock.NewSource(
+		migrate.SourceScript{Version: 1, Direction: migrate.Up, Content: content1},
+		migrate.SourceScript{Version: 2, Direction: migrate.Up, Content: content2},
+		migrate.SourceScript{Version: 3, Direction: migrate.Up, Content: content3},
+	)
+
+	drv := drivermock.NewDriver()
+	drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+
+	m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+	pending, err := m.Pending(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, pending, 2)
+	assert.Equal(t, uint64(2), pending[0].Version)
+	assert.Equal(t, uint64(3), pending[1].Version)
+
+	applied, err := m.Applied(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, applied, 1)
+	assert.Equal(t, uint64(1), applied[0].Version)
+}
+
+func TestMigrator_DryRun(t *testing.T) {
+	content := []byte("CREATE TABLE dummy;")
+	src := sourcemock.NewSource(
+		migrate.SourceScript{Version: 1, Direction: migrate.Up, Content: content},
+	)
+	drv := drivermock.NewDriver()
+	m := migrate.New(
+		migrate.WithSource(src),
+		migrate.WithDriver(drv),
+		migrate.WithDryRun(true),
+	)
+
+	err := m.Up(context.Background())
+	assert.NoError(t, err)
+
+	state := drv.State()
+	assert.Empty(t, state)
+}
