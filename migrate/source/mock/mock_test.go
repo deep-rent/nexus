@@ -29,7 +29,7 @@ func TestNewSource(t *testing.T) {
 	scripts := []migrate.SourceScript{
 		{Version: 1, Description: "init"},
 	}
-	s := mock.NewSource(scripts...)
+	s := mock.New(scripts...)
 
 	require.NotNil(t, s)
 	assert.Equal(t, scripts, s.Scripts)
@@ -41,7 +41,7 @@ func TestSource_List(t *testing.T) {
 			{Version: 1, Description: "1st", Content: []byte("SELECT 1;")},
 			{Version: 2, Description: "2nd", Content: []byte("SELECT 2;")},
 		}
-		s := mock.NewSource(expected...)
+		s := mock.New(expected...)
 
 		actual, err := s.List()
 		require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestSource_List(t *testing.T) {
 
 	t.Run("error", func(t *testing.T) {
 		wantErr := errors.New("list failed")
-		s := mock.NewSource()
+		s := mock.New()
 		s.ListErr = wantErr
 
 		scripts, err := s.List()
@@ -62,7 +62,7 @@ func TestSource_List(t *testing.T) {
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		s := mock.NewSource()
+		s := mock.New()
 		scripts, err := s.List()
 		assert.NoError(t, err)
 		assert.Empty(t, scripts)

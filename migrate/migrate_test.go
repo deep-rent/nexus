@@ -31,7 +31,7 @@ import (
 func TestNewMigrator(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		m := migrate.New(
-			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithSource(sourcemock.New()),
 			migrate.WithDriver(drivermock.New()),
 		)
 		require.NotNil(t, m)
@@ -45,7 +45,7 @@ func TestNewMigrator(t *testing.T) {
 
 	t.Run("panic missing driver", func(t *testing.T) {
 		assert.PanicsWithValue(t, "migrate: driver is required", func() {
-			migrate.New(migrate.WithSource(sourcemock.NewSource()))
+			migrate.New(migrate.WithSource(sourcemock.New()))
 		})
 	})
 }
@@ -55,7 +55,7 @@ func TestMigrator_Up(t *testing.T) {
 		up1 := []byte("CREATE TABLE users;")
 		up2 := []byte("CREATE TABLE posts;")
 
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -82,7 +82,7 @@ func TestMigrator_Up(t *testing.T) {
 
 	t.Run("success up to date", func(t *testing.T) {
 		up := []byte("CREATE TABLE users;")
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -102,7 +102,7 @@ func TestMigrator_Up(t *testing.T) {
 		drv := drivermock.New()
 		drv.LockErr = errors.New("lock failed")
 		m := migrate.New(
-			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithSource(sourcemock.New()),
 			migrate.WithDriver(drv),
 		)
 
@@ -115,7 +115,7 @@ func TestMigrator_Up(t *testing.T) {
 		drv := drivermock.New()
 		drv.InitErr = errors.New("table creation failed")
 		m := migrate.New(
-			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithSource(sourcemock.New()),
 			migrate.WithDriver(drv),
 		)
 
@@ -125,7 +125,7 @@ func TestMigrator_Up(t *testing.T) {
 	})
 
 	t.Run("error execution", func(t *testing.T) {
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -142,7 +142,7 @@ func TestMigrator_Up(t *testing.T) {
 	})
 
 	t.Run("error missing source file", func(t *testing.T) {
-		src := sourcemock.NewSource() // Empty
+		src := sourcemock.New() // Empty
 		drv := drivermock.New()
 		drv.Set(migrate.Record{
 			Version:  1,
@@ -159,7 +159,7 @@ func TestMigrator_Up(t *testing.T) {
 	t.Run("error checksum mismatch", func(t *testing.T) {
 		oldContent := []byte("old content")
 		newContent := []byte("new content")
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -180,7 +180,7 @@ func TestMigrator_Up(t *testing.T) {
 
 	t.Run("error dirty state", func(t *testing.T) {
 		content := []byte("content")
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -206,7 +206,7 @@ func TestMigrator_Down(t *testing.T) {
 		up := []byte("CREATE")
 		down := []byte("DROP TABLE users;")
 
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -231,7 +231,7 @@ func TestMigrator_Down(t *testing.T) {
 	})
 
 	t.Run("success no applied migrations", func(t *testing.T) {
-		src := sourcemock.NewSource()
+		src := sourcemock.New()
 		drv := drivermock.New()
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
@@ -242,7 +242,7 @@ func TestMigrator_Down(t *testing.T) {
 
 	t.Run("error missing down script", func(t *testing.T) {
 		content := []byte("CREATE")
-		src := sourcemock.NewSource(
+		src := sourcemock.New(
 			migrate.SourceScript{
 				Version:   1,
 				Direction: migrate.Up,
@@ -263,7 +263,7 @@ func TestMigrator_Force(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		drv := drivermock.New()
 		m := migrate.New(
-			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithSource(sourcemock.New()),
 			migrate.WithDriver(drv),
 		)
 
@@ -276,7 +276,7 @@ func TestMigrator_Force(t *testing.T) {
 		drv := drivermock.New()
 		drv.ForceErr = errors.New("db disconnected")
 		m := migrate.New(
-			migrate.WithSource(sourcemock.NewSource()),
+			migrate.WithSource(sourcemock.New()),
 			migrate.WithDriver(drv),
 		)
 
@@ -292,7 +292,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 	content3 := []byte("DROP t2")
 	content4 := []byte("CREATE t3")
 
-	src := sourcemock.NewSource(
+	src := sourcemock.New(
 		migrate.SourceScript{
 			Version:   1,
 			Direction: migrate.Up,
@@ -363,7 +363,7 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 	content2 := []byte("2")
 	content3 := []byte("3")
 
-	src := sourcemock.NewSource(
+	src := sourcemock.New(
 		migrate.SourceScript{
 			Version:   1,
 			Direction: migrate.Up,
@@ -400,7 +400,7 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 
 func TestMigrator_DryRun(t *testing.T) {
 	content := []byte("CREATE TABLE dummy;")
-	src := sourcemock.NewSource(
+	src := sourcemock.New(
 		migrate.SourceScript{
 			Version:   1,
 			Direction: migrate.Up,

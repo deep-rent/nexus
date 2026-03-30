@@ -32,8 +32,8 @@ type Source struct {
 	ListErr error
 }
 
-// NewSource creates a new in-memory Source with the provided scripts.
-func NewSource(scripts ...migrate.SourceScript) *Source {
+// New creates a new in-memory Source with the provided scripts.
+func New(scripts ...migrate.SourceScript) *Source {
 	return &Source{
 		Scripts: scripts,
 	}
