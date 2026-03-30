@@ -16,11 +16,12 @@ package health
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/deep-rent/nexus/router"
 )
 
 // Status represents the operational state of a dependency.
@@ -161,42 +162,27 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 	return overall, results
 }
 
-// writeJSON responds with the provided payload and HTTP status code.
-func writeJSON(w http.ResponseWriter, code int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
 // Live indicates whether the application process is running.
 // It does not evaluate external dependencies to prevent orchestration loops
 // from killing the pod.
-func (m *Monitor) Live() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]Status{"status": StatusHealthy})
+func (m *Monitor) Live() router.HandlerFunc {
+	return func(e *router.Exchange) error {
+		return e.JSON(http.StatusOK, map[string]Status{"status": StatusHealthy})
 	}
 }
 
 // Ready evaluates checks to determine if the app can serve traffic.
 // Returns HTTP 503 if any dependency is sick.
-func (m *Monitor) Ready() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		overall, results := m.run(r.Context())
+func (m *Monitor) Ready() router.HandlerFunc {
+	return func(e *router.Exchange) error {
+		overall, results := m.run(e.Context())
 
 		code := http.StatusOK
 		if overall == StatusSick {
 			code = http.StatusServiceUnavailable
 		}
 
-		writeJSON(w, code, map[string]any{
+		return e.JSON(code, map[string]any{
 			"status": overall,
 			"checks": results,
 		})
@@ -205,6 +191,6 @@ func (m *Monitor) Ready() http.HandlerFunc {
 
 // Handler provides the exact same detailed breakdown as readiness,
 // but is intended for operational dashboards and monitoring scrapers.
-func (m *Monitor) Handler() http.HandlerFunc {
+func (m *Monitor) Handler() router.HandlerFunc {
 	return m.Ready()
 }
