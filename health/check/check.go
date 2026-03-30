@@ -12,6 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package check provides a collection of standard health check constructors
+// for common infrastructure dependencies like TCP, HTTP, DNS, and Databases.
+//
+// These functions return a health.CheckFunc that can be registered with a
+// health.Monitor.
+//
+// Example:
+//
+//	monitor := health.NewMonitor()
+//
+//	// Check a Redis instance via TCP
+//	monitor.Register("redis", 2*time.Second,
+//		check.TCP("localhost:6379", 1*time.Second))
+//
+//	// Check an external API with a custom HTTP client
+//	monitor.Register("stripe", 10*time.Second,
+//		check.HTTP(customClient, "https://api.stripe.com/health"))
 package check
 
 import (
@@ -25,7 +42,9 @@ import (
 	"github.com/deep-rent/nexus/health"
 )
 
-// TCP tests connectivity to a given address.
+// TCP returns a health check that attempts to establish a TCP connection
+// to the specified address. It returns health.StatusSick if the connection
+// cannot be established within the provided timeout.
 func TCP(addr string, timeout time.Duration) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		d := net.Dialer{Timeout: timeout}
@@ -33,17 +52,22 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 		if err != nil {
 			return health.StatusSick, fmt.Errorf("tcp dial %s: %w", addr, err)
 		}
-		conn.Close()
+		_ = conn.Close()
 		return health.StatusHealthy, nil
 	}
 }
 
-// HTTP performs a GET request to the specified URL using the provided client.
-// If the client is nil, a default internal client is used.
-// If neither the client nor the request context has a timeout, it defaults to
-// 10 seconds.
+// HTTP returns a health check that performs a GET request to the specified URL.
+// If client is nil, http.DefaultClient is employed.
+//
+// The check logic includes:
+//  1. Fallback Timeout: If neither the client nor the request context has a
+//     deadline, a 10-second timeout is applied.
+//  2. Connection Hygiene: The response body is fully drained and closed
+//     to ensure the underlying TCP connection can be reused.
+//  3. Status Codes: Any status code in the 2xx or 3xx range is considered healthy.
 func HTTP(client *http.Client, url string) health.CheckFunc {
-	const timeout = 10 * time.Second
+	const defaultTimeout = 10 * time.Second
 
 	if client == nil {
 		client = http.DefaultClient
@@ -57,7 +81,7 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 		// We only do this if the incoming context doesn't already have a deadline.
 		if _, deadline := ctx.Deadline(); !deadline && client.Timeout == 0 {
 			var cancel context.CancelFunc
-			child, cancel = context.WithTimeout(ctx, timeout)
+			child, cancel = context.WithTimeout(ctx, defaultTimeout)
 			defer cancel()
 		}
 
@@ -71,6 +95,7 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 			return health.StatusSick, fmt.Errorf("http: get %s: %w", url, err)
 		}
 
+		// Ensure the body is drained so the connection can be reused.
 		defer func() {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
@@ -87,13 +112,15 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 	}
 }
 
-// Pinger is an interface for types that support context-aware pinging,
-// like *sql.DB.
+// Pinger is an interface for types that support context-aware connectivity
+// checks. This is most commonly satisfied by *sql.DB from the standard library.
 type Pinger interface {
+	// PingContext verifies a connection to the target system is still alive.
 	PingContext(ctx context.Context) error
 }
 
-// Ping executes a PingContext on the provided interface.
+// Ping returns a health check that calls PingContext on the provided Pinger.
+// It is ideal for monitoring the health of SQL database connections.
 func Ping(p Pinger) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := p.PingContext(ctx); err != nil {
@@ -103,7 +130,8 @@ func Ping(p Pinger) health.CheckFunc {
 	}
 }
 
-// DNS verifies that the given host resolves to at least one IP address.
+// DNS returns a health check that verifies the provided host resolves
+// to at least one IP address using the default system resolver.
 func DNS(host string) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		_, err := net.DefaultResolver.LookupHost(ctx, host)
@@ -114,7 +142,9 @@ func DNS(host string) health.CheckFunc {
 	}
 }
 
-// From turns any error-returning function into a health check.
+// From converts a simple function that returns an error into a health check
+// callback. The resulting check is not context-aware and will ignore the
+// context passed during execution.
 func From(fn func() error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := fn(); err != nil {
@@ -124,7 +154,9 @@ func From(fn func() error) health.CheckFunc {
 	}
 }
 
-// Contextual allows for custom checks that are aware of the request context.
+// Contextual converts a context-aware function into a health check callback.
+// This is used for custom checks that need to respect timeouts or
+// cancellation signals.
 func Contextual(fn func(context.Context) error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := fn(ctx); err != nil {
