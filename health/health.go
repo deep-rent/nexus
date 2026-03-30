@@ -165,7 +165,7 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(payload)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 // Live indicates whether the application process is running.
