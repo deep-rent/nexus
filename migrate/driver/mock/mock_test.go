@@ -29,7 +29,7 @@ import (
 func TestNewDriver(t *testing.T) {
 	d := mock.NewDriver()
 	require.NotNil(t, d)
-	require.NotNil(t, d.records)
+	require.NotNil(t, d.State())
 	require.NotNil(t, d.ParserFunc)
 
 	parser := d.Parser()
@@ -112,9 +112,9 @@ func TestDriver_Unlock(t *testing.T) {
 func TestDriver_Applied(t *testing.T) {
 	t.Run("success sorted", func(t *testing.T) {
 		d := mock.NewDriver()
-		d.records[3] = migrate.Record{Version: 3}
-		d.records[1] = migrate.Record{Version: 1}
-		d.records[2] = migrate.Record{Version: 2}
+		d.Set(migrate.Record{Version: 3})
+		d.Set(migrate.Record{Version: 1})
+		d.Set(migrate.Record{Version: 2})
 
 		records, err := d.Applied(context.Background())
 		require.NoError(t, err)
@@ -137,17 +137,18 @@ func TestDriver_Applied(t *testing.T) {
 func TestDriver_Force(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		d := mock.NewDriver()
-		d.records[1] = migrate.Record{Version: 1, Dirty: false}
-		d.records[2] = migrate.Record{Version: 2, Dirty: true}
-		d.records[3] = migrate.Record{Version: 3, Dirty: false}
+		d.Set(migrate.Record{Version: 1, Dirty: false})
+		d.Set(migrate.Record{Version: 2, Dirty: true})
+		d.Set(migrate.Record{Version: 3, Dirty: false})
 
 		err := d.Force(context.Background(), 2)
 		assert.NoError(t, err)
 
-		assert.Len(t, d.records, 2)
-		assert.False(t, d.records[1].Dirty)
-		assert.False(t, d.records[2].Dirty)
-		_, exists := d.records[3]
+		state := d.State()
+		assert.Len(t, state, 2)
+		assert.False(t, state[1].Dirty)
+		assert.False(t, state[2].Dirty)
+		_, exists := state[3]
 		assert.False(t, exists)
 	})
 
@@ -176,7 +177,7 @@ func TestDriver_Execute(t *testing.T) {
 				Checksum:  [32]byte{1, 2, 3},
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
-				rec, ok := d.records[1]
+				rec, ok := d.Get(1)
 				require.True(t, ok)
 				assert.Equal(t, uint64(1), rec.Version)
 				assert.Equal(t, [32]byte{1, 2, 3}, rec.Checksum)
@@ -192,7 +193,7 @@ func TestDriver_Execute(t *testing.T) {
 				Checksum:  [32]byte{4, 5, 6},
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
-				rec, ok := d.records[2]
+				rec, ok := d.Get(2)
 				require.True(t, ok)
 				assert.Equal(t, uint64(2), rec.Version)
 				assert.True(t, rec.Dirty)
@@ -201,21 +202,21 @@ func TestDriver_Execute(t *testing.T) {
 		{
 			name: "down success",
 			setup: func(d *mock.Driver) {
-				d.records[3] = migrate.Record{Version: 3}
+				d.Set(migrate.Record{Version: 3})
 			},
 			script: migrate.ParsedScript{
 				Version:   3,
 				Direction: migrate.Down,
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
-				_, ok := d.records[3]
+				_, ok := d.Get(3)
 				assert.False(t, ok)
 			},
 		},
 		{
 			name: "down error",
 			setup: func(d *mock.Driver) {
-				d.records[4] = migrate.Record{Version: 4, Dirty: false}
+				d.Set(migrate.Record{Version: 4, Dirty: false})
 			},
 			err: errors.New("execute error"),
 			script: migrate.ParsedScript{
@@ -223,30 +224,30 @@ func TestDriver_Execute(t *testing.T) {
 				Direction: migrate.Down,
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
-				rec, ok := d.records[4]
+				rec, ok := d.Get(4)
 				require.True(t, ok)
 				assert.True(t, rec.Dirty)
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			d := mock.NewDriver()
-			if tt.setup != nil {
-				tt.setup(d)
+			if tc.setup != nil {
+				tc.setup(d)
 			}
-			d.ExecuteErr = tt.err
+			d.ExecuteErr = tc.err
 
-			err := d.Execute(context.Background(), tt.script)
-			if tt.err != nil {
-				assert.ErrorIs(t, err, tt.err)
+			err := d.Execute(context.Background(), tc.script)
+			if tc.err != nil {
+				assert.ErrorIs(t, err, tc.err)
 			} else {
 				assert.NoError(t, err)
 			}
 
-			if tt.validate != nil {
-				tt.validate(t, d)
+			if tc.validate != nil {
+				tc.validate(t, d)
 			}
 		})
 	}

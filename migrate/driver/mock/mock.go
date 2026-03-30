@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"sync"
 
@@ -68,6 +69,30 @@ func NewDriver() *Driver {
 			return []string{string(script)}
 		},
 	}
+}
+
+// Set write a Record to the in-memory table.
+func (d *Driver) Set(rec migrate.Record) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.records[rec.Version] = rec
+}
+
+// Get reads a Record from the in-memory table.
+func (d *Driver) Get(version uint64) (migrate.Record, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rec, ok := d.records[version]
+	return rec, ok
+}
+
+// State returns a copy of the in-memory table.
+func (d *Driver) State() map[uint64]migrate.Record {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make(map[uint64]migrate.Record, len(d.records))
+	maps.Copy(out, d.records)
+	return out
 }
 
 // Parser returns the injected ParserFunc.
