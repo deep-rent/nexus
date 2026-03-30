@@ -30,7 +30,7 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 		d := net.Dialer{Timeout: timeout}
 		conn, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
-			return health.StatusSick, err
+			return health.StatusSick, fmt.Errorf("tcp dial %s: %w", addr, err)
 		}
 		conn.Close()
 		return health.StatusHealthy, nil
