@@ -424,8 +424,6 @@ type runner interface {
 
 // execAll iterates through a slice of SQL statements and runs them sequentially
 // using the provided runner.
-// execAll iterates through a slice of SQL statements and runs them sequentially
-// using the provided runner.
 func (d *Driver) execAll(
 	ctx context.Context,
 	run runner,
@@ -542,9 +540,8 @@ func (d *Driver) Close() error {
 
 // ident assembles a fully qualified, safely quoted PostgreSQL identifier by
 // combining a schema name and a table name.
-//
-// Example output: "public"."migrations"
 func ident(schema, table string) string {
+	// Example output: "public"."migrations"
 	return fmt.Sprintf("%s.%s", escape(schema), escape(table))
 }
 
