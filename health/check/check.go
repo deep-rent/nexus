@@ -82,7 +82,7 @@ func DNS(host string) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		_, err := net.DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
-			return health.StatusSick, err
+			return health.StatusSick, fmt.Errorf("dns lookup %s: %w", host, err)
 		}
 		return health.StatusHealthy, nil
 	}
