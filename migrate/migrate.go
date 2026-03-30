@@ -314,16 +314,23 @@ func (m *Migrator) filter(ctx context.Context, up bool) ([]Migration, error) {
 }
 
 // Up applies all pending migrations in ascending order.
+// It acquires an exclusive database lock before delegating to the internal
+// up implementation.
 func (m *Migrator) Up(ctx context.Context) error {
 	return m.lock(ctx, m.up)
 }
 
+// up is the internal implementation of Up. It determines which migrations are
+// pending and executes them sequentially. It assumes the caller has already
+// acquired the necessary database locks.
 func (m *Migrator) up(ctx context.Context) error {
+	// 1. Identify which migrations have not yet been applied.
 	pending, err := m.Pending(ctx)
 	if err != nil {
 		return err
 	}
 
+	// 2. Fast-path return if the database is already fully up to date.
 	if len(pending) == 0 {
 		m.logger.Info("Migrations are up to date")
 		return nil
@@ -333,40 +340,56 @@ func (m *Migrator) up(ctx context.Context) error {
 		"Applying pending migrations",
 		slog.Int("count", len(pending)),
 	)
+
+	// 3. Execute each pending migration in strict ascending order.
+	// If any single migration fails, the loop halts immediately to prevent
+	// cascading errors and leaves the database in a dirty state for review.
 	for _, p := range pending {
 		if err := m.run(ctx, p); err != nil {
 			return err
 		}
 	}
+
 	m.logger.Info("All migrations applied successfully")
 	return nil
 }
 
 // Down reverts the most recently applied migration.
+// It acquires an exclusive database lock before delegating to the internal
+// down implementation.
 func (m *Migrator) Down(ctx context.Context) error {
 	return m.lock(ctx, m.down)
 }
 
+// down is the internal implementation of Down. It identifies the most recently
+// applied migration, locates its corresponding down script from the source, and
+// executes it. It assumes the caller has already acquired the database lock.
 func (m *Migrator) down(ctx context.Context) error {
+	// 1. Fetch the historical record of all applied migrations.
 	applied, err := m.Applied(ctx)
 	if err != nil {
 		return err
 	}
+
+	// 2. Fast-path return if the database is pristine and has no migrations.
 	if len(applied) == 0 {
 		m.logger.Info("No applied migrations to revert")
 		return nil
 	}
 
-	// Get the last applied migration to revert.
+	// 3. Isolate the target version to rollback (the last one applied).
 	last := applied[len(applied)-1]
 
+	// 4. Load all parsed files from the source to find the matching down script.
 	files, err := m.files()
 	if err != nil {
 		return err
 	}
 
+	// 5. Scan the available files for the exact version and down direction.
 	for _, f := range files {
 		if f.Version == last.Version && f.Direction == Down {
+			// 6. Execute the rollback script.
 			err := m.run(ctx, f)
 			if err == nil {
 				m.logger.Info(
@@ -377,6 +400,9 @@ func (m *Migrator) down(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// 7. Error out if the database claims a version is applied, but the source
+	// lacks the required file to safely revert it.
 	return fmt.Errorf(
 		"down migration file not found for version %d",
 		last.Version,
