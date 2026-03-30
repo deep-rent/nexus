@@ -45,16 +45,18 @@ func HTTP(url string, timeout time.Duration) health.CheckFunc {
 		if err != nil {
 			return health.StatusSick, err
 		}
-		resp, err := client.Do(req)
+		res, err := client.Do(req)
 		if err != nil {
 			return health.StatusSick, err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = res.Body.Close()
+		}()
 
-		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		if res.StatusCode >= 200 && res.StatusCode < 400 {
 			return health.StatusHealthy, nil
 		}
-		err = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		err = fmt.Errorf("unexpected status code: %d", res.StatusCode)
 		return health.StatusSick, err
 	}
 }
