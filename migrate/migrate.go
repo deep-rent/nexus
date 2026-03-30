@@ -24,13 +24,10 @@
 //	    log.Fatal(err)
 //	}
 //
-//	m, err := migrate.New(
+//	m := migrate.New(
 //	    migrate.WithSource(src),
 //	    migrate.WithDriver(drv),
 //	)
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
 //
 //	if err := m.Up(context.Background()); err != nil {
 //	    log.Fatal("Migration failed:", err)
@@ -231,9 +228,9 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// New creates a new Migrator instance. It returns an error if the required
-// dependencies (Source and Driver) are not provided.
-func New(opts ...Option) (*Migrator, error) {
+// New creates a new Migrator instance. It panics if the required dependencies
+// (Source and Driver) are not provided.
+func New(opts ...Option) *Migrator {
 	m := &Migrator{
 		logger: slog.Default(),
 	}
@@ -241,12 +238,12 @@ func New(opts ...Option) (*Migrator, error) {
 		opt(m)
 	}
 	if m.source == nil {
-		return nil, fmt.Errorf("migrate: source is required")
+		panic("migrate: source is required")
 	}
 	if m.driver == nil {
-		return nil, fmt.Errorf("migrate: driver is required")
+		panic("migrate: driver is required")
 	}
-	return m, nil
+	return m
 }
 
 // lock is a helper that acquires the driver lock, ensures the tracking table is
