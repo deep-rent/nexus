@@ -15,6 +15,17 @@
 // Package event provides a high-performance, in-memory event bus.
 // It relies on a lock-free ring buffer for low-latency event publishing and an
 // atomic copy-on-write mechanism for thread-safe subscriber management.
+//
+// Usage:
+//
+//	bus := event.New[MyEvent](event.WithAsyncDispatch())
+//	unsub := bus.Subscribe(func(e MyEvent) {
+//	    fmt.Println("Received:", e)
+//	})
+//	defer unsub()
+//
+//	bus.Publish(MyEvent{Data: "Hello World"})
+//	bus.Close()
 package event
 
 import (
@@ -26,35 +37,40 @@ import (
 	"github.com/deep-rent/nexus/internal/ring"
 )
 
-type Policy = ring.Policy
+// OverflowMode determines how the bus behaves when the internal buffer is full.
+type OverflowMode = ring.Policy
 
 const (
-	Block      = ring.Block
+	// Block waits until space is available in the buffer.
+	Block = ring.Block
+	// DropOldest removes the oldest unread event to make room for the new one.
 	DropOldest = ring.DropOldest
+	// DropNewest discards the incoming event if the buffer is full.
 	DropNewest = ring.DropNewest
 )
 
 const (
-	DefaultSize   = 1024
+	// DefaultSize is the default capacity of the internal ring buffer.
+	DefaultSize = 1024
+	// DefaultPolicy is the default overflow policy (Block).
 	DefaultPolicy = Block
 )
 
+// Subscriber is a callback function that handles events of type T.
 type Subscriber[T any] func(T)
 
-// WaitStrategy defines how the background processor behaves when the
-// internal ring buffer is empty.
+// WaitStrategy defines the idling behavior of the background processor.
 type WaitStrategy interface {
-	// Wait is called continuously while the buffer is empty.
-	Wait(idle int)
-	// Signal is called whenever a new event is successfully published or
-	// when the bus is closed.
+	// Snooze is called when the buffer is empty. The idle parameter
+	// represents the number of consecutive empty polls.
+	Snooze(idle int)
+	// Signal awakens the processor from a Snooze.
 	Signal()
 }
 
-// adaptiveWait employs spin-yield-sleep to minimize latency.
 type adaptiveWait struct{}
 
-func (adaptiveWait) Wait(idle int) {
+func (adaptiveWait) Snooze(idle int) {
 	if idle < 1000 {
 		runtime.Gosched()
 	} else if idle < 5000 {
@@ -64,76 +80,63 @@ func (adaptiveWait) Wait(idle int) {
 	}
 }
 
-func (adaptiveWait) Signal() {} // No-op for spin loops
+func (adaptiveWait) Signal() {}
 
-// blockingWait uses a semaphore channel to park the goroutine entirely
-// when idle, saving CPU cycles at the cost of a slight wakeup latency.
 type blockingWait struct {
-	ch chan struct{}
+	sem chan struct{}
 }
 
-func (w *blockingWait) Wait(_ int) {
-	<-w.ch
-}
+func (w *blockingWait) Snooze(_ int) { <-w.sem }
 
 func (w *blockingWait) Signal() {
 	select {
-	case w.ch <- struct{}{}:
+	case w.sem <- struct{}{}:
 	default:
 	}
 }
 
-// handler pairs a unique ID with a subscriber function for internal
-// dispatching.
 type handler[T any] struct {
 	id uint64
 	fn Subscriber[T]
 }
 
-// dispatcher defines the internal strategy for delivering events to
-// subscribers.
 type dispatcher[T any] interface {
 	dispatch(event T, handlers []handler[T])
 }
 
-// syncDispatcher delivers events sequentially on the worker's goroutine.
 type syncDispatcher[T any] struct{}
 
 func (syncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
 		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// TODO: Pass to logger.
-				}
-			}()
+			defer func() { _ = recover() }()
 			h.fn(event)
 		}()
 	}
 }
 
-// asyncDispatcher delivers events in parallel.
 type asyncDispatcher[T any] struct{}
 
 func (asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		go h.fn(event)
+		go func(f Subscriber[T]) {
+			defer func() { _ = recover() }()
+			f(event)
+		}(h.fn)
 	}
 }
 
-// Option defines a functional configuration option for the Bus.
+// Option configures the Bus during initialization.
 type Option[T any] func(*config[T])
 
 type config[T any] struct {
 	size       int
-	policy     Policy
+	policy     OverflowMode
 	dispatcher dispatcher[T]
 	wait       WaitStrategy
 }
 
-// WithSize sets the ring buffer capacity.
-// The provided size will be rounded up to the nearest power of 2. Non-positive
-// values will be ignored.
+// WithSize sets the buffer capacity (rounded up to the nearest power of 2).
 func WithSize[T any](size int) Option[T] {
 	return func(o *config[T]) {
 		if size > 0 {
@@ -142,39 +145,35 @@ func WithSize[T any](size int) Option[T] {
 	}
 }
 
-// WithPolicy sets the behavior when the internal ring buffer is full.
-func WithPolicy[T any](policy Policy) Option[T] {
+// WithOverflowMode defines the buffer behavior on exhaustion.
+func WithOverflowMode[T any](policy OverflowMode) Option[T] {
 	return func(o *config[T]) {
 		o.policy = policy
 	}
 }
 
-// WithAsyncDispatch configures the bus to deliver events to subscribers
-// concurrently. If this option is not provided, the bus defaults to
-// synchronous dispatch.
-func WithAsyncDispatch[T any]() Option[T] {
+// WithSyncDispatch forces sequential event delivery.
+func WithSyncDispatch[T any]() Option[T] {
 	return func(o *config[T]) {
-		o.dispatcher = asyncDispatcher[T]{}
+		o.dispatcher = syncDispatcher[T]{}
 	}
 }
 
-// WithAdaptiveWait configures the bus to prioritize ultra-low latency by
-// spinning and yielding when idle. This is the default behavior.
+// WithAdaptiveWait uses a low-latency spin-yield-sleep strategy.
 func WithAdaptiveWait[T any]() Option[T] {
 	return func(o *config[T]) {
 		o.wait = adaptiveWait{}
 	}
 }
 
-// WithBlockingWait configures the bus to park the background goroutine
-// when idle. This is ideal when managing thousands of idle buses.
+// WithBlockingWait uses a semaphore to park the CPU when idle.
 func WithBlockingWait[T any]() Option[T] {
 	return func(o *config[T]) {
-		o.wait = &blockingWait{ch: make(chan struct{}, 1)}
+		o.wait = &blockingWait{sem: make(chan struct{}, 1)}
 	}
 }
 
-// WithCustomWaitStrategy allows passing a user-defined WaitStrategy.
+// WithCustomWaitStrategy injects a user-defined idling strategy.
 func WithCustomWaitStrategy[T any](ws WaitStrategy) Option[T] {
 	return func(o *config[T]) {
 		if ws != nil {
@@ -183,35 +182,27 @@ func WithCustomWaitStrategy[T any](ws WaitStrategy) Option[T] {
 	}
 }
 
-// Bus represents a strictly-typed, lock-free event stream.
+// Bus is a high-performance, strictly-typed event stream.
 type Bus[T any] struct {
-	// Hot path:
-
 	buffer     *ring.Buffer[T]
 	dispatcher dispatcher[T]
 	wait       WaitStrategy
 	subs       atomic.Pointer[[]handler[T]]
 	closed     atomic.Bool
 
-	// Cold path:
-
 	mu sync.Mutex
 	id uint64
 	wg sync.WaitGroup
 }
 
-// New creates a Bus, configured via functional options.
-// If no options are provided, it defaults to a buffer size of 1024, the
-// ring.Block overflow policy, synchronous dispatching, and adaptive waiting.
+// New initializes a Bus with the provided options.
 func New[T any](opts ...Option[T]) *Bus[T] {
-	// Set default configuration
 	cfg := config[T]{
 		size:       DefaultSize,
 		policy:     DefaultPolicy,
-		dispatcher: syncDispatcher[T]{},
+		dispatcher: asyncDispatcher[T]{},
 		wait:       adaptiveWait{},
 	}
-
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -221,18 +212,15 @@ func New[T any](opts ...Option[T]) *Bus[T] {
 		dispatcher: cfg.dispatcher,
 		wait:       cfg.wait,
 	}
-
 	empty := make([]handler[T], 0)
 	b.subs.Store(&empty)
 
 	b.wg.Add(1)
 	go b.process()
-
 	return b
 }
 
-// Subscribe registers a callback for events and returns a function
-// that can be called to remove the subscription.
+// Subscribe adds a callback to the bus. Returns an unsubscribe function.
 func (b *Bus[T]) Subscribe(fn Subscriber[T]) (unsubscribe func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -241,37 +229,29 @@ func (b *Bus[T]) Subscribe(fn Subscriber[T]) (unsubscribe func()) {
 	id := b.id
 
 	curr := *b.subs.Load()
-
 	next := make([]handler[T], len(curr), len(curr)+1)
 	copy(next, curr)
 	next = append(next, handler[T]{id: id, fn: fn})
 
 	b.subs.Store(&next)
-
-	return func() {
-		b.detach(id)
-	}
+	return func() { b.detach(id) }
 }
 
-// detach filters out the subscriber with the given ID.
 func (b *Bus[T]) detach(id uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	curr := *b.subs.Load()
 	next := make([]handler[T], 0, len(curr))
-
 	for _, h := range curr {
 		if h.id != id {
 			next = append(next, h)
 		}
 	}
-
 	b.subs.Store(&next)
 }
 
-// Publish attempts to push an event. Returns false if the buffer is full or
-// closed.
+// Publish pushes an event to the bus. Returns false if full or closed.
 func (b *Bus[T]) Publish(event T) bool {
 	if b.closed.Load() {
 		return false
@@ -283,43 +263,35 @@ func (b *Bus[T]) Publish(event T) bool {
 	return false
 }
 
-// Close signals the background processor to drain remaining events and stop.
+// Close drains remaining events and shuts down the background processor.
 func (b *Bus[T]) Close() {
 	b.closed.Store(true)
-	b.wait.Signal() // Ensure the processor wakes up if it is blocking
+	b.wait.Signal()
 	b.wg.Wait()
 }
 
-// process continuously polls the ring buffer for new events.
 func (b *Bus[T]) process() {
 	defer b.wg.Done()
-
 	idle := 0
-
 	for {
 		if evt, ok := b.buffer.Pop(); ok {
-			idle = 0 // Reset backoff on success
-
-			handlers := *b.subs.Load()
-			if len(handlers) > 0 {
+			idle = 0
+			if handlers := *b.subs.Load(); len(handlers) > 0 {
 				b.dispatcher.dispatch(evt, handlers)
 			}
 		} else {
 			if b.closed.Load() {
-				// Perform one final drain check after detecting the close signal.
 				for {
 					if final, ok := b.buffer.Pop(); ok {
-						handlers := *b.subs.Load()
-						if len(handlers) > 0 {
+						if handlers := *b.subs.Load(); len(handlers) > 0 {
 							b.dispatcher.dispatch(final, handlers)
 						}
 					} else {
-						return // Truly empty and closed
+						return
 					}
 				}
 			}
-
-			b.wait.Wait(idle)
+			b.wait.Snooze(idle)
 			idle++
 		}
 	}
