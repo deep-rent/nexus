@@ -23,12 +23,18 @@
 //	monitor := health.NewMonitor()
 //
 //	// Check a Redis instance via TCP
-//	monitor.Register("redis", 2*time.Second,
-//		check.TCP("localhost:6379", 1*time.Second))
+//	monitor.Register(
+//		"redis",
+//		2*time.Second,
+//		check.TCP("localhost:6379", 1*time.Second),
+//	)
 //
 //	// Check an external API with a custom HTTP client
-//	monitor.Register("stripe", 10*time.Second,
-//		check.HTTP(customClient, "https://api.stripe.com/health"))
+//	monitor.Register(
+//		"stripe",
+//		10*time.Second,
+//		check.HTTP(client, "https://api.stripe.com/health"),
+//	)
 package check
 
 import (
