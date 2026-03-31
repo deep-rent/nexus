@@ -88,7 +88,7 @@ type config[T any] struct {
 }
 
 // WithSize sets the ring buffer capacity.
-// The provided size will be rounded up to the nearest power of 2. Non-negative
+// The provided size will be rounded up to the nearest power of 2. Non-positive
 // values will be ignored.
 func WithSize[T any](size int) Option[T] {
 	return func(o *config[T]) {
