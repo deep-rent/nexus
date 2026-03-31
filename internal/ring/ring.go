@@ -55,10 +55,25 @@ const (
 
 // Buffer represents a bounded, lock-free, strongly-typed concurrent queue.
 type Buffer[T any] struct {
-	data   []T
-	head   uint64
-	tail   uint64
-	mask   uint64 // Replaces capacity for bitwise modulo
+	// data holds the underlying circular storage for the buffer items.
+	// Its length is always a power of two.
+	data []T
+
+	// head is a monotonically increasing counter representing the read index.
+	// The actual array index is calculated as (head & mask).
+	head uint64
+
+	// tail is a monotonically increasing counter representing the write index.
+	// The actual array index is calculated as (tail & mask).
+	tail uint64
+
+	// mask is used to perform a bitwise AND operation (tail & mask) to
+	// wrap the counters around the buffer size efficiently.
+	// It is equal to (capacity - 1).
+	mask uint64
+
+	// policy defines the behavior of the Push operation when the
+	// difference between tail and head reaches the buffer capacity.
 	policy OverflowPolicy
 }
 
@@ -70,7 +85,7 @@ func New[T any](size int, policy OverflowPolicy) *Buffer[T] {
 	if size < 2 {
 		size = 2
 	}
-	// Round up to the next power of two
+	// Round up to the next power of two.
 	p := 1 << bits.Len(uint(size-1))
 
 	return &Buffer[T]{
@@ -107,9 +122,9 @@ func (b *Buffer[T]) Push(item T) bool {
 			}
 		}
 
-		// 2. Try to claim the tail slot
+		// 2. Try to claim the tail slot.
 		if atomic.CompareAndSwapUint64(&b.tail, tail, tail+1) {
-			// 3. Write data to the claimed slot
+			// 3. Write data to the claimed slot.
 			b.data[tail&b.mask] = item
 			return true
 		}
@@ -135,7 +150,7 @@ func (b *Buffer[T]) Pop() (T, bool) {
 		// 2. Read the data BEFORE advancing the head pointer.
 		item := b.data[head&b.mask]
 
-		// 3. Try to commit the read
+		// 3. Try to commit the read.
 		if atomic.CompareAndSwapUint64(&b.head, head, head+1) {
 			return item, true
 		}
