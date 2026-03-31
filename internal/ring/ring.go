@@ -45,7 +45,7 @@ const (
 	DropNewest
 )
 
-// Buffer is a lock-free ring buffer.
+// Buffer represents a bounded, lock-free, strongly-typed concurrent queue.
 type Buffer[T any] struct {
 	data   []T
 	head   uint64
@@ -54,7 +54,10 @@ type Buffer[T any] struct {
 	policy OverflowPolicy
 }
 
-// New creates a Buffer, rounding the size up to the nearest power of 2.
+// New creates a Buffer configured with the requested size and overflow policy.
+// If the provided size is less than 2, it defaults to 2. The final capacity is
+// always automatically rounded up to the nearest power of two to optimize
+// internal index masking.
 func New[T any](size int, policy OverflowPolicy) *Buffer[T] {
 	if size < 2 {
 		size = 2
@@ -69,7 +72,10 @@ func New[T any](size int, policy OverflowPolicy) *Buffer[T] {
 	}
 }
 
-// Push adds an item to the buffer lock-free.
+// Push adds an item to the tail of the buffer using atomic operations. It
+// returns true if the item was successfully written. If the buffer is full and
+// configured with the DropNewest policy, it safely discards the item and
+// returns false.
 func (b *Buffer[T]) Push(item T) bool {
 	for {
 		head := atomic.LoadUint64(&b.head)
@@ -103,7 +109,9 @@ func (b *Buffer[T]) Push(item T) bool {
 	}
 }
 
-// Pop retrieves the oldest item from the buffer lock-free.
+// Pop retrieves and removes the oldest item from the head of the buffer. It
+// returns the generic item and true on success. If the buffer is currently
+// empty, it returns the zero-value of type T and false.
 func (b *Buffer[T]) Pop() (T, bool) {
 	var zero T // Used to return a zero-value on failure
 
