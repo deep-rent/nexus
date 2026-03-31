@@ -183,7 +183,8 @@ var (
 	errInvalidVersion     = errors.New("invalid version")
 )
 
-// parse returns an error explaining why a file does not match the strict format.
+// parse returns an error explaining why a file does not match the strict
+// format.
 func (s *Source) parse(name string) (
 	version uint64,
 	desc string,
@@ -191,24 +192,32 @@ func (s *Source) parse(name string) (
 	tx bool,
 	err error,
 ) {
+	// Default to transactional execution unless explicitly disabled.
 	tx = true
+
+	// Strip the configured file extension (e.g., ".sql").
 	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
 		return 0, "", -1, false, errExtension
 	}
 
+	// Locate the dot that separates the version/description from the direction.
 	dot := strings.LastIndexByte(base, '.')
 	if dot <= 0 {
 		return 0, "", -1, false, errMissingDirection
 	}
 
+	// Extract the direction segment (e.g., "up", "down", or "up_notx").
 	s2 := base[dot+1:]
 
+	// Check for the "_notx" suffix to determine if transactions should be
+	// disabled.
 	if disabled, found := strings.CutSuffix(s2, "_notx"); found {
 		tx = false
 		s2 = disabled
 	}
 
+	// Map the direction string to the internal direction type.
 	switch s2 {
 	case "up":
 		direction = migrate.Up
@@ -218,26 +227,31 @@ func (s *Source) parse(name string) (
 		return 0, "", 0, false, errIllegalDirection
 	}
 
+	// Move the cursor back to the prefix (version and description).
 	base = base[:dot]
 
+	// Split the remaining string into the version and the description.
+	// We expect the first underscore to be the separator.
 	s0, s1, found := strings.Cut(base, "_")
 	if !found {
 		return 0, "", 0, false, errMissingSeparator
 	}
 
+	// Ensure neither the version nor the description segments are empty strings.
 	if s0 == "" {
 		return 0, "", 0, false, errInvalidVersion
 	}
-
 	if s1 == "" {
 		return 0, "", 0, false, errInvalidDescription
 	}
 
+	// Parse the version segment into an unsigned long.
 	v, e := strconv.ParseUint(s0, 10, 64)
 	if e != nil {
 		return 0, "", 0, false, errInvalidVersion
 	}
 
+	// Finalize the version and sanitize the description by restoring spaces.
 	version = v
 	desc = strings.ReplaceAll(s1, "_", " ")
 
