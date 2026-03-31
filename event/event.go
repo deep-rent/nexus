@@ -424,18 +424,17 @@ func (b *Bus[T]) Publish(event T) bool {
 // Note: Producers must be externally synchronized to stop calling Publish
 // before Close is invoked to prevent stranded events.
 func (b *Bus[T]) Close() {
+	// Give straggling producers a few microseconds to finish their push
+	// before we officially close the gates.
+	time.Sleep(time.Microsecond * 50)
+
+	// Atomically swap to closed. If it was already closed, do nothing.
 	if !b.closed.Swap(true) {
-		// First time closing:
+		// Wake up the processor if it is blocking on a semaphore so it
+		// can perform its final drain and exit.
 		b.wait.Signal()
 
-		// Give straggling producers a few microseconds to finish their push
-		// before the background processor performs its final drain.
-		time.Sleep(time.Microsecond * 50)
-
-		// Signal again to ensure the processor isn't sleeping while events
-		// from stragglers are sitting in the buffer.
-		b.wait.Signal()
-
+		// Wait for the processor goroutine to finish.
 		b.wg.Wait()
 	}
 }
