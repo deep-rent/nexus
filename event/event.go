@@ -213,7 +213,7 @@ type config[T any] struct {
 }
 
 // WithSize sets the buffer capacity (rounded up to the nearest power of 2).
-// Non-positive values will be ignored.
+// Defaults to DefaultSize. Non-positive values will be ignored.
 func WithSize[T any](size int) Option[T] {
 	return func(o *config[T]) {
 		if size > 0 {
@@ -223,7 +223,7 @@ func WithSize[T any](size int) Option[T] {
 }
 
 // WithOverflowMode defines how the bus deals with backpressure on buffer
-// exhaustion.
+// exhaustion. Defaults to DefaultOverflowMode.
 func WithOverflowMode[T any](mode OverflowMode) Option[T] {
 	return func(o *config[T]) {
 		o.mode = mode
@@ -276,7 +276,7 @@ func WithLogger[T any](logger *slog.Logger) Option[T] {
 
 // Bus is a high-performance, strictly-typed event stream.
 type Bus[T any] struct {
-	// Hot path fields:
+	// --- Hot path fields ---
 	// These are accessed heavily by the background processor.
 
 	// evts is the underlying lock-free ring buffer.
@@ -290,7 +290,7 @@ type Bus[T any] struct {
 	// closed indicates whether the bus has been shut down.
 	closed atomic.Bool
 
-	// Cold path fields:
+	// --- Cold path fields ---
 	// These are accessed only during subscription and teardown.
 
 	// mu protects write operations to the active subscriber list.
@@ -306,6 +306,7 @@ func New[T any](opts ...Option[T]) *Bus[T] {
 	cfg := config[T]{
 		size: DefaultSize,
 		mode: DefaultOverflowMode,
+		sync: false,
 		wait: adaptiveWait{},
 	}
 
@@ -328,7 +329,7 @@ func New[T any](opts ...Option[T]) *Bus[T] {
 		}
 	}
 
-	b := &Bus[T]{
+	bus := &Bus[T]{
 		evts: ring.New[T](cfg.size, cfg.mode),
 		disp: disp,
 		wait: cfg.wait,
@@ -337,12 +338,12 @@ func New[T any](opts ...Option[T]) *Bus[T] {
 	// Seed the atomic pointer with an empty slice to avoid nil pointer panics on
 	// first load.
 	empty := make([]handler[T], 0)
-	b.subs.Store(&empty)
+	bus.subs.Store(&empty)
 
 	// Spin up the background processor.
-	b.wg.Add(1)
-	go b.process()
-	return b
+	bus.wg.Add(1)
+	go bus.process()
+	return bus
 }
 
 // Subscribe adds a callback to the bus. It returns an unsubscribe function
