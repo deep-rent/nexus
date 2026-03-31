@@ -52,14 +52,13 @@ const (
 )
 
 // Result holds the outcome of a health check execution.
-// TODO: Update to encoding/json/v2
 type Result struct {
 	// Status is the state of the check.
 	Status Status `json:"status"`
 	// Error contains a descriptive error message if the check failed.
 	Error string `json:"error,omitempty"`
 	// Timestamp records when this check was actually executed.
-	Timestamp time.Time `json:"timestamp"`
+	Timestamp time.Time `json:"timestamp,format:unix"`
 }
 
 // CheckFunc defines the signature for a pluggable health check. It receives
