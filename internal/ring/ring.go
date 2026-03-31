@@ -19,6 +19,14 @@
 //
 // The buffer's capacity is strictly enforced as a power of two, allowing
 // for highly efficient bitwise operations when calculating array indices.
+//
+// Usage Example:
+//
+//	rb := ring.New[int](64, ring.DropOldest)
+//	rb.Push(42)
+//	if val, ok := rb.Pop(); ok {
+//	    fmt.Println(val) // Output: 42
+//	}
 package ring
 
 import (
