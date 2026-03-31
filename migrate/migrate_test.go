@@ -465,6 +465,10 @@ func setup(t *testing.T) *sql.DB {
 }
 
 func TestMigrator_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	db := setup(t)
 
 	fsys := fstest.MapFS{
