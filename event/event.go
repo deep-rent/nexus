@@ -68,6 +68,7 @@ import (
 // OverflowMode determines how the bus behaves when the internal buffer is full.
 type OverflowMode = ring.Policy
 
+// Mirror the constants from the ring package:
 const (
 	// Block waits until space is available in the buffer.
 	Block = ring.Block
@@ -544,11 +545,20 @@ func Topic[T any](b *Broker, name string, opts ...Option[T]) (*Bus[T], error) {
 // Close gracefully shuts down all buses managed by the broker.
 func (b *Broker) Close() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	for _, bus := range b.buses {
-		bus.Close()
-	}
-	// Clear the map to release references.
+	// 1. Capture the existing buses.
+	buses := b.buses
+	// 2. Clear the map to release references and block new retrievals.
 	b.buses = make(map[string]closer)
+	b.mu.Unlock() // Release the lock before calling Close on all the buses
+
+	// 3. Close all buses concurrently so the 50µs grace periods overlap.
+	var wg sync.WaitGroup
+	for _, bus := range buses {
+		wg.Add(1)
+		go func(c closer) {
+			defer wg.Done()
+			c.Close()
+		}(bus)
+	}
+	wg.Wait()
 }
