@@ -27,62 +27,105 @@ import (
 
 type Subscriber[T any] func(T)
 
-// Handler pairs a unique ID with a subscriber function for use by the
-// Dispatcher.
-type Handler[T any] struct {
-	ID uint64
-	Fn Subscriber[T]
+// handler pairs a unique ID with a subscriber function for internal
+// dispatching.
+type handler[T any] struct {
+	id uint64
+	fn Subscriber[T]
 }
 
-// Dispatcher defines the strategy for delivering events to subscribers.
-type Dispatcher[T any] interface {
-	Dispatch(event T, handlers []Handler[T])
+// dispatcher defines the internal strategy for delivering events to
+// subscribers.
+type dispatcher[T any] interface {
+	dispatch(event T, handlers []handler[T])
 }
 
-// SyncDispatcher delivers events sequentially on the worker's goroutine.
-type SyncDispatcher[T any] struct{}
+// syncDispatcher delivers events sequentially on the worker's goroutine.
+type syncDispatcher[T any] struct{}
 
-func (SyncDispatcher[T]) Dispatch(event T, handlers []Handler[T]) {
+func (syncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		h.Fn(event)
+		h.fn(event)
 	}
 }
 
-// AsyncDispatcher delivers events concurrently.
-type AsyncDispatcher[T any] struct{}
+// asyncDispatcher delivers events in parallel.
+type asyncDispatcher[T any] struct{}
 
-func (AsyncDispatcher[T]) Dispatch(event T, handlers []Handler[T]) {
+func (asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		go h.Fn(event)
+		go h.fn(event)
+	}
+}
+
+// Option defines a functional configuration option for the Bus.
+type Option[T any] func(*config[T])
+
+type config[T any] struct {
+	size       int
+	policy     ring.OverflowPolicy
+	dispatcher dispatcher[T]
+}
+
+// WithSize sets the ring buffer capacity.
+// The provided size will be rounded up to the nearest power of 2. Non-negative
+// values will be ignored.
+func WithSize[T any](size int) Option[T] {
+	return func(o *config[T]) {
+		if size > 0 {
+			o.size = size
+		}
+	}
+}
+
+// WithOverflowPolicy sets the behavior when the internal ring buffer is full.
+func WithOverflowPolicy[T any](policy ring.OverflowPolicy) Option[T] {
+	return func(o *config[T]) {
+		o.policy = policy
+	}
+}
+
+// WithAsyncDispatch configures the bus to deliver events to subscribers
+// concurrently. If this option is not provided, the bus defaults to
+// synchronous dispatch.
+func WithAsyncDispatch[T any]() Option[T] {
+	return func(o *config[T]) {
+		o.dispatcher = asyncDispatcher[T]{}
 	}
 }
 
 // Bus represents a strictly-typed, lock-free event stream.
 type Bus[T any] struct {
 	buffer     *ring.Buffer[T]
-	dispatcher Dispatcher[T]
-
-	subs  atomic.Pointer[[]Handler[T]]
-	mu    sync.Mutex
-	count uint64
-
-	closed atomic.Bool
-	wg     sync.WaitGroup
+	dispatcher dispatcher[T]
+	subs       atomic.Pointer[[]handler[T]]
+	mu         sync.Mutex
+	id         uint64
+	closed     atomic.Bool
+	wg         sync.WaitGroup
 }
 
-// New creates a Bus, configuring it with a buffer size, overflow policy,
-// and dispatching strategy.
-func New[T any](
-	size int,
-	policy ring.OverflowPolicy,
-	dispatcher Dispatcher[T],
-) *Bus[T] {
-	b := &Bus[T]{
-		buffer:     ring.New[T](size, policy),
-		dispatcher: dispatcher,
+// New creates a Bus, configured via functional options.
+// If no options are provided, it defaults to a buffer size of 1024, the
+// ring.Block overflow policy, and synchronous dispatching.
+func New[T any](opts ...Option[T]) *Bus[T] {
+	// Set default configuration
+	cfg := config[T]{
+		size:       1024,
+		policy:     ring.Block,
+		dispatcher: syncDispatcher[T]{},
 	}
 
-	empty := make([]Handler[T], 0)
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	b := &Bus[T]{
+		buffer:     ring.New[T](cfg.size, cfg.policy),
+		dispatcher: cfg.dispatcher,
+	}
+
+	empty := make([]handler[T], 0)
 	b.subs.Store(&empty)
 
 	b.wg.Add(1)
@@ -97,14 +140,14 @@ func (b *Bus[T]) Subscribe(fn Subscriber[T]) (unsubscribe func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.count++
-	id := b.count
+	b.id++
+	id := b.id
 
 	curr := *b.subs.Load()
 
-	next := make([]Handler[T], len(curr), len(curr)+1)
+	next := make([]handler[T], len(curr), len(curr)+1)
 	copy(next, curr)
-	next = append(next, Handler[T]{ID: id, Fn: fn})
+	next = append(next, handler[T]{id: id, fn: fn})
 
 	b.subs.Store(&next)
 
@@ -119,10 +162,10 @@ func (b *Bus[T]) detach(id uint64) {
 	defer b.mu.Unlock()
 
 	curr := *b.subs.Load()
-	next := make([]Handler[T], 0, len(curr))
+	next := make([]handler[T], 0, len(curr))
 
 	for _, h := range curr {
-		if h.ID != id {
+		if h.id != id {
 			next = append(next, h)
 		}
 	}
@@ -149,7 +192,7 @@ func (b *Bus[T]) process() {
 		if evt, ok := b.buffer.Pop(); ok {
 			handlers := *b.subs.Load()
 			if len(handlers) > 0 {
-				b.dispatcher.Dispatch(evt, handlers)
+				b.dispatcher.dispatch(evt, handlers)
 			}
 		} else {
 			if b.closed.Load() {
