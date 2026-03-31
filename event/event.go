@@ -310,8 +310,8 @@ type Bus[T any] struct {
 	wg sync.WaitGroup
 }
 
-// New initializes a Bus with the provided options.
-func New[T any](opts ...Option[T]) *Bus[T] {
+// NewBus initializes a Bus with the provided options.
+func NewBus[T any](opts ...Option[T]) *Bus[T] {
 	cfg := config[T]{
 		size: DefaultSize,
 		mode: DefaultOverflowMode,
