@@ -137,14 +137,14 @@ func NewMonitor() *Monitor {
 	}
 }
 
-// Register adds a new health check to the monitor.
+// Attach registers a new health check with the monitor.
 //
 // The ttl parameter specifies the minimum time that must elapse between
 // consecutive invocations of the check function; during this window, the
 // cached result is returned.
 //
 // If a check with the given name already exists, it is replaced
-func (m *Monitor) Register(name string, ttl time.Duration, fn CheckFunc) {
+func (m *Monitor) Attach(name string, ttl time.Duration, fn CheckFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.checks[name] = &check{
@@ -154,9 +154,9 @@ func (m *Monitor) Register(name string, ttl time.Duration, fn CheckFunc) {
 	}
 }
 
-// Unregister removes a health check by name. If the check does not exist,
+// Detach unregisters a health check by name. If the check does not exist,
 // this is a no-op.
-func (m *Monitor) Unregister(name string) {
+func (m *Monitor) Detach(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.checks, name)
