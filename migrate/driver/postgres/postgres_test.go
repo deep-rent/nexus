@@ -246,3 +246,26 @@ func TestDriver_ExecuteNonTransactional(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, applied, 1)
 }
+
+func TestDriver_StatementTimeout(t *testing.T) {
+	db := setup(t)
+	// Set a very aggressive timeout
+	d := postgres.New(db, postgres.WithStatementTimeout(50*time.Millisecond))
+	ctx := context.Background()
+	require.NoError(t, d.Init(ctx))
+
+	err := d.Execute(ctx, migrate.ParsedScript{
+		Version:   1,
+		Direction: migrate.Up,
+		Statements: []string{
+			// Sleep for 1 second, which should trigger the 50ms timeout
+			"SELECT pg_sleep(1);",
+		},
+		Tx: true,
+	})
+
+	// The exact error message depends on the pgx/pq driver, but it usually
+	// wraps a context deadline exceeded error.
+	assert.ErrorContains(t, err, "statement 1 failed")
+	assert.ErrorContains(t, err, "canceling statement due to user request")
+}
