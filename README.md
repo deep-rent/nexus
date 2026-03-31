@@ -6,6 +6,10 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Release](https://img.shields.io/github/v/release/deep-rent/nexus?label=Release)](https://pkg.go.dev/github.com/deep-rent/nexus)
 
+Nexus is a Go-based application framework. This project is not intended for general use. It is maintained as a public repository solely to support the requirements of its open-source downstream dependencies.
+
+**Note:** Please note that this project does not strictly follow semantic versioning. The major version is bound to our internal deployment cycles. As a result, minor version increments may contain breaking changes. We recommend that any projects depending on Nexus pin to specific versions to avoid unexpected build failures.
+
 ---
 
 <p align="center">

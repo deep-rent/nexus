@@ -250,10 +250,10 @@ func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 // If nil is given, this option is ignored. By default, slog.Default() is used.
 // The default error handler (NewErrorHandler) uses this logger for capturing
 // upstream errors.
-func WithLogger(log *slog.Logger) HandlerOption {
+func WithLogger(logger *slog.Logger) HandlerOption {
 	return func(cfg *handlerConfig) {
-		if log != nil {
-			cfg.logger = log
+		if logger != nil {
+			cfg.logger = logger
 		}
 	}
 }

@@ -35,3 +35,45 @@ func Remove(s string) string {
 	// Return the original string if no matching quotes are found.
 	return s
 }
+
+// RemoveAll strips all layers of surrounding quotes from a string,
+// regardless of quote type mixing (e.g., "'hello'" becomes hello).
+func RemoveAll(s string) string {
+	for {
+		unquoted := Remove(s)
+		if unquoted == s {
+			break
+		}
+		s = unquoted
+	}
+	return s
+}
+
+// Has returns true if the string is surrounded by a matching pair
+// of single or double quotes.
+func Has(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	switch s[0] {
+	case '"', '\'':
+		return s[len(s)-1] == s[0]
+	}
+	return false
+}
+
+// Wrap surrounds the given string with the specified quote character.
+// Note: It does not escape existing quotes inside the string.
+func Wrap(s string, q rune) string {
+	r := string(q)
+	return r + s + r
+}
+
+// Double wraps a string in double quotes.
+func Double(s string) string { return Wrap(s, '"') }
+
+// Single wraps a string in single quotes.
+func Single(s string) string { return Wrap(s, '\'') }
+
+// Is checks if the given rune is a single or double quote character.
+func Is(c rune) bool { return c == '"' || c == '\'' }

@@ -393,10 +393,10 @@ func WithRetryOptions(opts ...retry.Option) Option {
 
 // WithLogger provides a custom slog.Logger for the controller. If not provided,
 // slog.Default() is used.
-func WithLogger(log *slog.Logger) Option {
+func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
-		if log != nil {
-			c.logger = log
+		if logger != nil {
+			c.logger = logger
 		}
 	}
 }

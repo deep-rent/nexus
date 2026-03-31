@@ -18,20 +18,23 @@ package snake
 
 import (
 	"strings"
-	"unicode"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 // ToUpper converts a camelCase string to an uppercase SNAKE_CASE string.
 //
 // For example, "fooBar" is converted to "FOO_BAR", and so is "FOOBar". Note
-// that digits do not induce transitions, so "foo1" becomes "FOO1".
-func ToUpper(s string) string { return transform(s, unicode.ToUpper) }
+// that digits do not induce transitions, so "foo1" becomes "FOO1". Only ASCII
+// characters are supported.
+func ToUpper(s string) string { return transform(s, ascii.ToUpper) }
 
 // ToLower converts a camelCase string to a lowercase snake_case string.
 //
 // For example, "fooBar" is converted to "foo_bar", and so is "FOOBar". Note
-// that digits do not induce transitions, so "foo1" becomes "FOO1".
-func ToLower(s string) string { return transform(s, unicode.ToLower) }
+// that digits do not induce transitions, so "foo1" becomes "FOO1". Only ASCII
+// characters are supported.
+func ToLower(s string) string { return transform(s, ascii.ToLower) }
 
 // transform is a helper function that performs the actual text conversion.
 func transform(s string, toCase func(rune) rune) string {
@@ -42,14 +45,14 @@ func transform(s string, toCase func(rune) rune) string {
 		// Insert an underscore before a capital letter or digit.
 		if i != 0 {
 			q := runes[i-1]
-			if (unicode.IsLower(q) &&
+			if (ascii.IsLower(q) &&
 				// Case 1: Lowercase to uppercase/digit transition ("myVar", "myVar1").
-				(unicode.IsUpper(r) || unicode.IsDigit(r))) ||
-				(unicode.IsUpper(q) &&
+				(ascii.IsUpper(r) || ascii.IsDigit(r))) ||
+				(ascii.IsUpper(q) &&
 					// Case 2: Acronym to new word transition ("MYVar").
-					unicode.IsUpper(r) &&
+					ascii.IsUpper(r) &&
 					i+1 < len(runes) &&
-					unicode.IsLower(runes[i+1])) {
+					ascii.IsLower(runes[i+1])) {
 				b.WriteRune('_')
 			}
 		}

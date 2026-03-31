@@ -53,3 +53,152 @@ func TestRemove(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveAll(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want string
+	}
+
+	tests := []test{
+		{"single layer double", `"hello"`, "hello"},
+		{"single layer single", `'hello'`, "hello"},
+		{"nested mixed quotes", `"'hello'"`, "hello"},
+		{"deeply nested mixed quotes", `'"'"hello"'"'`, "hello"},
+		{"nested same quotes", `""hello""`, "hello"},
+		{"unmatched inner quote", `"he'llo"`, "he'llo"},
+		{"mismatched outer layer", `"hello'`, `"hello'`},
+		{"no quotes", "hello", "hello"},
+		{"empty string", "", ""},
+		{"only quotes stripped to empty", `""''""`, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.RemoveAll(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestHas(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want bool
+	}
+
+	tests := []test{
+		{"double quoted", `"hello"`, true},
+		{"single quoted", `'hello'`, true},
+		{"empty double quotes", `""`, true},
+		{"empty single quotes", `''`, true},
+		{"mismatched quotes", `"hello'`, false},
+		{"missing end quote", `"hello`, false},
+		{"missing start quote", `hello"`, false},
+		{"no quotes", `hello`, false},
+		{"single char", `"`, false},
+		{"empty string", ``, false},
+		{"quote inside", `he"llo`, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Has(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestWrap(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		q    rune
+		want string
+	}
+
+	tests := []test{
+		{"wrap with double quote", "hello", '"', `"hello"`},
+		{"wrap with single quote", "world", '\'', `'world'`},
+		{"wrap empty string", "", '"', `""`},
+		{"wrap with arbitrary rune", "test", '|', `|test|`},
+		{"wrap string already containing quotes", `"hello"`, '\'', `'"hello"'`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Wrap(tc.in, tc.q)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDouble(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want string
+	}
+
+	tests := []test{
+		{"standard string", "hello", `"hello"`},
+		{"empty string", "", `""`},
+		{"string with spaces", "hello world", `"hello world"`},
+		{"string already double quoted", `"hello"`, `""hello""`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Double(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSingle(t *testing.T) {
+	type test struct {
+		name string
+		in   string
+		want string
+	}
+
+	tests := []test{
+		{"standard string", "hello", `'hello'`},
+		{"empty string", "", `''`},
+		{"string with spaces", "hello world", `'hello world'`},
+		{"string already single quoted", `'hello'`, `''hello''`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Single(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestIs(t *testing.T) {
+	type test struct {
+		name string
+		in   rune
+		want bool
+	}
+
+	tests := []test{
+		{"double quote", '"', true},
+		{"single quote", '\'', true},
+		{"backtick", '`', false},
+		{"letter", 'a', false},
+		{"space", ' ', false},
+		{"null rune", '\x00', false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quote.Is(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
