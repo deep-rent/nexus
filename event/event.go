@@ -56,6 +56,7 @@ package event
 import (
 	"log/slog"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -171,7 +172,11 @@ func (d basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					d.logger.Error("Subscriber panicked", "panic", r)
+					d.logger.Error(
+						"Subscriber panicked",
+						slog.Any("panic", r),
+						slog.String("stack", string(debug.Stack())),
+					)
 				}
 			}()
 			h.fn(event)
@@ -192,7 +197,11 @@ func (d asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 		go func(f Subscriber[T]) {
 			defer func() {
 				if r := recover(); r != nil {
-					d.logger.Error("Subscriber panicked", "panic", r)
+					d.logger.Error(
+						"Subscriber panicked",
+						slog.Any("panic", r),
+						slog.String("stack", string(debug.Stack())),
+					)
 				}
 			}()
 			f(event)
