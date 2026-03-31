@@ -51,6 +51,28 @@ const (
 	DefaultExtension = ".sql"
 )
 
+// Errors explaining why the Parse method has failed:
+var (
+	// ErrExtension is returned when a filename does not end with the configured
+	// file extension.
+	ErrExtension = errors.New("extension mismatch")
+	// ErrMissingDirection is returned when a filename lacks the dot separator
+	// preceding the direction segment.
+	ErrMissingDirection = errors.New("missing direction segment")
+	// ErrIllegalDirection is returned when the direction segment is neither "up"
+	// nor "down".
+	ErrIllegalDirection = errors.New("illegal direction")
+	// ErrMissingSeparator is returned when a filename lacks the underscore
+	// separating the version from the description.
+	ErrMissingSeparator = errors.New("missing underscore separator")
+	// ErrInvalidDescription is returned when the description segment of the
+	// filename is empty.
+	ErrInvalidDescription = errors.New("invalid description")
+	// ErrInvalidVersion is returned when the version segment is empty or cannot
+	// be parsed into an unsigned integer.
+	ErrInvalidVersion = errors.New("invalid version")
+)
+
 // config holds the internal configuration options for the file source.
 type config struct {
 	ext    string
@@ -129,88 +151,6 @@ func (s *Source) Extension() string {
 // match the strict <version>_<description>.<direction>[_notx]<extension>
 // format.
 func (s *Source) Parse(name string) (
-	uint64,
-	string,
-	migrate.Direction,
-	bool,
-	error,
-) {
-	return s.parse(name)
-}
-
-// List reads the underlying file system, parses all files matching the
-// configured extension, and returns a complete list of valid migrations.
-func (s *Source) List() ([]migrate.SourceScript, error) {
-	var scripts []migrate.SourceScript
-
-	fn := func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-
-		name := d.Name()
-		version, desc, direction, tx, skipped := s.parse(name)
-		if skipped != nil {
-			s.logger.Debug(
-				"Skipping file in migration directory",
-				slog.String("name", name),
-				slog.String("reason", skipped.Error()),
-			)
-			return nil // Ignore files that don't match the naming convention
-		}
-
-		content, err := fs.ReadFile(s.dir, path)
-		if err != nil {
-			return fmt.Errorf("failed to read migration file %q: %w", path, err)
-		}
-
-		scripts = append(scripts, migrate.SourceScript{
-			Version:     version,
-			Description: desc,
-			Direction:   direction,
-			Path:        path,
-			Content:     content,
-			Tx:          tx,
-		})
-
-		return nil
-	}
-
-	err := fs.WalkDir(s.dir, ".", fn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to traverse migration directory: %w", err)
-	}
-
-	return scripts, nil
-}
-
-// Ensure Source satisfies the migrate.Source interface.
-var _ migrate.Source = (*Source)(nil)
-
-var (
-	// ErrExtension is returned when a filename does not end with the configured
-	// file extension.
-	ErrExtension = errors.New("extension mismatch")
-	// ErrMissingDirection is returned when a filename lacks the dot separator
-	// preceding the direction segment.
-	ErrMissingDirection = errors.New("missing direction segment")
-	// ErrIllegalDirection is returned when the direction segment is neither "up"
-	// nor "down".
-	ErrIllegalDirection = errors.New("illegal direction")
-	// ErrMissingSeparator is returned when a filename lacks the underscore
-	// separating the version from the description.
-	ErrMissingSeparator = errors.New("missing underscore separator")
-	// ErrInvalidDescription is returned when the description segment of the
-	// filename is empty.
-	ErrInvalidDescription = errors.New("invalid description")
-	// ErrInvalidVersion is returned when the version segment is empty or cannot
-	// be parsed into an unsigned integer.
-	ErrInvalidVersion = errors.New("invalid version")
-)
-
-// parse returns an error explaining why a file does not match the strict
-// format.
-func (s *Source) parse(name string) (
 	version uint64,
 	desc string,
 	direction migrate.Direction,
@@ -282,3 +222,52 @@ func (s *Source) parse(name string) (
 
 	return version, desc, direction, tx, nil
 }
+
+// List reads the underlying file system, parses all files matching the
+// configured extension, and returns a complete list of valid migrations.
+func (s *Source) List() ([]migrate.SourceScript, error) {
+	var scripts []migrate.SourceScript
+
+	fn := func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+
+		name := d.Name()
+		version, desc, direction, tx, skipped := s.Parse(name)
+		if skipped != nil {
+			s.logger.Debug(
+				"Skipping file in migration directory",
+				slog.String("name", name),
+				slog.String("reason", skipped.Error()),
+			)
+			return nil // Ignore files that don't match the naming convention
+		}
+
+		content, err := fs.ReadFile(s.dir, path)
+		if err != nil {
+			return fmt.Errorf("failed to read migration file %q: %w", path, err)
+		}
+
+		scripts = append(scripts, migrate.SourceScript{
+			Version:     version,
+			Description: desc,
+			Direction:   direction,
+			Path:        path,
+			Content:     content,
+			Tx:          tx,
+		})
+
+		return nil
+	}
+
+	err := fs.WalkDir(s.dir, ".", fn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to traverse migration directory: %w", err)
+	}
+
+	return scripts, nil
+}
+
+// Ensure Source satisfies the migrate.Source interface.
+var _ migrate.Source = (*Source)(nil)
