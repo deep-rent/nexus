@@ -52,7 +52,7 @@ const (
 const (
 	// DefaultSize is the default capacity of the internal ring buffer.
 	DefaultSize = 1024
-	// DefaultOverflowMode is the default overflow policy (Block).
+	// DefaultOverflowMode is the default overflow mode (Block).
 	DefaultOverflowMode = Block
 )
 
@@ -134,10 +134,10 @@ func (asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 type Option[T any] func(*config[T])
 
 type config[T any] struct {
-	size       int
-	policy     OverflowMode
-	dispatcher dispatcher[T]
-	wait       WaitStrategy
+	size int
+	mode OverflowMode
+	disp dispatcher[T]
+	wait WaitStrategy
 }
 
 // WithSize sets the buffer capacity (rounded up to the nearest power of 2).
@@ -149,17 +149,18 @@ func WithSize[T any](size int) Option[T] {
 	}
 }
 
-// WithOverflowMode defines the buffer behavior on exhaustion.
-func WithOverflowMode[T any](policy OverflowMode) Option[T] {
+// WithOverflowMode defines how the bus deals with backpressure on buffer
+// exhaustion.
+func WithOverflowMode[T any](mode OverflowMode) Option[T] {
 	return func(o *config[T]) {
-		o.policy = policy
+		o.mode = mode
 	}
 }
 
 // WithSyncDispatch forces sequential event delivery.
 func WithSyncDispatch[T any]() Option[T] {
 	return func(o *config[T]) {
-		o.dispatcher = syncDispatcher[T]{}
+		o.disp = syncDispatcher[T]{}
 	}
 }
 
@@ -189,11 +190,11 @@ func WithCustomWaitStrategy[T any](ws WaitStrategy) Option[T] {
 
 // Bus is a high-performance, strictly-typed event stream.
 type Bus[T any] struct {
-	buffer     *ring.Buffer[T]
-	dispatcher dispatcher[T]
-	wait       WaitStrategy
-	subs       atomic.Pointer[[]handler[T]]
-	closed     atomic.Bool
+	evts   *ring.Buffer[T]
+	disp   dispatcher[T]
+	wait   WaitStrategy
+	subs   atomic.Pointer[[]handler[T]]
+	closed atomic.Bool
 
 	mu sync.Mutex
 	id uint64
@@ -203,19 +204,19 @@ type Bus[T any] struct {
 // New initializes a Bus with the provided options.
 func New[T any](opts ...Option[T]) *Bus[T] {
 	cfg := config[T]{
-		size:       DefaultSize,
-		policy:     DefaultOverflowMode,
-		dispatcher: asyncDispatcher[T]{},
-		wait:       adaptiveWait{},
+		size: DefaultSize,
+		mode: DefaultOverflowMode,
+		disp: asyncDispatcher[T]{},
+		wait: adaptiveWait{},
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
 	b := &Bus[T]{
-		buffer:     ring.New[T](cfg.size, cfg.policy),
-		dispatcher: cfg.dispatcher,
-		wait:       cfg.wait,
+		evts: ring.New[T](cfg.size, cfg.mode),
+		disp: cfg.disp,
+		wait: cfg.wait,
 	}
 	empty := make([]handler[T], 0)
 	b.subs.Store(&empty)
@@ -261,7 +262,7 @@ func (b *Bus[T]) Publish(event T) bool {
 	if b.closed.Load() {
 		return false
 	}
-	if b.buffer.Push(event) {
+	if b.evts.Push(event) {
 		b.wait.Signal()
 		return true
 	}
@@ -279,17 +280,17 @@ func (b *Bus[T]) process() {
 	defer b.wg.Done()
 	idle := 0
 	for {
-		if evt, ok := b.buffer.Pop(); ok {
+		if evt, ok := b.evts.Pop(); ok {
 			idle = 0
 			if handlers := *b.subs.Load(); len(handlers) > 0 {
-				b.dispatcher.dispatch(evt, handlers)
+				b.disp.dispatch(evt, handlers)
 			}
 		} else {
 			if b.closed.Load() {
 				for {
-					if final, ok := b.buffer.Pop(); ok {
+					if final, ok := b.evts.Pop(); ok {
 						if handlers := *b.subs.Load(); len(handlers) > 0 {
-							b.dispatcher.dispatch(final, handlers)
+							b.disp.dispatch(final, handlers)
 						}
 					} else {
 						return
