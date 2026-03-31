@@ -275,10 +275,8 @@ func (d *Driver) Init(ctx context.Context) error {
 // database, ordered by their version in ascending order.
 func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	d.logger.Debug("Fetching applied migrations")
-	query := fmt.Sprintf(
-		"SELECT version, checksum, dirty FROM %s ORDER BY version ASC",
-		d.ident,
-	)
+	query := "SELECT version, checksum, dirty FROM " +
+		d.ident + " ORDER BY version ASC"
 
 	rows, err := d.db.QueryContext(ctx, query)
 	if err != nil {
@@ -343,16 +341,12 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 	d.logger.Info("Forcing database version", slog.Uint64("version", version))
 
 	return d.withTx(ctx, func(tx *sql.Tx) error {
-		queryUpdate := fmt.Sprintf(
-			"UPDATE %s SET dirty = false WHERE version = $1", d.ident,
-		)
+		queryUpdate := "UPDATE " + d.ident + "SET dirty = false WHERE version = $1"
 		if _, err := tx.ExecContext(ctx, queryUpdate, version); err != nil {
 			return fmt.Errorf("failed to clear dirty flag: %w", err)
 		}
 
-		queryDelete := fmt.Sprintf(
-			"DELETE FROM %s WHERE version > $1", d.ident,
-		)
+		queryDelete := "DELETE FROM " + d.ident + " WHERE version > $1"
 		if _, err := tx.ExecContext(ctx, queryDelete, version); err != nil {
 			return fmt.Errorf("failed to delete newer versions: %w", err)
 		}
