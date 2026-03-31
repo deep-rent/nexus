@@ -35,7 +35,7 @@ func setup(t *testing.T) *sql.DB {
 	ctx := t.Context()
 
 	container, err := testpg.Run(ctx,
-		"postgres:15-alpine",
+		"postgres:18-alpine",
 		testpg.WithDatabase("testdb"),
 		testpg.WithUsername("user"),
 		testpg.WithPassword("pass"),
