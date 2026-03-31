@@ -103,13 +103,18 @@ func WithAsyncDispatch[T any]() Option[T] {
 
 // Bus represents a strictly-typed, lock-free event stream.
 type Bus[T any] struct {
+	// Hot path:
+
 	buffer     *ring.Buffer[T]
 	dispatcher dispatcher[T]
 	subs       atomic.Pointer[[]handler[T]]
-	mu         sync.Mutex
-	id         uint64
 	closed     atomic.Bool
-	wg         sync.WaitGroup
+
+	// Cold path:
+
+	mu sync.Mutex
+	id uint64
+	wg sync.WaitGroup
 }
 
 // New creates a Bus, configured via functional options.
