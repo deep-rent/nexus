@@ -364,7 +364,14 @@ func (b *Bus[T]) Subscribe(fn Subscriber[T]) (unsubscribe func()) {
 	// Atomically swap the new slice into place for the background processor to
 	// read lock-free.
 	b.subs.Store(&next)
-	return func() { b.detach(id) }
+
+	// Guarantee the teardown logic only runs exactly once.
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			b.detach(id)
+		})
+	}
 }
 
 // detach filters out the subscriber matching the given ID.
