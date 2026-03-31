@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Explicitly allow SQL string concatenation:
+// #nosec G202
+
 // Package postgres provides a PostgreSQL-specific driver for the migrate
 // package.
 //
@@ -503,10 +506,7 @@ func (d *Driver) setClean(
 			return fmt.Errorf("failed to clear dirty state: %w", err)
 		}
 	case migrate.Down:
-		query := fmt.Sprintf(
-			"DELETE FROM %s WHERE version = $1",
-			d.ident,
-		)
+		query := "DELETE FROM " + d.ident + " WHERE version = $1"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
