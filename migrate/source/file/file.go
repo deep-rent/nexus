@@ -175,12 +175,12 @@ var _ migrate.Source = (*Source)(nil)
 
 // Errors returned by the parse function.
 var (
-	errExtension          = errors.New("extension mismatch")
-	errMissingDirection   = errors.New("missing direction segment")
-	errIllegalDirection   = errors.New("illegal direction")
-	errMissingSeparator   = errors.New("missing underscore separator")
-	errInvalidDescription = errors.New("invalid description")
-	errInvalidVersion     = errors.New("invalid version")
+	ErrExtension          = errors.New("extension mismatch")
+	ErrMissingDirection   = errors.New("missing direction segment")
+	ErrIllegalDirection   = errors.New("illegal direction")
+	ErrMissingSeparator   = errors.New("missing underscore separator")
+	ErrInvalidDescription = errors.New("invalid description")
+	ErrInvalidVersion     = errors.New("invalid version")
 )
 
 // parse returns an error explaining why a file does not match the strict
@@ -198,13 +198,13 @@ func (s *Source) parse(name string) (
 	// Strip the configured file extension (e.g., ".sql").
 	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
-		return 0, "", -1, false, errExtension
+		return 0, "", -1, false, ErrExtension
 	}
 
 	// Locate the dot that separates the version/description from the direction.
 	dot := strings.LastIndexByte(base, '.')
 	if dot <= 0 {
-		return 0, "", -1, false, errMissingDirection
+		return 0, "", -1, false, ErrMissingDirection
 	}
 
 	// Extract the direction segment (e.g., "up", "down", or "up_notx").
@@ -224,7 +224,7 @@ func (s *Source) parse(name string) (
 	case "down":
 		direction = migrate.Down
 	default:
-		return 0, "", 0, false, errIllegalDirection
+		return 0, "", 0, false, ErrIllegalDirection
 	}
 
 	// Move the cursor back to the prefix (version and description).
@@ -234,21 +234,21 @@ func (s *Source) parse(name string) (
 	// We expect the first underscore to be the separator.
 	s0, s1, found := strings.Cut(base, "_")
 	if !found {
-		return 0, "", 0, false, errMissingSeparator
+		return 0, "", 0, false, ErrMissingSeparator
 	}
 
 	// Ensure neither the version nor the description segments are empty strings.
 	if s0 == "" {
-		return 0, "", 0, false, errInvalidVersion
+		return 0, "", 0, false, ErrInvalidVersion
 	}
 	if s1 == "" {
-		return 0, "", 0, false, errInvalidDescription
+		return 0, "", 0, false, ErrInvalidDescription
 	}
 
 	// Parse the version segment into an unsigned long.
 	v, e := strconv.ParseUint(s0, 10, 64)
 	if e != nil {
-		return 0, "", 0, false, errInvalidVersion
+		return 0, "", 0, false, ErrInvalidVersion
 	}
 
 	// Finalize the version and sanitize the description by restoring spaces.
