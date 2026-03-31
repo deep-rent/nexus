@@ -45,7 +45,14 @@ type syncDispatcher[T any] struct{}
 
 func (syncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		h.fn(event)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// TODO: Pass to logger.
+				}
+			}()
+			h.fn(event)
+		}()
 	}
 }
 
