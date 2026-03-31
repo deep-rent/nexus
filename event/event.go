@@ -418,20 +418,26 @@ func (b *Bus[T]) Publish(event T) bool {
 	return false
 }
 
-// Close drains remaining events and shuts down the background processor.
+// Close signals the background processor to drain remaining events and stop.
 // Further calls to Publish will immediately return false.
 //
 // Note: Producers must be externally synchronized to stop calling Publish
 // before Close is invoked to prevent stranded events.
 func (b *Bus[T]) Close() {
-	b.closed.Store(true)
-	b.wait.Signal() // Wake up the processor if it is blocking on a semaphore
+	if !b.closed.Swap(true) {
+		// First time closing:
+		b.wait.Signal()
 
-	// Give straggling producers a few microseconds to finish their push before
-	// the wait group potentially returns.
-	time.Sleep(time.Microsecond * 50)
+		// Give straggling producers a few microseconds to finish their push
+		// before the background processor performs its final drain.
+		time.Sleep(time.Microsecond * 50)
 
-	b.wg.Wait()
+		// Signal again to ensure the processor isn't sleeping while events
+		// from stragglers are sitting in the buffer.
+		b.wait.Signal()
+
+		b.wg.Wait()
+	}
 }
 
 // process continuously polls the ring buffer for new events.
