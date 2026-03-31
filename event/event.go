@@ -41,6 +41,48 @@ const (
 
 type Subscriber[T any] func(T)
 
+// WaitStrategy defines how the background processor behaves when the
+// internal ring buffer is empty.
+type WaitStrategy interface {
+	// Wait is called continuously while the buffer is empty.
+	Wait(idle int)
+	// Signal is called whenever a new event is successfully published or
+	// when the bus is closed.
+	Signal()
+}
+
+// adaptiveWait employs spin-yield-sleep to minimize latency.
+type adaptiveWait struct{}
+
+func (adaptiveWait) Wait(idle int) {
+	if idle < 1000 {
+		runtime.Gosched()
+	} else if idle < 5000 {
+		time.Sleep(time.Microsecond)
+	} else {
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func (adaptiveWait) Signal() {} // No-op for spin loops
+
+// blockingWait uses a semaphore channel to park the goroutine entirely
+// when idle, saving CPU cycles at the cost of a slight wakeup latency.
+type blockingWait struct {
+	ch chan struct{}
+}
+
+func (w *blockingWait) Wait(_ int) {
+	<-w.ch
+}
+
+func (w *blockingWait) Signal() {
+	select {
+	case w.ch <- struct{}{}:
+	default:
+	}
+}
+
 // handler pairs a unique ID with a subscriber function for internal
 // dispatching.
 type handler[T any] struct {
@@ -86,6 +128,7 @@ type config[T any] struct {
 	size       int
 	policy     Policy
 	dispatcher dispatcher[T]
+	wait       WaitStrategy
 }
 
 // WithSize sets the ring buffer capacity.
@@ -115,12 +158,38 @@ func WithAsyncDispatch[T any]() Option[T] {
 	}
 }
 
+// WithAdaptiveWait configures the bus to prioritize ultra-low latency by
+// spinning and yielding when idle. This is the default behavior.
+func WithAdaptiveWait[T any]() Option[T] {
+	return func(o *config[T]) {
+		o.wait = adaptiveWait{}
+	}
+}
+
+// WithBlockingWait configures the bus to park the background goroutine
+// when idle. This is ideal when managing thousands of idle buses.
+func WithBlockingWait[T any]() Option[T] {
+	return func(o *config[T]) {
+		o.wait = &blockingWait{ch: make(chan struct{}, 1)}
+	}
+}
+
+// WithCustomWaitStrategy allows passing a user-defined WaitStrategy.
+func WithCustomWaitStrategy[T any](ws WaitStrategy) Option[T] {
+	return func(o *config[T]) {
+		if ws != nil {
+			o.wait = ws
+		}
+	}
+}
+
 // Bus represents a strictly-typed, lock-free event stream.
 type Bus[T any] struct {
 	// Hot path:
 
 	buffer     *ring.Buffer[T]
 	dispatcher dispatcher[T]
+	wait       WaitStrategy
 	subs       atomic.Pointer[[]handler[T]]
 	closed     atomic.Bool
 
@@ -133,13 +202,14 @@ type Bus[T any] struct {
 
 // New creates a Bus, configured via functional options.
 // If no options are provided, it defaults to a buffer size of 1024, the
-// ring.Block overflow policy, and synchronous dispatching.
+// ring.Block overflow policy, synchronous dispatching, and adaptive waiting.
 func New[T any](opts ...Option[T]) *Bus[T] {
 	// Set default configuration
 	cfg := config[T]{
 		size:       DefaultSize,
 		policy:     DefaultPolicy,
 		dispatcher: syncDispatcher[T]{},
+		wait:       adaptiveWait{},
 	}
 
 	for _, opt := range opts {
@@ -149,6 +219,7 @@ func New[T any](opts ...Option[T]) *Bus[T] {
 	b := &Bus[T]{
 		buffer:     ring.New[T](cfg.size, cfg.policy),
 		dispatcher: cfg.dispatcher,
+		wait:       cfg.wait,
 	}
 
 	empty := make([]handler[T], 0)
@@ -205,12 +276,17 @@ func (b *Bus[T]) Publish(event T) bool {
 	if b.closed.Load() {
 		return false
 	}
-	return b.buffer.Push(event)
+	if b.buffer.Push(event) {
+		b.wait.Signal()
+		return true
+	}
+	return false
 }
 
 // Close signals the background processor to drain remaining events and stop.
 func (b *Bus[T]) Close() {
 	b.closed.Store(true)
+	b.wait.Signal() // Ensure the processor wakes up if it is blocking
 	b.wg.Wait()
 }
 
@@ -243,21 +319,8 @@ func (b *Bus[T]) process() {
 				}
 			}
 
-			// Adaptive backoff to prevent 100% idle CPU burn:
+			b.wait.Wait(idle)
 			idle++
-			if idle < 1000 {
-				// Phase 1: Spin with yield. Keeps latency ultra-low for bursty traffic.
-				runtime.Gosched()
-			} else if idle < 5000 {
-				// Phase 2: Micro-sleep. Drops CPU usage significantly while keeping
-				// latency relatively low (~1ms penalty depending on OS scheduler).
-				time.Sleep(time.Microsecond)
-			} else {
-				// Phase 3: Deep idle. Near 0% CPU usage.
-				// Caps out at 1ms latency for the first event that breaks the idle
-				// state.
-				time.Sleep(time.Millisecond)
-			}
 		}
 	}
 }
