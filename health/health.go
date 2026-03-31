@@ -145,13 +145,13 @@ func NewMonitor() *Monitor {
 	}
 }
 
-// Attach registers a new health check with the monitor.
+// Attach registers a new health check under the given name. If a check with
+// the same name already exists, it is replaced.
 //
-// The ttl parameter specifies the minimum time that must elapse between
-// consecutive invocations of the check function; during this window, the
-// cached result is returned.
-//
-// If a check with the given name already exists, it is replaced
+// The name should be formatted in snake_case (e.g., "redis_primary").
+// The TTL (Time-To-Live) parameter defines the minimum duration between
+// consecutive executions of the check function; subsequent calls within this
+// window return the cached result to prevent overloading the dependency.
 func (m *Monitor) Attach(name string, ttl time.Duration, fn CheckFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -162,8 +162,8 @@ func (m *Monitor) Attach(name string, ttl time.Duration, fn CheckFunc) {
 	}
 }
 
-// Detach unregisters a health check by name. If the check does not exist,
-// this is a no-op.
+// Detach unregisters a health check by name. If the check does not exist, this
+// is a no-op.
 func (m *Monitor) Detach(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
