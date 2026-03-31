@@ -492,8 +492,8 @@ type Broker struct {
 	buses map[string]closer
 }
 
-// New initializes an empty event broker.
-func New() *Broker {
+// NewBroker initializes an empty event broker.
+func NewBroker() *Broker {
 	return &Broker{
 		buses: make(map[string]closer),
 	}
