@@ -66,7 +66,7 @@ type Report struct {
 	// Status is the overall health state of the application.
 	Status Status `json:"status"`
 	// Checks maps the name of each registered check to its specific result.
-	Checks map[string]Result `json:"checks,omitempty"`
+	Checks map[string]Result `json:"checks"`
 }
 
 // CheckFunc defines the signature for a pluggable health check. It receives
