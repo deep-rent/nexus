@@ -24,7 +24,7 @@
 //		"fmt"
 //		"log/slog"
 //		"time"
-//		"yourmodule/event" // Update with your actual module path
+//		"github.com/deep-rent/nexus/event"
 //	)
 //
 //	type UserCreated struct {
