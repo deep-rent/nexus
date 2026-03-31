@@ -15,15 +15,25 @@
 package migrate_test
 
 import (
+	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"testing"
+	"testing/fstest"
+	"time"
 
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	testpg "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/deep-rent/nexus/migrate"
 	drivermock "github.com/deep-rent/nexus/migrate/driver/mock"
+	"github.com/deep-rent/nexus/migrate/driver/postgres"
+	"github.com/deep-rent/nexus/migrate/source/file"
 	sourcemock "github.com/deep-rent/nexus/migrate/source/mock"
 )
 
@@ -419,4 +429,120 @@ func TestMigrator_DryRun(t *testing.T) {
 	state := drv.State()
 	assert.Empty(t, state)
 	assert.False(t, drv.IsLocked, "lock must be released")
+}
+
+func setup(t *testing.T) *sql.DB {
+	ctx := context.Background()
+
+	container, err := testpg.Run(ctx,
+		"postgres:18-alpine",
+		testpg.WithDatabase("testdb"),
+		testpg.WithUsername("user"),
+		testpg.WithPassword("pass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(10*time.Second),
+		),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		assert.NoError(t, container.Terminate(ctx))
+	})
+
+	ds, err := container.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	db, err := sql.Open("postgres", ds)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		assert.NoError(t, db.Close())
+	})
+
+	return db
+}
+
+func TestMigrator_Integration(t *testing.T) {
+	db := setup(t)
+
+	fsys := fstest.MapFS{
+		"01_init.up.sql": &fstest.MapFile{
+			Data: []byte(
+				"CREATE TABLE integration_users (id SERIAL PRIMARY KEY, name TEXT);",
+			),
+		},
+		"01_init.down.sql": &fstest.MapFile{
+			Data: []byte(
+				"DROP TABLE integration_users;",
+			),
+		},
+		"02_seed.up.sql": &fstest.MapFile{
+			Data: []byte(
+				"INSERT INTO integration_users (name) VALUES ('Alice'), ('Bob');",
+			),
+		},
+		"02_seed.down.sql": &fstest.MapFile{
+			Data: []byte(
+				"TRUNCATE TABLE integration_users;",
+			),
+		},
+	}
+
+	src := file.New(fsys)
+	drv := postgres.New(db)
+
+	m := migrate.New(
+		migrate.WithSource(src),
+		migrate.WithDriver(drv),
+	)
+
+	err := m.Up(t.Context())
+	require.NoError(t, err, "up migrations should apply successfully")
+
+	var count int
+	err = db.QueryRowContext(
+		t.Context(),
+		"SELECT count(*) FROM integration_users",
+	).Scan(&count)
+
+	require.NoError(t, err, "table should exist and be queryable")
+	assert.Equal(t, 2, count, "table should contain the seeded records")
+
+	applied, err := m.Applied(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, applied, 2, "tracking table should reflect applied migrations")
+
+	err = m.Down(t.Context())
+	require.NoError(t, err, "down migration should execute successfully")
+
+	err = db.QueryRowContext(
+		t.Context(),
+		"SELECT count(*) FROM integration_users",
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "table should be empty after reverting seed")
+
+	err = m.Down(t.Context())
+	require.NoError(t, err)
+
+	err = db.QueryRowContext(
+		t.Context(),
+		"SELECT count(*) FROM integration_users",
+	).Scan(&count)
+	assert.ErrorContains(
+		t,
+		err,
+		"relation \"integration_users\" does not exist",
+		"query should fail on dropped table",
+	)
+
+	applied, err = m.Applied(t.Context())
+	require.NoError(t, err)
+	assert.Empty(
+		t,
+		applied,
+		"tracking table should be empty after all down migrations",
+	)
 }
