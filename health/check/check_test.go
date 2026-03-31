@@ -305,3 +305,19 @@ func TestWrappers(t *testing.T) {
 		})
 	}
 }
+
+func TestWrapContext_PassesContext(t *testing.T) {
+	type key struct{}
+	exp := "nexus"
+	ctx := context.WithValue(context.Background(), key{}, exp)
+
+	chk := check.WrapContext(func(c context.Context) error {
+		act := c.Value(key{})
+		assert.Equal(t, exp, act, "context was not propagated")
+		return nil
+	})
+
+	status, err := chk(ctx)
+	assert.Equal(t, health.StatusHealthy, status)
+	assert.NoError(t, err)
+}
