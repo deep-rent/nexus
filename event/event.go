@@ -25,6 +25,19 @@ import (
 	"github.com/deep-rent/nexus/internal/ring"
 )
 
+type Policy = ring.OverflowPolicy
+
+const (
+	Block      = ring.Block
+	DropOldest = ring.DropOldest
+	DropNewest = ring.DropNewest
+)
+
+const (
+	DefaultSize   = 1024
+	DefaultPolicy = Block
+)
+
 type Subscriber[T any] func(T)
 
 // handler pairs a unique ID with a subscriber function for internal
@@ -70,7 +83,7 @@ type Option[T any] func(*config[T])
 
 type config[T any] struct {
 	size       int
-	policy     ring.OverflowPolicy
+	policy     Policy
 	dispatcher dispatcher[T]
 }
 
@@ -85,8 +98,8 @@ func WithSize[T any](size int) Option[T] {
 	}
 }
 
-// WithOverflowPolicy sets the behavior when the internal ring buffer is full.
-func WithOverflowPolicy[T any](policy ring.OverflowPolicy) Option[T] {
+// WithPolicy sets the behavior when the internal ring buffer is full.
+func WithPolicy[T any](policy Policy) Option[T] {
 	return func(o *config[T]) {
 		o.policy = policy
 	}
@@ -123,8 +136,8 @@ type Bus[T any] struct {
 func New[T any](opts ...Option[T]) *Bus[T] {
 	// Set default configuration
 	cfg := config[T]{
-		size:       1024,
-		policy:     ring.Block,
+		size:       DefaultSize,
+		policy:     DefaultPolicy,
 		dispatcher: syncDispatcher[T]{},
 	}
 
