@@ -27,11 +27,21 @@ import (
 	"sync/atomic"
 )
 
+// OverflowPolicy dictates how the buffer behaves when a producer attempts to
+// push into a queue that has reached its maximum capacity.
 type OverflowPolicy int
 
 const (
+	// Block causes the producer to yield the processor to other goroutines
+	// (via runtime.Gosched) until space becomes available.
 	Block OverflowPolicy = iota
+
+	// DropOldest forcefully advances the read pointer, discarding the oldest
+	// unread item in the buffer to make room for the newly pushed item.
 	DropOldest
+
+	// DropNewest immediately discards the incoming item being pushed, returning
+	// false and leaving the existing buffer contents unchanged.
 	DropNewest
 )
 
