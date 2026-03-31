@@ -173,8 +173,12 @@ func (b *Bus[T]) detach(id uint64) {
 	b.subs.Store(&next)
 }
 
-// Publish attempts to push an event into the underlying ring buffer.
+// Publish attempts to push an event. Returns false if the buffer is full or
+// closed.
 func (b *Bus[T]) Publish(event T) bool {
+	if b.closed.Load() {
+		return false
+	}
 	return b.buffer.Push(event)
 }
 
@@ -196,7 +200,17 @@ func (b *Bus[T]) process() {
 			}
 		} else {
 			if b.closed.Load() {
-				return
+				// Perform one final drain check after detecting the close signal.
+				for {
+					if finalEvt, ok := b.buffer.Pop(); ok {
+						handlers := *b.subs.Load()
+						if len(handlers) > 0 {
+							b.dispatcher.dispatch(finalEvt, handlers)
+						}
+					} else {
+						return // Truly empty and closed
+					}
+				}
 			}
 			runtime.Gosched()
 		}
