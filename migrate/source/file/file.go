@@ -124,6 +124,16 @@ func (s *Source) Extension() string {
 	return s.ext
 }
 
+func (s *Source) Parse(name string) (
+	uint64,
+	string,
+	migrate.Direction,
+	bool,
+	error,
+) {
+	return s.parse(name)
+}
+
 // List reads the underlying file system, parses all files matching the
 // configured extension, and returns a complete list of valid migrations.
 func (s *Source) List() ([]migrate.SourceScript, error) {
