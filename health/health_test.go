@@ -119,10 +119,22 @@ func TestMonitor_Ready(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, rep.Status)
 			assert.Len(t, rep.Checks, len(tc.checks))
 
-			if db, ok := rep.Checks["db"]; ok {
-				ts := db.Timestamp
-				assert.False(t, ts.IsZero(), "timestamp must be set")
-				assert.WithinDuration(t, time.Now(), ts, 2*time.Second)
+			for name, res := range rep.Checks {
+				ts := res.Timestamp
+				assert.False(
+					t,
+					ts.IsZero(),
+					"timestamp for check %q must be set",
+					name,
+				)
+				assert.WithinDuration(
+					t,
+					time.Now(),
+					ts,
+					2*time.Second,
+					"timestamp for check %q must be within 2s of now",
+					name,
+				)
 			}
 		})
 	}
