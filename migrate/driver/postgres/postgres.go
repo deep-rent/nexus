@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Explicitly allow SQL string concatenation:
+// #nosec G202
+
 // Package postgres provides a PostgreSQL-specific driver for the migrate
 // package.
 //
@@ -170,7 +173,8 @@ func New(db *sql.DB, opts ...Option) *Driver {
 		if _, err := rand.Read(b[:]); err != nil {
 			panic(fmt.Sprintf("postgres: failed to generate random lock ID: %v", err))
 		}
-		d.lockID = int64(binary.BigEndian.Uint64(b[:]))
+		raw := binary.BigEndian.Uint64(b[:])
+		d.lockID = int64(raw & 0x7FFFFFFFFFFFFFFF)
 	}
 
 	return d
@@ -275,10 +279,8 @@ func (d *Driver) Init(ctx context.Context) error {
 // database, ordered by their version in ascending order.
 func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	d.logger.Debug("Fetching applied migrations")
-	query := fmt.Sprintf(
-		"SELECT version, checksum, dirty FROM %s ORDER BY version ASC",
-		d.ident,
-	)
+	query := "SELECT version, checksum, dirty FROM " +
+		d.ident + " ORDER BY version ASC"
 
 	rows, err := d.db.QueryContext(ctx, query)
 	if err != nil {
@@ -343,16 +345,12 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 	d.logger.Info("Forcing database version", slog.Uint64("version", version))
 
 	return d.withTx(ctx, func(tx *sql.Tx) error {
-		queryUpdate := fmt.Sprintf(
-			"UPDATE %s SET dirty = false WHERE version = $1", d.ident,
-		)
+		queryUpdate := "UPDATE " + d.ident + "SET dirty = false WHERE version = $1"
 		if _, err := tx.ExecContext(ctx, queryUpdate, version); err != nil {
 			return fmt.Errorf("failed to clear dirty flag: %w", err)
 		}
 
-		queryDelete := fmt.Sprintf(
-			"DELETE FROM %s WHERE version > $1", d.ident,
-		)
+		queryDelete := "DELETE FROM " + d.ident + " WHERE version > $1"
 		if _, err := tx.ExecContext(ctx, queryDelete, version); err != nil {
 			return fmt.Errorf("failed to delete newer versions: %w", err)
 		}
@@ -464,11 +462,9 @@ func (d *Driver) setDirty(
 
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf(
-			"INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) "+
-				"ON CONFLICT (version) DO UPDATE SET dirty = true",
-			d.ident,
-		)
+		query := "INSERT INTO " + d.ident +
+			" (version, checksum, dirty) VALUES ($1, $2, true) " +
+			"ON CONFLICT (version) DO UPDATE SET dirty = true"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
@@ -478,10 +474,7 @@ func (d *Driver) setDirty(
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	case migrate.Down:
-		query := fmt.Sprintf(
-			"UPDATE %s SET dirty = true WHERE version = $1",
-			d.ident,
-		)
+		query := "UPDATE " + d.ident + " SET dirty = true WHERE version = $1"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
@@ -505,10 +498,7 @@ func (d *Driver) setClean(
 
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf(
-			"UPDATE %s SET dirty = false WHERE version = $1",
-			d.ident,
-		)
+		query := "UPDATE " + d.ident + " SET dirty = false WHERE version = $1"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
@@ -517,10 +507,7 @@ func (d *Driver) setClean(
 			return fmt.Errorf("failed to clear dirty state: %w", err)
 		}
 	case migrate.Down:
-		query := fmt.Sprintf(
-			"DELETE FROM %s WHERE version = $1",
-			d.ident,
-		)
+		query := "DELETE FROM " + d.ident + " WHERE version = $1"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
