@@ -124,6 +124,10 @@ func (s *Source) Extension() string {
 	return s.ext
 }
 
+// Parse extracts the version, description, execution direction, and transaction
+// flag from a given filename. It returns an error if the filename does not
+// match the strict <version>_<description>.<direction>[_notx]<extension>
+// format.
 func (s *Source) Parse(name string) (
 	uint64,
 	string,
