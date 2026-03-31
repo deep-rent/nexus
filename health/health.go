@@ -20,8 +20,8 @@
 //
 //	monitor := health.NewMonitor()
 //
-//	// Register a check with a 5-second minimum delay between executions.
-//	monitor.Register("database", 5*time.Second, check.Ping(db))
+//	// Register a check with a 5-second minimum delay between invocations.
+//	monitor.Attach("database", 5*time.Second, check.Ping(db))
 //
 //	// Mount the standard endpoints (/health, /health/live, /health/ready)
 //	// to a nexus router.
@@ -59,6 +59,14 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 	// Timestamp records when this check was actually executed.
 	Timestamp time.Time `json:"timestamp,format:unix"`
+}
+
+// Report represents the aggregated outcome of all registered health checks.
+type Report struct {
+	// Status is the overall health state of the application.
+	Status Status `json:"status"`
+	// Checks maps the name of each registered check to its specific result.
+	Checks map[string]Result `json:"checks,omitempty"`
 }
 
 // CheckFunc defines the signature for a pluggable health check. It receives
@@ -204,7 +212,9 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 // serving as a basic liveness probe to detect process hangs.
 func (m *Monitor) Live() router.HandlerFunc {
 	return func(e *router.Exchange) error {
-		return e.JSON(http.StatusOK, map[string]Status{"status": StatusHealthy})
+		return e.JSON(http.StatusOK, Report{
+			Status: StatusHealthy,
+		})
 	}
 }
 
@@ -220,9 +230,9 @@ func (m *Monitor) Ready() router.HandlerFunc {
 			code = http.StatusServiceUnavailable
 		}
 
-		return e.JSON(code, map[string]any{
-			"status": overall,
-			"checks": results,
+		return e.JSON(code, Report{
+			Status: overall,
+			Checks: results,
 		})
 	}
 }
