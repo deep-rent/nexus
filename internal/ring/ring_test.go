@@ -15,6 +15,7 @@
 package ring_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/deep-rent/nexus/internal/ring"
@@ -24,10 +25,10 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	tcs := []struct {
+	tests := []struct {
 		name string
 		size int
-		exp  int
+		want int
 	}{
 		{"neg", -1, 2},
 		{"zero", 0, 2},
@@ -39,14 +40,14 @@ func TestNew(t *testing.T) {
 		{"large", 1000, 1024},
 	}
 
-	for _, tc := range tcs {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			b := ring.New[int](tc.size, ring.DropNewest)
 			c := 0
 			for b.Push(c) {
 				c++
 			}
-			assert.Equal(t, tc.exp, c)
+			assert.Equal(t, tc.want, c)
 		})
 	}
 }
@@ -75,7 +76,7 @@ func TestPushPop(t *testing.T) {
 func TestDropNewest(t *testing.T) {
 	b := ring.New[int](4, ring.DropNewest)
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		assert.True(t, b.Push(i))
 	}
 
@@ -89,7 +90,7 @@ func TestDropNewest(t *testing.T) {
 func TestDropOldest(t *testing.T) {
 	b := ring.New[int](4, ring.DropOldest)
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		b.Push(i)
 	}
 
@@ -100,4 +101,40 @@ func TestDropOldest(t *testing.T) {
 	v, ok = b.Pop()
 	require.True(t, ok)
 	assert.Equal(t, 3, v)
+}
+
+func TestConcurrentMPSC(t *testing.T) {
+	b := ring.New[int](1024, ring.Block)
+	var wg sync.WaitGroup
+
+	p := 4
+	i := 10000
+	n := p * i
+
+	wg.Add(p)
+	for range p {
+		go func() {
+			defer wg.Done()
+			for range i {
+				for !b.Push(1) {
+				}
+			}
+		}()
+	}
+
+	var c int
+	d := make(chan struct{})
+
+	go func() {
+		for c < n {
+			if _, ok := b.Pop(); ok {
+				c++
+			}
+		}
+		close(d)
+	}()
+
+	wg.Wait()
+	<-d
+	assert.Equal(t, n, c)
 }
