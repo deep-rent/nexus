@@ -186,13 +186,16 @@ func BenchmarkPostgres_Complex(b *testing.B) {
 }
 
 func BenchmarkPostgres_Massive(b *testing.B) {
-	var script []byte
 	stmt := []byte("INSERT INTO users (email) VALUES ('test@example.com');\n")
-	for range 10000 {
+	iterations := 10000
+	script := make([]byte, 0, len(stmt)*iterations)
+
+	for range iterations {
 		script = append(script, stmt...)
 	}
 
 	b.ReportAllocs()
+	b.ResetTimer()
 
 	for b.Loop() {
 		_ = schema.Postgres(script)
