@@ -15,7 +15,6 @@
 package migrate_test
 
 import (
-	"context"
 	"crypto/sha256"
 	"errors"
 	"testing"
@@ -70,7 +69,7 @@ func TestMigrator_Up(t *testing.T) {
 		drv := drivermock.New()
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.NoError(t, err)
 
 		state := drv.State()
@@ -93,7 +92,7 @@ func TestMigrator_Up(t *testing.T) {
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.NoError(t, err)
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -106,7 +105,7 @@ func TestMigrator_Up(t *testing.T) {
 			migrate.WithDriver(drv),
 		)
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.ErrorContains(t, err, "failed to acquire lock")
 		assert.False(t, drv.IsLocked)
 	})
@@ -119,7 +118,7 @@ func TestMigrator_Up(t *testing.T) {
 			migrate.WithDriver(drv),
 		)
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.ErrorContains(t, err, "failed to initialize driver")
 		assert.False(t, drv.IsLocked, "lock must be released on init failure")
 	})
@@ -136,7 +135,7 @@ func TestMigrator_Up(t *testing.T) {
 		drv.ExecuteErr = errors.New("syntax error")
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.ErrorContains(t, err, "migration 1 failed")
 		assert.False(t, drv.IsLocked, "lock must be released on execute failure")
 	})
@@ -150,7 +149,7 @@ func TestMigrator_Up(t *testing.T) {
 		})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		msg := "applied migration 1 is missing from source files"
 		assert.ErrorContains(t, err, msg)
 		assert.False(t, drv.IsLocked, "lock must be released")
@@ -173,7 +172,7 @@ func TestMigrator_Up(t *testing.T) {
 		})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.ErrorContains(t, err, "checksum mismatch")
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -195,7 +194,7 @@ func TestMigrator_Up(t *testing.T) {
 		})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Up(context.Background())
+		err := m.Up(t.Context())
 		assert.ErrorContains(t, err, "database is dirty at version 1")
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -222,7 +221,7 @@ func TestMigrator_Down(t *testing.T) {
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Down(context.Background())
+		err := m.Down(t.Context())
 		assert.NoError(t, err)
 
 		state := drv.State()
@@ -235,7 +234,7 @@ func TestMigrator_Down(t *testing.T) {
 		drv := drivermock.New()
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Down(context.Background())
+		err := m.Down(t.Context())
 		assert.NoError(t, err)
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -253,7 +252,7 @@ func TestMigrator_Down(t *testing.T) {
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.Down(context.Background())
+		err := m.Down(t.Context())
 		assert.ErrorContains(t, err, "down migration file not found")
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -267,7 +266,7 @@ func TestMigrator_Force(t *testing.T) {
 			migrate.WithDriver(drv),
 		)
 
-		err := m.Force(context.Background(), 5)
+		err := m.Force(t.Context(), 5)
 		assert.NoError(t, err)
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -280,7 +279,7 @@ func TestMigrator_Force(t *testing.T) {
 			migrate.WithDriver(drv),
 		)
 
-		err := m.Force(context.Background(), 5)
+		err := m.Force(t.Context(), 5)
 		assert.ErrorContains(t, err, "failed to force version")
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -320,7 +319,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.MigrateTo(context.Background(), 3)
+		err := m.MigrateTo(t.Context(), 3)
 		assert.NoError(t, err)
 
 		state := drv.State()
@@ -334,7 +333,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(content2)})
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.MigrateTo(context.Background(), 1)
+		err := m.MigrateTo(t.Context(), 1)
 		assert.NoError(t, err)
 
 		state := drv.State()
@@ -352,7 +351,7 @@ func TestMigrator_MigrateTo(t *testing.T) {
 
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-		err := m.MigrateTo(context.Background(), 2)
+		err := m.MigrateTo(t.Context(), 2)
 		assert.ErrorContains(t, err, "down migration file not found for version 3")
 		assert.False(t, drv.IsLocked, "lock must be released")
 	})
@@ -386,13 +385,13 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 
 	m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
-	pending, err := m.Pending(context.Background())
+	pending, err := m.Pending(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, pending, 2)
 	assert.Equal(t, uint64(2), pending[0].Version)
 	assert.Equal(t, uint64(3), pending[1].Version)
 
-	applied, err := m.Applied(context.Background())
+	applied, err := m.Applied(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, applied, 1)
 	assert.Equal(t, uint64(1), applied[0].Version)
@@ -414,7 +413,7 @@ func TestMigrator_DryRun(t *testing.T) {
 		migrate.WithDryRun(true),
 	)
 
-	err := m.Up(context.Background())
+	err := m.Up(t.Context())
 	assert.NoError(t, err)
 
 	state := drv.State()
