@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package event provides a high-performance, in-memory event bus.
+// Package event provides a high-performance, in-memory event bus system.
 // It relies on a lock-free ring buffer for low-latency event publishing and an
 // atomic copy-on-write mechanism for thread-safe subscriber management.
+//
+// The package offers both standalone event streams (Bus) and a centralized
+// topic manager (Broker) for safely routing different event types across an
+// application.
 //
 // # Usage Example
 //
@@ -22,7 +26,6 @@
 //
 //	import (
 //		"fmt"
-//		"log/slog"
 //		"time"
 //		"github.com/deep-rent/nexus/event"
 //	)
@@ -32,23 +35,33 @@
 //	}
 //
 //	func main() {
-//		// Initialize the bus with custom options
-//		bus := event.New[UserCreated](
-//			event.WithSyncDispatch[UserCreated](),
-//			event.WithLogger[UserCreated](slog.Default()),
-//		)
-//		defer bus.Close()
+//		// 1. Initialize the central broker.
+//		broker := event.NewBroker()
+//		defer broker.Close()
 //
-//		// Subscribe to the event stream
+//		// 2. Retrieve a typed bus for a specific topic.
+//		// If the bus does not exist, it is created with the provided options.
+//		bus, err := event.Topic(
+//			broker,
+//			"users.created",
+//			event.WithSyncDispatch[UserCreated](),
+//		)
+//		if err != nil {
+//			panic(err)
+//		}
+//
+//		// 3. Subscribe to the event stream.
 //		unsub := bus.Subscribe(func(e UserCreated) {
 //			fmt.Println("New user registered:", e.Email)
 //		})
-//		defer unsub() // Clean up subscriber when done
+//		defer unsub()
 //
-//		// Publish an event
+//		// 4. Publish an event.
+//		// In a real application, you would retrieve the bus via event.Topic()
+//		// in your publisher service and cache the pointer for fast publishing.
 //		bus.Publish(UserCreated{Email: "alice@example.com"})
 //
-//		// Allow a brief moment for asynchronous processes if needed
+//		// Allow a brief moment for asynchronous processes if needed.
 //		time.Sleep(time.Millisecond * 10)
 //	}
 package event
