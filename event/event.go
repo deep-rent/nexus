@@ -41,14 +41,11 @@
 //
 //		// 2. Retrieve a typed bus for a specific topic.
 //		// If the bus does not exist, it is created with the provided options.
-//		bus, err := event.Topic(
+//		bus := event.Topic(
 //			broker,
 //			"users.created",
 //			event.WithSyncDispatch[UserCreated](),
 //		)
-//		if err != nil {
-//			panic(err)
-//		}
 //
 //		// 3. Subscribe to the event stream.
 //		unsub := bus.Subscribe(func(e UserCreated) {
@@ -513,9 +510,9 @@ func NewBroker() *Broker {
 }
 
 // Topic retrieves an existing bus for the given topic or creates a new one
-// if it does not exist. It returns an error if the topic already exists but
-// is registered to a different event type.
-func Topic[T any](b *Broker, name string, opts ...Option[T]) (*Bus[T], error) {
+// if it does not exist. It panics if the topic already exists but is registered
+// to a different event type.
+func Topic[T any](b *Broker, name string, opts ...Option[T]) *Bus[T] {
 	// Fast path: Invoke the read-only lock.
 	b.mu.RLock()
 	existing, exists := b.buses[name]
@@ -525,11 +522,11 @@ func Topic[T any](b *Broker, name string, opts ...Option[T]) (*Bus[T], error) {
 		// Type assert back to the requested generic type.
 		bus, ok := existing.(*Bus[T])
 		if !ok {
-			return nil, fmt.Errorf(
+			panic(fmt.Sprintf(
 				"event: topic %q exists but expects a different event type", name,
-			)
+			))
 		}
-		return bus, nil
+		return bus
 	}
 
 	// Slow path: Invoke the write lock to initialize.
@@ -541,18 +538,18 @@ func Topic[T any](b *Broker, name string, opts ...Option[T]) (*Bus[T], error) {
 	if existing, exists = b.buses[name]; exists {
 		bus, ok := existing.(*Bus[T])
 		if !ok {
-			return nil, fmt.Errorf(
+			panic(fmt.Sprintf(
 				"event: topic %q exists but expects a different event type", name,
-			)
+			))
 		}
-		return bus, nil
+		return bus
 	}
 
 	// Create and store the new typed bus.
 	bus := NewBus(opts...)
 	b.buses[name] = bus
 
-	return bus, nil
+	return bus
 }
 
 // Close gracefully shuts down all buses managed by the broker.
