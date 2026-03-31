@@ -420,9 +420,17 @@ func (b *Bus[T]) Publish(event T) bool {
 
 // Close drains remaining events and shuts down the background processor.
 // Further calls to Publish will immediately return false.
+//
+// Note: Producers must be externally synchronized to stop calling Publish
+// before Close is invoked to prevent stranded events.
 func (b *Bus[T]) Close() {
 	b.closed.Store(true)
 	b.wait.Signal() // Wake up the processor if it is blocking on a semaphore
+
+	// Give straggling producers a few microseconds to finish their push before
+	// the wait group potentially returns.
+	time.Sleep(time.Microsecond * 50)
+
 	b.wg.Wait()
 }
 
