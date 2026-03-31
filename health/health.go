@@ -24,7 +24,7 @@
 //	monitor.Attach("database", 5*time.Second, check.Ping(db))
 //
 //	// Mount the standard endpoints (/health, /health/live, /health/ready)
-//	// to a nexus router.
+//	// to a router.Router instance.
 //	monitor.Mount(r)
 package health
 
