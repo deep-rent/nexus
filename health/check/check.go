@@ -93,12 +93,12 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 
 		req, err := http.NewRequestWithContext(child, http.MethodGet, url, nil)
 		if err != nil {
-			return health.StatusSick, fmt.Errorf("http: request %s: %w", url, err)
+			return health.StatusSick, fmt.Errorf("http request %s: %w", url, err)
 		}
 
 		res, err := client.Do(req)
 		if err != nil {
-			return health.StatusSick, fmt.Errorf("http: get %s: %w", url, err)
+			return health.StatusSick, fmt.Errorf("http get %s: %w", url, err)
 		}
 
 		// Ensure the body is drained so the connection can be reused.
@@ -113,7 +113,7 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 		}
 
 		return health.StatusSick, fmt.Errorf(
-			"http: get %s: unexpected status code: %d",
+			"http get %s: unexpected status code: %d",
 			url, code,
 		)
 	}
