@@ -221,3 +221,28 @@ func TestDriver_Force(t *testing.T) {
 	assert.Equal(t, uint64(1), applied[0].Version)
 	assert.False(t, applied[0].Dirty, "dirty flag should be cleared")
 }
+
+func TestDriver_ExecuteNonTransactional(t *testing.T) {
+	db := setup(t)
+	d := postgres.New(db)
+	ctx := context.Background()
+	require.NoError(t, d.Init(ctx))
+
+	// Execute UP migration with Tx: false
+	err := d.Execute(ctx, migrate.ParsedScript{
+		Version:   1,
+		Direction: migrate.Up,
+		Checksum:  sha256.Sum256([]byte("notx")),
+		Statements: []string{
+			"CREATE TABLE metrics (id INT);",
+			// This would fail if wrapped in a transaction
+			"CREATE INDEX CONCURRENTLY idx_metrics_id ON metrics(id);",
+		},
+		Tx: false,
+	})
+	assert.NoError(t, err)
+
+	applied, err := d.Applied(ctx)
+	require.NoError(t, err)
+	require.Len(t, applied, 1)
+}
