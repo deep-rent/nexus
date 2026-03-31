@@ -24,7 +24,7 @@
 // Example usage:
 //
 //	db, _ := sql.Open("postgres", "postgres://user:pass@localhost:5432/db")
-//	driver := postgres.New(db,
+//	drv := postgres.New(db,
 //	    postgres.WithSchema("public"),
 //	    postgres.WithTable("migrations"),
 //	)
