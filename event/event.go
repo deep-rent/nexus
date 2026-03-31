@@ -52,8 +52,8 @@ const (
 const (
 	// DefaultSize is the default capacity of the internal ring buffer.
 	DefaultSize = 1024
-	// DefaultPolicy is the default overflow policy (Block).
-	DefaultPolicy = Block
+	// DefaultOverflowMode is the default overflow policy (Block).
+	DefaultOverflowMode = Block
 )
 
 // Subscriber is a callback function that handles events of type T.
@@ -71,9 +71,13 @@ type WaitStrategy interface {
 type adaptiveWait struct{}
 
 func (adaptiveWait) Snooze(idle int) {
-	if idle < 1000 {
+	const (
+		phase1 = 1000
+		phase2 = 5000
+	)
+	if idle < phase1 {
 		runtime.Gosched()
-	} else if idle < 5000 {
+	} else if idle < phase2 {
 		time.Sleep(time.Microsecond)
 	} else {
 		time.Sleep(time.Millisecond)
@@ -199,7 +203,7 @@ type Bus[T any] struct {
 func New[T any](opts ...Option[T]) *Bus[T] {
 	cfg := config[T]{
 		size:       DefaultSize,
-		policy:     DefaultPolicy,
+		policy:     DefaultOverflowMode,
 		dispatcher: asyncDispatcher[T]{},
 		wait:       adaptiveWait{},
 	}
