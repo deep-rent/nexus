@@ -192,6 +192,7 @@ func TestSource_List(t *testing.T) {
 		mfs := fstest.MapFS{
 			"01_init.up.sql":       &fstest.MapFile{Data: []byte("UP1")},
 			"02_add.down.sql":      &fstest.MapFile{Data: []byte("DOWN2")},
+			"04_idx.up_notx.sql":   &fstest.MapFile{Data: []byte("NOTX4")},
 			"bad_format.up.sql":    &fstest.MapFile{Data: []byte("IGNOREME")},
 			"subdir/03_sub.up.sql": &fstest.MapFile{Data: []byte("UP3")},
 		}
@@ -199,14 +200,27 @@ func TestSource_List(t *testing.T) {
 		scripts, err := s.List()
 
 		require.NoError(t, err)
-		assert.Len(t, scripts, 3)
+		require.Len(t, scripts, 4)
 
+		// Verify all fields are correctly populated for standard files
 		assert.Equal(t, uint64(1), scripts[0].Version)
-		assert.Equal(t, "UP1", string(scripts[0].Content))
+		assert.Equal(t, "init", scripts[0].Description)
 		assert.Equal(t, migrate.Up, scripts[0].Direction)
+		assert.True(t, scripts[0].Tx)
+		assert.Equal(t, "01_init.up.sql", scripts[0].Path)
+		assert.Equal(t, []byte("UP1"), scripts[0].Content)
 
+		// Verify direction logic
 		assert.Equal(t, uint64(2), scripts[1].Version)
-		assert.Equal(t, uint64(3), scripts[2].Version)
+		assert.Equal(t, migrate.Down, scripts[1].Direction)
+
+		// Verify the _notx flag correctly disables transactions
+		assert.Equal(t, uint64(4), scripts[2].Version)
+		assert.False(t, scripts[2].Tx)
+
+		// Verify relative paths are preserved for subdirectories
+		assert.Equal(t, uint64(3), scripts[3].Version)
+		assert.Equal(t, "subdir/03_sub.up.sql", scripts[3].Path)
 	})
 
 	t.Run("walkdir err", func(t *testing.T) {
