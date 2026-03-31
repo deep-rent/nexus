@@ -187,14 +187,25 @@ func (s *Source) List() ([]migrate.SourceScript, error) {
 // Ensure Source satisfies the migrate.Source interface.
 var _ migrate.Source = (*Source)(nil)
 
-// Errors returned by the parse function.
 var (
-	ErrExtension          = errors.New("extension mismatch")
-	ErrMissingDirection   = errors.New("missing direction segment")
-	ErrIllegalDirection   = errors.New("illegal direction")
-	ErrMissingSeparator   = errors.New("missing underscore separator")
+	// ErrExtension is returned when a filename does not end with the configured
+	// file extension.
+	ErrExtension = errors.New("extension mismatch")
+	// ErrMissingDirection is returned when a filename lacks the dot separator
+	// preceding the direction segment.
+	ErrMissingDirection = errors.New("missing direction segment")
+	// ErrIllegalDirection is returned when the direction segment is neither "up"
+	// nor "down".
+	ErrIllegalDirection = errors.New("illegal direction")
+	// ErrMissingSeparator is returned when a filename lacks the underscore
+	// separating the version from the description.
+	ErrMissingSeparator = errors.New("missing underscore separator")
+	// ErrInvalidDescription is returned when the description segment of the
+	// filename is empty.
 	ErrInvalidDescription = errors.New("invalid description")
-	ErrInvalidVersion     = errors.New("invalid version")
+	// ErrInvalidVersion is returned when the version segment is empty or cannot
+	// be parsed into an unsigned integer.
+	ErrInvalidVersion = errors.New("invalid version")
 )
 
 // parse returns an error explaining why a file does not match the strict
