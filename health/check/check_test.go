@@ -161,6 +161,8 @@ func (m *mockPinger) PingContext(ctx context.Context) error {
 	return m.err
 }
 
+var _ check.Pinger = (*mockPinger)(nil)
+
 func TestPing(t *testing.T) {
 	tests := []struct {
 		name       string
