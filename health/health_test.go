@@ -232,3 +232,37 @@ func TestMonitor_Concurrency(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestMonitor_ContextPropagation(t *testing.T) {
+	m := health.NewMonitor()
+	received := make(chan struct{})
+
+	m.Attach("ctx_test", 0, func(ctx context.Context) (health.Status, error) {
+		select {
+		case <-ctx.Done():
+			close(received)
+			return health.StatusSick, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+			return health.StatusHealthy, nil
+		}
+	})
+
+	r := router.New()
+	m.Mount(r)
+
+	// Create a context that we can cancel:
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/health", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	// Cancel the context immediately to simulate a client disconnect:
+	cancel()
+	r.ServeHTTP(w, req)
+
+	select {
+	case <-received:
+		// Success: the check function saw the cancellation:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("CheckFunc did not receive context cancellation")
+	}
+}
