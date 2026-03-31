@@ -173,7 +173,8 @@ func New(db *sql.DB, opts ...Option) *Driver {
 		if _, err := rand.Read(b[:]); err != nil {
 			panic(fmt.Sprintf("postgres: failed to generate random lock ID: %v", err))
 		}
-		d.lockID = int64(binary.BigEndian.Uint64(b[:]))
+		raw := binary.BigEndian.Uint64(b[:])
+		d.lockID = int64(raw & 0x7FFFFFFFFFFFFFFF)
 	}
 
 	return d
