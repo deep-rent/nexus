@@ -35,14 +35,14 @@ import (
 	"sync/atomic"
 )
 
-// OverflowPolicy dictates how the buffer behaves when a producer attempts to
-// push into a queue that has reached its maximum capacity.
-type OverflowPolicy int
+// Policy dictates how the buffer behaves when a producer attempts to
+// push into a queue that has reached its maximum capacity (overflow).
+type Policy int
 
 const (
 	// Block causes the producer to yield the processor to other goroutines
 	// (via runtime.Gosched) until space becomes available.
-	Block OverflowPolicy = iota
+	Block Policy = iota
 
 	// DropOldest forcefully advances the read pointer, discarding the oldest
 	// unread item in the buffer to make room for the newly pushed item.
@@ -74,14 +74,14 @@ type Buffer[T any] struct {
 
 	// policy defines the behavior of the Push operation when the
 	// difference between tail and head reaches the buffer capacity.
-	policy OverflowPolicy
+	policy Policy
 }
 
 // New creates a Buffer configured with the requested size and overflow policy.
 // If the provided size is less than 2, it defaults to 2. The final capacity is
 // always automatically rounded up to the nearest power of two to optimize
 // internal index masking.
-func New[T any](size int, policy OverflowPolicy) *Buffer[T] {
+func New[T any](size int, policy Policy) *Buffer[T] {
 	if size < 2 {
 		size = 2
 	}

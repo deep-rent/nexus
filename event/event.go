@@ -25,7 +25,7 @@ import (
 	"github.com/deep-rent/nexus/internal/ring"
 )
 
-type Policy = ring.OverflowPolicy
+type Policy = ring.Policy
 
 const (
 	Block      = ring.Block
