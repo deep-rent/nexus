@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/deep-rent/nexus/internal/ring"
 )
@@ -217,8 +218,12 @@ func (b *Bus[T]) Close() {
 func (b *Bus[T]) process() {
 	defer b.wg.Done()
 
+	idle := 0
+
 	for {
 		if evt, ok := b.buffer.Pop(); ok {
+			idle = 0 // Reset backoff on success
+
 			handlers := *b.subs.Load()
 			if len(handlers) > 0 {
 				b.dispatcher.dispatch(evt, handlers)
@@ -227,17 +232,32 @@ func (b *Bus[T]) process() {
 			if b.closed.Load() {
 				// Perform one final drain check after detecting the close signal.
 				for {
-					if finalEvt, ok := b.buffer.Pop(); ok {
+					if final, ok := b.buffer.Pop(); ok {
 						handlers := *b.subs.Load()
 						if len(handlers) > 0 {
-							b.dispatcher.dispatch(finalEvt, handlers)
+							b.dispatcher.dispatch(final, handlers)
 						}
 					} else {
 						return // Truly empty and closed
 					}
 				}
 			}
-			runtime.Gosched()
+
+			// Adaptive backoff to prevent 100% idle CPU burn:
+			idle++
+			if idle < 1000 {
+				// Phase 1: Spin with yield. Keeps latency ultra-low for bursty traffic.
+				runtime.Gosched()
+			} else if idle < 5000 {
+				// Phase 2: Micro-sleep. Drops CPU usage significantly while keeping
+				// latency relatively low (~1ms penalty depending on OS scheduler).
+				time.Sleep(time.Microsecond)
+			} else {
+				// Phase 3: Deep idle. Near 0% CPU usage.
+				// Caps out at 1ms latency for the first event that breaks the idle
+				// state.
+				time.Sleep(time.Millisecond)
+			}
 		}
 	}
 }
