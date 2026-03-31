@@ -15,6 +15,7 @@
 package postgres_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"testing"
@@ -32,7 +33,7 @@ import (
 )
 
 func setup(t *testing.T) *sql.DB {
-	ctx := t.Context()
+	ctx := context.Background()
 
 	container, err := testpg.Run(ctx,
 		"postgres:18-alpine",
@@ -77,7 +78,7 @@ func TestNew(t *testing.T) {
 func TestDriver_Init(t *testing.T) {
 	db := setup(t)
 	d := postgres.New(db)
-	ctx := t.Context()
+	ctx := context.Background()
 
 	// 1. Initial creation
 	err := d.Init(ctx)
@@ -90,7 +91,7 @@ func TestDriver_Init(t *testing.T) {
 
 func TestDriver_Locking(t *testing.T) {
 	db := setup(t)
-	ctx := t.Context()
+	ctx := context.Background()
 
 	d1 := postgres.New(db,
 		postgres.WithLockID(12345),
@@ -121,7 +122,7 @@ func TestDriver_Locking(t *testing.T) {
 func TestDriver_ExecuteAndApplied(t *testing.T) {
 	db := setup(t)
 	d := postgres.New(db)
-	ctx := t.Context()
+	ctx := context.Background()
 	require.NoError(t, d.Init(ctx))
 
 	checksum := sha256.Sum256([]byte("1"))
@@ -164,7 +165,7 @@ func TestDriver_ExecuteAndApplied(t *testing.T) {
 func TestDriver_ExecuteFailureRollback(t *testing.T) {
 	db := setup(t)
 	d := postgres.New(db)
-	ctx := t.Context()
+	ctx := context.Background()
 	require.NoError(t, d.Init(ctx))
 
 	script := migrate.ParsedScript{
@@ -199,7 +200,7 @@ func TestDriver_ExecuteFailureRollback(t *testing.T) {
 func TestDriver_Force(t *testing.T) {
 	db := setup(t)
 	d := postgres.New(db)
-	ctx := t.Context()
+	ctx := context.Background()
 	require.NoError(t, d.Init(ctx))
 
 	// Manually inject a dirty state at version 1 and a clean state at version 2
