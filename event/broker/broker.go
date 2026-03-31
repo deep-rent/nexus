@@ -81,7 +81,7 @@ func Topic[T any](
 	}
 
 	// Create and store the new typed bus
-	bus := event.New[T](opts...)
+	bus := event.New(opts...)
 	b.buses[name] = bus
 
 	return bus, nil
