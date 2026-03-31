@@ -269,3 +269,15 @@ func TestDriver_StatementTimeout(t *testing.T) {
 	assert.ErrorContains(t, err, "statement 1 failed")
 	assert.ErrorContains(t, err, "canceling statement due to user request")
 }
+
+func TestDriver_Close(t *testing.T) {
+	db := setup(t)
+	d := postgres.New(db)
+
+	err := d.Close()
+	assert.NoError(t, err)
+
+	// Verify the underlying pool is actually closed
+	err = db.Ping()
+	assert.ErrorContains(t, err, "database is closed")
+}
