@@ -152,7 +152,7 @@ func TestPostgres_TestData(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join("testdata", tc.file)
-			content, err := os.ReadFile(path)
+			content, err := os.ReadFile(path) //nolint:gosec
 			require.NoError(t, err)
 
 			actual := schema.Postgres(content)
@@ -173,7 +173,7 @@ func BenchmarkPostgres_Simple(b *testing.B) {
 
 func BenchmarkPostgres_Complex(b *testing.B) {
 	path := filepath.Join("testdata", "00002_audit_triggers.up.sql")
-	script, err := os.ReadFile(path)
+	script, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		b.Fatal(err)
 	}
