@@ -54,6 +54,7 @@
 package event
 
 import (
+	"fmt"
 	"log/slog"
 	"runtime"
 	"runtime/debug"
@@ -476,4 +477,78 @@ func (b *Bus[T]) process() {
 			idle++
 		}
 	}
+}
+
+// closer is an internal interface that allows the Broker to shut down
+// buses without knowing their generic type payloads.
+type closer interface {
+	Close()
+}
+
+// Broker manages a collection of typed event buses segregated by topic strings.
+type Broker struct {
+	mu    sync.RWMutex
+	buses map[string]closer
+}
+
+// New initializes an empty event broker.
+func New() *Broker {
+	return &Broker{
+		buses: make(map[string]closer),
+	}
+}
+
+// Topic retrieves an existing bus for the given topic or creates a new one
+// if it does not exist. It returns an error if the topic already exists but
+// is registered to a different event type.
+func Topic[T any](b *Broker, name string, opts ...Option[T]) (*Bus[T], error) {
+	// Fast path: Invoke the read-only lock.
+	b.mu.RLock()
+	existing, exists := b.buses[name]
+	b.mu.RUnlock()
+
+	if exists {
+		// Type assert back to the requested generic type.
+		bus, ok := existing.(*Bus[T])
+		if !ok {
+			return nil, fmt.Errorf(
+				"event: topic %q exists but expects a different event type", name,
+			)
+		}
+		return bus, nil
+	}
+
+	// Slow path: Invoke the write lock to initialize.
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Double-check locking in case another goroutine initialized it
+	// while we were waiting to acquire the write lock.
+	if existing, exists = b.buses[name]; exists {
+		bus, ok := existing.(*Bus[T])
+		if !ok {
+			return nil, fmt.Errorf(
+				"event: topic %q exists but expects a different event type", name,
+			)
+		}
+		return bus, nil
+	}
+
+	// Create and store the new typed bus.
+	bus := NewBus(opts...)
+	b.buses[name] = bus
+
+	return bus, nil
+}
+
+// Close gracefully shuts down all buses managed by the broker.
+func (b *Broker) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, bus := range b.buses {
+		bus.Close()
+	}
+	// Clear the map to release references.
+	b.buses = make(map[string]closer)
 }
