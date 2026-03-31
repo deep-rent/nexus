@@ -159,7 +159,7 @@ func TestMonitor_Live(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var rep health.Report
-	json.Unmarshal(w.Body.Bytes(), &rep)
+	_ = json.Unmarshal(w.Body.Bytes(), &rep)
 	assert.Equal(t, health.StatusHealthy, rep.Status)
 }
 
@@ -220,7 +220,7 @@ func TestMonitor_Lifecycle(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/health", nil))
 	var rep1 health.Report
-	json.Unmarshal(w1.Body.Bytes(), &rep1)
+	_ = json.Unmarshal(w1.Body.Bytes(), &rep1)
 	assert.Contains(t, rep1.Checks, "tmp")
 
 	// Detach and verify gone:
@@ -228,7 +228,7 @@ func TestMonitor_Lifecycle(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/health", nil))
 	var rep2 health.Report
-	json.Unmarshal(w2.Body.Bytes(), &rep2)
+	_ = json.Unmarshal(w2.Body.Bytes(), &rep2)
 	assert.NotContains(t, rep2.Checks, "tmp")
 }
 

@@ -34,7 +34,9 @@ func TestTCP(t *testing.T) {
 	// Start a dummy TCP server for the success case:
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() {
+		_ = l.Close()
+	}()
 
 	addr := l.Addr().String()
 	free := "127.0.0.1:0" // A port that won't accept connections.
