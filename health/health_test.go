@@ -118,6 +118,12 @@ func TestMonitor_Ready(t *testing.T) {
 			assert.Equal(t, tc.wantCode, w.Code)
 			assert.Equal(t, tc.wantStatus, rep.Status)
 			assert.Len(t, rep.Checks, len(tc.checks))
+
+			if db, ok := rep.Checks["db"]; ok {
+				ts := db.Timestamp
+				assert.False(t, ts.IsZero(), "timestamp must be set")
+				assert.WithinDuration(t, time.Now(), ts, 2*time.Second)
+			}
 		})
 	}
 }
@@ -167,7 +173,12 @@ func TestMonitor_Caching(t *testing.T) {
 		)
 	}
 
-	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "should use cached result")
+	assert.Equal(
+		t,
+		int32(1),
+		atomic.LoadInt32(&calls),
+		"must use cached result",
+	)
 
 	// Wait for TTL:
 	time.Sleep(60 * time.Millisecond)
