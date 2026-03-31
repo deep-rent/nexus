@@ -458,11 +458,9 @@ func (d *Driver) setDirty(
 
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf(
-			"INSERT INTO %s (version, checksum, dirty) VALUES ($1, $2, true) "+
-				"ON CONFLICT (version) DO UPDATE SET dirty = true",
-			d.ident,
-		)
+		query := "INSERT INTO " + d.ident +
+			" (version, checksum, dirty) VALUES ($1, $2, true) " +
+			"ON CONFLICT (version) DO UPDATE SET dirty = true"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
@@ -472,10 +470,7 @@ func (d *Driver) setDirty(
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
 		}
 	case migrate.Down:
-		query := fmt.Sprintf(
-			"UPDATE %s SET dirty = true WHERE version = $1",
-			d.ident,
-		)
+		query := "UPDATE " + d.ident + " SET dirty = true WHERE version = $1"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
@@ -499,10 +494,7 @@ func (d *Driver) setClean(
 
 	switch direction {
 	case migrate.Up:
-		query := fmt.Sprintf(
-			"UPDATE %s SET dirty = false WHERE version = $1",
-			d.ident,
-		)
+		query := "UPDATE " + d.ident + " SET dirty = false WHERE version = $1"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,
