@@ -155,6 +155,25 @@ func TestHTTP_Unreachable(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestHTTP_Timeout(t *testing.T) {
+	// A server that hangs longer than our client timeout:
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	// Use a client with a very strict 10ms timeout:
+	client := &http.Client{Timeout: 10 * time.Millisecond}
+	chk := check.HTTP(client, ts.URL)
+
+	status, err := chk(context.Background())
+
+	assert.Equal(t, health.StatusSick, status)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "Timeout") // Or "context deadline exceeded"
+}
+
 type mockPinger struct{ err error }
 
 func (m *mockPinger) PingContext(ctx context.Context) error {
