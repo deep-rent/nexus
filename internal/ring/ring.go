@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package ring provides a generic, lock-free ring buffer designed for
+// high-throughput concurrent queues. It relies on atomic compare-and-swap
+// operations to manage read and write positions, completely avoiding
+// mutex bottlenecks during high-load scenarios.
+//
+// The buffer's capacity is strictly enforced as a power of two, allowing
+// for highly efficient bitwise operations when calculating array indices.
 package ring
 
 import (
