@@ -8,7 +8,7 @@
 
 Nexus is a Go-based application framework. This project is not intended for general use. It is maintained as a public repository solely to support the requirements of its open-source downstream dependencies.
 
-**Note:** Please note that this project does not strictly follow semantic versioning. The major version is bound to our internal deployment cycles. As a result, minor version increments may contain breaking changes. We recommend that any projects depending on Nexus pin to specific versions to avoid unexpected build failures.
+> **Remark:** Please note that this project does not strictly follow semantic versioning. The major version is bound to our internal deployment cycles. As a result, minor version increments may contain breaking changes. We recommend that any projects depending on Nexus pin to specific versions to avoid unexpected build failures.
 
 ---
 
