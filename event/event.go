@@ -18,13 +18,13 @@
 //
 // Usage:
 //
-//	bus := event.New[MyEvent](event.WithAsyncDispatch())
-//	unsub := bus.Subscribe(func(e MyEvent) {
+//	bus := event.New[Event](event.WithSyncDispatch())
+//	unsub := bus.Subscribe(func(e Event) {
 //	    fmt.Println("Received:", e)
 //	})
 //	defer unsub()
 //
-//	bus.Publish(MyEvent{Data: "Hello World"})
+//	bus.Publish(Event{Data: "Hello World"})
 //	bus.Close()
 package event
 
@@ -178,6 +178,7 @@ func WithBlockingWait[T any]() Option[T] {
 }
 
 // WithCustomWaitStrategy injects a user-defined idling strategy.
+// Nil values will be ignored.
 func WithCustomWaitStrategy[T any](ws WaitStrategy) Option[T] {
 	return func(o *config[T]) {
 		if ws != nil {
