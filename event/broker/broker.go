@@ -33,8 +33,8 @@ type Broker struct {
 	buses map[string]closer
 }
 
-// NewBroker initializes an empty event broker.
-func NewBroker() *Broker {
+// New initializes an empty event broker.
+func New() *Broker {
 	return &Broker{
 		buses: make(map[string]closer),
 	}
@@ -48,13 +48,13 @@ func Topic[T any](
 	name string,
 	opts ...event.Option[T],
 ) (*event.Bus[T], error) {
-	// Fast path: Read-only lock
+	// Fast path: Invoke the read-only lock.
 	b.mu.RLock()
 	existing, exists := b.buses[name]
 	b.mu.RUnlock()
 
 	if exists {
-		// Type assert back to the requested generic type
+		// Type assert back to the requested generic type.
 		bus, ok := existing.(*event.Bus[T])
 		if !ok {
 			return nil, fmt.Errorf(
@@ -64,7 +64,7 @@ func Topic[T any](
 		return bus, nil
 	}
 
-	// Slow path: Write lock to initialize
+	// Slow path: Invoke the write lock to initialize.
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -80,8 +80,8 @@ func Topic[T any](
 		return bus, nil
 	}
 
-	// Create and store the new typed bus
-	bus := event.New(opts...)
+	// Create and store the new typed bus.
+	bus := event.NewBus(opts...)
 	b.buses[name] = bus
 
 	return bus, nil
