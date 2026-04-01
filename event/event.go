@@ -25,41 +25,39 @@
 //	package main
 //
 //	import (
-//		"fmt"
-//		"time"
-//		"github.com/deep-rent/nexus/event"
+//	  "fmt"
+//	  "time"
+//	  "github.com/deep-rent/nexus/event"
 //	)
 //
 //	type UserCreated struct {
-//		Email string
+//	  Email string
 //	}
 //
 //	func main() {
-//		// 1. Initialize the central broker.
-//		broker := event.NewBroker()
-//		defer broker.Close()
+//	  // 1. Initialize the central broker with options applied to all its buses.
+//	  broker := event.NewBroker(
+//	    event.WithSyncDispatch(),
+//	  )
+//	  defer broker.Close()
 //
-//		// 2. Retrieve a typed bus for a specific topic.
-//		// If the bus does not exist, it is created with the provided options.
-//		bus := event.Topic(
-//			broker,
-//			"users.created",
-//			event.WithSyncDispatch[UserCreated](),
-//		)
+//	  // 2. Retrieve a typed bus for a specific topic.
+//	  // If the bus does not exist, it is created using the broker's options.
+//	  bus := event.Topic[UserCreated](broker, "users.created")
 //
-//		// 3. Subscribe to the event stream.
-//		unsub := bus.Subscribe(func(e UserCreated) {
-//			fmt.Println("New user registered:", e.Email)
-//		})
-//		defer unsub()
+//	  // 3. Subscribe to the event stream.
+//	  unsub := bus.Subscribe(func(e UserCreated) {
+//	    fmt.Println("New user registered:", e.Email)
+//	  })
+//	  defer unsub()
 //
-//		// 4. Publish an event.
-//		// In a real application, you would retrieve the bus via event.Topic()
-//		// in your publisher service and cache the pointer for fast publishing.
-//		bus.Publish(UserCreated{Email: "alice@example.com"})
+//	  // 4. Publish an event.
+//	  // In a real application, you would retrieve the bus via event.Topic()
+//	  // in your publisher service and cache the pointer for fast publishing.
+//	  bus.Publish(UserCreated{Email: "alice@example.com"})
 //
-//		// Allow a brief moment for asynchronous processes if needed.
-//		time.Sleep(time.Millisecond * 10)
+//	  // Allow a brief moment for asynchronous processes if needed.
+//	  time.Sleep(time.Millisecond * 10)
 //	}
 package event
 
@@ -222,10 +220,10 @@ func (d asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 }
 
 // Option configures the Bus during initialization.
-type Option[T any] func(*config[T])
+type Option func(*config)
 
 // config aggregates all user-defined settings for the Bus.
-type config[T any] struct {
+type config struct {
 	size   int
 	mode   OverflowMode
 	sync   bool
@@ -235,8 +233,8 @@ type config[T any] struct {
 
 // WithSize sets the buffer capacity (rounded up to the nearest power of 2).
 // Defaults to DefaultSize. Non-positive values will be ignored.
-func WithSize[T any](size int) Option[T] {
-	return func(o *config[T]) {
+func WithSize(size int) Option {
+	return func(o *config) {
 		if size > 0 {
 			o.size = size
 		}
@@ -245,40 +243,41 @@ func WithSize[T any](size int) Option[T] {
 
 // WithOverflowMode defines how the bus deals with backpressure on buffer
 // exhaustion. Defaults to DefaultOverflowMode.
-func WithOverflowMode[T any](mode OverflowMode) Option[T] {
-	return func(o *config[T]) {
+func WithOverflowMode(mode OverflowMode) Option {
+	return func(o *config) {
 		o.mode = mode
 	}
 }
 
 // WithSyncDispatch forces sequential event delivery. If omitted, the bus
 // defaults to asynchronous parallel delivery.
-func WithSyncDispatch[T any]() Option[T] {
-	return func(o *config[T]) {
+func WithSyncDispatch() Option {
+	return func(o *config) {
 		o.sync = true
 	}
 }
 
 // WithAdaptiveWait uses a low-latency spin-yield-sleep strategy.
 // This is the default.
-func WithAdaptiveWait[T any]() Option[T] {
-	return func(o *config[T]) {
+func WithAdaptiveWait() Option {
+	return func(o *config) {
 		o.wait = adaptiveWait{}
 	}
 }
 
 // WithBlockingWait uses a semaphore to park the CPU when idle.
 // Ideal for multi-tenant setups.
-func WithBlockingWait[T any]() Option[T] {
-	return func(o *config[T]) {
+func WithBlockingWait() Option {
+	return func(o *config) {
 		o.wait = &blockingWait{sem: make(chan struct{}, 1)}
 	}
 }
 
 // WithCustomWaitStrategy injects a user-defined idling strategy.
 // Nil values are ignored.
-func WithCustomWaitStrategy[T any](strategy WaitStrategy) Option[T] {
-	return func(o *config[T]) {
+// Note: If passed to a Broker, the instance is shared across all buses.
+func WithCustomWaitStrategy(strategy WaitStrategy) Option {
+	return func(o *config) {
 		if strategy != nil {
 			o.wait = strategy
 		}
@@ -287,8 +286,8 @@ func WithCustomWaitStrategy[T any](strategy WaitStrategy) Option[T] {
 
 // WithLogger sets the structured logger for recording subscriber panics.
 // If not provided, it defaults to slog.Default().
-func WithLogger[T any](logger *slog.Logger) Option[T] {
-	return func(o *config[T]) {
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *config) {
 		if logger != nil {
 			o.logger = logger
 		}
@@ -323,8 +322,8 @@ type Bus[T any] struct {
 }
 
 // NewBus initializes a Bus with the provided options.
-func NewBus[T any](opts ...Option[T]) *Bus[T] {
-	cfg := config[T]{
+func NewBus[T any](opts ...Option) *Bus[T] {
+	cfg := config{
 		size: DefaultSize,
 		mode: DefaultOverflowMode,
 		sync: false,
@@ -500,19 +499,22 @@ type closer interface {
 type Broker struct {
 	mu    sync.RWMutex
 	buses map[string]closer
+	opts  []Option
 }
 
-// NewBroker initializes an empty event broker.
-func NewBroker() *Broker {
+// NewBroker initializes an empty event broker with options applied to all
+// subsequently created buses.
+func NewBroker(opts ...Option) *Broker {
 	return &Broker{
 		buses: make(map[string]closer),
+		opts:  opts,
 	}
 }
 
 // Topic retrieves an existing bus for the given topic or creates a new one
-// if it does not exist. It panics if the topic already exists but is registered
-// to a different event type.
-func Topic[T any](b *Broker, name string, opts ...Option[T]) *Bus[T] {
+// using the broker's configured options. It panics if the topic already exists
+// but is registered to a different event type.
+func Topic[T any](b *Broker, name string) *Bus[T] {
 	// Fast path: Invoke the read-only lock.
 	b.mu.RLock()
 	existing, exists := b.buses[name]
@@ -546,7 +548,7 @@ func Topic[T any](b *Broker, name string, opts ...Option[T]) *Bus[T] {
 	}
 
 	// Create and store the new typed bus.
-	bus := NewBus(opts...)
+	bus := NewBus[T](b.opts...)
 	b.buses[name] = bus
 
 	return bus
