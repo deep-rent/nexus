@@ -115,16 +115,18 @@ type adaptiveWait struct{}
 func (adaptiveWait) Snooze(idle int) {
 	const (
 		phase1 = 1000 // Spin-yield limit
-		phase2 = 5000 // Micro-sleep limit
+		phase2 = 5000 // Sleep limit
 	)
-	if idle < phase1 {
+
+	switch {
+	case idle < phase1:
 		// Low latency mode: Yield the processor but stay actively scheduled.
 		runtime.Gosched()
-	} else if idle < phase2 {
+	case idle < phase2:
 		// Cooldown mode: Drop CPU usage significantly while maintaining fast
 		// response.
 		time.Sleep(time.Microsecond)
-	} else {
+	default:
 		// Deep idle mode: Near 0% CPU consumption.
 		time.Sleep(time.Millisecond)
 	}
