@@ -17,6 +17,7 @@ package event_test
 import (
 	"bytes"
 	"log/slog"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -179,6 +180,49 @@ func TestBroker_Topic(t *testing.T) {
 			event.Topic[string](br, "t1")
 		},
 	)
+}
+
+func TestBus_Concurrency_SPMC(t *testing.T) {
+	t.Parallel()
+	b := event.NewBus[int](
+		event.WithSize(4096),
+		event.WithSyncDispatch(),
+	)
+	defer b.Close()
+
+	var wg1 sync.WaitGroup
+	var sum int64
+
+	sc := 5
+	pc := 10
+	mc := 1000
+
+	wg1.Add(mc * pc * sc)
+
+	for range sc {
+		b.Subscribe(func(v int) {
+			atomic.AddInt64(&sum, int64(v))
+			wg1.Done()
+		})
+	}
+
+	var wg2 sync.WaitGroup
+	wg2.Add(pc)
+
+	for range pc {
+		go func() {
+			wg2.Done()
+			wg2.Wait()
+			for range mc {
+				for !b.Publish(1) {
+					runtime.Gosched()
+				}
+			}
+		}()
+	}
+
+	wg1.Wait()
+	assert.Equal(t, int64(pc*mc*sc), atomic.LoadInt64(&sum))
 }
 
 func TestBroker_Options(t *testing.T) {
