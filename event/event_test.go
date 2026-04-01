@@ -182,7 +182,7 @@ func TestBroker_Topic(t *testing.T) {
 	)
 }
 
-func TestBus_Concurrency_SPMC(t *testing.T) {
+func TestBus_Concurrency_MPMC(t *testing.T) {
 	t.Parallel()
 	bus := event.NewBus[int](
 		event.WithSize(4096),
