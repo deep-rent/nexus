@@ -134,34 +134,6 @@ func TestBus_PanicRecovery_Sync(t *testing.T) {
 	assert.Contains(t, buf.String(), "sync panic")
 }
 
-func TestBus_PanicRecovery_Async(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
-
-	bus := event.NewBus[int](
-		event.WithLogger(logger),
-	)
-	defer bus.Close()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	bus.Subscribe(func(v int) {
-		defer wg.Done()
-		if v == 1 {
-			panic("async panic")
-		}
-	})
-
-	require.True(t, bus.Publish(1))
-	require.True(t, bus.Publish(2))
-	wg.Wait()
-
-	assert.Contains(t, buf.String(), "Subscriber panicked")
-	assert.Contains(t, buf.String(), "async panic")
-}
-
 func TestBroker_Topic(t *testing.T) {
 	t.Parallel()
 	broker := event.NewBroker()
@@ -305,47 +277,61 @@ func TestBus_DropPolicy(t *testing.T) {
 }
 
 type buffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu sync.Mutex
+	wb bytes.Buffer
 }
 
 func (b *buffer) Write(p []byte) (n int, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+
+	return b.wb.Write(p)
 }
 
 func (b *buffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.String()
+
+	return b.wb.String()
 }
 
 var _ io.Writer = (*buffer)(nil)
 
-func TestBus_PanicRecovery_Async_Fixed(t *testing.T) {
+func TestBus_PanicRecovery_Async(t *testing.T) {
 	t.Parallel()
 
 	buf := &buffer{}
 	logger := slog.New(slog.NewTextHandler(buf, nil))
 
-	bus := event.NewBus[int](event.WithLogger(logger))
+	bus := event.NewBus[int](
+		event.WithLogger(logger),
+	)
 	defer bus.Close()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 
 	bus.Subscribe(func(v int) {
 		defer wg.Done()
-		panic("async panic")
+		if v == 1 {
+			panic("async panic")
+		}
 	})
 
 	require.True(t, bus.Publish(1))
+	require.True(t, bus.Publish(2))
 	wg.Wait()
 
 	assert.Eventually(t, func() bool {
-		return bytes.Contains([]byte(buf.String()), []byte("async panic"))
-	}, 50*time.Millisecond, 5*time.Millisecond)
+		pt1 := []byte("Subscriber panicked")
+		pt2 := []byte("async panic")
+
+		out := []byte(buf.String())
+		return bytes.Contains(out, pt1) && bytes.Contains(out, pt2)
+	},
+		100*time.Millisecond, 5*time.Millisecond,
+		"expected panic logs were not written in time",
+	)
 }
 
 func TestBroker_ConcurrentTopicCreation(t *testing.T) {
