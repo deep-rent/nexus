@@ -93,7 +93,6 @@ func TestBus_Options(t *testing.T) {
 	}
 
 	for _, tc := range tcs {
-		tc := tc
 		t.Run(tc.n, func(t *testing.T) {
 			t.Parallel()
 			b := event.NewBus(tc.opts...)
@@ -146,7 +145,7 @@ func TestBus_Concurrency_SPMC(t *testing.T) {
 
 	wg.Add(mc * pc * sc)
 
-	for i := 0; i < sc; i++ {
+	for range sc {
 		b.Subscribe(func(v int) {
 			atomic.AddInt64(&sum, int64(v))
 			wg.Done()
@@ -156,11 +155,11 @@ func TestBus_Concurrency_SPMC(t *testing.T) {
 	var swg sync.WaitGroup
 	swg.Add(pc)
 
-	for i := 0; i < pc; i++ {
+	for range pc {
 		go func() {
 			swg.Done()
 			swg.Wait()
-			for j := 0; j < mc; j++ {
+			for range mc {
 				for !b.Publish(1) {
 					runtime.Gosched()
 				}
