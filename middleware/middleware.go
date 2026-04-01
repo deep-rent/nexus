@@ -80,22 +80,22 @@ func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 // in the chain.
 func Recover(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 			defer func() {
-				if err := recover(); err != nil {
-					method, url := r.Method, r.URL.String()
+				if r := recover(); r != nil {
+					method, url := req.Method, req.URL.String()
 					logger.Error(
 						"Panic caught by middleware",
-						"method", method,
-						"url", url,
-						"error", err,
-						"stack", string(debug.Stack()),
+						slog.String("method", method),
+						slog.String("url", url),
+						slog.Any("panic", r),
+						slog.String("stack", string(debug.Stack())),
 					)
-					w.WriteHeader(http.StatusInternalServerError)
+					res.WriteHeader(http.StatusInternalServerError)
 				}
 			}()
 
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(res, req)
 		})
 	}
 }

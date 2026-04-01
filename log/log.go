@@ -35,8 +35,16 @@
 //
 // Create a multi-target logger using Combine and NewHandler:
 //
-//	h1 := log.NewHandler(log.WithLevel("debug"), log.WithFormat("text"), log.WithWriter(os.Stdout))
-//	h2 := log.NewHandler(log.WithLevel("error"), log.WithFormat("json"), log.WithWriter(os.Stderr))
+//	h1 := log.NewHandler(
+//	  log.WithLevel("debug"),
+//	  log.WithFormat("text"),
+//	  log.WithWriter(os.Stdout),
+//	)
+//	h2 := log.NewHandler(
+//	  log.WithLevel("error"),
+//	  log.WithFormat("json"),
+//	  log.WithWriter(os.Stderr),
+//	)
 //	multiLogger := log.Combine(h1, h2)
 //
 //	slog.SetDefault(multiLogger)
