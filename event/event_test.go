@@ -156,35 +156,32 @@ func TestBroker_Topic(t *testing.T) {
 
 func TestBus_Concurrency_MPMC(t *testing.T) {
 	t.Parallel()
-	bus := event.NewBus[int](
-		event.WithSize(4096),
-		event.WithSyncDispatch(),
-	)
+	bus := event.NewBus[int](event.WithSize(4096), event.WithSyncDispatch())
 	defer bus.Close()
 
-	var wg1 sync.WaitGroup
+	var wg sync.WaitGroup
 	var sum int64
 
 	sc := 5
 	pc := 10
 	mc := 1000
 
-	wg1.Add(mc * pc * sc)
+	wg.Add(mc * pc * sc)
 
 	for range sc {
 		bus.Subscribe(func(v int) {
 			atomic.AddInt64(&sum, int64(v))
-			wg1.Done()
+			wg.Done()
 		})
 	}
 
-	var wg2 sync.WaitGroup
-	wg2.Add(pc)
+	var ready sync.WaitGroup
+	ready.Add(pc)
 
 	for range pc {
 		go func() {
-			wg2.Done()
-			wg2.Wait()
+			ready.Done()
+			ready.Wait()
 			for range mc {
 				for !bus.Publish(1) {
 					runtime.Gosched()
@@ -193,7 +190,18 @@ func TestBus_Concurrency_MPMC(t *testing.T) {
 		}()
 	}
 
-	wg1.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout due to dropped events or deadlock")
+	}
+
 	assert.Equal(t, int64(pc*mc*sc), atomic.LoadInt64(&sum))
 }
 
