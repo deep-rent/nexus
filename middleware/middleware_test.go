@@ -91,7 +91,7 @@ func TestRecover(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, rr.Code)
 		out := buf.String()
 		assert.Contains(t, out, "Panic caught by middleware")
-		assert.Contains(t, out, `error=test`)
+		assert.Contains(t, out, `panic=test`)
 		assert.Contains(t, out, `url=/panic`)
 		assert.Contains(t, out, `stack=`)
 	})
