@@ -267,7 +267,7 @@ func (w *pauseWait) Signal()      {}
 
 var _ event.WaitStrategy = (*pauseWait)(nil)
 
-func TestBus_DropPolicy(t *testing.T) {
+func TestBus_DropNewestMode(t *testing.T) {
 	t.Parallel()
 	w := &pauseWait{sem: make(chan struct{})}
 	bus := event.NewBus[int](
@@ -279,6 +279,23 @@ func TestBus_DropPolicy(t *testing.T) {
 	assert.True(t, bus.Publish(1))
 	assert.True(t, bus.Publish(2))
 	assert.False(t, bus.Publish(3))
+
+	close(w.sem)
+	bus.Close()
+}
+
+func TestBus_DropOldestMode(t *testing.T) {
+	t.Parallel()
+	w := &pauseWait{sem: make(chan struct{})}
+	bus := event.NewBus[int](
+		event.WithSize(2),
+		event.WithOverflowMode(event.DropOldest),
+		event.WithCustomWaitStrategy(w),
+	)
+
+	assert.True(t, bus.Publish(1))
+	assert.True(t, bus.Publish(2))
+	assert.True(t, bus.Publish(3))
 
 	close(w.sem)
 	bus.Close()
