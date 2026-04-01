@@ -86,7 +86,7 @@ func New[T any](size int, policy Policy) *Buffer[T] {
 		size = 2
 	}
 	// Round up to the next power of two.
-	p := 1 << bits.Len(uint(size-1))
+	p := uint(1 << bits.Len(uint(size-1)))
 
 	return &Buffer[T]{
 		data:   make([]T, p),
