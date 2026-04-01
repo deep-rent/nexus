@@ -16,6 +16,7 @@ package event_test
 
 import (
 	"bytes"
+	"io"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -52,25 +53,25 @@ func TestBus_Basic(t *testing.T) {
 
 func TestBus_Unsubscribe(t *testing.T) {
 	t.Parallel()
-	b := event.NewBus[int](event.WithSyncDispatch())
-	defer b.Close()
+	bus := event.NewBus[int](event.WithSyncDispatch())
+	defer bus.Close()
 
 	var wg sync.WaitGroup
 	var c int32
 
-	unsub := b.Subscribe(func(v int) {
+	unsub := bus.Subscribe(func(v int) {
 		atomic.AddInt32(&c, 1)
 		wg.Done()
 	})
 
 	wg.Add(1)
-	require.True(t, b.Publish(1))
+	require.True(t, bus.Publish(1))
 	wg.Wait()
 
 	unsub()
 	unsub()
 
-	require.True(t, b.Publish(2))
+	require.True(t, bus.Publish(2))
 	time.Sleep(10 * time.Millisecond)
 
 	assert.Equal(t, int32(1), atomic.LoadInt32(&c))
@@ -94,7 +95,6 @@ func TestBus_Options(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.n, func(t *testing.T) {
 			t.Parallel()
 			b := event.NewBus[int](tc.opts...)
@@ -108,26 +108,26 @@ func TestBus_Options(t *testing.T) {
 func TestBus_PanicRecovery_Sync(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	l := slog.New(slog.NewTextHandler(&buf, nil))
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	b := event.NewBus[int](
+	bus := event.NewBus[int](
 		event.WithSyncDispatch(),
-		event.WithLogger(l),
+		event.WithLogger(logger),
 	)
-	defer b.Close()
+	defer bus.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	b.Subscribe(func(v int) {
+	bus.Subscribe(func(v int) {
 		defer wg.Done()
 		if v == 1 {
 			panic("sync panic")
 		}
 	})
 
-	require.True(t, b.Publish(1))
-	require.True(t, b.Publish(2))
+	require.True(t, bus.Publish(1))
+	require.True(t, bus.Publish(2))
 	wg.Wait()
 
 	assert.Contains(t, buf.String(), "Subscriber panicked")
@@ -137,25 +137,25 @@ func TestBus_PanicRecovery_Sync(t *testing.T) {
 func TestBus_PanicRecovery_Async(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	l := slog.New(slog.NewTextHandler(&buf, nil))
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	b := event.NewBus[int](
-		event.WithLogger(l),
+	bus := event.NewBus[int](
+		event.WithLogger(logger),
 	)
-	defer b.Close()
+	defer bus.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	b.Subscribe(func(v int) {
+	bus.Subscribe(func(v int) {
 		defer wg.Done()
 		if v == 1 {
 			panic("async panic")
 		}
 	})
 
-	require.True(t, b.Publish(1))
-	require.True(t, b.Publish(2))
+	require.True(t, bus.Publish(1))
+	require.True(t, bus.Publish(2))
 	wg.Wait()
 
 	assert.Contains(t, buf.String(), "Subscriber panicked")
@@ -164,31 +164,31 @@ func TestBus_PanicRecovery_Async(t *testing.T) {
 
 func TestBroker_Topic(t *testing.T) {
 	t.Parallel()
-	br := event.NewBroker()
-	defer br.Close()
+	broker := event.NewBroker()
+	defer broker.Close()
 
-	b1 := event.Topic[int](br, "t1")
-	require.NotNil(t, b1)
+	bus1 := event.Topic[int](broker, "t1")
+	require.NotNil(t, bus1)
 
-	b2 := event.Topic[int](br, "t1")
-	assert.Same(t, b1, b2)
+	bus2 := event.Topic[int](broker, "t1")
+	assert.Same(t, bus1, bus2)
 
 	assert.PanicsWithValue(
 		t,
 		`event: topic "t1" exists but expects a different event type`,
 		func() {
-			event.Topic[string](br, "t1")
+			event.Topic[string](broker, "t1")
 		},
 	)
 }
 
 func TestBus_Concurrency_SPMC(t *testing.T) {
 	t.Parallel()
-	b := event.NewBus[int](
+	bus := event.NewBus[int](
 		event.WithSize(4096),
 		event.WithSyncDispatch(),
 	)
-	defer b.Close()
+	defer bus.Close()
 
 	var wg1 sync.WaitGroup
 	var sum int64
@@ -200,7 +200,7 @@ func TestBus_Concurrency_SPMC(t *testing.T) {
 	wg1.Add(mc * pc * sc)
 
 	for range sc {
-		b.Subscribe(func(v int) {
+		bus.Subscribe(func(v int) {
 			atomic.AddInt64(&sum, int64(v))
 			wg1.Done()
 		})
@@ -214,7 +214,7 @@ func TestBus_Concurrency_SPMC(t *testing.T) {
 			wg2.Done()
 			wg2.Wait()
 			for range mc {
-				for !b.Publish(1) {
+				for !bus.Publish(1) {
 					runtime.Gosched()
 				}
 			}
@@ -228,13 +228,13 @@ func TestBus_Concurrency_SPMC(t *testing.T) {
 func TestBroker_Options(t *testing.T) {
 	t.Parallel()
 	w := &stubWait{}
-	br := event.NewBroker(
+	broker := event.NewBroker(
 		event.WithCustomWaitStrategy(w),
 		event.WithSyncDispatch(),
 	)
-	defer br.Close()
+	defer broker.Close()
 
-	b := event.Topic[int](br, "t1")
+	b := event.Topic[int](broker, "t1")
 	require.True(t, b.Publish(1))
 	b.Close()
 
@@ -243,18 +243,18 @@ func TestBroker_Options(t *testing.T) {
 
 func TestBroker_Close(t *testing.T) {
 	t.Parallel()
-	br := event.NewBroker()
+	broker := event.NewBroker()
 
-	b1 := event.Topic[int](br, "t1")
-	b2 := event.Topic[string](br, "t2")
+	bus1 := event.Topic[int](broker, "t1")
+	bus2 := event.Topic[string](broker, "t2")
 
-	require.True(t, b1.Publish(1))
-	require.True(t, b2.Publish("a"))
+	require.True(t, bus1.Publish(1))
+	require.True(t, bus2.Publish("a"))
 
-	br.Close()
+	broker.Close()
 
-	assert.False(t, b1.Publish(2))
-	assert.False(t, b2.Publish("b"))
+	assert.False(t, bus1.Publish(2))
+	assert.False(t, bus2.Publish("b"))
 }
 
 type stubWait struct {
@@ -270,10 +270,10 @@ var _ event.WaitStrategy = (*stubWait)(nil)
 func TestBus_CustomWaitStrategy(t *testing.T) {
 	t.Parallel()
 	w := &stubWait{}
-	b := event.NewBus[int](event.WithCustomWaitStrategy(w))
+	bus := event.NewBus[int](event.WithCustomWaitStrategy(w))
 
-	assert.True(t, b.Publish(1))
-	b.Close()
+	assert.True(t, bus.Publish(1))
+	bus.Close()
 
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&w.signal), int32(1))
 }
@@ -290,16 +290,131 @@ var _ event.WaitStrategy = (*pauseWait)(nil)
 func TestBus_DropPolicy(t *testing.T) {
 	t.Parallel()
 	w := &pauseWait{sem: make(chan struct{})}
-	b := event.NewBus[int](
+	bus := event.NewBus[int](
 		event.WithSize(2),
 		event.WithOverflowMode(event.DropNewest),
 		event.WithCustomWaitStrategy(w),
 	)
 
-	assert.True(t, b.Publish(1))
-	assert.True(t, b.Publish(2))
-	assert.False(t, b.Publish(3))
+	assert.True(t, bus.Publish(1))
+	assert.True(t, bus.Publish(2))
+	assert.False(t, bus.Publish(3))
 
 	close(w.sem)
-	b.Close()
+	bus.Close()
+}
+
+type buffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *buffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *buffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+var _ io.Writer = (*buffer)(nil)
+
+func TestBus_PanicRecovery_Async_Fixed(t *testing.T) {
+	t.Parallel()
+
+	buf := &buffer{}
+	logger := slog.New(slog.NewTextHandler(buf, nil))
+
+	bus := event.NewBus[int](event.WithLogger(logger))
+	defer bus.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	bus.Subscribe(func(v int) {
+		defer wg.Done()
+		panic("async panic")
+	})
+
+	require.True(t, bus.Publish(1))
+	wg.Wait()
+
+	assert.Eventually(t, func() bool {
+		return bytes.Contains([]byte(buf.String()), []byte("async panic"))
+	}, 50*time.Millisecond, 5*time.Millisecond)
+}
+
+func TestBroker_ConcurrentTopicCreation(t *testing.T) {
+	t.Parallel()
+	broker := event.NewBroker()
+	defer broker.Close()
+
+	gr := 100
+	var wg sync.WaitGroup
+	wg.Add(gr)
+
+	buses := make([]*event.Bus[int], gr)
+
+	for i := range gr {
+		go func(idx int) {
+			defer wg.Done()
+			buses[idx] = event.Topic[int](broker, "hot-topic")
+		}(i)
+	}
+
+	wg.Wait()
+
+	first := buses[0]
+	require.NotNil(t, first)
+
+	for _, b := range buses[1:] {
+		assert.Same(t, first, b)
+	}
+}
+
+func TestBus_ConcurrentSubUnsub(t *testing.T) {
+	t.Parallel()
+	bus := event.NewBus[int]()
+	defer bus.Close()
+
+	var pub sync.WaitGroup
+	pub.Add(1)
+
+	var stop atomic.Bool
+
+	go func() {
+		defer pub.Done()
+		for !stop.Load() {
+			bus.Publish(1)
+			runtime.Gosched()
+		}
+	}()
+
+	var sub sync.WaitGroup
+	mc := 50
+	sub.Add(mc)
+
+	for range mc {
+		go func() {
+			defer sub.Done()
+			var c int32
+
+			unsub := bus.Subscribe(func(v int) {
+				atomic.AddInt32(&c, 1)
+			})
+
+			time.Sleep(2 * time.Millisecond)
+			unsub()
+
+			assert.Greater(t, atomic.LoadInt32(&c), int32(0))
+		}()
+	}
+
+	sub.Wait()
+	stop.Store(true)
+	pub.Wait()
 }
