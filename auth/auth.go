@@ -182,11 +182,11 @@ func AllRoles[T RoleClaims](roles ...string) Rule[T] {
 // Guard is responsible for intercepting HTTP requests, validating their JWT
 // authentication, and enforcing defined authorization rules.
 type Guard[T jwt.Claims] struct {
-	verifier *jwt.Verifier[T]
+	verifier jwt.Verifier[T]
 }
 
 // NewGuard creates a new Guard using the provided JWT verifier.
-func NewGuard[T jwt.Claims](v *jwt.Verifier[T]) *Guard[T] {
+func NewGuard[T jwt.Claims](v jwt.Verifier[T]) *Guard[T] {
 	return &Guard[T]{
 		verifier: v,
 	}
