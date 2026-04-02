@@ -186,7 +186,10 @@ func Log(logger *slog.Logger) Pipe {
 // clients and proxies always fetch a fresh copy of the resource.
 func Volatile() Pipe {
 	control := strings.Join([]string{
-		"no-store", "no-cache", "must-revalidate", "proxy-revalidate",
+		"no-store",
+		"no-cache",
+		"must-revalidate",
+		"proxy-revalidate",
 	}, ", ")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +236,7 @@ var DefaultSecurityConfig = SecurityConfig{
 	STSIncludeSubdomains:    true,
 	FrameOptions:            "DENY",
 	NoSniff:                 true,
-	PermissionsPolicy:       "geolocation=(), microphone=(), camera=(), payment=()",
+	PermissionsPolicy:       "geolocation=(),microphone=(),camera=(),payment=()",
 	CrossOriginOpenerPolicy: "same-origin",
 }
 
