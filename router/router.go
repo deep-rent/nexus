@@ -478,12 +478,12 @@ func Secure(cfg middleware.SecurityConfig) Middleware {
 	return Adapt(middleware.Secure(cfg))
 }
 
-// CORS mirrors the middleware created by [cors.New].
+// CORS mirrors the middleware created by [cors.New] for use in the router.
 func CORS(opts ...cors.Option) Middleware {
 	return Adapt(cors.New(opts...))
 }
 
-// Gzip mirrors the middleware created by [gzip.New].
+// Gzip mirrors the middleware created by [gzip.New] for use in the router.
 func Gzip(opts ...gzip.Option) Middleware {
 	return Adapt(gzip.New(opts...))
 }
