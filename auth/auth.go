@@ -43,7 +43,7 @@
 //
 //	// Inside your handler, retrieve the claims:
 //	func createUser(e *router.Exchange) error {
-//		claims, ok := auth.FromExchange[*auth.Claims](e)
+//		claims, ok := auth.From[*auth.Claims](e)
 //		if !ok {
 //			return errors.New("claims missing")
 //		}
