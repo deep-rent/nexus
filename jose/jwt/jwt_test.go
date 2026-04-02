@@ -346,3 +346,29 @@ func TestParse_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestVerify_Errors(t *testing.T) {
+	t.Parallel()
+	k1 := generate(t, "k1")
+	k2 := generate(t, "k2")
+
+	raw, err := jwt.Sign(k1, &testClaims{Role: "user"})
+	require.NoError(t, err)
+
+	t.Run("key_not_found", func(t *testing.T) {
+		t.Parallel()
+		set := jwk.Singleton(k2)
+		_, err := jwt.Verify[*testClaims](set, raw)
+		assert.ErrorIs(t, err, jwt.ErrKeyNotFound)
+	})
+
+	t.Run("invalid signature", func(t *testing.T) {
+		t.Parallel()
+		tampered := append([]byte{}, raw...)
+		tampered[len(tampered)-2] = tampered[len(tampered)-2] + 1
+
+		set := jwk.Singleton(k1)
+		_, err := jwt.Verify[*testClaims](set, tampered)
+		assert.ErrorIs(t, err, jwt.ErrInvalidSignature)
+	})
+}
