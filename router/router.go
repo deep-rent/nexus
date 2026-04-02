@@ -451,6 +451,31 @@ func Adapt(pipe middleware.Pipe) Middleware {
 	}
 }
 
+// Recover mirrors [middleware.Recover] for use in the router.
+func Recover(logger *slog.Logger) Middleware {
+	return Adapt(middleware.Recover(logger))
+}
+
+// RequestID mirrors [middleware.RequestID] for use in the router.
+func RequestID() Middleware {
+	return Adapt(middleware.RequestID())
+}
+
+// Log mirrors [middleware.Log] for use in the router.
+func Log(logger *slog.Logger) Middleware {
+	return Adapt(middleware.Log(logger))
+}
+
+// Volatile mirrors [middleware.Volatile] for use in the router.
+func Volatile() Middleware {
+	return Adapt(middleware.Volatile())
+}
+
+// Secure mirrors [middleware.Secure] for use in the router.
+func Secure(cfg middleware.SecurityConfig) Middleware {
+	return Adapt(middleware.Secure(cfg))
+}
+
 // Option defines a functional configuration option for the Router.
 type Option func(*Router)
 
