@@ -352,8 +352,15 @@ func (s *singletonSet) Keys() iter.Seq[Key] {
 func (s *singletonSet) Len() int { return 1 }
 
 func (s *singletonSet) Find(hint Hint) Key {
-	if s.key.Algorithm() == hint.Algorithm() &&
-		(s.key.KeyID() == hint.KeyID() || s.key.Thumbprint() == hint.Thumbprint()) {
+	if s.key.Algorithm() != hint.Algorithm() {
+		return nil
+	}
+	kid := hint.KeyID()
+	if kid != "" && s.key.KeyID() == kid {
+		return s.key
+	}
+	x5t := hint.Thumbprint()
+	if x5t != "" && s.key.Thumbprint() == x5t {
 		return s.key
 	}
 	return nil

@@ -44,6 +44,20 @@ func (k *mockKey) Thumbprint() string          { return k.x5t }
 func (k *mockKey) Verify(msg, sig []byte) bool { return true }
 func (k *mockKey) Material() any               { return k.mat }
 
+var _ jwk.Key = (*mockKey)(nil)
+
+type mockHint struct {
+	alg string
+	kid string
+	x5t string
+}
+
+func (h mockHint) Algorithm() string  { return h.alg }
+func (h mockHint) KeyID() string      { return h.kid }
+func (h mockHint) Thumbprint() string { return h.x5t }
+
+var _ jwk.Hint = mockHint{}
+
 func TestParse(t *testing.T) {
 	tests := []struct {
 		alg string
@@ -302,6 +316,81 @@ func TestSingleton(t *testing.T) {
 		called = true
 	}
 	assert.True(t, called)
+}
+
+func TestSingletonSet_Find(t *testing.T) {
+	key := &mockKey{
+		alg: "RS256",
+		kid: "key-123",
+		x5t: "thumb-abc",
+	}
+
+	tests := []struct {
+		name      string
+		hint      mockHint
+		wantFound bool
+	}{
+		{
+			name: "exact match on kid",
+			hint: mockHint{
+				alg: "RS256",
+				kid: "key-123",
+			},
+			wantFound: true,
+		},
+		{
+			name: "exact match on thumbprint",
+			hint: mockHint{
+				alg: "RS256",
+				x5t: "thumb-abc",
+			},
+			wantFound: true,
+		},
+		{
+			name: "algorithm mismatch returns nil",
+			hint: mockHint{
+				alg: "ES256",
+				kid: "key-123",
+			},
+			wantFound: false,
+		},
+		{
+			name: "wrong kid returns nil",
+			hint: mockHint{
+				alg: "RS256",
+				kid: "wrong-id",
+			},
+			wantFound: false,
+		},
+		{
+			name: "wrong thumbprint returns nil",
+			hint: mockHint{
+				alg: "RS256",
+				x5t: "wrong-thumb",
+			},
+			wantFound: false,
+		},
+		{
+			name: "empty hint returns nil",
+			hint: mockHint{
+				alg: "RS256",
+			},
+			wantFound: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			set := jwk.Singleton(key)
+			got := set.Find(tc.hint)
+
+			if tc.wantFound {
+				assert.Same(t, key, got, "expected to find the original key")
+			} else {
+				assert.Nil(t, got, "expected result to be nil")
+			}
+		})
+	}
 }
 
 func TestBuilder(t *testing.T) {

@@ -35,14 +35,16 @@ type testClaims struct {
 	Role string `json:"rol"`
 }
 
-func gen(t *testing.T, id string) jwk.KeyPair {
+func generate(t *testing.T, id string) jwk.KeyPair {
+	t.Helper()
 	raw, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	return jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(raw)
 }
 
 func TestBasicSignVerify(t *testing.T) {
-	k := gen(t, "k1")
+	t.Parallel()
+	k := generate(t, "k1")
 	set := jwk.Singleton(k)
 
 	input := map[string]any{
@@ -61,14 +63,17 @@ func TestBasicSignVerify(t *testing.T) {
 }
 
 func TestSigner_Defaults(t *testing.T) {
-	k := gen(t, "k1")
+	t.Parallel()
+	k := generate(t, "k1")
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	s := jwt.NewSigner(k).
-		WithIssuer("nexus").
-		WithAudience("api").
-		WithLifetime(time.Hour).
-		WithClock(func() time.Time { return now })
+	s := jwt.NewSigner(
+		[]jwk.KeyPair{k},
+		jwt.WithIssuer("nexus"),
+		jwt.WithAudience("api"),
+		jwt.WithLifetime(time.Hour),
+		jwt.WithSignerClock(func() time.Time { return now }),
+	)
 
 	c := &testClaims{Role: "user"}
 	raw, err := s.Sign(c)
@@ -86,9 +91,10 @@ func TestSigner_Defaults(t *testing.T) {
 }
 
 func TestSigner_Rotation(t *testing.T) {
-	k1 := gen(t, "k1")
-	k2 := gen(t, "k2")
-	s := jwt.NewSigner(k1, k2)
+	t.Parallel()
+	k1 := generate(t, "k1")
+	k2 := generate(t, "k2")
+	s := jwt.NewSigner([]jwk.KeyPair{k1, k2})
 	c := &testClaims{Reserved: jwt.Reserved{Sub: "test"}}
 
 	t1, _ := s.Sign(c)
@@ -104,16 +110,30 @@ func TestSigner_Rotation(t *testing.T) {
 	assert.Equal(t, "k1", parsed3.Header().KeyID())
 }
 
+func TestNewSigner_Panic(t *testing.T) {
+	t.Parallel()
+	assert.Panics(t, func() {
+		jwt.NewSigner(nil)
+	}, "Should panic if no keys are provided")
+
+	assert.Panics(t, func() {
+		jwt.NewSigner([]jwk.KeyPair{})
+	}, "Should panic if empty key slice is provided")
+}
+
 func TestVerifier_Validation(t *testing.T) {
-	k := gen(t, "k1")
+	t.Parallel()
+	k := generate(t, "k1")
 	set := jwk.Singleton(k)
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	s := jwt.NewSigner(k).
-		WithIssuer("good-iss").
-		WithAudience("good-aud").
-		WithLifetime(time.Hour).
-		WithClock(func() time.Time { return now })
+	s := jwt.NewSigner(
+		[]jwk.KeyPair{k},
+		jwt.WithIssuer("good-iss"),
+		jwt.WithAudience("good-aud"),
+		jwt.WithLifetime(time.Hour),
+		jwt.WithSignerClock(func() time.Time { return now }),
+	)
 
 	token, _ := s.Sign(&testClaims{})
 
@@ -122,48 +142,59 @@ func TestVerifier_Validation(t *testing.T) {
 
 	tests := []struct {
 		n   string
-		v   *jwt.Verifier[*testClaims]
+		v   jwt.Verifier[*testClaims]
 		err error
 	}{
 		{
 			"valid",
-			jwt.NewVerifier[*testClaims](set).
-				WithIssuers("good-iss").
-				WithAudiences("good-aud").
-				WithClock(func() time.Time { return now }),
+			jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithIssuers("good-iss"),
+				jwt.WithAudiences("good-aud"),
+				jwt.WithVerifierClock(func() time.Time { return now }),
+			),
 			nil,
 		},
 		{
 			"bad issuer",
-			jwt.NewVerifier[*testClaims](set).
-				WithIssuers("bad-iss").
-				WithClock(func() time.Time { return now }),
+			jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithIssuers("bad-iss"),
+				jwt.WithVerifierClock(func() time.Time { return now }),
+			),
 			jwt.ErrInvalidIssuer,
 		},
 		{
 			"bad audience",
-			jwt.NewVerifier[*testClaims](set).
-				WithAudiences("bad-aud").
-				WithClock(func() time.Time { return now }),
+			jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithAudiences("bad-aud"),
+				jwt.WithVerifierClock(func() time.Time { return now }),
+			),
 			jwt.ErrInvalidAudience,
 		},
 		{
 			"expired",
-			jwt.NewVerifier[*testClaims](set).
-				WithClock(func() time.Time { return now.Add(d1) }),
+			jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithVerifierClock(func() time.Time { return now.Add(d1) }),
+			),
 			jwt.ErrTokenExpired,
 		},
 		{
 			"leeway saves",
-			jwt.NewVerifier[*testClaims](set).
-				WithClock(func() time.Time { return now.Add(d2) }).
-				WithLeeway(time.Minute),
+			jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithVerifierClock(func() time.Time { return now.Add(d2) }),
+				jwt.WithLeeway(time.Minute),
+			),
 			nil,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.n, func(t *testing.T) {
+			t.Parallel()
 			_, err := tc.v.Verify(token)
 			if tc.err == nil {
 				assert.NoError(t, err)
@@ -175,34 +206,42 @@ func TestVerifier_Validation(t *testing.T) {
 }
 
 func TestVerifier_TimeConstraints(t *testing.T) {
-	k := gen(t, "k1")
+	t.Parallel()
+	k := generate(t, "k1")
 	set := jwk.Singleton(k)
 	now := time.Now()
 
 	t.Run("token not yet active", func(t *testing.T) {
+		t.Parallel()
 		c := &testClaims{Reserved: jwt.Reserved{Nbf: now.Add(time.Hour)}}
 		raw, _ := jwt.Sign(k, c)
 
-		v := jwt.NewVerifier[*testClaims](set).
-			WithClock(func() time.Time { return now })
+		v := jwt.NewVerifier[*testClaims](
+			set,
+			jwt.WithVerifierClock(func() time.Time { return now }),
+		)
 		_, err := v.Verify(raw)
 		assert.ErrorIs(t, err, jwt.ErrTokenNotYetActive)
 	})
 
 	t.Run("token too old", func(t *testing.T) {
+		t.Parallel()
 		c := &testClaims{Reserved: jwt.Reserved{Iat: now.Add(-2 * time.Hour)}}
 		raw, _ := jwt.Sign(k, c)
 
-		v := jwt.NewVerifier[*testClaims](set).
-			WithMaxAge(time.Hour).
-			WithClock(func() time.Time { return now })
+		v := jwt.NewVerifier[*testClaims](
+			set,
+			jwt.WithMaxAge(time.Hour),
+			jwt.WithVerifierClock(func() time.Time { return now }),
+		)
 		_, err := v.Verify(raw)
 		assert.ErrorIs(t, err, jwt.ErrTokenTooOld)
 	})
 }
 
 func TestOmitEmpty(t *testing.T) {
-	k := gen(t, "k1")
+	t.Parallel()
+	k := generate(t, "k1")
 	raw, _ := jwt.Sign(k, &jwt.Reserved{})
 	tok, _ := jwt.Parse[*jwt.Reserved](raw)
 	b, _ := json.Marshal(tok.Claims())
@@ -219,7 +258,8 @@ func TestOmitEmpty(t *testing.T) {
 }
 
 func TestDynamicClaims(t *testing.T) {
-	k := gen(t, "k1")
+	t.Parallel()
+	k := generate(t, "k1")
 	set := jwk.Singleton(k)
 
 	input := map[string]any{
@@ -278,4 +318,100 @@ func TestDynamicClaims(t *testing.T) {
 		_, ok := jwt.Get[string](empty, "str")
 		assert.False(t, ok)
 	})
+}
+
+func TestParse_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		wantErr string
+	}{
+		{"not enough segments", "a.b", "expected three dot-separated segments"},
+		{"bad header base64", "!!!.b.c", "failed to decode header"},
+		{"bad header json", "dGVzdA.b.c", "failed to unmarshal header"},
+		{"bad typ", "eyJ0eXAiOiJmb28ifQ.e30.c", "unexpected token type \"foo\""},
+		{"bad claims base64", "eyJ0eXAiOiJKV1QifQ.!!!.c", "failed to decode claims"},
+		{"bad claims json", "eyJ0eXAiOiJKV1QifQ.dGVzdA.c", "failed to unmarshal claims"},
+		{"bad sig base64", "eyJ0eXAiOiJKV1QifQ.e30.!!!", "failed to decode signature"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := jwt.Parse[*testClaims]([]byte(tc.in))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestVerify_Errors(t *testing.T) {
+	t.Parallel()
+	k1 := generate(t, "k1")
+	k2 := generate(t, "k2")
+
+	raw, err := jwt.Sign(k1, &testClaims{Role: "user"})
+	require.NoError(t, err)
+
+	t.Run("key_not_found", func(t *testing.T) {
+		t.Parallel()
+		set := jwk.Singleton(k2)
+		_, err := jwt.Verify[*testClaims](set, raw)
+		assert.ErrorIs(t, err, jwt.ErrKeyNotFound)
+	})
+
+	t.Run("invalid signature", func(t *testing.T) {
+		t.Parallel()
+		tampered := append([]byte{}, raw...)
+		tampered[len(tampered)-2] = tampered[len(tampered)-2] + 1
+
+		set := jwk.Singleton(k1)
+		_, err := jwt.Verify[*testClaims](set, tampered)
+		assert.ErrorIs(t, err, jwt.ErrInvalidSignature)
+	})
+}
+
+func TestSign_Errors(t *testing.T) {
+	t.Parallel()
+	k := generate(t, "k1")
+
+	_, err := jwt.Sign(k, make(chan int))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to marshal claims")
+}
+
+func TestAudience_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	type claims struct {
+		jwt.Reserved
+	}
+
+	tests := []struct {
+		name    string
+		json    string
+		want    []string
+		wantErr bool
+	}{
+		{"single string", `{"aud":"api"}`, []string{"api"}, false},
+		{"string array", `{"aud":["api","web"]}`, []string{"api", "web"}, false},
+		{"wrong type int", `{"aud":123}`, nil, true},
+		{"wrong type array of ints", `{"aud":[1,2,3]}`, nil, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var c claims
+			err := json.Unmarshal([]byte(tc.json), &c)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.want, c.Audience())
+			}
+		})
+	}
 }

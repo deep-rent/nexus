@@ -59,6 +59,8 @@ import (
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/middleware"
+	"github.com/deep-rent/nexus/middleware/cors"
+	"github.com/deep-rent/nexus/middleware/gzip"
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -183,6 +185,9 @@ type Exchange struct {
 	W ResponseWriter
 	// jsonOpts is inherited from the parent Router.
 	jsonOpts []json.Options
+	// errorHandler allows middlewares to trigger standardized error resolution
+	// across boundary layers.
+	errorHandler ErrorHandler
 }
 
 // Context returns the request's context.
@@ -385,14 +390,112 @@ var _ Handler = HandlerFunc(nil)
 // ErrorHandler defines a function that handles errors returned by routes.
 type ErrorHandler func(e *Exchange, err error)
 
+// Middleware defines a function that wraps a Handler, allowing custom logic
+// to be executed before and/or after the next handler in the chain. Unlike
+// standard HTTP middleware, this natively supports returning API errors.
+type Middleware func(Handler) Handler
+
+// Chain combines a handler with multiple Middleware functions. The functions
+// are applied in reverse order, meaning the first middleware in the list is
+// the outermost and executes first.
+func Chain(h Handler, mws ...Middleware) Handler {
+	for i := len(mws) - 1; i >= 0; i-- {
+		if mw := mws[i]; mw != nil {
+			h = mw(h)
+		}
+	}
+	return h
+}
+
+// Wrap converts a standard [http.Handler] into a router [Handler].
+// This allows integrating standard HTTP handlers seamlessly within the router.
+func Wrap(h http.Handler) Handler {
+	return HandlerFunc(func(e *Exchange) error {
+		h.ServeHTTP(e.W, e.R)
+		return nil
+	})
+}
+
+// Adapt converts a standard [middleware.Pipe] into a [Middleware].
+//
+// This bridges low-level HTTP transport middlewares into the router's
+// ecosystem. It ensures that any modifications made to the request or response
+// writer by the transport middleware are preserved for downstream handlers.
+// Furthermore, it immediately resolves any errors returned by downstream
+// handlers using the router's ErrorHandler, guaranteeing that outer transport
+// middlewares (like Log) observe the correct, final HTTP status code.
+func Adapt(pipe middleware.Pipe) Middleware {
+	return func(next Handler) Handler {
+		return HandlerFunc(func(e *Exchange) error {
+			var nextErr error
+
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				e.R = r
+				if rw, ok := w.(ResponseWriter); ok {
+					e.W = rw
+				} else {
+					e.W = NewResponseWriter(w)
+				}
+
+				nextErr = next.ServeHTTP(e)
+
+				// Resolve the error immediately so transport middlewares
+				// (like Logger) observe the correct HTTP status code.
+				if nextErr != nil && e.errorHandler != nil {
+					e.errorHandler(e, nextErr)
+					nextErr = nil // Prevent double-handling upstream
+				}
+			})
+
+			pipe(h).ServeHTTP(e.W, e.R)
+			return nextErr
+		})
+	}
+}
+
+// Recover mirrors [middleware.Recover] for use in the router.
+func Recover(logger *slog.Logger) Middleware {
+	return Adapt(middleware.Recover(logger))
+}
+
+// RequestID mirrors [middleware.RequestID] for use in the router.
+func RequestID() Middleware {
+	return Adapt(middleware.RequestID())
+}
+
+// Log mirrors [middleware.Log] for use in the router.
+func Log(logger *slog.Logger) Middleware {
+	return Adapt(middleware.Log(logger))
+}
+
+// Volatile mirrors [middleware.Volatile] for use in the router.
+func Volatile() Middleware {
+	return Adapt(middleware.Volatile())
+}
+
+// Secure mirrors [middleware.Secure] for use in the router.
+func Secure(cfg middleware.SecurityConfig) Middleware {
+	return Adapt(middleware.Secure(cfg))
+}
+
+// CORS mirrors the middleware created by [cors.New] for use in the router.
+func CORS(opts ...cors.Option) Middleware {
+	return Adapt(cors.New(opts...))
+}
+
+// Gzip mirrors the middleware created by [gzip.New] for use in the router.
+func Gzip(opts ...gzip.Option) Middleware {
+	return Adapt(gzip.New(opts...))
+}
+
 // Option defines a functional configuration option for the Router.
 type Option func(*Router)
 
-// WithMiddleware adds global middleware pipes to the Router.
-// These pipes are applied to every route registered with the Router.
-func WithMiddleware(pipes ...middleware.Pipe) Option {
+// WithMiddleware adds global middleware to the Router.
+// These middlewares are applied to every route registered with the Router.
+func WithMiddleware(mws ...Middleware) Option {
 	return func(r *Router) {
-		r.mws = append(r.mws, pipes...)
+		r.mws = append(r.mws, mws...)
 	}
 }
 
@@ -438,7 +541,7 @@ type Router struct {
 	// Mux is the underlying [http.ServeMux]. It is exposed to allow direct
 	// usage with [http.ListenAndServe].
 	Mux          *http.ServeMux
-	mws          []middleware.Pipe
+	mws          []Middleware
 	maxBytes     int64
 	jsonOpts     []json.Options
 	errorHandler ErrorHandler
@@ -474,8 +577,15 @@ func (r *Router) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 func (r *Router) Handle(
 	pattern string,
 	handler Handler,
-	mws ...middleware.Pipe,
+	mws ...Middleware,
 ) {
+	// Combine global and local middleware once during registration.
+	local := make([]Middleware, 0, len(r.mws)+len(mws))
+	local = append(local, r.mws...)
+	local = append(local, mws...)
+
+	chained := Chain(handler, local...)
+
 	h := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		// Enforce body size limit if configured.
 		if r.maxBytes > 0 {
@@ -483,22 +593,18 @@ func (r *Router) Handle(
 		}
 
 		e := &Exchange{
-			R:        req,
-			W:        NewResponseWriter(res),
-			jsonOpts: r.jsonOpts,
+			R:            req,
+			W:            NewResponseWriter(res),
+			jsonOpts:     r.jsonOpts,
+			errorHandler: r.errorHandler,
 		}
 
-		err := handler.ServeHTTP(e)
-		if err != nil {
+		if err := chained.ServeHTTP(e); err != nil {
 			r.errorHandler(e, err)
 		}
 	})
 
-	// Combine global and local middleware.
-	local := make([]middleware.Pipe, 0, len(r.mws)+len(mws))
-	local = append(local, r.mws...)
-	local = append(local, mws...)
-	r.Mux.Handle(pattern, middleware.Chain(h, local...))
+	r.Mux.Handle(pattern, h)
 }
 
 // HandleFunc is a convenience wrapper for Handle that accepts a function
@@ -506,7 +612,7 @@ func (r *Router) Handle(
 func (r *Router) HandleFunc(
 	pattern string,
 	fn func(*Exchange) error,
-	mws ...middleware.Pipe,
+	mws ...Middleware,
 ) {
 	r.Handle(pattern, HandlerFunc(fn), mws...)
 }
@@ -515,9 +621,9 @@ func (r *Router) HandleFunc(
 // pattern.
 //
 // The handler will still be wrapped by the Router's global middleware,
-// ensuring logging/auth logic applies to these routes as well.
+// ensuring logging and security logic applies to these routes as well.
 func (r *Router) Mount(pattern string, handler http.Handler) {
-	r.Mux.Handle(pattern, middleware.Chain(handler, r.mws...))
+	r.Handle(pattern, Wrap(handler))
 }
 
 // handle centralizes error processing.

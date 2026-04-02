@@ -13,28 +13,33 @@
 // limitations under the License.
 
 // Package middleware provides a standard approach for chaining and composing
-// HTTP middleware.
+// HTTP transport middleware.
+//
+// This package focuses on low-level HTTP operations (like logging, CORS,
+// and compression) that operate directly on [http.Handler]. For higher-level
+// business logic that requires structured error handling and API contexts,
+// see the Middleware definitions in the router package. The router provides
+// an adapter to seamlessly integrate the transport pipes defined here within
+// its richer handler ecosystem.
 //
 // # Usage
 //
 // The core type is Pipe, an adapter that wraps an http.Handler to add
 // functionality. The Chain function composes these pipes into a single handler.
-// The package also includes common middleware like Recover for panic handling,
-// RequestID for tracing, and Log for request logging.
 //
 // Example:
 //
 //	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//		w.Write([]byte("OK"))
+//	  w.Write([]byte("OK"))
 //	})
 //
 //	// Chain middleware around the final handler.
 //	// Order matters: Recover must be first (outermost).
 //	logger := slog.Default()
 //	chainedHandler := middleware.Chain(handler,
-//		middleware.Recover(logger),
-//		middleware.RequestID(),
-//		middleware.Log(logger),
+//	  middleware.Recover(logger),
+//	  middleware.RequestID(),
+//	  middleware.Log(logger),
 //	)
 //
 //	http.ListenAndServe(":8080", chainedHandler)
@@ -100,11 +105,11 @@ func Recover(logger *slog.Logger) Pipe {
 	}
 }
 
-type contextKey string // Prevents collisions with other packages.
+type contextKey struct{} // Prevents collisions with other packages.
 
 // requestIDKey is the key under which the request ID is stored in the request
 // context.
-const requestIDKey = contextKey("RequestID")
+var requestIDKey contextKey
 
 // RequestID returns a middleware Pipe that injects a unique ID into each
 // request. It adds the ID to the response via the "X-Request-ID" header and to
@@ -186,7 +191,10 @@ func Log(logger *slog.Logger) Pipe {
 // clients and proxies always fetch a fresh copy of the resource.
 func Volatile() Pipe {
 	control := strings.Join([]string{
-		"no-store", "no-cache", "must-revalidate", "proxy-revalidate",
+		"no-store",
+		"no-cache",
+		"must-revalidate",
+		"proxy-revalidate",
 	}, ", ")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +241,7 @@ var DefaultSecurityConfig = SecurityConfig{
 	STSIncludeSubdomains:    true,
 	FrameOptions:            "DENY",
 	NoSniff:                 true,
-	PermissionsPolicy:       "geolocation=(), microphone=(), camera=(), payment=()",
+	PermissionsPolicy:       "geolocation=(),microphone=(),camera=(),payment=()",
 	CrossOriginOpenerPolicy: "same-origin",
 }
 
@@ -251,43 +259,45 @@ func Secure(cfg SecurityConfig) Pipe {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+
 			// 1. Strict-Transport-Security
 			if hsts != "" {
-				w.Header().Set("Strict-Transport-Security", hsts)
+				h.Set("Strict-Transport-Security", hsts)
 			}
 
 			// 2. X-Content-Type-Options
 			if cfg.NoSniff {
-				w.Header().Set("X-Content-Type-Options", "nosniff")
+				h.Set("X-Content-Type-Options", "nosniff")
 			}
 
 			// 3. X-Frame-Options
 			if cfg.FrameOptions != "" {
-				w.Header().Set("X-Frame-Options", cfg.FrameOptions)
+				h.Set("X-Frame-Options", cfg.FrameOptions)
 			}
 
 			// 4. Content-Security-Policy
 			if cfg.CSP != "" {
-				w.Header().Set("Content-Security-Policy", cfg.CSP)
+				h.Set("Content-Security-Policy", cfg.CSP)
 			}
 
 			// 5. Referrer-Policy
 			if cfg.ReferrerPolicy != "" {
-				w.Header().Set("Referrer-Policy", cfg.ReferrerPolicy)
+				h.Set("Referrer-Policy", cfg.ReferrerPolicy)
 			}
 
 			// 6. Permissions-Policy (New)
 			if cfg.PermissionsPolicy != "" {
-				w.Header().Set("Permissions-Policy", cfg.PermissionsPolicy)
+				h.Set("Permissions-Policy", cfg.PermissionsPolicy)
 			}
 
 			// 7. Cross-Origin-Opener-Policy (New)
 			if cfg.CrossOriginOpenerPolicy != "" {
-				w.Header().Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
+				h.Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
 			}
 
 			// 8. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
-			w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
+			h.Set("X-Permitted-Cross-Domain-Policies", "none")
 
 			next.ServeHTTP(w, r)
 		})
