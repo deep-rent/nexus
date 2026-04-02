@@ -35,7 +35,9 @@ func TestTCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("net.Listen() = %v; want nil", err)
 	}
-	defer l.Close()
+	defer func() {
+		_ = l.Close()
+	}()
 
 	addr := l.Addr().String()
 	free := "127.0.0.1:0"
