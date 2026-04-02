@@ -98,9 +98,16 @@ import (
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
-// Header represents the decoded JOSE header of a JWT.
+// Header provides access to the metadata associated with a JWT, such as the
+// cryptographic algorithm used to sign the token and identifiers for the
+// signing key.
+//
+// It is an alias for jwk.Hint, allowing it to be passed directly to a
+// jwk.Set's Find method to locate the appropriate verification key.
 type Header jwk.Hint
 
+// header is the concrete implementation of the Header interface, providing
+// JSON tags for standard JWS header parameters.
 type header struct {
 	Typ string `json:"typ,omitempty"`
 	Alg string `json:"alg"`
@@ -112,6 +119,8 @@ func (h *header) Type() string       { return h.Typ }
 func (h *header) Algorithm() string  { return h.Alg }
 func (h *header) KeyID() string      { return h.Kid }
 func (h *header) Thumbprint() string { return h.X5t }
+
+var _ Header = (*header)(nil)
 
 var (
 	// ErrKeyNotFound is returned when no matching key is found in the JWK set.
@@ -157,6 +166,15 @@ func (t *token[T]) Verify(set jwk.Set) error {
 	return nil
 }
 
+// Ensure token implements the Token interface.
+var _ Token[Claims] = (*token[Claims])(nil)
+
+// audience represents the "aud" (Audience) claim of a JWT as defined in
+// RFC 7519, Section 4.1.3.
+//
+// Because the "aud" claim can be either a single case-sensitive string or
+// an array of such strings, this type implements custom JSON unmarshaling
+// logic to ensure it is always handled as a slice of strings internally.
 type audience []string
 
 func (a *audience) UnmarshalJSON(b []byte) error {
@@ -391,6 +409,7 @@ type Verifier[T Claims] interface {
 // VerifierOption defines a functional option for configuring a Verifier.
 type VerifierOption func(*verifierConfig)
 
+// verifierConfig holds the configuration options for a Verifier.
 type verifierConfig struct {
 	issuers   []string
 	audiences []string
@@ -590,6 +609,7 @@ type Signer interface {
 // SignerOption defines a functional option for configuring a Signer.
 type SignerOption func(*signerConfig)
 
+// signerConfig holds the configuration options for a Signer.
 type signerConfig struct {
 	iat bool
 	iss string
