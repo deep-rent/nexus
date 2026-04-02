@@ -15,987 +15,1016 @@
 package env_test
 
 import (
+	"errors"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/env"
 )
 
-type upperUnmarshaller string
+type mockUpperUnmarshaller string
 
-func (u *upperUnmarshaller) UnmarshalEnv(v string) error {
-	*u = upperUnmarshaller(strings.ToUpper(v))
+func (u *mockUpperUnmarshaller) UnmarshalEnv(v string) error {
+	*u = mockUpperUnmarshaller(strings.ToUpper(v))
 	return nil
 }
 
-type errorUnmarshaler struct{}
+var _ env.Unmarshaler = (*mockUpperUnmarshaller)(nil)
 
-func (e *errorUnmarshaler) UnmarshalEnv(v string) error {
-	return assert.AnError
+type mockErrorUnmarshaler struct{}
+
+func (e *mockErrorUnmarshaler) UnmarshalEnv(_ string) error {
+	return errors.New("unmarshal error")
 }
 
-type checkUnmarshaler string
+var _ env.Unmarshaler = (*mockErrorUnmarshaler)(nil)
 
-func (c checkUnmarshaler) UnmarshalEnv(v string) error {
+type mockCheckUnmarshaler string
+
+func (c mockCheckUnmarshaler) UnmarshalEnv(v string) error {
 	if v == "invalid" {
-		return assert.AnError
+		return errors.New("invalid value")
 	}
 	return nil
 }
 
-type TString struct {
+var _ env.Unmarshaler = (*mockCheckUnmarshaler)(nil)
+
+type mockTString struct {
 	V string
 }
 
-type TBool struct {
+type mockTBool struct {
 	V bool
 }
 
-type TInt struct {
+type mockTInt struct {
 	V int
 }
 
-type TInt8 struct {
+type mockTInt8 struct {
 	V int8
 }
 
-type TInt16 struct {
+type mockTInt16 struct {
 	V int16
 }
 
-type TInt32 struct {
+type mockTInt32 struct {
 	V int32
 }
 
-type TInt64 struct {
+type mockTInt64 struct {
 	V int64
 }
 
-type TUint struct {
+type mockTUint struct {
 	V uint
 }
 
-type TUint8 struct {
+type mockTUint8 struct {
 	V uint8
 }
 
-type TUint16 struct {
+type mockTUint16 struct {
 	V uint16
 }
 
-type TUint32 struct {
+type mockTUint32 struct {
 	V uint32
 }
 
-type TUint64 struct {
+type mockTUint64 struct {
 	V uint64
 }
 
-type TFloat32 struct {
+type mockTFloat32 struct {
 	V float32
 }
 
-type TFloat64 struct {
+type mockTFloat64 struct {
 	V float64
 }
 
-type TComplex64 struct {
+type mockTComplex64 struct {
 	V complex64
 }
 
-type TComplex128 struct {
+type mockTComplex128 struct {
 	V complex128
 }
 
-type TURL struct {
+type mockTURL struct {
 	V url.URL
 }
 
-type TURLPtr struct {
+type mockTURLPtr struct {
 	V *url.URL
 }
 
-type TUpper struct {
-	V upperUnmarshaller
+type mockTUpper struct {
+	V mockUpperUnmarshaller
 }
 
-type TUpperPtr struct {
-	V *upperUnmarshaller
+type mockTUpperPtr struct {
+	V *mockUpperUnmarshaller
 }
 
-type TDefault struct {
+type mockTDefault struct {
 	V string `env:",default:foo"`
 }
 
-type TDefaultQuotes struct {
+type mockTDefaultQuotes struct {
 	V string `env:",default:'foo,bar'"`
 }
 
-type TDefaultSliceSplit struct {
+type mockTDefaultSliceSplit struct {
 	V []string `env:",split:';',default:'a;b'"`
 }
 
-type TRequired struct {
+type mockTRequired struct {
 	V string `env:",required"`
 }
 
-type TRequiredWithDefault struct {
+type mockTRequiredWithDefault struct {
 	V int `env:",required,default:42"`
 }
 
-type TIgnored struct {
+type mockTIgnored struct {
 	V string `env:"-"`
 }
 
-type TUnexported struct {
+type mockTUnexported struct {
 	v string //nolint:unused
 }
 
-type TCustomName struct {
+type mockTCustomName struct {
 	Foo string `env:"BAR"`
 }
 
-type TSnakeCase struct {
+type mockTSnakeCase struct {
 	FooBar string
 }
 
-type TSliceString struct {
+type mockTSliceString struct {
 	V []string
 }
 
-type TSliceInt struct {
+type mockTSliceInt struct {
 	V []int
 }
 
-type TSliceCustomSplit struct {
+type mockTSliceCustomSplit struct {
 	V []string `env:",split:';'"`
 }
 
-type TSliceByte struct {
+type mockTSliceByte struct {
 	V []byte
 }
 
-type TSliceByteHex struct {
+type mockTSliceByteHex struct {
 	V []byte `env:",format:hex"`
 }
 
-type TSliceByteBase64 struct {
+type mockTSliceByteBase64 struct {
 	V []byte `env:",format:base64"`
 }
 
-type TPtrString struct {
+type mockTPtrString struct {
 	V *string
 }
 
-type TPtrPtrInt struct {
+type mockTPtrPtrInt struct {
 	V **int
 }
 
-type TInner struct {
+type MockTInner struct {
 	V string
 }
 
-type TNested struct {
-	Nested TInner
+type mockTNested struct {
+	Nested MockTInner
 }
 
-type TNestedCustomPrefix struct {
-	Foo TInner `env:",prefix:BAR_"`
+type mockTNestedCustomPrefix struct {
+	Foo MockTInner `env:",prefix:BAR_"`
 }
 
-type TNestedEmptyPrefix struct {
-	Foo TInner `env:",prefix:''"`
+type mockTNestedEmptyPrefix struct {
+	Foo MockTInner `env:",prefix:''"`
 }
 
-type TInline struct {
-	TInner `env:",inline"`
+type mockTInline struct {
+	MockTInner `env:",inline"`
 }
 
-type TDuration struct {
+type mockTDuration struct {
 	V time.Duration
 }
 
-type TDurationUnitS struct {
+type mockTDurationUnitS struct {
 	V time.Duration `env:",unit:s"`
 }
 
-type TDurationUnitNs struct {
+type mockTDurationUnitNs struct {
 	V time.Duration `env:",unit:ns"`
 }
 
-type TDurationUnitUs struct {
+type mockTDurationUnitUs struct {
 	V time.Duration `env:",unit:us"`
 }
 
-type TDurationUnitMicro struct {
+type mockTDurationUnitMicro struct {
 	V time.Duration `env:",unit:μs"`
 }
 
-type TDurationUnitMs struct {
+type mockTDurationUnitMs struct {
 	V time.Duration `env:",unit:ms"`
 }
 
-type TDurationUnitM struct {
+type mockTDurationUnitM struct {
 	V time.Duration `env:",unit:m"`
 }
 
-type TDurationUnitH struct {
+type mockTDurationUnitH struct {
 	V time.Duration `env:",unit:h"`
 }
 
-type TDurationUnitInvalid struct {
+type mockTDurationUnitInvalid struct {
 	V time.Duration `env:",unit:invalid"`
 }
 
-type TTime struct {
+type mockTTime struct {
 	V time.Time
 }
 
-type TTimeFormatDate struct {
+type mockTTimeFormatDate struct {
 	V time.Time `env:",format:date"`
 }
 
-type TTimeFormatDateTime struct {
+type mockTTimeFormatDateTime struct {
 	V time.Time `env:",format:dateTime"`
 }
 
-type TTimeFormatTime struct {
+type mockTTimeFormatTime struct {
 	V time.Time `env:",format:time"`
 }
 
-type TTimeFormatUnix struct {
+type mockTTimeFormatUnix struct {
 	V time.Time `env:",format:unix"`
 }
 
-type TTimeFormatUnixUnit struct {
+type mockTTimeFormatUnixUnit struct {
 	V time.Time `env:",format:unix,unit:ms"`
 }
 
-type TTimeFormatUnixUnitS struct {
+type mockTTimeFormatUnixUnitS struct {
 	V time.Time `env:",format:unix,unit:s"`
 }
 
-type TTimeFormatUnixUnitUs struct {
+type mockTTimeFormatUnixUnitUs struct {
 	V time.Time `env:",format:unix,unit:us"`
 }
 
-type TTimeFormatUnixUnitMicro struct {
+type mockTTimeFormatUnixUnitMicro struct {
 	V time.Time `env:",format:unix,unit:μs"`
 }
 
-type TTimeFormatUnixUnitInvalid struct {
+type mockTTimeFormatUnixUnitInvalid struct {
 	V time.Time `env:",format:unix,unit:invalid"`
 }
 
-type TUnknownTag struct {
+type mockTUnknownTag struct {
 	V string `env:",foo:bar"`
 }
 
-type TTrimOptions struct {
+type mockTTrimOptions struct {
 	V string `env:", default:foo"`
 }
 
-type TNestedPtr struct {
-	Nested *TInner
+type mockTNestedPtr struct {
+	Nested *MockTInner
 }
 
-type TNestedDoublePtr struct {
-	Nested **TInner
+type mockTNestedDoublePtr struct {
+	Nested **MockTInner
 }
 
-type TLocation struct {
+type mockTLocation struct {
 	V time.Location
 }
 
-type TLocationPtr struct {
+type mockTLocationPtr struct {
 	V *time.Location
 }
 
 func TestUnmarshal(t *testing.T) {
-	u, err := url.Parse("http://foo.com/bar")
-	require.NoError(t, err)
+	t.Parallel()
 
-	type test struct {
+	u, err := url.Parse("http://foo.com/bar")
+	if err != nil {
+		t.Fatalf("url.Parse() unexpected error: %v", err)
+	}
+
+	tests := []struct {
 		name    string
 		vars    map[string]string
 		opts    []env.Option
-		in      any
+		give    any
 		want    any
 		wantErr bool
-	}
-
-	tests := []test{
+	}{
 		{
 			name: "string",
 			vars: map[string]string{"V": "foo"},
-			in:   &TString{},
-			want: &TString{"foo"},
+			give: &mockTString{},
+			want: &mockTString{"foo"},
 		},
 		{
 			name: "bool",
 			vars: map[string]string{"V": "true"},
-			in:   &TBool{},
-			want: &TBool{true},
+			give: &mockTBool{},
+			want: &mockTBool{true},
 		},
 		{
 			name: "int",
 			vars: map[string]string{"V": "42"},
-			in:   &TInt{},
-			want: &TInt{42},
+			give: &mockTInt{},
+			want: &mockTInt{42},
 		},
 		{
 			name: "int8",
 			vars: map[string]string{"V": "42"},
-			in:   &TInt8{},
-			want: &TInt8{42},
+			give: &mockTInt8{},
+			want: &mockTInt8{42},
 		},
 		{
 			name: "int16",
 			vars: map[string]string{"V": "42"},
-			in:   &TInt16{},
-			want: &TInt16{42},
+			give: &mockTInt16{},
+			want: &mockTInt16{42},
 		},
 		{
 			name: "int32",
 			vars: map[string]string{"V": "42"},
-			in:   &TInt32{},
-			want: &TInt32{42},
+			give: &mockTInt32{},
+			want: &mockTInt32{42},
 		},
 		{
 			name: "int64",
 			vars: map[string]string{"V": "42"},
-			in:   &TInt64{},
-			want: &TInt64{42},
+			give: &mockTInt64{},
+			want: &mockTInt64{42},
 		},
 		{
 			name: "uint",
 			vars: map[string]string{"V": "42"},
-			in:   &TUint{},
-			want: &TUint{42},
+			give: &mockTUint{},
+			want: &mockTUint{42},
 		},
 		{
 			name: "uint8",
 			vars: map[string]string{"V": "42"},
-			in:   &TUint8{},
-			want: &TUint8{42},
+			give: &mockTUint8{},
+			want: &mockTUint8{42},
 		},
 		{
 			name: "uint16",
 			vars: map[string]string{"V": "42"},
-			in:   &TUint16{},
-			want: &TUint16{42},
+			give: &mockTUint16{},
+			want: &mockTUint16{42},
 		},
 		{
 			name: "uint32",
 			vars: map[string]string{"V": "42"},
-			in:   &TUint32{},
-			want: &TUint32{42},
+			give: &mockTUint32{},
+			want: &mockTUint32{42},
 		},
 		{
 			name: "uint64",
 			vars: map[string]string{"V": "42"},
-			in:   &TUint64{},
-			want: &TUint64{42},
+			give: &mockTUint64{},
+			want: &mockTUint64{42},
 		},
 		{
 			name: "float32",
 			vars: map[string]string{"V": "3.14"},
-			in:   &TFloat32{},
-			want: &TFloat32{3.14},
+			give: &mockTFloat32{},
+			want: &mockTFloat32{3.14},
 		},
 		{
 			name: "float64",
 			vars: map[string]string{"V": "3.14"},
-			in:   &TFloat64{},
-			want: &TFloat64{3.14},
+			give: &mockTFloat64{},
+			want: &mockTFloat64{3.14},
 		},
 		{
 			name: "complex64",
 			vars: map[string]string{"V": "5-2i"},
-			in:   &TComplex64{},
-			want: &TComplex64{complex(5, -2)},
+			give: &mockTComplex64{},
+			want: &mockTComplex64{complex(5, -2)},
 		},
 		{
 			name: "complex128",
 			vars: map[string]string{"V": "5-2i"},
-			in:   &TComplex64{},
-			want: &TComplex64{complex(5, -2)},
+			give: &mockTComplex128{},
+			want: &mockTComplex128{complex(5, -2)},
 		},
 		{
 			name: "url",
 			vars: map[string]string{"V": "http://foo.com/bar"},
-			in:   &TURL{},
-			want: &TURL{V: *u},
+			give: &mockTURL{},
+			want: &mockTURL{V: *u},
 		},
 		{
 			name: "url pointer",
 			vars: map[string]string{"V": "http://foo.com/bar"},
-			in:   &TURLPtr{},
-			want: &TURLPtr{V: u},
+			give: &mockTURLPtr{},
+			want: &mockTURLPtr{V: u},
 		},
 		{
 			name:    "url parse error",
 			vars:    map[string]string{"V": "::invalid"},
-			in:      &TURL{},
+			give:    &mockTURL{},
 			wantErr: true,
 		},
 		{
 			name: "unmarshaler",
 			vars: map[string]string{"V": "foo"},
-			in:   &TUpper{},
-			want: &TUpper{"FOO"},
+			give: &mockTUpper{},
+			want: &mockTUpper{"FOO"},
 		},
 		{
 			name: "unmarshaler pointer",
 			vars: map[string]string{"V": "foo"},
-			in:   &TUpperPtr{},
-			want: &TUpperPtr{V: func() *upperUnmarshaller {
-				p := upperUnmarshaller("FOO")
+			give: &mockTUpperPtr{},
+			want: &mockTUpperPtr{V: func() *mockUpperUnmarshaller {
+				p := mockUpperUnmarshaller("FOO")
 				return &p
 			}()},
 		},
 		{
 			name:    "value-receiver unmarshaler error",
 			vars:    map[string]string{"V": "invalid"},
-			in:      &struct{ V checkUnmarshaler }{},
+			give:    &struct{ V mockCheckUnmarshaler }{},
 			wantErr: true,
 		},
 		{
 			name:    "unmarshaler error",
 			vars:    map[string]string{"V": "foo"},
-			in:      &struct{ V errorUnmarshaler }{},
+			give:    &struct{ V mockErrorUnmarshaler }{},
 			wantErr: true,
 		},
 		{
 			name: "default",
 			vars: map[string]string{},
-			in:   &TDefault{},
-			want: &TDefault{"foo"},
+			give: &mockTDefault{},
+			want: &mockTDefault{"foo"},
 		},
 		{
 			name: "explicitly empty string uses default",
 			vars: map[string]string{"V": ""},
-			in:   &TDefault{},
-			want: &TDefault{"foo"},
+			give: &mockTDefault{},
+			want: &mockTDefault{"foo"},
 		},
 		{
 			name: "default with quotes",
 			vars: map[string]string{},
-			in:   &TDefaultQuotes{},
-			want: &TDefaultQuotes{"foo,bar"},
+			give: &mockTDefaultQuotes{},
+			want: &mockTDefaultQuotes{"foo,bar"},
 		},
 		{
 			name: "default on slice with split",
 			vars: map[string]string{},
-			in:   &TDefaultSliceSplit{},
-			want: &TDefaultSliceSplit{[]string{"a", "b"}},
+			give: &mockTDefaultSliceSplit{},
+			want: &mockTDefaultSliceSplit{[]string{"a", "b"}},
 		},
 		{
 			name: "required",
 			vars: map[string]string{"V": "foo"},
-			in:   &TRequired{},
-			want: &TRequired{"foo"},
+			give: &mockTRequired{},
+			want: &mockTRequired{"foo"},
 		},
 		{
 			name:    "required error",
 			vars:    map[string]string{},
-			in:      &TRequired{},
+			give:    &mockTRequired{},
 			wantErr: true,
 		},
 		{
 			name: "required with default",
 			vars: map[string]string{},
-			in:   &TRequiredWithDefault{},
-			want: &TRequiredWithDefault{42},
+			give: &mockTRequiredWithDefault{},
+			want: &mockTRequiredWithDefault{42},
 		},
 		{
 			name: "required field with empty value",
 			vars: map[string]string{"V": ""},
-			in:   &TRequired{},
-			want: &TRequired{""},
+			give: &mockTRequired{},
+			want: &mockTRequired{""},
 		},
 		{
 			name: "ignored",
 			vars: map[string]string{"V": "foo"},
-			in:   &TIgnored{},
-			want: &TIgnored{},
+			give: &mockTIgnored{},
+			want: &mockTIgnored{},
 		},
 		{
 			name: "unexported",
 			vars: map[string]string{"v": "foo"},
-			in:   &TUnexported{},
-			want: &TUnexported{},
+			give: &mockTUnexported{},
+			want: &mockTUnexported{},
 		},
 		{
 			name: "custom name",
 			vars: map[string]string{"BAR": "foo"},
-			in:   &TCustomName{},
-			want: &TCustomName{"foo"},
+			give: &mockTCustomName{},
+			want: &mockTCustomName{"foo"},
 		},
 		{
 			name: "snake case",
 			vars: map[string]string{"FOO_BAR": "baz"},
-			in:   &TSnakeCase{},
-			want: &TSnakeCase{"baz"},
+			give: &mockTSnakeCase{},
+			want: &mockTSnakeCase{"baz"},
 		},
 		{
 			name: "slice string",
 			vars: map[string]string{"V": "foo,bar"},
-			in:   &TSliceString{},
-			want: &TSliceString{[]string{"foo", "bar"}},
+			give: &mockTSliceString{},
+			want: &mockTSliceString{[]string{"foo", "bar"}},
 		},
 		{
 			name: "slice int",
 			vars: map[string]string{"V": "1,2"},
-			in:   &TSliceInt{},
-			want: &TSliceInt{[]int{1, 2}},
+			give: &mockTSliceInt{},
+			want: &mockTSliceInt{[]int{1, 2}},
 		},
 		{
 			name: "slice custom split",
 			vars: map[string]string{"V": "foo;bar"},
-			in:   &TSliceCustomSplit{},
-			want: &TSliceCustomSplit{[]string{"foo", "bar"}},
+			give: &mockTSliceCustomSplit{},
+			want: &mockTSliceCustomSplit{[]string{"foo", "bar"}},
 		},
 		{
 			name: "empty slice",
 			vars: map[string]string{"V": ""},
-			in:   &TSliceString{},
-			want: &TSliceString{[]string{}},
+			give: &mockTSliceString{},
+			want: &mockTSliceString{[]string{}},
 		},
 		{
 			name: "byte slice",
 			vars: map[string]string{"V": "foo"},
-			in:   &TSliceByte{},
-			want: &TSliceByte{[]byte("foo")},
+			give: &mockTSliceByte{},
+			want: &mockTSliceByte{[]byte("foo")},
 		},
 		{
 			name: "byte slice hex",
 			vars: map[string]string{"V": "666f6f"},
-			in:   &TSliceByteHex{},
-			want: &TSliceByteHex{[]byte("foo")},
+			give: &mockTSliceByteHex{},
+			want: &mockTSliceByteHex{[]byte("foo")},
 		},
 		{
 			name: "byte slice base64",
 			vars: map[string]string{"V": "Zm9v"},
-			in:   &TSliceByteBase64{},
-			want: &TSliceByteBase64{[]byte("foo")},
+			give: &mockTSliceByteBase64{},
+			want: &mockTSliceByteBase64{[]byte("foo")},
 		},
 		{
 			name: "pointer",
 			vars: map[string]string{"V": "foo"},
-			in:   &TPtrString{},
-			want: &TPtrString{(func() *string { s := "foo"; return &s }())},
+			give: &mockTPtrString{},
+			want: &mockTPtrString{(func() *string { s := "foo"; return &s }())},
 		},
 		{
 			name: "double pointer",
 			vars: map[string]string{"V": "42"},
-			in:   &TPtrPtrInt{},
-			want: &TPtrPtrInt{(func() **int { i := 42; p := &i; return &p }())},
+			give: &mockTPtrPtrInt{},
+			want: &mockTPtrPtrInt{(func() **int { i := 42; p := &i; return &p }())},
 		},
 		{
 			name: "nested struct",
 			vars: map[string]string{"NESTED_V": "foo"},
-			in:   &TNested{},
-			want: &TNested{Nested: TInner{"foo"}},
+			give: &mockTNested{},
+			want: &mockTNested{Nested: MockTInner{"foo"}},
 		},
 		{
 			name: "nested struct pointer",
 			vars: map[string]string{"NESTED_V": "foo"},
-			in:   &TNestedPtr{},
-			want: &TNestedPtr{Nested: &TInner{"foo"}},
+			give: &mockTNestedPtr{},
+			want: &mockTNestedPtr{Nested: &MockTInner{"foo"}},
 		},
 		{
 			name: "nested struct double pointer",
 			vars: map[string]string{"NESTED_V": "foo"},
-			in:   &TNestedDoublePtr{},
-			want: &TNestedDoublePtr{Nested: func() **TInner {
-				p := &TInner{"foo"}
+			give: &mockTNestedDoublePtr{},
+			want: &mockTNestedDoublePtr{Nested: func() **MockTInner {
+				p := &MockTInner{"foo"}
 				return &p
 			}()},
 		},
 		{
 			name: "nested struct with custom prefix",
 			vars: map[string]string{"BAR_V": "foo"},
-			in:   &TNestedCustomPrefix{},
-			want: &TNestedCustomPrefix{Foo: TInner{"foo"}},
+			give: &mockTNestedCustomPrefix{},
+			want: &mockTNestedCustomPrefix{Foo: MockTInner{"foo"}},
 		},
 		{
 			name: "nested struct with empty prefix",
 			vars: map[string]string{"V": "foo"},
-			in:   &TNestedEmptyPrefix{},
-			want: &TNestedEmptyPrefix{Foo: TInner{"foo"}},
+			give: &mockTNestedEmptyPrefix{},
+			want: &mockTNestedEmptyPrefix{Foo: MockTInner{"foo"}},
 		},
 		{
 			name: "inline struct",
 			vars: map[string]string{"V": "foo"},
-			in:   &TInline{},
-			want: &TInline{TInner: TInner{"foo"}},
+			give: &mockTInline{},
+			want: &mockTInline{MockTInner: MockTInner{"foo"}},
 		},
 		{
 			name: "global prefix",
 			vars: map[string]string{"APP_V": "foo"},
 			opts: []env.Option{env.WithPrefix("APP_")},
-			in:   &TString{},
-			want: &TString{"foo"},
+			give: &mockTString{},
+			want: &mockTString{"foo"},
 		},
 		{
 			name: "duration",
 			vars: map[string]string{"V": "1m"},
-			in:   &TDuration{},
-			want: &TDuration{time.Minute},
+			give: &mockTDuration{},
+			want: &mockTDuration{time.Minute},
 		},
 		{
 			name: "duration with unit s",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitS{},
-			want: &TDurationUnitS{5 * time.Second},
+			give: &mockTDurationUnitS{},
+			want: &mockTDurationUnitS{5 * time.Second},
 		},
 		{
 			name: "duration with unit ns",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitNs{},
-			want: &TDurationUnitNs{5 * time.Nanosecond},
+			give: &mockTDurationUnitNs{},
+			want: &mockTDurationUnitNs{5 * time.Nanosecond},
 		},
 		{
 			name: "duration with unit us",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitUs{},
-			want: &TDurationUnitUs{5 * time.Microsecond},
+			give: &mockTDurationUnitUs{},
+			want: &mockTDurationUnitUs{5 * time.Microsecond},
 		},
 		{
 			name: "duration with unit μs",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitMicro{},
-			want: &TDurationUnitMicro{5 * time.Microsecond},
+			give: &mockTDurationUnitMicro{},
+			want: &mockTDurationUnitMicro{5 * time.Microsecond},
 		},
 		{
 			name: "duration with unit ms",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitMs{},
-			want: &TDurationUnitMs{5 * time.Millisecond},
+			give: &mockTDurationUnitMs{},
+			want: &mockTDurationUnitMs{5 * time.Millisecond},
 		},
 		{
 			name: "duration with unit m",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitM{},
-			want: &TDurationUnitM{5 * time.Minute},
+			give: &mockTDurationUnitM{},
+			want: &mockTDurationUnitM{5 * time.Minute},
 		},
 		{
 			name: "duration with unit h",
 			vars: map[string]string{"V": "5"},
-			in:   &TDurationUnitH{},
-			want: &TDurationUnitH{5 * time.Hour},
+			give: &mockTDurationUnitH{},
+			want: &mockTDurationUnitH{5 * time.Hour},
 		},
 		{
 			name:    "duration with invalid unit",
 			vars:    map[string]string{"V": "5"},
-			in:      &TDurationUnitInvalid{},
+			give:    &mockTDurationUnitInvalid{},
 			wantErr: true,
 		},
 		{
 			name: "time rfc3339",
 			vars: map[string]string{"V": "2025-10-08T22:13:00Z"},
-			in:   &TTime{},
-			want: &TTime{time.Date(2025, 10, 8, 22, 13, 0, 0, time.UTC)},
+			give: &mockTTime{},
+			want: &mockTTime{time.Date(2025, 10, 8, 22, 13, 0, 0, time.UTC)},
 		},
 		{
 			name: "time with format date",
 			vars: map[string]string{"V": "2025-10-08"},
-			in:   &TTimeFormatDate{},
-			want: &TTimeFormatDate{time.Date(2025, 10, 8, 0, 0, 0, 0, time.UTC)},
+			give: &mockTTimeFormatDate{},
+			want: &mockTTimeFormatDate{time.Date(2025, 10, 8, 0, 0, 0, 0, time.UTC)},
 		},
 		{
 			name: "time with format datetime",
 			vars: map[string]string{"V": "2025-09-14 06:45:00"},
-			in:   &TTimeFormatDateTime{},
-			want: &TTimeFormatDateTime{time.Date(2025, 9, 14, 6, 45, 0, 0, time.UTC)},
+			give: &mockTTimeFormatDateTime{},
+			want: &mockTTimeFormatDateTime{time.Date(2025, 9, 14, 6, 45, 0, 0, time.UTC)},
 		},
 		{
 			name: "time with format time",
 			vars: map[string]string{"V": "22:13:00"},
-			in:   &TTimeFormatTime{},
-			want: &TTimeFormatTime{time.Date(0, 1, 1, 22, 13, 0, 0, time.UTC)},
+			give: &mockTTimeFormatTime{},
+			want: &mockTTimeFormatTime{time.Date(0, 1, 1, 22, 13, 0, 0, time.UTC)},
 		},
 		{
 			name: "time unix seconds",
 			vars: map[string]string{"V": "1760000000"},
-			in:   &TTimeFormatUnix{},
-			want: &TTimeFormatUnix{time.Unix(1760000000, 0)},
+			give: &mockTTimeFormatUnix{},
+			want: &mockTTimeFormatUnix{time.Unix(1760000000, 0)},
 		},
 		{
 			name: "time unix milliseconds",
 			vars: map[string]string{"V": "1760000000000"},
-			in:   &TTimeFormatUnixUnit{},
-			want: &TTimeFormatUnixUnit{time.UnixMilli(1760000000000)},
+			give: &mockTTimeFormatUnixUnit{},
+			want: &mockTTimeFormatUnixUnit{time.UnixMilli(1760000000000)},
 		},
 		{
 			name: "time unix explicitly seconds",
 			vars: map[string]string{"V": "1760000000"},
-			in:   &TTimeFormatUnixUnitS{},
-			want: &TTimeFormatUnixUnitS{time.Unix(1760000000, 0)},
+			give: &mockTTimeFormatUnixUnitS{},
+			want: &mockTTimeFormatUnixUnitS{time.Unix(1760000000, 0)},
 		},
 		{
 			name: "time unix microseconds (us)",
 			vars: map[string]string{"V": "1760000000000000"},
-			in:   &TTimeFormatUnixUnitUs{},
-			want: &TTimeFormatUnixUnitUs{time.UnixMicro(1760000000000000)},
+			give: &mockTTimeFormatUnixUnitUs{},
+			want: &mockTTimeFormatUnixUnitUs{time.UnixMicro(1760000000000000)},
 		},
 		{
 			name: "time unix microseconds (μs)",
 			vars: map[string]string{"V": "1760000000000000"},
-			in:   &TTimeFormatUnixUnitMicro{},
-			want: &TTimeFormatUnixUnitMicro{time.UnixMicro(1760000000000000)},
+			give: &mockTTimeFormatUnixUnitMicro{},
+			want: &mockTTimeFormatUnixUnitMicro{time.UnixMicro(1760000000000000)},
 		},
 		{
 			name:    "time unix invalid unit",
 			vars:    map[string]string{"V": "1760000000"},
-			in:      &TTimeFormatUnixUnitInvalid{},
+			give:    &mockTTimeFormatUnixUnitInvalid{},
 			wantErr: true,
 		},
 		{
 			name: "not set keeps original value",
 			vars: map[string]string{},
-			in:   &TString{"foo"},
-			want: &TString{"foo"},
+			give: &mockTString{"foo"},
+			want: &mockTString{"foo"},
 		},
 		{
 			name: "trim option keys",
 			vars: map[string]string{},
-			in:   &TTrimOptions{},
-			want: &TTrimOptions{"foo"},
+			give: &mockTTrimOptions{},
+			want: &mockTTrimOptions{"foo"},
 		},
 		{
 			name:    "parse error int",
 			vars:    map[string]string{"V": "foo"},
-			in:      &TInt{},
+			give:    &mockTInt{},
 			wantErr: true,
 		},
 		{
 			name:    "parse error bool",
 			vars:    map[string]string{"V": "foo"},
-			in:      &TBool{},
+			give:    &mockTBool{},
 			wantErr: true,
 		},
 		{
 			name:    "parse error time",
 			vars:    map[string]string{"V": "foo"},
-			in:      &TTime{},
+			give:    &mockTTime{},
 			wantErr: true,
 		},
 		{
 			name:    "parse error duration",
 			vars:    map[string]string{"V": "foo"},
-			in:      &TDuration{},
+			give:    &mockTDuration{},
 			wantErr: true,
 		},
 		{
 			name:    "unknown tag option",
 			vars:    map[string]string{},
-			in:      &TUnknownTag{},
+			give:    &mockTUnknownTag{},
 			wantErr: true,
 		},
 		{
 			name: "location",
 			vars: map[string]string{"V": "UTC"},
-			in:   &TLocation{},
-			want: &TLocation{*time.UTC},
+			give: &mockTLocation{},
+			want: &mockTLocation{*time.UTC},
 		},
 		{
 			name: "location pointer",
 			vars: map[string]string{"V": "UTC"},
-			in:   &TLocationPtr{},
-			want: &TLocationPtr{time.UTC},
+			give: &mockTLocationPtr{},
+			want: &mockTLocationPtr{time.UTC},
 		},
 		{
 			name:    "parse error location",
 			vars:    map[string]string{"V": "Invalid/Timezone"},
-			in:      &TLocation{},
+			give:    &mockTLocation{},
 			wantErr: true,
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := tc.opts
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.opts
 			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
-				v, ok := tc.vars[k]
+				v, ok := tt.vars[k]
 				return v, ok
 			}))
-			err := env.Unmarshal(tc.in, opts...)
-			if tc.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.want, tc.in)
+			err := env.Unmarshal(tt.give, opts...)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Unmarshal() error = nil; want non-nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unmarshal() unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(tt.give, tt.want) {
+				t.Errorf("Unmarshal() = %v; want %v", tt.give, tt.want)
 			}
 		})
 	}
 }
 
-func TestUnmarshalErrors(t *testing.T) {
+func TestUnmarshal_Errors(t *testing.T) {
+	t.Parallel()
+
 	t.Run("nil", func(t *testing.T) {
-		err := env.Unmarshal(nil)
-		require.Error(t, err)
+		t.Parallel()
+		if err := env.Unmarshal(nil); err == nil {
+			t.Error("Unmarshal(nil) error = nil; want non-nil")
+		}
 	})
 
 	t.Run("not a pointer", func(t *testing.T) {
+		t.Parallel()
 		var s struct{}
-		err := env.Unmarshal(s)
-		require.Error(t, err)
+		if err := env.Unmarshal(s); err == nil {
+			t.Error("Unmarshal(struct) error = nil; want non-nil")
+		}
 	})
 
 	t.Run("not a pointer to a struct", func(t *testing.T) {
+		t.Parallel()
 		var i int
-		err := env.Unmarshal(&i)
-		require.Error(t, err)
+		if err := env.Unmarshal(&i); err == nil {
+			t.Error("Unmarshal(*int) error = nil; want non-nil")
+		}
 	})
 }
 
 func TestExpand(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name    string
 		vars    map[string]string
 		opts    []env.Option
-		in      string
+		give    string
 		want    string
 		wantErr bool
-	}
-
-	tests := []test{
+	}{
 		{
 			name: "no variables",
-			in:   "foo bar baz",
+			give: "foo bar baz",
 			want: "foo bar baz",
 		},
 		{
 			name: "simple bracket expansion",
 			vars: map[string]string{"FOO": "bar"},
-			in:   "hello ${FOO}",
+			give: "hello ${FOO}",
 			want: "hello bar",
 		},
 		{
 			name: "simple unbracketed expansion",
 			vars: map[string]string{"FOO": "bar"},
-			in:   "hello $FOO",
+			give: "hello $FOO",
 			want: "hello bar",
 		},
 		{
 			name: "unbracketed expansion stopping at non-identifier",
 			vars: map[string]string{"FOO": "bar"},
-			in:   "$FOO-baz",
+			give: "$FOO-baz",
 			want: "bar-baz",
 		},
 		{
 			name: "unbracketed expansion with numbers and underscores",
 			vars: map[string]string{"VAR_123": "bar"},
-			in:   "hello $VAR_123",
+			give: "hello $VAR_123",
 			want: "hello bar",
 		},
 		{
 			name: "multiple expansions",
 			vars: map[string]string{"FOO": "bar", "BAZ": "qux"},
-			in:   "${FOO} ${BAZ}",
+			give: "${FOO} ${BAZ}",
 			want: "bar qux",
 		},
 		{
 			name: "escaped dollar sign",
 			vars: map[string]string{},
-			in:   "this is not a var: $$FOO",
+			give: "this is not a var: $$FOO",
 			want: "this is not a var: $FOO",
 		},
 		{
 			name: "lone dollar sign",
 			vars: map[string]string{},
-			in:   "a lone $ sign",
+			give: "a lone $ sign",
 			want: "a lone $ sign",
 		},
 		{
 			name: "lone dollar sign before number",
 			vars: map[string]string{},
-			in:   "cost is $5",
+			give: "cost is $5",
 			want: "cost is $5",
 		},
 		{
 			name: "variable at start",
 			vars: map[string]string{"FOO": "bar"},
-			in:   "${FOO} baz",
+			give: "${FOO} baz",
 			want: "bar baz",
 		},
 		{
 			name: "variable at end",
 			vars: map[string]string{"FOO": "bar"},
-			in:   "baz ${FOO}",
+			give: "baz ${FOO}",
 			want: "baz bar",
 		},
 		{
 			name: "bracketed with prefix",
 			vars: map[string]string{"APP_FOO": "bar"},
 			opts: []env.Option{env.WithPrefix("APP_")},
-			in:   "${FOO}",
+			give: "${FOO}",
 			want: "bar",
 		},
 		{
 			name: "unbracketed with prefix",
 			vars: map[string]string{"APP_FOO": "bar"},
 			opts: []env.Option{env.WithPrefix("APP_")},
-			in:   "$FOO",
+			give: "$FOO",
 			want: "bar",
 		},
 		{
 			name:    "bracketed variable not set",
 			vars:    map[string]string{},
-			in:      "${FOO}",
+			give:    "${FOO}",
 			wantErr: true,
 		},
 		{
 			name:    "unbracketed variable not set",
 			vars:    map[string]string{},
-			in:      "$FOO",
+			give:    "$FOO",
 			wantErr: true,
 		},
 		{
 			name:    "unclosed bracket",
 			vars:    map[string]string{},
-			in:      "${FOO",
+			give:    "${FOO",
 			wantErr: true,
 		},
 		{
 			name: "empty string",
-			in:   "",
+			give: "",
 			want: "",
 		},
 		{
 			name: "complex string",
 			vars: map[string]string{"USER": "foo", "HOST": "bar", "PORT": "8080"},
-			in:   "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
+			give: "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
 			want: "user=foo, pass=$ECRET, dsn=foo@bar:8080",
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := tc.opts
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.opts
 			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
-				v, ok := tc.vars[k]
+				v, ok := tt.vars[k]
 				return v, ok
 			}))
-			got, err := env.Expand(tc.in, opts...)
-			if tc.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.want, got)
+			got, err := env.Expand(tt.give, opts...)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Expand() error = nil; want non-nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Expand() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Expand() = %q; want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-type BenchConfig struct {
+type mockBenchConfig struct {
 	Host    string        `env:",required"`
 	Port    int           `env:",default:8080"`
 	Timeout time.Duration `env:",unit:s"`
@@ -1020,9 +1049,9 @@ func BenchmarkUnmarshal(b *testing.B) {
 	}
 
 	for b.Loop() {
-		var cfg BenchConfig
+		var cfg mockBenchConfig
 		if err := env.Unmarshal(&cfg, opts...); err != nil {
-			b.Fatalf("unexpected error: %v", err)
+			b.Fatalf("Unmarshal() unexpected error: %v", err)
 		}
 	}
 }
@@ -1046,7 +1075,7 @@ func BenchmarkExpand(b *testing.B) {
 	for b.Loop() {
 		_, err := env.Expand(input, opts...)
 		if err != nil {
-			b.Fatalf("unexpected error: %v", err)
+			b.Fatalf("Expand() unexpected error: %v", err)
 		}
 	}
 }
