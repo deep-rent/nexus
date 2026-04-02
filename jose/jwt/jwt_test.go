@@ -372,3 +372,12 @@ func TestVerify_Errors(t *testing.T) {
 		assert.ErrorIs(t, err, jwt.ErrInvalidSignature)
 	})
 }
+
+func TestSign_Errors(t *testing.T) {
+	t.Parallel()
+	k := generate(t, "k1")
+
+	_, err := jwt.Sign(k, make(chan int))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to marshal claims")
+}
