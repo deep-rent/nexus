@@ -59,6 +59,7 @@ import (
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/middleware"
+	"github.com/deep-rent/nexus/middleware/cors"
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -474,6 +475,11 @@ func Volatile() Middleware {
 // Secure mirrors [middleware.Secure] for use in the router.
 func Secure(cfg middleware.SecurityConfig) Middleware {
 	return Adapt(middleware.Secure(cfg))
+}
+
+// CORS mirrors the middleware created by [cors.New].
+func CORS(opts ...cors.Option) Middleware {
+	return Adapt(cors.New(opts...))
 }
 
 // Option defines a functional configuration option for the Router.
