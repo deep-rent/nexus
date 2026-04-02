@@ -25,14 +25,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/health"
 	"github.com/deep-rent/nexus/router"
 )
 
 func TestMonitor_Ready(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		checks     map[string]health.CheckFunc
@@ -97,10 +96,12 @@ func TestMonitor_Ready(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			m := health.NewMonitor()
-			for n, fn := range tc.checks {
+			for n, fn := range tt.checks {
 				m.Attach(n, 0, fn)
 			}
 
@@ -111,42 +112,49 @@ func TestMonitor_Ready(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 			r.ServeHTTP(w, req)
 
+			if got, want := w.Code, tt.wantCode; got != want {
+				t.Errorf("ServeHTTP() status code = %d; want %d", got, want)
+			}
+
 			var rep health.Report
-			err := json.Unmarshal(w.Body.Bytes(), &rep)
-			require.NoError(t, err)
+			if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
+				t.Fatalf("json.Unmarshal(body) = %v; want nil", err)
+			}
 
-			assert.Equal(t, tc.wantCode, w.Code)
-			assert.Equal(t, tc.wantStatus, rep.Status)
-			assert.Len(t, rep.Checks, len(tc.checks))
+			if got, want := rep.Status, tt.wantStatus; got != want {
+				t.Errorf("Report.Status = %q; want %q", got, want)
+			}
 
+			if got, want := len(rep.Checks), len(tt.checks); got != want {
+				t.Errorf("len(Report.Checks) = %d; want %d", got, want)
+			}
+
+			now := time.Now()
 			for name, res := range rep.Checks {
-				ts := res.Timestamp
-				assert.False(
-					t,
-					ts.IsZero(),
-					"timestamp for check %q must be set",
-					name,
-				)
-				assert.WithinDuration(
-					t,
-					time.Now(),
-					ts,
-					2*time.Second,
-					"timestamp for check %q must be within 2s of now",
-					name,
-				)
+				if res.Timestamp.IsZero() {
+					t.Errorf("Check %q timestamp is zero; want non-zero", name)
+				}
+
+				diff := now.Sub(res.Timestamp)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff > 2*time.Second {
+					t.Errorf("Check %q timestamp = %v; want within 2s of %v",
+						name, res.Timestamp, now)
+				}
 			}
 		})
 	}
 }
 
 func TestMonitor_Live(t *testing.T) {
-	m := health.NewMonitor()
+	t.Parallel()
 
+	m := health.NewMonitor()
 	chk := func(ctx context.Context) (health.Status, error) {
 		return health.StatusSick, nil
 	}
-
 	m.Attach("failure", 0, chk)
 
 	r := router.New()
@@ -156,14 +164,23 @@ func TestMonitor_Live(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	if got, want := w.Code, http.StatusOK; got != want {
+		t.Errorf("ServeHTTP() status code = %d; want %d", got, want)
+	}
 
 	var rep health.Report
-	_ = json.Unmarshal(w.Body.Bytes(), &rep)
-	assert.Equal(t, health.StatusHealthy, rep.Status)
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
+		t.Fatalf("json.Unmarshal(body) = %v; want nil", err)
+	}
+
+	if got, want := rep.Status, health.StatusHealthy; got != want {
+		t.Errorf("Report.Status = %q; want %q", got, want)
+	}
 }
 
 func TestMonitor_Caching(t *testing.T) {
+	t.Parallel()
+
 	m := health.NewMonitor()
 	var calls int32
 
@@ -177,7 +194,6 @@ func TestMonitor_Caching(t *testing.T) {
 	r := router.New()
 	m.Mount(r)
 
-	// Call multiple times rapidly:
 	for range 5 {
 		r.ServeHTTP(
 			httptest.NewRecorder(),
@@ -185,29 +201,24 @@ func TestMonitor_Caching(t *testing.T) {
 		)
 	}
 
-	assert.Equal(
-		t,
-		int32(1),
-		atomic.LoadInt32(&calls),
-		"must use cached result",
-	)
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("atomic.LoadInt32(&calls) = %d; want 1 (must use cache)", got)
+	}
 
-	// Wait for TTL:
 	time.Sleep(60 * time.Millisecond)
 	r.ServeHTTP(
 		httptest.NewRecorder(),
 		httptest.NewRequest(http.MethodGet, "/health", nil),
 	)
 
-	assert.Equal(
-		t,
-		int32(2),
-		atomic.LoadInt32(&calls),
-		"must refresh after TTL",
-	)
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("atomic.LoadInt32(&calls) = %d; want 2 (must refresh cache)", got)
+	}
 }
 
 func TestMonitor_Lifecycle(t *testing.T) {
+	t.Parallel()
+
 	m := health.NewMonitor()
 	m.Attach("tmp", 0, func(ctx context.Context) (health.Status, error) {
 		return health.StatusHealthy, nil
@@ -216,23 +227,33 @@ func TestMonitor_Lifecycle(t *testing.T) {
 	r := router.New()
 	m.Mount(r)
 
-	// Verify it exists:
 	w1 := httptest.NewRecorder()
 	r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/health", nil))
 	var rep1 health.Report
-	_ = json.Unmarshal(w1.Body.Bytes(), &rep1)
-	assert.Contains(t, rep1.Checks, "tmp")
+	if err := json.Unmarshal(w1.Body.Bytes(), &rep1); err != nil {
+		t.Fatalf("json.Unmarshal(body) = %v", err)
+	}
 
-	// Detach and verify gone:
+	if _, ok := rep1.Checks["tmp"]; !ok {
+		t.Errorf("Report.Checks contains %q; want true", "tmp")
+	}
+
 	m.Detach("tmp")
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/health", nil))
 	var rep2 health.Report
-	_ = json.Unmarshal(w2.Body.Bytes(), &rep2)
-	assert.NotContains(t, rep2.Checks, "tmp")
+	if err := json.Unmarshal(w2.Body.Bytes(), &rep2); err != nil {
+		t.Fatalf("json.Unmarshal(body) = %v", err)
+	}
+
+	if _, ok := rep2.Checks["tmp"]; ok {
+		t.Errorf("Report.Checks contains %q; want false", "tmp")
+	}
 }
 
 func TestMonitor_Concurrency(t *testing.T) {
+	t.Parallel()
+
 	m := health.NewMonitor()
 	m.Attach("a", 0, func(ctx context.Context) (health.Status, error) {
 		return health.StatusHealthy, nil
@@ -246,17 +267,23 @@ func TestMonitor_Concurrency(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/health", nil)
 			r.ServeHTTP(w, req)
-			assert.Equal(t, http.StatusOK, w.Code)
-		})
+			if w.Code != http.StatusOK {
+				t.Errorf("ServeHTTP() status code = %d; want 200", w.Code)
+			}
+		}()
 	}
 	wg.Wait()
 }
 
 func TestMonitor_ContextPropagation(t *testing.T) {
+	t.Parallel()
+
 	m := health.NewMonitor()
 	received := make(chan struct{})
 
@@ -273,18 +300,15 @@ func TestMonitor_ContextPropagation(t *testing.T) {
 	r := router.New()
 	m.Mount(r)
 
-	// Create a context that we can cancel:
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil).WithContext(ctx)
 	w := httptest.NewRecorder()
 
-	// Cancel the context immediately to simulate a client disconnect:
 	cancel()
 	r.ServeHTTP(w, req)
 
 	select {
 	case <-received:
-		// Success: the check function saw the cancellation:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("CheckFunc did not receive context cancellation")
 	}
