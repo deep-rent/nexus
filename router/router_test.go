@@ -39,6 +39,7 @@ func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
 var _ router.Handler = &mockHandler{}
 
 func TestExchangeBindJSON(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		ctype      string
@@ -82,6 +83,7 @@ func TestExchangeBindJSON(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var r *http.Request
 			if tc.useNilBody {
 				r = httptest.NewRequest(http.MethodPost, "/", nil)
@@ -111,6 +113,7 @@ func TestExchangeBindJSON(t *testing.T) {
 }
 
 func TestExchangeReadForm(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		ctype       string
@@ -161,6 +164,7 @@ func TestExchangeReadForm(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r := httptest.NewRequest(
 				http.MethodPost,
 				"/"+tc.queryParams,
@@ -192,6 +196,7 @@ func TestExchangeReadForm(t *testing.T) {
 }
 
 func TestExchangeJSON(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 	payload := map[string]string{"foo": "bar"}
@@ -205,7 +210,9 @@ func TestExchangeJSON(t *testing.T) {
 }
 
 func TestExchangeForm(t *testing.T) {
+	t.Parallel()
 	t.Run("write_form_data", func(t *testing.T) {
+		t.Parallel()
 		rec := httptest.NewRecorder()
 		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
@@ -224,6 +231,7 @@ func TestExchangeForm(t *testing.T) {
 	})
 
 	t.Run("write_form_manual_content_type", func(t *testing.T) {
+		t.Parallel()
 		rec := httptest.NewRecorder()
 		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
@@ -239,6 +247,7 @@ func TestExchangeForm(t *testing.T) {
 }
 
 func TestStatus(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
@@ -247,6 +256,7 @@ func TestStatus(t *testing.T) {
 }
 
 func TestExchangeRedirect(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/old", nil)
 	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
@@ -259,6 +269,7 @@ func TestExchangeRedirect(t *testing.T) {
 }
 
 func TestExchangeRedirectTo(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
 	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
@@ -287,6 +298,7 @@ func TestExchangeRedirectTo(t *testing.T) {
 }
 
 func TestExchangeHelpers(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/users/123?q=search", nil)
 	req.SetPathValue("id", "123")
 	rec := httptest.NewRecorder()
@@ -307,6 +319,7 @@ func TestExchangeHelpers(t *testing.T) {
 }
 
 func TestRouterHandle(t *testing.T) {
+	t.Parallel()
 	r := router.New()
 
 	r.HandleFunc("GET /func", func(e *router.Exchange) error {
@@ -328,6 +341,7 @@ func TestRouterHandle(t *testing.T) {
 }
 
 func TestRouterErrorHandling(t *testing.T) {
+	t.Parallel()
 	r := router.New()
 
 	r.HandleFunc("GET /typed", func(e *router.Exchange) error {
@@ -353,6 +367,7 @@ func TestRouterErrorHandling(t *testing.T) {
 }
 
 func TestRouterStrictDecoding(t *testing.T) {
+	t.Parallel()
 	r := router.New(
 		router.WithJSONOptions(json.RejectUnknownMembers(true)),
 	)
@@ -383,6 +398,7 @@ func TestRouterStrictDecoding(t *testing.T) {
 }
 
 func TestRouterMaxBodySize(t *testing.T) {
+	t.Parallel()
 	r := router.New(
 		router.WithMaxBodySize(10),
 	)
@@ -409,6 +425,7 @@ func TestRouterMaxBodySize(t *testing.T) {
 }
 
 func TestRouterDoubleWrite(t *testing.T) {
+	t.Parallel()
 	r := router.New()
 
 	r.HandleFunc("GET /double", func(e *router.Exchange) error {
@@ -426,6 +443,7 @@ func TestRouterDoubleWrite(t *testing.T) {
 }
 
 func TestRouterMount(t *testing.T) {
+	t.Parallel()
 	r := router.New()
 
 	subMux := http.NewServeMux()
@@ -444,6 +462,7 @@ func TestRouterMount(t *testing.T) {
 }
 
 func TestRouter_Middleware(t *testing.T) {
+	t.Parallel()
 	mw := func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
 			e.SetHeader("X-Global", "true")
@@ -465,6 +484,7 @@ func TestRouter_Middleware(t *testing.T) {
 }
 
 func TestChain(t *testing.T) {
+	t.Parallel()
 	appendHeader := func(val string) router.Middleware {
 		return func(next router.Handler) router.Handler {
 			return router.HandlerFunc(func(e *router.Exchange) error {
@@ -494,6 +514,7 @@ func TestChain(t *testing.T) {
 }
 
 func TestWrap(t *testing.T) {
+	t.Parallel()
 	stdHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Wrapped", "true")
 		w.WriteHeader(http.StatusAccepted)
@@ -512,6 +533,8 @@ func TestWrap(t *testing.T) {
 }
 
 func TestAdapt(t *testing.T) {
+	t.Parallel()
+	// Using a local variable scoped to this specific test.
 	var capturedStatus int
 
 	pipe := func(next http.Handler) http.Handler {
@@ -539,6 +562,7 @@ func TestAdapt(t *testing.T) {
 }
 
 func TestResponseWriter_Unwrap(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	rw := router.NewResponseWriter(rec)
 	rc := http.NewResponseController(rw)
@@ -548,6 +572,7 @@ func TestResponseWriter_Unwrap(t *testing.T) {
 }
 
 func TestError_ErrorString(t *testing.T) {
+	t.Parallel()
 	e := &router.Error{
 		Reason:      "reason",
 		Description: "description",
@@ -560,6 +585,7 @@ type unmarshalable struct {
 }
 
 func TestExchangeJSON_MarshalError(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 	err := e.JSON(http.StatusOK, unmarshalable{C: make(chan int)})
@@ -569,6 +595,7 @@ func TestExchangeJSON_MarshalError(t *testing.T) {
 }
 
 func TestExchangeRedirectTo_Error(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
@@ -582,6 +609,7 @@ func TestExchangeRedirectTo_Error(t *testing.T) {
 }
 
 func TestExchange_NoContent(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
