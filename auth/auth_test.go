@@ -30,11 +30,11 @@ import (
 )
 
 type mockVerifier[T jwt.Claims] struct {
-	verifyFn func(in []byte) (T, error)
+	verify func(in []byte) (T, error)
 }
 
 func (m *mockVerifier[T]) Verify(in []byte) (T, error) {
-	return m.verifyFn(in)
+	return m.verify(in)
 }
 
 var _ jwt.Verifier[*auth.Claims] = (*mockVerifier[*auth.Claims])(nil)
@@ -138,7 +138,7 @@ func TestGuard_Secure(t *testing.T) {
 			t.Parallel()
 
 			mv := &mockVerifier[*auth.Claims]{
-				verifyFn: func(in []byte) (*auth.Claims, error) {
+				verify: func(in []byte) (*auth.Claims, error) {
 					if tc.mockErr != nil {
 						return nil, tc.mockErr
 					}
@@ -182,7 +182,7 @@ func TestContextExtraction(t *testing.T) {
 
 	want := &auth.Claims{Roles: []string{"tester"}}
 	mv := &mockVerifier[*auth.Claims]{
-		verifyFn: func(in []byte) (*auth.Claims, error) {
+		verify: func(in []byte) (*auth.Claims, error) {
 			return want, nil
 		},
 	}
