@@ -20,26 +20,25 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/health"
 	"github.com/deep-rent/nexus/health/check"
 )
 
 func TestTCP(t *testing.T) {
-	// Start a dummy TCP server for the success case:
+	t.Parallel()
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() {
-		_ = l.Close()
-	}()
+	if err != nil {
+		t.Fatalf("net.Listen() = %v; want nil", err)
+	}
+	defer l.Close()
 
 	addr := l.Addr().String()
-	free := "127.0.0.1:0" // A port that won't accept connections.
+	free := "127.0.0.1:0"
 
 	tests := []struct {
 		name       string
@@ -57,29 +56,34 @@ func TestTCP(t *testing.T) {
 		},
 		{
 			name:       "connection refused",
-			addr:       free, // Connection will fail instantly or timeout.
+			addr:       free,
 			timeout:    10 * time.Millisecond,
 			wantStatus: health.StatusSick,
 			wantErr:    true,
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			chk := check.TCP(tc.addr, tc.timeout)
-			status, err := chk(context.Background())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// t.Parallel()
 
-			assert.Equal(t, tc.wantStatus, status)
-			if tc.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
+			chk := check.TCP(tt.addr, tt.timeout)
+			status, err := chk(t.Context())
+
+			if status != tt.wantStatus {
+				t.Errorf("TCP(%q) status = %q; want %q", tt.addr, status, tt.wantStatus)
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("TCP(%q) error = %v; wantErr %t", tt.addr, err, tt.wantErr)
 			}
 		})
 	}
 }
 
 func TestHTTP(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		handler    http.HandlerFunc
@@ -88,7 +92,7 @@ func TestHTTP(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name: "200 OK",
+			name: "200 ok",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			},
@@ -96,7 +100,7 @@ func TestHTTP(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name: "204 No Content",
+			name: "204 no content",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
 			},
@@ -104,7 +108,7 @@ func TestHTTP(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name: "400 Bad Request",
+			name: "400 bad request",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 			},
@@ -112,7 +116,7 @@ func TestHTTP(t *testing.T) {
 			wantErr:    true,
 		},
 		{
-			name: "500 Internal Server Error",
+			name: "500 internal server error",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			},
@@ -130,50 +134,79 @@ func TestHTTP(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			ts := httptest.NewServer(tc.handler)
-			defer ts.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-			chk := check.HTTP(tc.client, ts.URL)
-			status, err := chk(context.Background())
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
 
-			assert.Equal(t, tc.wantStatus, status)
-			if tc.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
+			chk := check.HTTP(tt.client, server.URL)
+			status, err := chk(t.Context())
+
+			if status != tt.wantStatus {
+				t.Errorf(
+					"HTTP(%q) status = %q; want %q",
+					server.URL, status, tt.wantStatus,
+				)
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf(
+					"HTTP(%q) error = %v; wantErr %t",
+					server.URL, err, tt.wantErr,
+				)
 			}
 		})
 	}
 }
 
 func TestHTTP_Unreachable(t *testing.T) {
-	// Tests the HTTP check against an invalid or unreachable URL:
-	chk := check.HTTP(nil, "http://127.0.0.1:0/invalid")
-	status, err := chk(context.Background())
+	t.Parallel()
 
-	assert.Equal(t, health.StatusSick, status)
-	assert.Error(t, err)
+	const url = "http://127.0.0.1:0/invalid"
+	chk := check.HTTP(nil, url)
+	status, err := chk(t.Context())
+
+	if got, want := status, health.StatusSick; got != want {
+		t.Errorf("HTTP(%q) status = %q; want %q", url, got, want)
+	}
+
+	if err == nil {
+		t.Errorf("HTTP(%q) error = nil; want error", url)
+	}
 }
 
 func TestHTTP_Timeout(t *testing.T) {
-	// A server that hangs longer than our client timeout:
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.Parallel()
+
+	h := func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(50 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
+	}
+	server := httptest.NewServer(http.HandlerFunc(h))
+	defer server.Close()
 
-	// Use a client with a very strict 10ms timeout:
 	client := &http.Client{Timeout: 10 * time.Millisecond}
-	chk := check.HTTP(client, ts.URL)
+	chk := check.HTTP(client, server.URL)
 
-	status, err := chk(context.Background())
+	status, err := chk(t.Context())
 
-	assert.Equal(t, health.StatusSick, status)
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "Timeout") // Or "context deadline exceeded"
+	if got, want := status, health.StatusSick; got != want {
+		t.Errorf("HTTP(%q) status = %q; want %q", server.URL, got, want)
+	}
+
+	if err == nil {
+		t.Fatalf("HTTP(%q) error = nil; want error", server.URL)
+	}
+
+	if msg := err.Error(); !strings.Contains(msg, "Timeout") &&
+		!strings.Contains(msg, "context deadline exceeded") {
+		t.Errorf(
+			"HTTP(%q) error = %q; want it to contain timeout info",
+			server.URL, msg,
+		)
+	}
 }
 
 type mockPinger struct{ err error }
@@ -182,9 +215,9 @@ func (m *mockPinger) PingContext(ctx context.Context) error {
 	return m.err
 }
 
-var _ check.Pinger = (*mockPinger)(nil)
-
 func TestPing(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		pinger     check.Pinger
@@ -205,22 +238,27 @@ func TestPing(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			chk := check.Ping(tc.pinger)
-			status, err := chk(context.Background())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-			assert.Equal(t, tc.wantStatus, status)
-			if tc.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
+			chk := check.Ping(tt.pinger)
+			status, err := chk(t.Context())
+
+			if status != tt.wantStatus {
+				t.Errorf("Ping() status = %q; want %q", status, tt.wantStatus)
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Ping() error = %v; wantErr %t", err, tt.wantErr)
 			}
 		})
 	}
 }
 
 func TestDNS(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		host       string
@@ -241,22 +279,27 @@ func TestDNS(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			chk := check.DNS(tc.host)
-			status, err := chk(context.Background())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-			assert.Equal(t, tc.wantStatus, status)
-			if tc.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
+			chk := check.DNS(tt.host)
+			status, err := chk(t.Context())
+
+			if status != tt.wantStatus {
+				t.Errorf("DNS(%q) status = %q; want %q", tt.host, status, tt.wantStatus)
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DNS(%q) error = %v; wantErr %t", tt.host, err, tt.wantErr)
 			}
 		})
 	}
 }
 
 func TestWrappers(t *testing.T) {
+	t.Parallel()
+
 	errFail := errors.New("fail")
 
 	tests := []struct {
@@ -266,7 +309,7 @@ func TestWrappers(t *testing.T) {
 		wantErr    error
 	}{
 		{
-			name: "Wrap success",
+			name: "wrap success",
 			chk: check.Wrap(func() error {
 				return nil
 			}),
@@ -274,7 +317,7 @@ func TestWrappers(t *testing.T) {
 			wantErr:    nil,
 		},
 		{
-			name: "Wrap failure",
+			name: "wrap failure",
 			chk: check.Wrap(func() error {
 				return errFail
 			}),
@@ -282,7 +325,7 @@ func TestWrappers(t *testing.T) {
 			wantErr:    errFail,
 		},
 		{
-			name: "WrapContext success",
+			name: "wrap context success",
 			chk: check.WrapContext(func(ctx context.Context) error {
 				return nil
 			}),
@@ -290,7 +333,7 @@ func TestWrappers(t *testing.T) {
 			wantErr:    nil,
 		},
 		{
-			name: "WrapContext failure",
+			name: "wrap context failure",
 			chk: check.WrapContext(func(ctx context.Context) error {
 				return errFail
 			}),
@@ -299,27 +342,44 @@ func TestWrappers(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			status, err := tc.chk(context.Background())
-			assert.Equal(t, tc.wantStatus, status)
-			assert.Equal(t, tc.wantErr, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			status, err := tt.chk(t.Context())
+			if status != tt.wantStatus {
+				t.Errorf("%s status = %q; want %q", tt.name, status, tt.wantStatus)
+			}
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("%s error = %v; want %v", tt.name, err, tt.wantErr)
+			}
 		})
 	}
 }
 
 func TestWrapContext_PassesContext(t *testing.T) {
-	type key struct{}
-	exp := "nexus"
-	ctx := context.WithValue(context.Background(), key{}, exp)
+	t.Parallel()
+
+	type contextKey struct{}
+	const val = "nexus"
+
+	ctx := context.WithValue(t.Context(), contextKey{}, val)
 
 	chk := check.WrapContext(func(c context.Context) error {
-		act := c.Value(key{})
-		assert.Equal(t, exp, act, "context was not propagated")
+		t.Helper()
+		if got := c.Value(contextKey{}); got != val {
+			t.Errorf("context value = %v; want %v", got, val)
+		}
 		return nil
 	})
 
 	status, err := chk(ctx)
-	assert.Equal(t, health.StatusHealthy, status)
-	assert.NoError(t, err)
+	if got, want := status, health.StatusHealthy; got != want {
+		t.Errorf("WrapContext() status = %q; want %q", got, want)
+	}
+
+	if err != nil {
+		t.Errorf("WrapContext() error = %v; want nil", err)
+	}
 }
