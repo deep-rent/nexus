@@ -26,6 +26,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/router"
 )
 
@@ -617,4 +619,31 @@ func TestExchange_NoContent(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 	assert.True(t, e.W.Closed())
+}
+
+func TestMirroredMiddlewareConnectivity(t *testing.T) {
+	t.Parallel()
+
+	logger := log.Silent()
+	factories := []struct {
+		name string
+		fn   any
+	}{
+		{"Recover", router.Recover(logger)},
+		{"RequestID", router.RequestID()},
+		{"Log", router.Log(logger)},
+		{"Volatile", router.Volatile()},
+		{"Secure", router.Secure(middleware.DefaultSecurityConfig)},
+		{"CORS", router.CORS()},
+		{"Gzip", router.Gzip()},
+	}
+
+	for _, tc := range factories {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.NotNil(t, tc.fn, "factory %s should return a middleware", tc.name)
+			_, ok := tc.fn.(router.Middleware)
+			assert.True(t, ok, "%s should satisfy router.Middleware", tc.name)
+		})
+	}
 }
