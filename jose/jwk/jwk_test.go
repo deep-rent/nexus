@@ -58,7 +58,7 @@ var _ jwk.Hint = mockHint{}
 
 func readTestFile(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
+	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec
 	if err != nil {
 		t.Fatalf("os.ReadFile(%q) error = %v", name, err)
 	}
