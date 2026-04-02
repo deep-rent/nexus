@@ -240,8 +240,8 @@ func TestRun_WithLogger(t *testing.T) {
 		name string
 		want string
 	}{
-		{"start log", "Application started"},
-		{"stop log", "Application stopped"},
+		{"log started", "Application started"},
+		{"log stopped", "Application stopped"},
 	}
 
 	for _, tt := range tests {
