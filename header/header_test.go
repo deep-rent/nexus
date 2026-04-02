@@ -17,84 +17,100 @@ package header_test
 import (
 	"io"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/header"
 )
 
+type mockRoundTripper struct{ trap *http.Request }
+
+func (t *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.trap = r
+	return &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+var _ http.RoundTripper = (*mockRoundTripper)(nil)
+
 func TestDirectives(t *testing.T) {
+	t.Parallel()
+
 	type directive struct {
 		k string
 		v string
 	}
 
-	type test struct {
+	tests := []struct {
 		name string
-		in   string
+		give string
 		want []directive
-	}
-	tests := []test{
+	}{
 		{
 			name: "simple",
-			in:   "max-age=3600",
+			give: "max-age=3600",
 			want: []directive{{"max-age", "3600"}},
 		},
 		{
 			name: "multiple",
-			in:   "no-cache, max-age=3600",
+			give: "no-cache, max-age=3600",
 			want: []directive{{"no-cache", ""}, {"max-age", "3600"}},
 		},
 		{
 			name: "with spaces",
-			in:   "  no-cache ,  max-age = 3600  ",
+			give: "  no-cache ,  max-age = 3600  ",
 			want: []directive{{"no-cache", ""}, {"max-age", "3600"}},
 		},
 		{
 			name: "flag only",
-			in:   "no-cache",
+			give: "no-cache",
 			want: []directive{{"no-cache", ""}},
 		},
 		{
 			name: "empty",
-			in:   "",
+			give: "",
 			want: []directive{{"", ""}},
 		},
 		{
 			name: "only comma",
-			in:   ",",
+			give: ",",
 			want: []directive{{"", ""}, {"", ""}},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var got []directive
-			for k, v := range header.Directives(tc.in) {
+			for k, v := range header.Directives(tt.give) {
 				got = append(got, directive{k, v})
 			}
-			assert.Equal(t, tc.want, got)
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Directives(%q) = %v; want %v", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestThrottle(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC()
 	future, past := now.Add(30*time.Second), now.Add(-30*time.Second)
 
-	type test struct {
+	tests := []struct {
 		name string
 		h    http.Header
 		now  func() time.Time
 		want time.Duration
-	}
-
-	tests := []test{
+	}{
 		{
 			name: "retry-after seconds",
 			h:    http.Header{"Retry-After": {"60"}},
@@ -154,25 +170,35 @@ func TestThrottle(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.Throttle(tc.h, tc.now)
-			assert.InDelta(t, tc.want, got, float64(time.Second))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := header.Throttle(tt.h, tt.now)
+			diff := got - tt.want
+			if diff < 0 {
+				diff = -diff
+			}
+
+			if diff > time.Second {
+				t.Errorf("Throttle(h, now) = %v; want %v", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestLifetime(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC()
 	future, past := now.Add(60*time.Second), now.Add(-60*time.Second)
 
-	type test struct {
+	tests := []struct {
 		name string
 		h    http.Header
 		now  func() time.Time
 		want time.Duration
-	}
-	tests := []test{
+	}{
 		{
 			name: "cache-control max-age",
 			h:    http.Header{"Cache-Control": {"max-age=3600"}},
@@ -226,22 +252,32 @@ func TestLifetime(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.Lifetime(tc.h, tc.now)
-			assert.InDelta(t, tc.want, got, float64(time.Second))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := header.Lifetime(tt.h, tt.now)
+			diff := got - tt.want
+			if diff < 0 {
+				diff = -diff
+			}
+
+			if diff > time.Second {
+				t.Errorf("Lifetime(h, now) = %v; want %v", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestCredentials(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name   string
 		h      http.Header
 		scheme string
 		want   string
-	}
-	tests := []test{
+	}{
 		{
 			name:   "basic scheme",
 			h:      http.Header{"Authorization": {"Basic foo"}},
@@ -280,81 +316,92 @@ func TestCredentials(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.Credentials(tc.h, tc.scheme)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := header.Credentials(tt.h, tt.scheme); got != tt.want {
+				t.Errorf("Credentials(h, %q) = %q; want %q", tt.scheme, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestPreferences(t *testing.T) {
+	t.Parallel()
+
 	type pref struct {
 		k string
 		q float64
 	}
-	type test struct {
+
+	tests := []struct {
 		name string
-		in   string
+		give string
 		want []pref
-	}
-	tests := []test{
+	}{
 		{
 			name: "simple",
-			in:   "en, fr",
+			give: "en, fr",
 			want: []pref{{"en", 1.0}, {"fr", 1.0}},
 		},
 		{
 			name: "with q-factors",
-			in:   "en;q=0.9, fr;q=0.8",
+			give: "en;q=0.9, fr;q=0.8",
 			want: []pref{{"en", 0.9}, {"fr", 0.8}},
 		},
 		{
 			name: "mixed",
-			in:   "en, fr;q=0.8",
+			give: "en, fr;q=0.8",
 			want: []pref{{"en", 1.0}, {"fr", 0.8}},
 		},
 		{
 			name: "malformed q-factor",
-			in:   "en;q=invalid",
+			give: "en;q=invalid",
 			want: []pref{{"en", 1.0}},
 		},
 		{
 			name: "bounded from above",
-			in:   "a;q=2.0",
+			give: "a;q=2.0",
 			want: []pref{{"a", 1.0}},
 		},
 		{
 			name: "bounded from below",
-			in:   "b;q=-1.0",
+			give: "b;q=-1.0",
 			want: []pref{{"b", 0.0}},
 		},
 		{
 			name: "empty",
-			in:   "",
+			give: "",
 			want: nil,
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var got []pref
-			for k, q := range header.Preferences(tc.in) {
+			for k, q := range header.Preferences(tt.give) {
 				got = append(got, pref{k, q})
 			}
-			assert.Equal(t, tc.want, got)
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Preferences(%q) = %v; want %v", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestAccepts(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name  string
 		value string
 		key   string
 		want  bool
-	}
-	tests := []test{
+	}{
 		{
 			name:  "accepted",
 			value: "application/json, text/plain;q=0.9",
@@ -423,21 +470,25 @@ func TestAccepts(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.Accepts(tc.value, tc.key)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := header.Accepts(tt.value, tt.key); got != tt.want {
+				t.Errorf("Accepts(%q, %q) = %t; want %t", tt.value, tt.key, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestMediaType(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name string
 		h    http.Header
 		want string
-	}
-	tests := []test{
+	}{
 		{
 			name: "basic",
 			h:    http.Header{"Content-Type": {"application/json; charset=utf-8"}},
@@ -465,22 +516,26 @@ func TestMediaType(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.MediaType(tc.h)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := header.MediaType(tt.h); got != tt.want {
+				t.Errorf("MediaType(h) = %q; want %q", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestLink(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name  string
 		value string
 		rel   string
 		want  string
-	}
-	tests := []test{
+	}{
 		{
 			name:  "single link",
 			value: `<https://api.example.com/items?page=2>; rel="next"`,
@@ -488,16 +543,18 @@ func TestLink(t *testing.T) {
 			want:  "https://api.example.com/items?page=2",
 		},
 		{
-			name:  "multiple links finding last",
-			value: `<https://api.example.com/items?page=2>; rel="next", <https://api.example.com/items?page=5>; rel="last"`,
-			rel:   "last",
-			want:  "https://api.example.com/items?page=5",
+			name: "multiple links finding last",
+			value: `<https://api.example.com/items?page=2>; rel="next", ` +
+				`<https://api.example.com/items?page=5>; rel="last"`,
+			rel:  "last",
+			want: "https://api.example.com/items?page=5",
 		},
 		{
-			name:  "multiple links finding first",
-			value: `<https://api.example.com/items?page=2>; rel="next", <https://api.example.com/items?page=1>; rel="prev"`,
-			rel:   "prev",
-			want:  "https://api.example.com/items?page=1",
+			name: "multiple links finding first",
+			value: `<https://api.example.com/items?page=2>; rel="next", ` +
+				`<https://api.example.com/items?page=1>; rel="prev"`,
+			rel:  "prev",
+			want: "https://api.example.com/items?page=1",
 		},
 		{
 			name:  "unquoted relation token",
@@ -531,25 +588,30 @@ func TestLink(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.Link(tc.value, tc.rel)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := header.Link(tt.value, tt.rel); got != tt.want {
+				t.Errorf("Link(%q, %q) = %q; want %q", tt.value, tt.rel, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestLinks(t *testing.T) {
+	t.Parallel()
+
 	type linkPair struct {
 		rel string
 		url string
 	}
-	type test struct {
+
+	tests := []struct {
 		name  string
 		value string
 		want  []linkPair
-	}
-	tests := []test{
+	}{
 		{
 			name:  "single link",
 			value: `<https://api.example.com/items?page=2>; rel="next"`,
@@ -558,8 +620,9 @@ func TestLinks(t *testing.T) {
 			},
 		},
 		{
-			name:  "multiple links",
-			value: `<https://api.example.com/items?page=2>; rel="next", <https://api.example.com/items?page=5>; rel="last"`,
+			name: "multiple links",
+			value: `<https://api.example.com/items?page=2>; rel="next", ` +
+				`<https://api.example.com/items?page=5>; rel="last"`,
 			want: []linkPair{
 				{"next", "https://api.example.com/items?page=2"},
 				{"last", "https://api.example.com/items?page=5"},
@@ -604,55 +667,61 @@ func TestLinks(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var got []linkPair
-			for rel, url := range header.Links(tc.value) {
+			for rel, url := range header.Links(tt.value) {
 				got = append(got, linkPair{rel: rel, url: url})
 			}
-			assert.Equal(t, tc.want, got)
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Links(%q) = %v; want %v", tt.value, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestFilename(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name string
 		h    http.Header
 		want string
-	}
-	tests := []test{
+	}{
 		{
 			name: "standard filename",
 			h: http.Header{
-				"Content-Disposition": []string{`attachment; filename="report.pdf"`},
+				"Content-Disposition": []string{`attachment; filename="foo.pdf"`},
 			},
-			want: "report.pdf",
+			want: "foo.pdf",
 		},
 		{
 			name: "unquoted filename",
 			h: http.Header{
-				"Content-Disposition": []string{`attachment; filename=report.pdf`},
+				"Content-Disposition": []string{`attachment; filename=bar.pdf`},
 			},
-			want: "report.pdf",
+			want: "bar.pdf",
 		},
 		{
 			name: "utf-8 filename (RFC 6266)",
 			h: http.Header{
 				"Content-Disposition": []string{
-					`attachment; filename*=UTF-8''%e2%82%ac%20rates.pdf`,
+					`attachment; filename*=UTF-8''%e2%82%ac%20foo.pdf`,
 				},
 			},
-			want: "€ rates.pdf",
+			want: "€ foo.pdf",
 		},
 		{
 			name: "fallback with both filename and filename*",
 			h: http.Header{
 				"Content-Disposition": []string{
-					`attachment; filename="rates.pdf"; filename*=UTF-8''%e2%82%ac%20rates.pdf`,
+					`attachment;filename="bar.pdf";filename*=UTF-8''%e2%82%ac%20bar.pdf`,
 				},
 			},
-			want: "€ rates.pdf",
+			want: "€ bar.pdf",
 		},
 		{
 			name: "no filename present",
@@ -675,56 +744,104 @@ func TestFilename(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := header.Filename(tc.h)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := header.Filename(tt.h); got != tt.want {
+				t.Errorf("Filename(h) = %q; want %q", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	h := header.New("x-foo-bar", "baz")
-	assert.Equal(t, "X-Foo-Bar", h.Key)
-	assert.Equal(t, "baz", h.Value)
-	assert.Equal(t, "X-Foo-Bar: baz", h.String())
+
+	if h.Key != "X-Foo-Bar" {
+		t.Errorf("h.Key = %q; want %q", h.Key, "X-Foo-Bar")
+	}
+
+	if h.Value != "baz" {
+		t.Errorf("h.Value = %q; want %q", h.Value, "baz")
+	}
+
+	if got, want := h.String(), "X-Foo-Bar: baz"; got != want {
+		t.Errorf("h.String() = %q; want %q", got, want)
+	}
 }
 
 func TestUserAgent(t *testing.T) {
-	t.Run("UserAgent", func(t *testing.T) {
-		h := header.UserAgent("foobar", "1.0", "contact@example.com")
-		assert.Equal(t, "User-Agent", h.Key)
-		assert.Equal(t, "foobar/1.0 (contact@example.com)", h.Value)
-	})
+	t.Parallel()
 
-	t.Run("UserAgent without comment", func(t *testing.T) {
-		h := header.UserAgent("foobar", "1.0", "")
-		assert.Equal(t, "User-Agent", h.Key)
-		assert.Equal(t, "foobar/1.0", h.Value)
-	})
+	tests := []struct {
+		name    string
+		product string
+		version string
+		comment string
+		want    string
+	}{
+		{
+			name:    "UserAgent",
+			product: "foobar",
+			version: "1.0",
+			comment: "contact@example.com",
+			want:    "foobar/1.0 (contact@example.com)",
+		},
+		{
+			name:    "UserAgent without comment",
+			product: "foobar",
+			version: "1.0",
+			comment: "",
+			want:    "foobar/1.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := header.UserAgent(tt.product, tt.version, tt.comment)
+			if h.Key != "User-Agent" {
+				t.Errorf("h.Key = %q; want %q", h.Key, "User-Agent")
+			}
+
+			if h.Value != tt.want {
+				t.Errorf("h.Value = %q; want %q", h.Value, tt.want)
+			}
+		})
+	}
 }
-
-type mockRoundTripper struct{ trap *http.Request }
-
-func (t *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	t.trap = r
-	return &http.Response{
-		StatusCode: 200,
-		Body:       io.NopCloser(strings.NewReader("")),
-	}, nil
-}
-
-var _ http.RoundTripper = (*mockRoundTripper)(nil)
 
 func TestNewTransport(t *testing.T) {
+	t.Parallel()
+
 	t.Run("no headers returns original transport", func(t *testing.T) {
+		t.Parallel()
+
 		base := http.DefaultTransport
 		wrapped := header.NewTransport(base)
-		assert.Same(t, base, wrapped)
+
+		if base != wrapped {
+			t.Errorf("NewTransport(base) = %p; want %p", wrapped, base)
+		}
 	})
 
 	t.Run("adds headers to request", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com", nil)
+		t.Parallel()
+
+		req, err := http.NewRequestWithContext(
+			t.Context(),
+			"GET",
+			"http://example.com",
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("http.NewRequestWithContext() = %v", err)
+		}
+
 		originalHeader := req.Header.Clone()
 		base := &mockRoundTripper{}
 
@@ -734,14 +851,31 @@ func TestNewTransport(t *testing.T) {
 		}
 		transport := header.NewTransport(base, headers...)
 
-		_, err := transport.RoundTrip(req)
-		require.NoError(t, err)
+		_, err = transport.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("transport.RoundTrip(req) = %v; want nil", err)
+		}
 
 		r := base.trap
-		assert.NotNil(t, r)
-		assert.NotSame(t, req, r, "request should have been cloned")
-		assert.Equal(t, "foo", r.Header.Get("X-Foo"))
-		assert.Equal(t, "bar", r.Header.Get("X-Bar"))
-		assert.Equal(t, originalHeader, req.Header)
+		if r == nil {
+			t.Fatal("base.trap = nil; want *http.Request")
+		}
+
+		if r == req {
+			t.Error("request should have been cloned but was same instance")
+		}
+
+		if got := r.Header.Get("X-Foo"); got != "foo" {
+			t.Errorf("r.Header.Get(\"X-Foo\") = %q; want %q", got, "foo")
+		}
+
+		if got := r.Header.Get("X-Bar"); got != "bar" {
+			t.Errorf("r.Header.Get(\"X-Bar\") = %q; want %q", got, "bar")
+		}
+
+		if !reflect.DeepEqual(req.Header, originalHeader) {
+			t.Errorf("req.Header = %v; want %v (original should be untouched)",
+				req.Header, originalHeader)
+		}
 	})
 }
