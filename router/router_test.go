@@ -29,13 +29,14 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
-// mockHandler implements router.Handler
 type mockHandler struct{}
 
 func (m *mockHandler) ServeHTTP(e *router.Exchange) error {
 	e.Status(http.StatusOK)
 	return nil
 }
+
+var _ router.Handler = &mockHandler{}
 
 func TestExchangeBindJSON(t *testing.T) {
 	tests := []struct {
@@ -442,11 +443,11 @@ func TestRouterMount(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, res.StatusCode)
 }
 
-func TestRouterMiddleware(t *testing.T) {
-	mw := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Global", "true")
-			next.ServeHTTP(w, r)
+func TestRouter_Middleware(t *testing.T) {
+	mw := func(next router.Handler) router.Handler {
+		return router.HandlerFunc(func(e *router.Exchange) error {
+			e.SetHeader("X-Global", "true")
+			return next.ServeHTTP(e)
 		})
 	}
 
@@ -463,13 +464,88 @@ func TestRouterMiddleware(t *testing.T) {
 	assert.Equal(t, "true", res.Header.Get("X-Global"))
 }
 
+func TestChain(t *testing.T) {
+	appendHeader := func(val string) router.Middleware {
+		return func(next router.Handler) router.Handler {
+			return router.HandlerFunc(func(e *router.Exchange) error {
+				// Read current value, append the new one, and write it back.
+				current := e.GetHeader("X-Chain")
+				e.SetHeader("X-Chain", current+val)
+				return next.ServeHTTP(e)
+			})
+		}
+	}
+
+	h := router.Chain(
+		router.HandlerFunc(func(e *router.Exchange) error {
+			e.SetHeader("X-Chain", e.GetHeader("X-Chain")+"C")
+			return nil
+		}),
+		appendHeader("A"),
+		appendHeader("B"),
+	)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
+
+	err := h.ServeHTTP(e)
+	require.NoError(t, err)
+	assert.Equal(t, "ABC", rec.Header().Get("X-Chain"))
+}
+
+func TestWrap(t *testing.T) {
+	stdHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Wrapped", "true")
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	r := router.New()
+	r.Handle("GET /wrap", router.Wrap(stdHandler))
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/wrap")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusAccepted, res.StatusCode)
+	assert.Equal(t, "true", res.Header.Get("X-Wrapped"))
+}
+
+func TestAdapt(t *testing.T) {
+	var capturedStatus int
+
+	pipe := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r)
+			if rw, ok := w.(router.ResponseWriter); ok {
+				capturedStatus = rw.Status()
+			}
+		})
+	}
+
+	r := router.New(router.WithMiddleware(router.Adapt(pipe)))
+
+	r.HandleFunc("GET /adapt", func(e *router.Exchange) error {
+		return errors.New("boom")
+	})
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/adapt")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
+	assert.Equal(t, http.StatusInternalServerError, capturedStatus)
+}
+
 func TestResponseWriter_Unwrap(t *testing.T) {
 	rec := httptest.NewRecorder()
 	rw := router.NewResponseWriter(rec)
 	rc := http.NewResponseController(rw)
 
 	err := rc.Flush()
-	assert.NoError(t, err, "ResponseController should be able to Flush via Unwrap")
+	assert.NoError(t, err, "controller should be able to flush via unwrap")
 }
 
 func TestError_ErrorString(t *testing.T) {
