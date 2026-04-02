@@ -28,7 +28,7 @@
 // Example:
 //
 //	// 1. Initialize the JWT verifier and the auth guard.
-//	verifier := jwt.NewVerifier[auth.Claims](keySet)
+//	verifier := jwt.NewVerifier[*auth.Claims](keySet)
 //	guard := auth.NewGuard(verifier)
 //
 //	// 2. Setup the router.
@@ -37,13 +37,13 @@
 //	// 3. Protect a route requiring authentication and specific roles.
 //	r.HandleFunc(
 //		"POST /admin/users",
-//		createUserHandler,
-//		guard.Secure(auth.HasRole[auth.Claims]("admin")),
+//		createUser,
+//		guard.Secure(auth.HasRole[*auth.Claims]("admin")),
 //	)
 //
 //	// Inside your handler, retrieve the claims:
-//	func createUserHandler(e *router.Exchange) error {
-//		claims, ok := auth.FromExchange[auth.Claims](e)
+//	func createUser(e *router.Exchange) error {
+//		claims, ok := auth.FromExchange[*auth.Claims](e)
 //		if !ok {
 //			return errors.New("claims missing")
 //		}
