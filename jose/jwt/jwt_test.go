@@ -381,3 +381,37 @@ func TestSign_Errors(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to marshal claims")
 }
+
+func TestAudience_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	type claims struct {
+		jwt.Reserved
+	}
+
+	tests := []struct {
+		name    string
+		json    string
+		want    []string
+		wantErr bool
+	}{
+		{"single string", `{"aud":"api"}`, []string{"api"}, false},
+		{"string array", `{"aud":["api","web"]}`, []string{"api", "web"}, false},
+		{"wrong type int", `{"aud":123}`, nil, true},
+		{"wrong type array of ints", `{"aud":[1,2,3]}`, nil, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var c claims
+			err := json.Unmarshal([]byte(tc.json), &c)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.want, c.Audience())
+			}
+		})
+	}
+}
