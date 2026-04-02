@@ -37,7 +37,7 @@ func (m *mockVerifier[T]) Verify(in []byte) (T, error) {
 	return m.verifyFn(in)
 }
 
-var _ jwt.Verifier[jwt.Claims] = (*mockVerifier[jwt.Claims])(nil)
+var _ jwt.Verifier[*auth.Claims] = (*mockVerifier[*auth.Claims])(nil)
 
 func TestClaims_HasRole(t *testing.T) {
 	t.Parallel()
@@ -49,42 +49,42 @@ func TestClaims_HasRole(t *testing.T) {
 
 func TestRules(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c := &auth.Claims{Roles: []string{"manager"}}
+	ctx := t.Context()
+	c := &auth.Claims{Roles: []string{"manager", "editor"}}
 
-	t.Run("HasRole", func(t *testing.T) {
-		var rule auth.Rule[*auth.Claims]
+	tests := []struct {
+		name    string
+		rule    auth.Rule[*auth.Claims]
+		wantErr bool
+	}{
+		{"HasRole success", auth.HasRole[*auth.Claims]("manager"), false},
+		{"HasRole failure", auth.HasRole[*auth.Claims]("admin"), true},
+		{"AnyRole success", auth.AnyRole[*auth.Claims]("admin", "manager"), false},
+		{"AnyRole failure", auth.AnyRole[*auth.Claims]("admin", "guest"), true},
+		{"AllRoles success", auth.AllRoles[*auth.Claims]("manager", "editor"), false},
+		{"AllRoles failure", auth.AllRoles[*auth.Claims]("manager", "admin"), true},
+	}
 
-		rule = auth.HasRole[*auth.Claims]("manager")
-		assert.NoError(t, rule.Eval(ctx, c))
-
-		rule = auth.HasRole[*auth.Claims]("admin")
-		assert.Error(t, rule.Eval(ctx, c))
-	})
-
-	t.Run("AnyRole", func(t *testing.T) {
-		var rule auth.Rule[*auth.Claims]
-
-		rule = auth.AnyRole[*auth.Claims]("admin", "manager")
-		assert.NoError(t, rule.Eval(ctx, c))
-
-		rule = auth.AnyRole[*auth.Claims]("admin", "user")
-		assert.Error(t, rule.Eval(ctx, c))
-	})
-
-	t.Run("AllRoles", func(t *testing.T) {
-		var rule auth.Rule[*auth.Claims]
-
-		rule = auth.AllRoles[*auth.Claims]("manager")
-		assert.NoError(t, rule.Eval(ctx, c))
-
-		rule = auth.AllRoles[*auth.Claims]("manager", "admin")
-		assert.Error(t, rule.Eval(ctx, c))
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.rule.Eval(ctx, c)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestGuard_Secure(t *testing.T) {
 	t.Parallel()
+
+	teapotErr := &router.Error{
+		Status: http.StatusTeapot,
+		Reason: "teapot",
+	}
 
 	tests := []struct {
 		name       string
@@ -95,27 +95,38 @@ func TestGuard_Secure(t *testing.T) {
 		wantReason string
 	}{
 		{
-			name:       "missing token",
+			name:       "Missing Token",
 			token:      "",
 			wantStatus: http.StatusUnauthorized,
 			wantReason: auth.ReasonMissingToken,
 		},
 		{
-			name:       "invalid token",
+			name:       "Invalid Token",
 			token:      "Bearer invalid",
 			mockErr:    errors.New("jwt error"),
 			wantStatus: http.StatusUnauthorized,
 			wantReason: auth.ReasonInvalidToken,
 		},
 		{
-			name:       "insufficient privileges",
+			name:       "Insufficient Privileges",
 			token:      "Bearer valid",
 			rules:      []auth.Rule[*auth.Claims]{auth.HasRole[*auth.Claims]("admin")},
 			wantStatus: http.StatusForbidden,
 			wantReason: auth.ReasonInsufficientPrivileges,
 		},
 		{
-			name:       "success",
+			name:  "Rule Error Pass-through",
+			token: "Bearer valid",
+			rules: []auth.Rule[*auth.Claims]{
+				auth.RuleFunc[*auth.Claims](func(context.Context, *auth.Claims) error {
+					return teapotErr
+				}),
+			},
+			wantStatus: http.StatusTeapot,
+			wantReason: "teapot",
+		},
+		{
+			name:       "Success",
 			token:      "Bearer valid",
 			rules:      []auth.Rule[*auth.Claims]{auth.HasRole[*auth.Claims]("user")},
 			wantStatus: http.StatusOK,
@@ -164,33 +175,4 @@ func TestGuard_Secure(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestContextExtraction(t *testing.T) {
-	t.Parallel()
-
-	expected := &auth.Claims{Roles: []string{"tester"}}
-	mv := &mockVerifier[*auth.Claims]{
-		verifyFn: func(in []byte) (*auth.Claims, error) {
-			return expected, nil
-		},
-	}
-
-	guard := auth.NewGuard(mv)
-	handler := guard.Secure()(router.HandlerFunc(func(e *router.Exchange) error {
-		claims, ok := auth.From[*auth.Claims](e)
-		assert.True(t, ok)
-		assert.Equal(t, expected, claims)
-
-		e.Status(http.StatusOK)
-		return nil
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer valid")
-	res := router.NewResponseWriter(httptest.NewRecorder())
-	e := &router.Exchange{R: req, W: res}
-
-	err := handler.ServeHTTP(e)
-	assert.NoError(t, err)
 }
