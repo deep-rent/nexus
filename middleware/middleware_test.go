@@ -215,9 +215,13 @@ func TestSecure(t *testing.T) {
 		assert.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
 		assert.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
 
-		assert.Equal(t, "geolocation=(), microphone=(), camera=(), payment=()", rr.Header().Get("Permissions-Policy"))
-		assert.Equal(t, "same-origin", rr.Header().Get("Cross-Origin-Opener-Policy"))
-		assert.Equal(t, "none", rr.Header().Get("X-Permitted-Cross-Domain-Policies"))
+		var val string
+		val = rr.Header().Get("Permissions-Policy")
+		assert.Equal(t, "geolocation=(),microphone=(),camera=(),payment=()", val)
+		val = rr.Header().Get("Cross-Origin-Opener-Policy")
+		assert.Equal(t, "same-origin", val)
+		val = rr.Header().Get("X-Permitted-Cross-Domain-Policies")
+		assert.Equal(t, "none", val)
 	})
 
 	t.Run("applies custom config", func(t *testing.T) {
@@ -242,9 +246,13 @@ func TestSecure(t *testing.T) {
 		assert.Equal(t, "default-src 'self'", hdr.Get("Content-Security-Policy"))
 		assert.Equal(t, "no-referrer", hdr.Get("Referrer-Policy"))
 
-		assert.Equal(t, "geolocation=()", hdr.Get("Permissions-Policy"))
-		assert.Equal(t, "same-origin-allow-popups", hdr.Get("Cross-Origin-Opener-Policy"))
-		assert.Equal(t, "none", hdr.Get("X-Permitted-Cross-Domain-Policies"))
+		var val string
+		val = hdr.Get("Permissions-Policy")
+		assert.Equal(t, "geolocation=()", val)
+		val = hdr.Get("Cross-Origin-Opener-Policy")
+		assert.Equal(t, "same-origin-allow-popups", val)
+		val = hdr.Get("X-Permitted-Cross-Domain-Policies")
+		assert.Equal(t, "none", val)
 	})
 
 	t.Run("sets only hardcoded headers on empty config", func(t *testing.T) {
