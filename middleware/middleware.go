@@ -251,43 +251,45 @@ func Secure(cfg SecurityConfig) Pipe {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+
 			// 1. Strict-Transport-Security
 			if hsts != "" {
-				w.Header().Set("Strict-Transport-Security", hsts)
+				h.Set("Strict-Transport-Security", hsts)
 			}
 
 			// 2. X-Content-Type-Options
 			if cfg.NoSniff {
-				w.Header().Set("X-Content-Type-Options", "nosniff")
+				h.Set("X-Content-Type-Options", "nosniff")
 			}
 
 			// 3. X-Frame-Options
 			if cfg.FrameOptions != "" {
-				w.Header().Set("X-Frame-Options", cfg.FrameOptions)
+				h.Set("X-Frame-Options", cfg.FrameOptions)
 			}
 
 			// 4. Content-Security-Policy
 			if cfg.CSP != "" {
-				w.Header().Set("Content-Security-Policy", cfg.CSP)
+				h.Set("Content-Security-Policy", cfg.CSP)
 			}
 
 			// 5. Referrer-Policy
 			if cfg.ReferrerPolicy != "" {
-				w.Header().Set("Referrer-Policy", cfg.ReferrerPolicy)
+				h.Set("Referrer-Policy", cfg.ReferrerPolicy)
 			}
 
 			// 6. Permissions-Policy (New)
 			if cfg.PermissionsPolicy != "" {
-				w.Header().Set("Permissions-Policy", cfg.PermissionsPolicy)
+				h.Set("Permissions-Policy", cfg.PermissionsPolicy)
 			}
 
 			// 7. Cross-Origin-Opener-Policy (New)
 			if cfg.CrossOriginOpenerPolicy != "" {
-				w.Header().Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
+				h.Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
 			}
 
 			// 8. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
-			w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
+			h.Set("X-Permitted-Cross-Domain-Policies", "none")
 
 			next.ServeHTTP(w, r)
 		})
