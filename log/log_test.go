@@ -16,23 +16,20 @@ package log_test
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/deep-rent/nexus/log"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name string
 		opts []log.Option
-	}
-
-	tests := []test{
+	}{
 		{
 			name: "no options",
 			opts: []log.Option{},
@@ -84,21 +81,24 @@ func TestNew(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			require.NotNil(t, log.New(tc.opts...))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := log.New(tt.opts...); got == nil {
+				t.Fatalf("New() = nil; want *slog.Logger")
+			}
 		})
 	}
 }
 
 func TestParseLevel(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		in      string
 		want    slog.Level
 		wantErr bool
-	}
-
-	tests := []test{
+	}{
 		{"debug", slog.LevelDebug, false},
 		{"info", slog.LevelInfo, false},
 		{"warn", slog.LevelWarn, false},
@@ -111,27 +111,29 @@ func TestParseLevel(t *testing.T) {
 		{"", 0, true},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.in, func(t *testing.T) {
-			got, err := log.ParseLevel(tc.in)
-			if tc.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
+			got, err := log.ParseLevel(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseLevel(%q) error = %v; wantErr %v",
+					tt.in, err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("ParseLevel(%q) = %v; want %v", tt.in, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestParseFormat(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		in      string
 		want    log.Format
 		wantErr bool
-	}
-
-	tests := []test{
+	}{
 		{"text", log.FormatText, false},
 		{"json", log.FormatJSON, false},
 		{"TEXT", log.FormatText, false},
@@ -142,77 +144,113 @@ func TestParseFormat(t *testing.T) {
 		{"", 0, true},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.in, func(t *testing.T) {
-			got, err := log.ParseFormat(tc.in)
-			if tc.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
+			got, err := log.ParseFormat(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseFormat(%q) error = %v; wantErr %v",
+					tt.in, err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("ParseFormat(%q) = %v; want %v", tt.in, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestFormat_String(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		in   log.Format
 		want string
-	}
-
-	tests := []test{
+	}{
 		{log.FormatText, "text"},
 		{log.FormatJSON, "json"},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.want, func(t *testing.T) {
-			assert.Equal(t, tc.want, tc.in.String())
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.in.String(); got != tt.want {
+				t.Errorf("Format.String() = %q; want %q", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestSilent(t *testing.T) {
+	t.Parallel()
+
 	logger := log.Silent()
-	require.NotNil(t, logger)
+	if logger == nil {
+		t.Fatalf("Silent() = nil; want *slog.Logger")
+	}
 
-	ctx := context.Background()
-	assert.False(t, logger.Enabled(ctx, slog.LevelDebug))
-	assert.False(t, logger.Enabled(ctx, slog.LevelInfo))
-	assert.False(t, logger.Enabled(ctx, slog.LevelWarn))
-	assert.False(t, logger.Enabled(ctx, slog.LevelError))
+	ctx := t.Context()
+	levels := []slog.Level{
+		slog.LevelDebug,
+		slog.LevelInfo,
+		slog.LevelWarn,
+		slog.LevelError,
+	}
 
-	assert.NotPanics(t, func() {
-		logger.Error("This should not explode", "key", "value")
-	})
+	for _, l := range levels {
+		if logger.Enabled(ctx, l) {
+			t.Errorf("Silent().Enabled(ctx, %v) = true; want false", l)
+		}
+	}
+
+	// Ensure it does not panic
+	logger.Error("test message", "key", "value")
 }
 
 func TestNewHandler(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	handler := log.NewHandler(
 		log.WithLevel(slog.LevelDebug),
 		log.WithWriter(&buf),
 	)
 
-	require.NotNil(t, handler)
-	ctx := context.Background()
-	assert.True(t, handler.Enabled(ctx, slog.LevelDebug))
+	if handler == nil {
+		t.Fatalf("NewHandler() = nil; want slog.Handler")
+	}
+
+	if !handler.Enabled(t.Context(), slog.LevelDebug) {
+		t.Errorf("NewHandler().Enabled(debug) = false; want true")
+	}
 }
 
 func TestCombine(t *testing.T) {
+	t.Parallel()
+
 	var buf1, buf2 bytes.Buffer
 	h1 := log.NewHandler(log.WithWriter(&buf1), log.WithFormat(log.FormatText))
 	h2 := log.NewHandler(log.WithWriter(&buf2), log.WithFormat(log.FormatJSON))
 
 	logger := log.Combine(h1, h2)
-	require.NotNil(t, logger)
+	if logger == nil {
+		t.Fatalf("Combine() = nil; want *slog.Logger")
+	}
 
 	logger.Info("broadcast message", slog.String("key", "value"))
 
-	assert.Contains(t, buf1.String(), "broadcast message")
-	assert.Contains(t, buf1.String(), "key=value")
+	out1 := buf1.String()
+	if want := "broadcast message"; !strings.Contains(out1, want) {
+		t.Errorf("buf1 missing %q; got %q", want, out1)
+	}
+	if want := "key=value"; !strings.Contains(out1, want) {
+		t.Errorf("buf1 missing %q; got %q", want, out1)
+	}
 
-	assert.Contains(t, buf2.String(), "broadcast message")
-	assert.Contains(t, buf2.String(), `"key":"value"`)
+	out2 := buf2.String()
+	if want := "broadcast message"; !strings.Contains(out2, want) {
+		t.Errorf("buf2 missing %q; got %q", want, out2)
+	}
+	if want := `"key":"value"`; !strings.Contains(out2, want) {
+		t.Errorf("buf2 missing %q; got %q", want, out2)
+	}
 }
