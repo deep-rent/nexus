@@ -21,14 +21,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/middleware/gzip"
 )
 
 func TestMiddleware(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	const payload = "This is a test payload that is long enough to be compressed."
+
+	tests := []struct {
 		name      string
 		acceptEnc string
 		mediaType string
@@ -37,11 +38,7 @@ func TestMiddleware(t *testing.T) {
 		opts      []gzip.Option
 		wantEnc   string
 		wantZip   bool
-	}
-
-	const payload = "This is a test payload that is long enough to be compressed."
-
-	tests := []test{
+	}{
 		{
 			name:      "compresses text/plain",
 			acceptEnc: "gzip",
@@ -144,82 +141,126 @@ func TestMiddleware(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", tc.mediaType)
-				if tc.preEnc != "" {
-					w.Header().Set("Content-Encoding", tc.preEnc)
+				w.Header().Set("Content-Type", tt.mediaType)
+				if tt.preEnc != "" {
+					w.Header().Set("Content-Encoding", tt.preEnc)
 				}
-				_, _ = w.Write([]byte(tc.body))
+				_, _ = w.Write([]byte(tt.body))
 			})
 
-			chain := gzip.New(tc.opts...)(h)
+			chain := gzip.New(tt.opts...)(h)
 
-			r := httptest.NewRequest("GET", "/", nil)
-			r.Header.Set("Accept-Encoding", tc.acceptEnc)
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.Header.Set("Accept-Encoding", tt.acceptEnc)
 
 			w := httptest.NewRecorder()
 			chain.ServeHTTP(w, r)
 
-			require.Equal(t, http.StatusOK, w.Code)
-			assert.Equal(t, tc.wantEnc, w.Header().Get("Content-Encoding"))
+			if got, want := w.Code, http.StatusOK; got != want {
+				t.Fatalf("Middleware() status = %d; want %d", got, want)
+			}
 
-			if tc.wantEnc == "gzip" {
-				assert.Equal(t, "Accept-Encoding", w.Header().Get("Vary"))
-				assert.Empty(t, w.Header().Get("Content-Length"))
+			hdr := w.Header()
+
+			if got, want := hdr.Get("Content-Encoding"), tt.wantEnc; got != want {
+				t.Errorf("Middleware() Content-Encoding = %q; want %q", got, want)
+			}
+
+			if tt.wantEnc == "gzip" {
+				if got, want := hdr.Get("Vary"), "Accept-Encoding"; got != want {
+					t.Errorf("Middleware() Vary = %q; want %q", got, want)
+				}
+				if got := hdr.Get("Content-Length"); len(got) != 0 {
+					t.Errorf("Middleware() Content-Length = %q; want empty", got)
+				}
 			}
 
 			var body string
-			if tc.wantZip {
+			if tt.wantZip {
 				gzr, err := compress.NewReader(w.Body)
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("compress.NewReader() error = %v", err)
+				}
 				data, err := io.ReadAll(gzr)
-				require.NoError(t, err)
-				err = gzr.Close()
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("io.ReadAll(gzip) error = %v", err)
+				}
+				if err := gzr.Close(); err != nil {
+					t.Errorf("gzr.Close() error = %v", err)
+				}
 				body = string(data)
 			} else {
 				data, err := io.ReadAll(w.Body)
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("io.ReadAll() error = %v", err)
+				}
 				body = string(data)
 			}
-			assert.Equal(t, tc.body, body)
+
+			if got, want := body, tt.body; got != want {
+				t.Errorf("Middleware() body = %q; want %q", got, want)
+			}
 		})
 	}
 }
 
 func TestFlusher(t *testing.T) {
+	t.Parallel()
+
 	pipe := gzip.New()
 	h := pipe(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		flusher, ok := w.(http.Flusher)
-		require.True(t, ok)
+		if !ok {
+			t.Fatalf("ResponseWriter does not implement http.Flusher")
+		}
 
-		_, err := w.Write([]byte("foo"))
-		require.NoError(t, err)
+		if _, err := w.Write([]byte("foo")); err != nil {
+			t.Errorf("w.Write(foo) error = %v", err)
+		}
 		flusher.Flush()
 
-		_, err = w.Write([]byte("bar"))
-		require.NoError(t, err)
+		if _, err := w.Write([]byte("bar")); err != nil {
+			t.Errorf("w.Write(bar) error = %v", err)
+		}
 	}))
 
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
 
 	h.ServeHTTP(w, r)
 
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "gzip", w.Header().Get("Content-Encoding"))
-	assert.True(t, w.Flushed)
+	if got, want := w.Code, http.StatusOK; got != want {
+		t.Fatalf("Flusher status = %d; want %d", got, want)
+	}
+
+	if got, want := w.Header().Get("Content-Encoding"), "gzip"; got != want {
+		t.Errorf("Flusher Content-Encoding = %q; want %q", got, want)
+	}
+
+	if !w.Flushed {
+		t.Errorf("Flusher was not called")
+	}
 
 	gzr, err := compress.NewReader(w.Body)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("compress.NewReader() error = %v", err)
+	}
 	data, err := io.ReadAll(gzr)
-	require.NoError(t, err)
-	err = gzr.Close()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v", err)
+	}
+	if err := gzr.Close(); err != nil {
+		t.Errorf("gzr.Close() error = %v", err)
+	}
 
-	assert.Equal(t, "foobar", string(data))
+	if got, want := string(data), "foobar"; got != want {
+		t.Errorf("Flusher body = %q; want %q", got, want)
+	}
 }
