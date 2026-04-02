@@ -29,6 +29,17 @@ import (
 	mw "github.com/deep-rent/nexus/middleware"
 )
 
+var mockHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+})
+
+func mockLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+}
+
 func TestChain(t *testing.T) {
 	t.Run("Chains pipes in correct order", func(t *testing.T) {
 		var order []string
@@ -41,7 +52,7 @@ func TestChain(t *testing.T) {
 			}
 		}
 
-		h := mw.Chain(okHandler, rec("a"), rec("b"), rec("c"))
+		h := mw.Chain(mockHandler, rec("a"), rec("b"), rec("c"))
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 
 		exp := "a,b,c"
@@ -58,13 +69,13 @@ func TestChain(t *testing.T) {
 			})
 		}
 
-		h := mw.Chain(okHandler, nil, p, nil)
+		h := mw.Chain(mockHandler, nil, p, nil)
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 		assert.True(t, called)
 	})
 
 	t.Run("Returns original handler if no pipes", func(t *testing.T) {
-		h := mw.Chain(okHandler)
+		h := mw.Chain(mockHandler)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -75,7 +86,7 @@ func TestChain(t *testing.T) {
 
 func TestRecover(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newLogger(&buf)
+	logger := mockLogger(&buf)
 	pipe := mw.Recover(logger)
 
 	t.Run("Recovers from panic", func(t *testing.T) {
@@ -98,7 +109,7 @@ func TestRecover(t *testing.T) {
 
 	t.Run("Does nothing if no panic", func(t *testing.T) {
 		buf.Reset()
-		h := pipe(okHandler)
+		h := pipe(mockHandler)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/ok", nil))
 
@@ -142,7 +153,7 @@ func TestGetSetRequestID(t *testing.T) {
 
 func TestLog(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newLogger(&buf)
+	logger := mockLogger(&buf)
 	pipe := mw.Log(logger)
 
 	t.Run("Logs with non-default status", func(t *testing.T) {
@@ -188,7 +199,7 @@ func TestLog(t *testing.T) {
 }
 
 func TestVolatile(t *testing.T) {
-	h := mw.Volatile()(okHandler)
+	h := mw.Volatile()(mockHandler)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -202,7 +213,7 @@ func TestVolatile(t *testing.T) {
 
 func TestSecure(t *testing.T) {
 	t.Run("uses default config", func(t *testing.T) {
-		h := mw.Secure(mw.DefaultSecurityConfig)(okHandler)
+		h := mw.Secure(mw.DefaultSecurityConfig)(mockHandler)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -235,7 +246,7 @@ func TestSecure(t *testing.T) {
 			PermissionsPolicy:       "geolocation=()",           // Custom
 			CrossOriginOpenerPolicy: "same-origin-allow-popups", // Custom
 		}
-		h := mw.Secure(cfg)(okHandler)
+		h := mw.Secure(cfg)(mockHandler)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -257,7 +268,7 @@ func TestSecure(t *testing.T) {
 
 	t.Run("sets only hardcoded headers on empty config", func(t *testing.T) {
 		cfg := mw.SecurityConfig{}
-		h := mw.Secure(cfg)(okHandler)
+		h := mw.Secure(cfg)(mockHandler)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
@@ -275,7 +286,7 @@ func TestSecure(t *testing.T) {
 
 func TestIntegration(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newLogger(&buf)
+	logger := mockLogger(&buf)
 
 	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.NotEmpty(t, mw.GetRequestID(r.Context()))
@@ -309,14 +320,3 @@ func TestIntegration(t *testing.T) {
 	assert.Contains(t, out, "id="+id)
 	assert.Contains(t, out, "status=202")
 }
-
-func newLogger(buf *bytes.Buffer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-}
-
-var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
-})
