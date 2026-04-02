@@ -100,11 +100,11 @@ func Recover(logger *slog.Logger) Pipe {
 	}
 }
 
-type contextKey string // Prevents collisions with other packages.
+type contextKey struct{} // Prevents collisions with other packages.
 
 // requestIDKey is the key under which the request ID is stored in the request
 // context.
-const requestIDKey = contextKey("RequestID")
+var requestIDKey contextKey
 
 // RequestID returns a middleware Pipe that injects a unique ID into each
 // request. It adds the ID to the response via the "X-Request-ID" header and to

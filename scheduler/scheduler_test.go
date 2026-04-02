@@ -230,8 +230,8 @@ func TestScheduler(t *testing.T) {
 func TestOnceScheduler(t *testing.T) {
 	t.Parallel()
 
-	type contextKey string
-	const testKey contextKey = "key"
+	type contextKey struct{}
+	var testKey contextKey
 
 	t.Run("context", func(t *testing.T) {
 		t.Parallel()
