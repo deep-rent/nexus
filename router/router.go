@@ -60,6 +60,7 @@ import (
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
+	"github.com/deep-rent/nexus/middleware/gzip"
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -480,6 +481,11 @@ func Secure(cfg middleware.SecurityConfig) Middleware {
 // CORS mirrors the middleware created by [cors.New].
 func CORS(opts ...cors.Option) Middleware {
 	return Adapt(cors.New(opts...))
+}
+
+// Gzip mirrors the middleware created by [gzip.New].
+func Gzip(opts ...gzip.Option) Middleware {
+	return Adapt(gzip.New(opts...))
 }
 
 // Option defines a functional configuration option for the Router.
