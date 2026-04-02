@@ -24,9 +24,9 @@
 // Start by defining custom claims:
 //
 //	type Claims struct {
-//	  jwt.Reserved
-//	  Scope string         `json:"scp"`
-//	  Extra map[string]any `json:",unknown"`
+//		jwt.Reserved
+//		Scope string         `json:"scp"`
+//		Extra map[string]any `json:",unknown"`
 //	}
 //
 // The top-level Verify function can be used for simple, one-off signature
@@ -39,13 +39,16 @@
 // # Advanced Validation
 //
 // For advanced validation of claims like issuer, audience, and token age,
-// create a reusable Verifier with the desired configuration:
+// create a reusable Verifier with the desired configuration using functional
+// options:
 //
-//	verifier := jwt.NewVerifier[Claims](keySet).
-//		WithIssuer("foo", "bar").
-//		WithAudience("baz").
-//		WithLeeway(1 * time.Minute).
-//		WithMaxAge(1 * time.Hour)
+//	verifier := jwt.NewVerifier[Claims](
+//		keySet,
+//		jwt.WithIssuers("foo", "bar"),
+//		jwt.WithAudiences("baz"),
+//		jwt.WithLeeway(1 * time.Minute),
+//		jwt.WithMaxAge(1 * time.Hour),
+//	)
 //
 //	claims, err := verifier.Verify([]byte("eyJhb..."))
 //	if err != nil { /* handle validation error */ }
@@ -67,14 +70,16 @@
 // Signer. Your claims struct must implement MutableClaims (embedding
 // jwt.Reserved handles this automatically).
 //
-//	signer := jwt.NewSigner(keyPair).
-//	    WithIssuer("https://api.example.com").
-//	    WithLifetime(1 * time.Hour)
+//	signer := jwt.NewSigner(
+//		[]jwk.KeyPair{keyPair},
+//		jwt.WithIssuer("https://api.example.com"),
+//		jwt.WithLifetime(1 * time.Hour),
+//	)
 //
 //	// The signer will automatically set "iss", "iat", and "exp" on the struct.
 //	claims := &MyClaims{
-//	    Reserved: jwt.Reserved{Subject: "user_123"},
-//	    Scope:    "admin",
+//		Reserved: jwt.Reserved{Subject: "user_123"},
+//		Scope:    "admin",
 //	}
 //	token, err := signer.Sign(claims)
 package jwt
@@ -373,11 +378,20 @@ var (
 	ErrTokenTooOld = errors.New("token is too old")
 )
 
-// Verifier is a configured, reusable JWT verifier. The type parameter T is the
-// user-defined struct for the token's claims. It must implement the Claims
-// interface, or else verification will always fail.
-type Verifier[T Claims] struct {
-	set       jwk.Set
+// Verifier defines the interface for a configured, reusable JWT verifier. The
+// type parameter T is the user-defined struct for the token's claims. It must
+// implement the Claims interface, or else verification will always fail.
+type Verifier[T Claims] interface {
+	// Verify parses a token from its compact serialization, verifies its
+	// signature against the verifier's key set, and validates its claims
+	// according to the verifier's configuration.
+	Verify(in []byte) (T, error)
+}
+
+// VerifierOption defines a functional option for configuring a Verifier.
+type VerifierOption func(*verifierConfig)
+
+type verifierConfig struct {
 	issuers   []string
 	audiences []string
 	leeway    time.Duration
@@ -389,88 +403,96 @@ type Verifier[T Claims] struct {
 // "iss" claim is missing or does not match one of these, it will be rejected.
 // This option can be used multiple times to append additional values. By
 // default, no issuer validation is performed.
-//
-// This method is not thread-safe and should be called only during setup.
-func (v *Verifier[T]) WithIssuers(iss ...string) *Verifier[T] {
-	v.issuers = append(v.issuers, iss...)
-	return v
+func WithIssuers(iss ...string) VerifierOption {
+	return func(c *verifierConfig) {
+		c.issuers = append(c.issuers, iss...)
+	}
 }
 
 // WithAudiences adds one or more trusted audiences to the verifier. If the
 // token's "aud" claim is missing or does not contain at least one of these
 // values, it will be rejected. This option can be used multiple times to append
 // additional values. By default, no audience validation is performed.
-//
-// This method is not thread-safe and should be called only during setup.
-func (v *Verifier[T]) WithAudiences(aud ...string) *Verifier[T] {
-	v.audiences = append(v.audiences, aud...)
-	return v
+func WithAudiences(aud ...string) VerifierOption {
+	return func(c *verifierConfig) {
+		c.audiences = append(c.audiences, aud...)
+	}
 }
 
 // WithLeeway sets a grace period to allow for clock skew in temporal
 // validations of the "exp", "nbf", and "iat" claims. It is subtracted from or
 // added to the current time as appropriate. The default is zero, meaning no
 // leeway. Negative values will be ignored.
-//
-// This method is not thread-safe and should be called only during setup.
-func (v *Verifier[T]) WithLeeway(d time.Duration) *Verifier[T] {
-	if d > 0 {
-		v.leeway = d
+func WithLeeway(d time.Duration) VerifierOption {
+	return func(c *verifierConfig) {
+		if d > 0 {
+			c.leeway = d
+		}
 	}
-	return v
 }
 
 // WithMaxAge sets the maximum age for tokens based on their "iat" claim.
 // Tokens without an "iat" claim will no longer be accepted. The default is
 // zero, meaning no age validation. Negative values will be ignored.
-//
-// This method is not thread-safe and should be called only during setup.
-func (v *Verifier[T]) WithMaxAge(d time.Duration) *Verifier[T] {
-	if d > 0 {
-		v.age = d
+func WithMaxAge(d time.Duration) VerifierOption {
+	return func(c *verifierConfig) {
+		if d > 0 {
+			c.age = d
+		}
 	}
-	return v
 }
 
-// WithClock sets the function used to retrieve the current time during
+// WithVerifierClock sets the function used to retrieve the current time during
 // validation. This is useful for deterministic testing or synchronizing with
 // an external time source. The default is time.Now.
-//
-// This method is not thread-safe and should be called only during setup.
-func (v *Verifier[T]) WithClock(now func() time.Time) *Verifier[T] {
-	if now != nil {
-		v.now = now
+func WithVerifierClock(now func() time.Time) VerifierOption {
+	return func(c *verifierConfig) {
+		if now != nil {
+			c.now = now
+		}
 	}
-	return v
 }
 
-// NewVerifier creates a new verifier bound to a specific JWK set.
+// verifier is the default implementation of the Verifier interface.
+type verifier[T Claims] struct {
+	set jwk.Set
+	cfg verifierConfig
+}
+
+// Ensure verifier implements the Verifier interface.
+var _ Verifier[Claims] = (*verifier[Claims])(nil)
+
+// NewVerifier creates a new Verifier bound to a specific JWK set.
 // The type parameter T is the user-defined struct for the token's claims.
-// Further configuration can be applied using the With... setters.
-func NewVerifier[T Claims](set jwk.Set) *Verifier[T] {
-	return &Verifier[T]{
-		set: set,
+func NewVerifier[T Claims](set jwk.Set, opts ...VerifierOption) Verifier[T] {
+	cfg := verifierConfig{
 		now: time.Now,
 	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	return &verifier[T]{
+		set: set,
+		cfg: cfg,
+	}
 }
 
-// Verify parses a token from its compact serialization, verifies its
-// signature against the verifier's key set, and validates its claims
-// according to the verifier's configuration.
-func (v *Verifier[T]) Verify(in []byte) (T, error) {
+// Verify implements the Verifier interface.
+func (v *verifier[T]) Verify(in []byte) (T, error) {
 	c, err := Verify[T](v.set, in)
 	if err != nil {
 		var zero T
 		return zero, err
 	}
-	now := v.now()
-	if len(v.issuers) > 0 && !slices.Contains(v.issuers, c.Issuer()) {
+	now := v.cfg.now()
+	if len(v.cfg.issuers) > 0 && !slices.Contains(v.cfg.issuers, c.Issuer()) {
 		var zero T
 		return zero, ErrInvalidIssuer
 	}
-	if len(v.audiences) > 0 {
+	if len(v.cfg.audiences) > 0 {
 		found := false
-		for _, aud := range v.audiences {
+		for _, aud := range v.cfg.audiences {
 			if slices.Contains(c.Audience(), aud) {
 				found = true
 				break
@@ -482,19 +504,19 @@ func (v *Verifier[T]) Verify(in []byte) (T, error) {
 		}
 	}
 	if nbf := c.NotBefore(); !nbf.IsZero() {
-		if now.Add(v.leeway).Before(nbf) {
+		if now.Add(v.cfg.leeway).Before(nbf) {
 			var zero T
 			return zero, ErrTokenNotYetActive
 		}
 	}
 	if exp := c.ExpiresAt(); !exp.IsZero() {
-		if now.Add(-v.leeway).After(exp) {
+		if now.Add(-v.cfg.leeway).After(exp) {
 			var zero T
 			return zero, ErrTokenExpired
 		}
 	}
-	if iat := c.IssuedAt(); v.age > 0 && !iat.IsZero() {
-		if iat.Add(v.age).Before(now.Add(-v.leeway)) {
+	if iat := c.IssuedAt(); v.cfg.age > 0 && !iat.IsZero() {
+		if iat.Add(v.cfg.age).Before(now.Add(-v.cfg.leeway)) {
 			var zero T
 			return zero, ErrTokenTooOld
 		}
@@ -558,10 +580,17 @@ func encode(src []byte) []byte {
 	return dst
 }
 
-// Signer is a configured, reusable JWT creator. It allows setting default
-// claims (like Issuer and Audience) and enforcing token lifetime (Expiration).
-type Signer struct {
-	rot rotor.Rotor[jwk.KeyPair]
+// Signer defines the interface for a configured, reusable JWT creator.
+type Signer interface {
+	// Sign applies the signer's configuration (issuer, audience, and temporal
+	// validity) directly to the mutable claims object, then signs it.
+	Sign(claims MutableClaims) ([]byte, error)
+}
+
+// SignerOption defines a functional option for configuring a Signer.
+type SignerOption func(*signerConfig)
+
+type signerConfig struct {
 	iat bool
 	iss string
 	aud []string
@@ -569,93 +598,107 @@ type Signer struct {
 	now func() time.Time
 }
 
-// NewSigner creates a new Signer that uses the provided key pool for signing.
-// At least one key pair must be provided; otherwise, it panics. If multiple
-// keys are given, they will be rotated through in a round-robin fashion to
-// ensure even usage across the key pool. Further configuration can be applied
-// using the With... setters.
-func NewSigner(keys ...jwk.KeyPair) *Signer {
-	return &Signer{
-		rot: rotor.New(keys),
-		iat: true,
-		now: time.Now,
-	}
-}
-
 // WithIssuedAt enables or disables automatic setting of the "iat" (Issued At)
 // claim for all tokens created by this signer. It is enabled by default and
 // will be stamped with the current time.
-//
-// This method is not thread-safe and should be called only during setup.
-func (s *Signer) WithIssuedAt(use bool) *Signer {
-	s.iat = use
-	return s
+func WithIssuedAt(use bool) SignerOption {
+	return func(c *signerConfig) {
+		c.iat = use
+	}
 }
 
 // WithIssuer sets the "iss" (Issuer) claim for all tokens created by this
 // signer. If the user-provided claims already contain an issuer, this
 // configuration will overwrite it.
-//
-// This method is not thread-safe and should be called only during setup.
-func (s *Signer) WithIssuer(iss string) *Signer {
-	s.iss = iss
-	return s
+func WithIssuer(iss string) SignerOption {
+	return func(c *signerConfig) {
+		c.iss = iss
+	}
 }
 
 // WithAudience sets the "aud" (Audience) claim. If the user-provided claims
 // already contain an audience, this configuration will overwrite it.
-//
-// This method is not thread-safe and should be called only during setup.
-func (s *Signer) WithAudience(aud ...string) *Signer {
-	s.aud = aud
-	return s
+func WithAudience(aud ...string) SignerOption {
+	return func(c *signerConfig) {
+		c.aud = aud
+	}
 }
 
 // WithLifetime sets the duration for which tokens are valid. It calculates the
 // "exp" (Expires At) claim by adding this duration to the current time.
 // If zero (default), no "exp" claim is added unless provided in the input
 // claims.
-//
-// This method is not thread-safe and should be called only during setup.
-func (s *Signer) WithLifetime(d time.Duration) *Signer {
-	if d > 0 {
-		s.ttl = d
+func WithLifetime(d time.Duration) SignerOption {
+	return func(c *signerConfig) {
+		if d > 0 {
+			c.ttl = d
+		}
 	}
-	return s
 }
 
-// WithClock sets the function used to retrieve the current time when
+// WithSignerClock sets the function used to retrieve the current time when
 // timestamping tokens ("iat", "nbf", "exp"). This is useful for deterministic
 // testing. The default is time.Now.
-//
-// This method is not thread-safe and should be called only during setup.
-func (s *Signer) WithClock(now func() time.Time) *Signer {
-	if now != nil {
-		s.now = now
+func WithSignerClock(now func() time.Time) SignerOption {
+	return func(c *signerConfig) {
+		if now != nil {
+			c.now = now
+		}
 	}
-	return s
 }
 
-// Sign applies the signer's configuration (issuer, audience, and temporal
-// validity) directly to the mutable claims object, then signs it.
-func (s *Signer) Sign(claims MutableClaims) ([]byte, error) {
-	now := s.now()
-	// Always stamp the current time as time of issuance.
-	if s.iat {
+// signer is the default implementation of the Signer interface.
+type signer struct {
+	rot rotor.Rotor[jwk.KeyPair]
+	cfg signerConfig
+}
+
+// Ensure signer implements the Signer interface.
+var _ Signer = (*signer)(nil)
+
+// NewSigner creates a new Signer that uses the provided key pool for
+// signing. At least one key pair must be provided in the slice; otherwise, it
+// panics. If multiple keys are given, they will be rotated through in a
+// round-robin fashion to ensure even usage across the key pool.
+func NewSigner(keys []jwk.KeyPair, opts ...SignerOption) Signer {
+	if len(keys) == 0 {
+		panic("jwt: at least one key pair is required to create a signer")
+	}
+
+	cfg := signerConfig{
+		iat: true,
+		now: time.Now,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	return &signer{
+		rot: rotor.New(keys),
+		cfg: cfg,
+	}
+}
+
+// Sign implements the Signer interface.
+func (s *signer) Sign(claims MutableClaims) ([]byte, error) {
+	now := s.cfg.now()
+	// Always stamp the current time as time of issuance if configured.
+	if s.cfg.iat {
 		claims.SetIssuedAt(now)
 	}
 	// Apply configured issuer name.
-	if s.iss != "" {
-		claims.SetIssuer(s.iss)
+	if s.cfg.iss != "" {
+		claims.SetIssuer(s.cfg.iss)
 	}
 	// Apply configured audience.
-	if len(s.aud) > 0 {
-		claims.SetAudience(s.aud)
+	if len(s.cfg.aud) > 0 {
+		claims.SetAudience(s.cfg.aud)
 	}
 	// Calculate and apply expiration if a lifetime is configured.
-	if s.ttl > 0 {
-		claims.SetExpiresAt(now.Add(s.ttl))
+	if s.cfg.ttl > 0 {
+		claims.SetExpiresAt(now.Add(s.cfg.ttl))
 	}
+
 	key := s.rot.Next()
 	// Delegate to the low-level Sign function.
 	return Sign(key, claims)
