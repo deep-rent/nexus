@@ -63,13 +63,19 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
-const (
-	Scheme = "Bearer"
-)
+// Scheme defines the expected authentication scheme for the Authorization
+// header. It is used to extract the JWT token from the request.
+const Scheme = "Bearer"
 
 const (
-	ReasonMissingToken           = "missing_token"
-	ReasonInvalidToken           = "invalid_token"
+	// ReasonMissingToken indicates that the Authorization header was either
+	// missing or did not contain a valid Bearer token.
+	ReasonMissingToken = "missing_token"
+	// ReasonInvalidToken indicates that the token was provided but failed
+	// verification (e.g., expired, mismatched signature, or malformed).
+	ReasonInvalidToken = "invalid_token"
+	// ReasonInsufficientPrivileges indicates that the token is valid, but the
+	// associated claims failed to satisfy the required authorization rules.
 	ReasonInsufficientPrivileges = "insufficient_privileges"
 )
 
