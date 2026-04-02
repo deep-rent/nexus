@@ -468,17 +468,16 @@ func TestChain(t *testing.T) {
 	appendHeader := func(val string) router.Middleware {
 		return func(next router.Handler) router.Handler {
 			return router.HandlerFunc(func(e *router.Exchange) error {
-				// Read current value, append the new one, and write it back.
-				current := e.GetHeader("X-Chain")
+				current := e.W.Header().Get("X-Chain")
 				e.SetHeader("X-Chain", current+val)
 				return next.ServeHTTP(e)
 			})
 		}
 	}
-
 	h := router.Chain(
 		router.HandlerFunc(func(e *router.Exchange) error {
-			e.SetHeader("X-Chain", e.GetHeader("X-Chain")+"C")
+			current := e.W.Header().Get("X-Chain")
+			e.SetHeader("X-Chain", current+"C")
 			return nil
 		}),
 		appendHeader("A"),
