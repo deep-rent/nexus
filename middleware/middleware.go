@@ -13,28 +13,33 @@
 // limitations under the License.
 
 // Package middleware provides a standard approach for chaining and composing
-// HTTP middleware.
+// HTTP transport middleware.
+//
+// This package focuses on low-level HTTP operations (like logging, CORS,
+// and compression) that operate directly on [http.Handler]. For higher-level
+// business logic that requires structured error handling and API contexts,
+// see the Middleware definitions in the router package. The router provides
+// an adapter to seamlessly integrate the transport pipes defined here within
+// its richer handler ecosystem.
 //
 // # Usage
 //
 // The core type is Pipe, an adapter that wraps an http.Handler to add
 // functionality. The Chain function composes these pipes into a single handler.
-// The package also includes common middleware like Recover for panic handling,
-// RequestID for tracing, and Log for request logging.
 //
 // Example:
 //
 //	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//		w.Write([]byte("OK"))
+//	  w.Write([]byte("OK"))
 //	})
 //
 //	// Chain middleware around the final handler.
 //	// Order matters: Recover must be first (outermost).
 //	logger := slog.Default()
 //	chainedHandler := middleware.Chain(handler,
-//		middleware.Recover(logger),
-//		middleware.RequestID(),
-//		middleware.Log(logger),
+//	  middleware.Recover(logger),
+//	  middleware.RequestID(),
+//	  middleware.Log(logger),
 //	)
 //
 //	http.ListenAndServe(":8080", chainedHandler)
