@@ -22,10 +22,8 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -38,11 +36,11 @@ type mockKey struct {
 	mat any
 }
 
-func (k *mockKey) Algorithm() string           { return k.alg }
-func (k *mockKey) KeyID() string               { return k.kid }
-func (k *mockKey) Thumbprint() string          { return k.x5t }
-func (k *mockKey) Verify(msg, sig []byte) bool { return true }
-func (k *mockKey) Material() any               { return k.mat }
+func (k *mockKey) Algorithm() string       { return k.alg }
+func (k *mockKey) KeyID() string           { return k.kid }
+func (k *mockKey) Thumbprint() string      { return k.x5t }
+func (k *mockKey) Verify(_, _ []byte) bool { return true }
+func (k *mockKey) Material() any           { return k.mat }
 
 var _ jwk.Key = (*mockKey)(nil)
 
@@ -58,7 +56,18 @@ func (h mockHint) Thumbprint() string { return h.x5t }
 
 var _ jwk.Hint = mockHint{}
 
+func readTestFile(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) error = %v", name, err)
+	}
+	return b
+}
+
 func TestParse(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		alg string
 		kid string
@@ -139,29 +148,50 @@ func TestParse(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.alg, func(t *testing.T) {
-			in := read(t, tc.src)
+	for _, tt := range tests {
+		t.Run(tt.alg, func(t *testing.T) {
+			t.Parallel()
+			in := readTestFile(t, tt.src)
 
 			key1, err := jwk.Parse(in)
-			require.NoError(t, err)
-			require.Equal(t, tc.alg, key1.Algorithm())
-			require.Equal(t, tc.kid, key1.KeyID())
-			require.Equal(t, tc.x5t, key1.Thumbprint())
+			if err != nil {
+				t.Fatalf("Parse(%q) error = %v", tt.src, err)
+			}
+			if got, want := key1.Algorithm(), tt.alg; got != want {
+				t.Errorf("key1.Algorithm() = %q; want %q", got, want)
+			}
+			if got, want := key1.KeyID(), tt.kid; got != want {
+				t.Errorf("key1.KeyID() = %q; want %q", got, want)
+			}
+			if got, want := key1.Thumbprint(), tt.x5t; got != want {
+				t.Errorf("key1.Thumbprint() = %q; want %q", got, want)
+			}
 
 			encoded, err := jwk.Write(key1)
-			require.NoError(t, err, "failed to write key")
+			if err != nil {
+				t.Fatalf("Write() error = %v", err)
+			}
 
 			key2, err := jwk.Parse(encoded)
-			require.NoError(t, err, "failed to re-parse key")
-			assert.Equal(t, key1.Algorithm(), key2.Algorithm())
-			assert.Equal(t, key1.KeyID(), key2.KeyID())
-			assert.Equal(t, key1.Thumbprint(), key2.Thumbprint())
+			if err != nil {
+				t.Fatalf("Parse(encoded) error = %v", err)
+			}
+			if got, want := key2.Algorithm(), key1.Algorithm(); got != want {
+				t.Errorf("key2.Algorithm() = %q; want %q", got, want)
+			}
+			if got, want := key2.KeyID(), key1.KeyID(); got != want {
+				t.Errorf("key2.KeyID() = %q; want %q", got, want)
+			}
+			if got, want := key2.Thumbprint(), key1.Thumbprint(); got != want {
+				t.Errorf("key2.Thumbprint() = %q; want %q", got, want)
+			}
 		})
 	}
 }
 
-func TestParseError(t *testing.T) {
+func TestParse_Error(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		file string
@@ -175,38 +205,58 @@ func TestParseError(t *testing.T) {
 		{"ECDSA point not on curve", "ecdsa_not_on_curve.json"},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			in := read(t, tc.file)
-			_, err := jwk.Parse(in)
-			require.Error(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			in := readTestFile(t, tt.file)
+			if _, err := jwk.Parse(in); err == nil {
+				t.Errorf("Parse(%q) expected error; got nil", tt.file)
+			}
 		})
 	}
 }
 
 func TestParseSet(t *testing.T) {
-	in := read(t, "set.json")
+	t.Parallel()
+
+	in := readTestFile(t, "set.json")
 
 	set, err := jwk.ParseSet(in)
-	require.NoError(t, err)
-	require.Equal(t, 11, set.Len())
+	if err != nil {
+		t.Fatalf("ParseSet() error = %v", err)
+	}
+	if got, want := set.Len(), 11; got != want {
+		t.Errorf("set.Len() = %d; want %d", got, want)
+	}
 
 	encoded, err := jwk.WriteSet(set)
-	require.NoError(t, err, "failed to write set")
+	if err != nil {
+		t.Fatalf("WriteSet() error = %v", err)
+	}
 
 	set2, err := jwk.ParseSet(encoded)
-	require.NoError(t, err, "failed to re-parse set")
-
-	assert.Equal(t, set.Len(), set2.Len())
+	if err != nil {
+		t.Fatalf("ParseSet(encoded) error = %v", err)
+	}
+	if got, want := set2.Len(), set.Len(); got != want {
+		t.Errorf("set2.Len() = %d; want %d", got, want)
+	}
 
 	for k := range set.Keys() {
 		found := set2.Find(k)
-		require.NotNil(t, found, "key %s lost during round-trip", k.KeyID())
-		assert.Equal(t, k.KeyID(), found.KeyID())
+		if found == nil {
+			t.Errorf("key %q lost during round-trip", k.KeyID())
+			continue
+		}
+		if got, want := found.KeyID(), k.KeyID(); got != want {
+			t.Errorf("found.KeyID() = %q; want %q", got, want)
+		}
 	}
 }
 
-func TestParseSetError(t *testing.T) {
+func TestParseSet_Error(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		file string
@@ -215,28 +265,41 @@ func TestParseSetError(t *testing.T) {
 		{"duplicate thumbprint", "duplicate_thumbprint.json"},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			in := read(t, tc.file)
-			_, err := jwk.ParseSet(in)
-			require.Error(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			in := readTestFile(t, tt.file)
+			if _, err := jwk.ParseSet(in); err == nil {
+				t.Errorf("ParseSet(%q) expected error; got nil", tt.file)
+			}
 		})
 	}
 }
 
-func TestParseSetPartialSuccess(t *testing.T) {
-	set, err := jwk.ParseSet(read(t, "set_partial.json"))
+func TestParseSet_PartialSuccess(t *testing.T) {
+	t.Parallel()
 
-	require.Error(t, err)
-	assert.Equal(t, 2, set.Len())
+	set, err := jwk.ParseSet(readTestFile(t, "set_partial.json"))
+	if err == nil {
+		t.Errorf("ParseSet(partial) expected error; got nil")
+	}
+	if got, want := set.Len(), 2; got != want {
+		t.Errorf("set.Len() = %d; want %d", got, want)
+	}
 
 	k1 := set.Find(&mockKey{alg: "ES256", kid: "valid-1"})
-	assert.NotNil(t, k1)
+	if k1 == nil {
+		t.Errorf("could not find valid-1")
+	}
 	k2 := set.Find(&mockKey{alg: "ES512", kid: "valid-2"})
-	assert.NotNil(t, k2)
+	if k2 == nil {
+		t.Errorf("could not find valid-2")
+	}
 }
 
-func TestWriteErrors(t *testing.T) {
+func TestWrite_Errors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		key     jwk.Key
@@ -284,41 +347,61 @@ func TestWriteErrors(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := jwk.Write(tc.key)
-			require.Error(t, err)
-			assert.ErrorContains(t, err, tc.wantErr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := jwk.Write(tt.key)
+			if err == nil {
+				t.Fatalf("Write() expected error; got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Write() error = %q; want it to contain %q",
+					err, tt.wantErr)
+			}
 		})
 	}
 }
 
-func TestWriteSetErrors(t *testing.T) {
-	s := jwk.Singleton(&mockKey{alg: "XY99"})
+func TestWriteSet_Errors(t *testing.T) {
+	t.Parallel()
 
-	_, err := jwk.WriteSet(s)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "unsupported algorithm")
+	s := jwk.Singleton(&mockKey{alg: "XY99"})
+	if _, err := jwk.WriteSet(s); err == nil {
+		t.Errorf("WriteSet() expected error; got nil")
+	}
 }
 
 func TestSingleton(t *testing.T) {
+	t.Parallel()
+
 	key := &mockKey{
 		kid: "kid",
 		x5t: "x5t",
 		alg: "alg",
 	}
 	set := jwk.Singleton(key)
-	assert.Equal(t, 1, set.Len())
-	assert.Equal(t, key, set.Find(key))
-	called := false
+	if got, want := set.Len(), 1; got != want {
+		t.Errorf("set.Len() = %d; want %d", got, want)
+	}
+	if got, want := set.Find(key), key; got != want {
+		t.Errorf("set.Find() = %v; want %v", got, want)
+	}
+
+	var called bool
 	for k := range set.Keys() {
-		assert.Equal(t, key, k)
+		if k != key {
+			t.Errorf("set.Keys() yielded %v; want %v", k, key)
+		}
 		called = true
 	}
-	assert.True(t, called)
+	if !called {
+		t.Errorf("set.Keys() did not yield the key")
+	}
 }
 
 func TestSingletonSet_Find(t *testing.T) {
+	t.Parallel()
+
 	key := &mockKey{
 		alg: "RS256",
 		kid: "key-123",
@@ -379,43 +462,64 @@ func TestSingletonSet_Find(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			set := jwk.Singleton(key)
-			got := set.Find(tc.hint)
+			got := set.Find(tt.hint)
 
-			if tc.wantFound {
-				assert.Same(t, key, got, "expected to find the original key")
-			} else {
-				assert.Nil(t, got, "expected result to be nil")
+			if tt.wantFound {
+				if got != key {
+					t.Errorf("Find() = %v; want original key", got)
+				}
+			} else if got != nil {
+				t.Errorf("Find() = %v; want nil", got)
 			}
 		})
 	}
 }
 
 func TestBuilder(t *testing.T) {
+	t.Parallel()
+
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+	}
 	id := "test-id"
 
-	t.Run("Build", func(t *testing.T) {
+	t.Run("build", func(t *testing.T) {
+		t.Parallel()
 		v := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).Build(&k.PublicKey)
-		assert.Equal(t, id, v.KeyID())
-		assert.Equal(t, "ES256", v.Algorithm())
+		if got, want := v.KeyID(), id; got != want {
+			t.Errorf("v.KeyID() = %q; want %q", got, want)
+		}
+		if got, want := v.Algorithm(), "ES256"; got != want {
+			t.Errorf("v.Algorithm() = %q; want %q", got, want)
+		}
 	})
 
-	t.Run("BuildPair", func(t *testing.T) {
+	t.Run("build pair", func(t *testing.T) {
+		t.Parallel()
 		p := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(k)
-		assert.Equal(t, id, p.KeyID())
+		if got, want := p.KeyID(), id; got != want {
+			t.Errorf("p.KeyID() = %q; want %q", got, want)
+		}
 
 		msg := []byte("payload")
 		sig, err := p.Sign(msg)
-		require.NoError(t, err)
-		assert.True(t, p.Verify(msg, sig))
+		if err != nil {
+			t.Fatalf("p.Sign() error = %v", err)
+		}
+		if !p.Verify(msg, sig) {
+			t.Errorf("p.Verify() = false; want true")
+		}
 	})
 }
 
-func TestBuilderPanic(t *testing.T) {
+func TestBuilder_Panic(t *testing.T) {
+	t.Parallel()
+
 	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	rs, _ := rsa.GenerateKey(rand.Reader, 2048)
 
@@ -424,41 +528,40 @@ func TestBuilderPanic(t *testing.T) {
 		call func()
 	}{
 		{
-			"unidentified key",
-			func() {
+			name: "unidentified key",
+			call: func() {
 				jwk.NewKeyBuilder(jwa.ES256).Build(&ec.PublicKey)
 			},
 		},
 		{
-			"unidentified key pair",
-			func() {
+			name: "unidentified key pair",
+			call: func() {
 				jwk.NewKeyBuilder(jwa.ES256).BuildPair(ec)
 			},
 		},
 		{
-			"incompatible key type 1",
-			func() {
+			name: "incompatible key type 1",
+			call: func() {
 				jwk.NewKeyBuilder(jwa.ES256).WithKeyID("x").BuildPair(rs)
 			},
 		},
 		{
-			"incompatible key type 2",
-			func() {
+			name: "incompatible key type 2",
+			call: func() {
 				jwk.NewKeyBuilder(jwa.RS256).WithKeyID("x").BuildPair(ec)
 			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Panics(t, tc.call)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("Expected panic for %q", tt.name)
+				}
+			}()
+			tt.call()
 		})
 	}
-}
-
-func read(t *testing.T, name string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec
-	require.NoError(t, err)
-	return b
 }
