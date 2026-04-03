@@ -30,25 +30,25 @@ import (
 
 func TestBus_Basic(t *testing.T) {
 	t.Parallel()
-	b := event.NewBus[int](event.WithSyncDispatch())
-	defer b.Close()
+	bus := event.NewBus[int](event.WithSyncDispatch())
+	defer bus.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	var sum atomic.Int64
-	b.Subscribe(func(v int) {
+	bus.Subscribe(func(v int) {
 		sum.Add(int64(v))
 		wg.Done()
 	})
 
 	event1 := 10
-	if ok := b.Publish(event1); !ok {
+	if ok := bus.Publish(event1); !ok {
 		t.Errorf("Publish(%d) = %t; want %t", event1, ok, true)
 	}
 
 	event2 := 20
-	if ok := b.Publish(event2); !ok {
+	if ok := bus.Publish(event2); !ok {
 		t.Errorf("Publish(%d) = %t; want %t", event2, ok, true)
 	}
 

@@ -79,7 +79,10 @@ func TestRun_Panic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("Run(r) error = %q; want to contain %q", err.Error(), tt.want)
+				t.Errorf(
+					"Run(r) error = %q; want to contain %q",
+					err.Error(), tt.want,
+				)
 			}
 		})
 	}
@@ -302,11 +305,10 @@ func TestRunAll_CascadingPanic(t *testing.T) {
 	t.Parallel()
 
 	var canceled bool
-	const panicMsg = "worker 1 panicked"
 
 	r1 := func(ctx context.Context) error {
 		time.Sleep(10 * time.Millisecond)
-		panic(panicMsg)
+		panic("worker 1 panicked")
 	}
 
 	r2 := func(ctx context.Context) error {
@@ -323,8 +325,9 @@ func TestRunAll_CascadingPanic(t *testing.T) {
 		t.Fatalf("RunAll() = nil; want error")
 	}
 
-	if !strings.Contains(err.Error(), panicMsg) {
-		t.Errorf("RunAll() error = %q; want to contain %q", err.Error(), panicMsg)
+	if got, want := err.Error(),
+		"worker 1 panicked"; !strings.Contains(got, want) {
+		t.Errorf("RunAll() error = %q; want to contain %q", got, want)
 	}
 
 	if !canceled {
@@ -413,8 +416,9 @@ func TestRunAll_ShutdownTimeoutOnCascadingError(t *testing.T) {
 			t.Fatalf("RunAll() = nil; want error")
 		}
 
-		if want := "shutdown timed out"; !strings.Contains(err.Error(), want) {
-			t.Errorf("RunAll() error = %q; want to contain %q", err.Error(), want)
+		if got, want := err.Error(),
+			"shutdown timed out"; !strings.Contains(got, want) {
+			t.Errorf("RunAll() error = %q; want to contain %q", got, want)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not time out as expected")

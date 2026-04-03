@@ -202,7 +202,7 @@ func TestSilent(t *testing.T) {
 		}
 	}
 
-	// Ensure it does not panic
+	// Ensure it does not panic.
 	logger.Error("test message", "key", "value")
 }
 

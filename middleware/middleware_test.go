@@ -313,11 +313,26 @@ func TestSecure(t *testing.T) {
 			key  string
 			want string
 		}{
-			{"X-Content-Type-Options", "nosniff"},
-			{"X-Frame-Options", "DENY"},
-			{"Permissions-Policy", "geolocation=(),microphone=(),camera=(),payment=()"},
-			{"Cross-Origin-Opener-Policy", "same-origin"},
-			{"X-Permitted-Cross-Domain-Policies", "none"},
+			{
+				"X-Content-Type-Options",
+				"nosniff",
+			},
+			{
+				"X-Frame-Options",
+				"DENY",
+			},
+			{
+				"Permissions-Policy",
+				"geolocation=(),microphone=(),camera=(),payment=()",
+			},
+			{
+				"Cross-Origin-Opener-Policy",
+				"same-origin",
+			},
+			{
+				"X-Permitted-Cross-Domain-Policies",
+				"none",
+			},
 		}
 
 		for _, tt := range tests {
