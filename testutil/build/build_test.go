@@ -19,29 +19,37 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/testutil/build"
 )
 
-func TestBinary(t *testing.T) {
+func TestBinary_Build(t *testing.T) {
+	t.Parallel()
+
 	src := t.TempDir()
 
 	// Create a dummy go.mod so the directory is a valid Go module.
 	mod := []byte("module dummy\n\ngo 1.24\n")
-	err := os.WriteFile(filepath.Join(src, "go.mod"), mod, 0o600)
-	require.NoError(t, err)
+	modPath := filepath.Join(src, "go.mod")
+	if err := os.WriteFile(modPath, mod, 0o600); err != nil {
+		t.Fatalf("os.WriteFile(go.mod) err = %v", err)
+	}
 
 	// Create the main package.
 	code := []byte("package main\nfunc main() {}\n")
-	err = os.WriteFile(filepath.Join(src, "main.go"), code, 0o600)
-	require.NoError(t, err)
+	codePath := filepath.Join(src, "main.go")
+	if err := os.WriteFile(codePath, code, 0o600); err != nil {
+		t.Fatalf("os.WriteFile(main.go) err = %v", err)
+	}
 
 	// Build the directory.
 	exe := build.Binary(t, src, "testbin")
 
 	// Verify the executable was created.
 	stat, err := os.Stat(exe)
-	require.NoError(t, err)
-	require.False(t, stat.IsDir())
+	if err != nil {
+		t.Fatalf("os.Stat(%q) err = %v", exe, err)
+	}
+	if stat.IsDir() {
+		t.Errorf("os.Stat(%q).IsDir() = true; want false", exe)
+	}
 }
