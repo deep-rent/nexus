@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/cloudflare/circl v1.6.3
-	github.com/lib/pq v1.12.1
+	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0
