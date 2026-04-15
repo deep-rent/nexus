@@ -16,17 +16,18 @@ package tag_test
 
 import (
 	"maps"
+	"reflect"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/deep-rent/nexus/internal/tag"
 )
 
 func TestParse(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		input    string
-		wantName string
+		give string
+		want string
 	}{
 		{`json,omitempty,default:value`, "json"},
 		{`xml`, "xml"},
@@ -36,15 +37,19 @@ func TestParse(t *testing.T) {
 		{`custom,config:'a,b',max:10`, "custom"},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.input, func(t *testing.T) {
-			p := tag.Parse(tc.input)
-			assert.Equal(t, tc.wantName, p.Name)
+	for _, tt := range tests {
+		t.Run(tt.give, func(t *testing.T) {
+			t.Parallel()
+			if got := tag.Parse(tt.give).Name; got != tt.want {
+				t.Errorf("Parse(%q).Name = %q; want %q", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestTag_Opts(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		opts string
@@ -90,7 +95,7 @@ func TestTag_Opts(t *testing.T) {
 			},
 		},
 		{
-			"quoted_comma_double",
+			"quoted comma double",
 			`message:"hello, world",flag`,
 			map[string]string{
 				"message": "hello, world",
@@ -131,16 +136,19 @@ func TestTag_Opts(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			s := "dummy"
-			if tc.opts != "" {
-				s += "," + tc.opts
+			if tt.opts != "" {
+				s += "," + tt.opts
 			}
 
 			p := tag.Parse(s)
-			m := maps.Collect(p.Opts())
-			assert.Equal(t, tc.want, m)
+			got := maps.Collect(p.Opts())
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Parse(%q).Opts() = %v; want %v", s, got, tt.want)
+			}
 		})
 	}
 }
