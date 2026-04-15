@@ -174,7 +174,8 @@ func Reset() {
 // related services, e.g., by package or feature. The assigned tag can be
 // retrieved later using the [Tag] function.
 func NewSlot[T any](keys ...string) Slot[T] {
-	s := new(struct{ _ byte }) // Unique allocation
+	// Explicitly cast to the named generic type BEFORE storing.
+	s := Slot[T](new(struct{ _ byte })) // Unique allocation
 	t := reflect.TypeFor[T]().String()
 	var tag string
 	if len(keys) == 0 {
