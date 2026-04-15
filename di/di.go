@@ -152,7 +152,12 @@ var (
 // Slot is an abstract, typed symbol for an injectable service.
 // It is a unique pointer that acts as a map key within the [Injector],
 // while the generic type T provides compile-time type safety.
-type Slot[T any] *struct{}
+type Slot[T any] *struct {
+	// The embedded byte ensures a non-zero size, guaranteeing unique memory
+	// addresses.
+
+	_ byte
+}
 
 // slots is a global, concurrent map that stores the debug tag for each slot.
 var slots = &sync.Map{}
@@ -169,7 +174,7 @@ func Reset() {
 // related services, e.g., by package or feature. The assigned tag can be
 // retrieved later using the [Tag] function.
 func NewSlot[T any](keys ...string) Slot[T] {
-	s := new(struct{})
+	s := new(struct{ _ byte }) // Unique allocation
 	t := reflect.TypeFor[T]().String()
 	var tag string
 	if len(keys) == 0 {
