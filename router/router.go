@@ -144,6 +144,8 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 	return rw.ResponseWriter
 }
 
+var _ http.ResponseWriter = (*responseWriter)(nil)
+
 // Error describes the standardized shape of API errors returned to clients.
 //
 // Handlers can return this struct directly to control the HTTP status code
