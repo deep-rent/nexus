@@ -36,18 +36,18 @@
 //
 //	// 3. Protect a route requiring authentication and specific roles.
 //	r.HandleFunc(
-//		"POST /admin/users",
-//		createUser,
-//		guard.Secure(auth.HasRole[*auth.Claims]("admin")),
+//	  "POST /admin/users",
+//	  createUser,
+//	  guard.Secure(auth.HasRole[*auth.Claims]("admin")),
 //	)
 //
 //	// Inside your handler, retrieve the claims:
 //	func createUser(e *router.Exchange) error {
-//		claims, ok := auth.From[*auth.Claims](e)
-//		if !ok {
-//			return errors.New("claims missing")
-//		}
-//		// ... handle request ...
+//	  claims, ok := auth.From[*auth.Claims](e)
+//	  if !ok {
+//	    return errors.New("claims missing")
+//	  }
+//	  // ... handle request ...
 //	}
 package auth
 
@@ -117,6 +117,8 @@ type RoleClaims interface {
 // JWT reserved claims and adds a custom "rol" slice for roles.
 type Claims struct {
 	jwt.Reserved
+	// Roles is a slice of strings representing the assigned permissions or
+	// groups.
 	Roles []string `json:"rol,omitempty"`
 }
 
@@ -141,12 +143,13 @@ type Rule[T jwt.Claims] interface {
 // [Rule] that calls f.
 type RuleFunc[T jwt.Claims] func(context.Context, T) error
 
-// Eval calls f(ctx, claims).
+// Eval calls f(ctx, claims) to implement the [Rule] interface.
 func (f RuleFunc[T]) Eval(ctx context.Context, claims T) error {
 	return f(ctx, claims)
 }
 
-// HasRole creates a Rule that enforces the presence of a specific single role.
+// HasRole creates a [Rule] that enforces the presence of a specific single
+// role.
 func HasRole[T RoleClaims](role string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		if !claims.HasRole(role) {
@@ -156,8 +159,8 @@ func HasRole[T RoleClaims](role string) Rule[T] {
 	})
 }
 
-// AnyRole creates a Rule that passes if the user possesses at least one of the
-// specified roles.
+// AnyRole creates a [Rule] that passes if the user possesses at least one of
+// the specified roles.
 func AnyRole[T RoleClaims](roles ...string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		if slices.ContainsFunc(roles, claims.HasRole) {
@@ -167,7 +170,7 @@ func AnyRole[T RoleClaims](roles ...string) Rule[T] {
 	})
 }
 
-// AllRoles creates a Rule that mandates the presence of all specified roles.
+// AllRoles creates a [Rule] that mandates the presence of all specified roles.
 func AllRoles[T RoleClaims](roles ...string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		for _, role := range roles {
@@ -182,17 +185,18 @@ func AllRoles[T RoleClaims](roles ...string) Rule[T] {
 // Guard is responsible for intercepting HTTP requests, validating their JWT
 // authentication, and enforcing defined authorization rules.
 type Guard[T jwt.Claims] struct {
+	// verifier is the internal [jwt.Verifier] used to process tokens.
 	verifier jwt.Verifier[T]
 }
 
-// NewGuard creates a new Guard using the provided JWT verifier.
+// NewGuard creates a new [Guard] using the provided JWT verifier.
 func NewGuard[T jwt.Claims](v jwt.Verifier[T]) *Guard[T] {
 	return &Guard[T]{
 		verifier: v,
 	}
 }
 
-// Secure produces a router Middleware that protects routes.
+// Secure produces a [router.Middleware] that protects routes.
 //
 // It extracts a Bearer token from the Authorization header, verifies its
 // signature and validity, and ensures all provided rules pass. If any step
