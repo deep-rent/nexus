@@ -267,16 +267,14 @@ func TestMonitor_Concurrency(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/health", nil)
 			r.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
 				t.Errorf("ServeHTTP() status code = %d; want 200", w.Code)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
