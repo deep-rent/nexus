@@ -15,21 +15,21 @@
 // Package cache provides a generic, auto-refreshing in-memory cache for a
 // resource fetched from a URL.
 //
-// The core of the package is the Controller, a scheduler.Tick that periodically
-// fetches a remote resource, parses it, and caches it in memory. It is designed
-// to be resilient, with a built-in, configurable retry mechanism for handling
-// transient network failures.
+// The core of the package is the [Controller], a [scheduler.Tick] that
+// periodically fetches a remote resource, parses it, and caches it in memory.
+// It is designed to be resilient, with a built-in, configurable retry
+// mechanism for handling transient network failures.
 //
 // The refresh interval is intelligently determined by the resource's caching
-// headers (e.g., Cache-Control, Expires), but can be clamped within a specified
-// min/max range. The controller also handles conditional requests using ETag
-// and Last-Modified headers to reduce bandwidth and server load.
+// headers (e.g., Cache-Control, Expires), but can be clamped within a
+// specified min/max range. The controller also handles conditional requests
+// using ETag and Last-Modified headers to reduce bandwidth and server load.
 //
 // # Usage
 //
-// A typical use case involves creating a scheduler, defining a Mapper function
-// to parse the HTTP response, creating and configuring a Controller, and then
-// dispatching it to run in the background.
+// A typical use case involves creating a scheduler, defining a [Mapper]
+// function to parse the HTTP response, creating and configuring a [Controller],
+// and then dispatching it to run in the background.
 //
 // Example:
 //
@@ -42,9 +42,9 @@
 //	defer sched.Shutdown()
 //
 //	// 2. Define a mapper to parse the response body into your target type.
-//	var mapper cache.Mapper[Resource] = func(body []byte) (Resource, error) {
+//	var mapper cache.Mapper[Resource] = func(r *cache.Response) (Resource, error) {
 //		var data Resource
-//		err := json.Unmarshal(body, &data)
+//		err := json.Unmarshal(r.Body, &data)
 //		return data, err
 //	}
 //
@@ -84,7 +84,6 @@ import (
 	"github.com/deep-rent/nexus/scheduler"
 )
 
-// Default configuration values for the cache controller.
 const (
 	// DefaultTimeout is the default timeout for a single HTTP request.
 	DefaultTimeout = 30 * time.Second
@@ -98,21 +97,24 @@ const (
 // target type T. It is responsible for decoding the data (e.g., from JSON or
 // XML) and returning the structured result. An error should be returned if
 // parsing fails fatally. For warnings or debug information, invoke the logger
-// contained in the Response. If the mapping takes a considerable amount of
-// time, it should generally respect the context contained in the Response.
+// contained in the [Response]. If the mapping takes a considerable amount of
+// time, it should generally respect the context contained in the [Response].
 type Mapper[T any] func(r *Response) (T, error)
 
-// Response provides contextual information to a Mapper function,
+// Response provides contextual information to a [Mapper] function,
 // including the response body, request context, and a logger.
 type Response struct {
-	Body   []byte          // Raw response payload to be mapped.
-	Ctx    context.Context // Context controlling the HTTP exchange.
-	Logger *slog.Logger    // Logger instance inherited from the Controller.
+	// Body is the raw response payload to be mapped.
+	Body []byte
+	// Ctx is the context controlling the HTTP exchange.
+	Ctx context.Context
+	// Logger is the logger instance inherited from the [Controller].
+	Logger *slog.Logger
 }
 
 // Controller manages the lifecycle of a cached resource. It implements
-// scheduler.Tick, allowing it to be run by a scheduler to periodically refresh
-// the resource from a URL.
+// [scheduler.Tick], allowing it to be run by a scheduler to periodically
+// refresh the resource from a URL.
 type Controller[T any] interface {
 	scheduler.Tick
 	// Get retrieves the currently cached resource. The boolean return value is
@@ -124,11 +126,11 @@ type Controller[T any] interface {
 	Ready() <-chan struct{}
 }
 
-// NewController creates and configures a new cache Controller.
+// NewController creates and configures a new cache [Controller].
 //
-// It requires a URL for the resource to fetch and a Mapper function to parse
-// the response. If no http.Client is provided via options, it creates a default
-// one with a sensible timeout and a retry transport.
+// It requires a URL for the resource to fetch and a [Mapper] function to parse
+// the response. If no [http.Client] is provided via options, it creates a
+// default one with a sensible timeout and a retry transport.
 func NewController[T any](
 	url string,
 	mapper Mapper[T],
@@ -179,21 +181,35 @@ func NewController[T any](
 	}
 }
 
-// controller is the internal implementation of the Controller interface.
+// controller is the internal implementation of the [Controller] interface.
 type controller[T any] struct {
-	url          string
-	mapper       Mapper[T]
-	client       *http.Client
-	minInterval  time.Duration
-	maxInterval  time.Duration
-	now          func() time.Time
-	logger       *slog.Logger
-	readyOnce    sync.Once
-	readyChan    chan struct{}
-	mu           sync.RWMutex
-	resource     T
-	ok           bool
-	etag         string
+	// url is the endpoint from which the resource is fetched.
+	url string
+	// mapper is the user-provided function to parse the raw body.
+	mapper Mapper[T]
+	// client is the HTTP client used for fetching.
+	client *http.Client
+	// minInterval is the minimum wait time between refreshes.
+	minInterval time.Duration
+	// maxInterval is the maximum wait time between refreshes.
+	maxInterval time.Duration
+	// now is an internal hook for time mocking.
+	now func() time.Time
+	// logger handles internal logging of fetch cycles.
+	logger *slog.Logger
+	// readyOnce ensures the ready channel is closed only once.
+	readyOnce sync.Once
+	// readyChan is closed upon the first successful fetch.
+	readyChan chan struct{}
+	// mu protects the following cached fields.
+	mu sync.RWMutex
+	// resource stores the most recently successfully parsed T.
+	resource T
+	// ok indicates if resource has been populated.
+	ok bool
+	// etag stores the ETag from the last successful response.
+	etag string
+	// lastModified stores the Last-Modified header from the last response.
 	lastModified string
 }
 
@@ -214,9 +230,9 @@ func (c *controller[T]) ready() {
 	c.readyOnce.Do(func() { close(c.readyChan) })
 }
 
-// Run executes a single fetch-and-cache cycle. It implements the scheduler.Tick
-// interface. It handles conditional requests, response parsing, and caching,
-// and returns the duration to wait before the next run.
+// Run executes a single fetch-and-cache cycle. It implements the
+// [scheduler.Tick] interface. It handles conditional requests, response
+// parsing, and caching, and returns the duration to wait before the next run.
 func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	c.logger.Debug("Fetching resource")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
@@ -311,20 +327,28 @@ var _ Controller[any] = (*controller[any])(nil)
 
 // config holds the internal configuration for the cache controller.
 type config struct {
-	client      *http.Client
-	timeout     time.Duration
-	headers     []header.Header
-	tls         *tls.Config
+	// client is an optional custom HTTP client.
+	client *http.Client
+	// timeout is the default request timeout.
+	timeout time.Duration
+	// headers are static headers applied to every request.
+	headers []header.Header
+	// tls is the TLS configuration for the default client.
+	tls *tls.Config
+	// minInterval is the floor for refresh delays.
 	minInterval time.Duration
+	// maxInterval is the ceiling for refresh delays.
 	maxInterval time.Duration
-	retry       []retry.Option
-	logger      *slog.Logger
+	// retry are options for the default transport's retry logic.
+	retry []retry.Option
+	// logger is the destination for internal logs.
+	logger *slog.Logger
 }
 
-// Option is a function that configures the cache Controller.
+// Option is a function that configures the cache [Controller].
 type Option func(*config)
 
-// WithClient provides a custom http.Client to be used for requests. This is
+// WithClient provides a custom [http.Client] to be used for requests. This is
 // useful for advanced configurations, such as custom transports or connection
 // pooling. If not provided, a default client with retry logic is created.
 func WithClient(client *http.Client) Option {
@@ -337,7 +361,7 @@ func WithClient(client *http.Client) Option {
 
 // WithTimeout sets the total timeout for a single HTTP fetch attempt, including
 // connection, redirects, and reading the response body. This is ignored if a
-// custom client is provided via WithClient.
+// custom client is provided via [WithClient].
 func WithTimeout(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
@@ -354,8 +378,8 @@ func WithHeader(k, v string) Option {
 	}
 }
 
-// WithTLSConfig provides a custom tls.Config for the default HTTP transport.
-// This is ignored if a custom client is provided via WithClient.
+// WithTLSConfig provides a custom [tls.Config] for the default HTTP transport.
+// This is ignored if a custom client is provided via [WithClient].
 func WithTLSConfig(tls *tls.Config) Option {
 	return func(c *config) {
 		c.tls = tls
@@ -384,15 +408,15 @@ func WithMaxInterval(d time.Duration) Option {
 }
 
 // WithRetryOptions configures the retry mechanism for the default HTTP client.
-// These options are ignored if a custom client is provided via WithClient.
+// These options are ignored if a custom client is provided via [WithClient].
 func WithRetryOptions(opts ...retry.Option) Option {
 	return func(c *config) {
 		c.retry = append(c.retry, opts...)
 	}
 }
 
-// WithLogger provides a custom slog.Logger for the controller. If not provided,
-// slog.Default() is used.
+// WithLogger provides a custom [slog.Logger] for the controller. If not
+// provided, [slog.Default] is used.
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
