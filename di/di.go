@@ -523,14 +523,14 @@ func provide(
 	state.injector = in
 	state.visiting = visiting
 
-	instance, err = provider(state)
+	// Guarantee the state is scrubbed and returned to the pool.
+	defer func() {
+		state.injector = nil
+		state.visiting = nil
+		statePool.Put(state)
+	}()
 
-	// Clean and return the state to the pool.
-	state.injector = nil
-	state.visiting = nil
-	statePool.Put(state)
-
-	return instance, err
+	return provider(state)
 }
 
 // scopedKey is the context key for the scoped dependency cache.
