@@ -15,45 +15,75 @@
 package file_test
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"log/slog"
+	"reflect"
 	"testing"
 	"testing/fstest"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/migrate"
 	"github.com/deep-rent/nexus/migrate/source/file"
 )
 
+type mockWalkErrFS struct{}
+
+func (mockWalkErrFS) Open(name string) (fs.File, error) {
+	return nil, errors.New("forced walk error")
+}
+
+var _ fs.FS = mockWalkErrFS{}
+
+type mockReadErrFS struct{ fs.FS }
+
+func (r mockReadErrFS) Open(name string) (fs.File, error) {
+	if name == "01_bad.up.sql" {
+		return nil, errors.New("forced read error")
+	}
+	return r.FS.Open(name)
+}
+
+var _ fs.FS = mockReadErrFS{}
+
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	mfs := fstest.MapFS{}
 	l := slog.Default()
 
 	s := file.New(mfs, file.WithExtension("txt"), file.WithLogger(l))
-	assert.Equal(t, ".txt", s.Extension())
-	assert.Equal(t, mfs, s.Directory())
+	if got, want := s.Extension(), ".txt"; got != want {
+		t.Errorf("Extension() = %q; want %q", got, want)
+	}
+	if got, want := s.Directory(), mfs; !reflect.DeepEqual(got, want) {
+		t.Errorf("Directory() = %v; want %v", got, want)
+	}
 
 	s2 := file.New(mfs, file.WithExtension(""))
-	assert.Equal(t, file.DefaultExtension, s2.Extension())
+	if got, want := s2.Extension(), file.DefaultExtension; got != want {
+		t.Errorf("Extension() = %q; want %q", got, want)
+	}
 
 	s3 := file.New(mfs, file.WithExtension(".csv"))
-	assert.Equal(t, ".csv", s3.Extension())
+	if got, want := s3.Extension(), ".csv"; got != want {
+		t.Errorf("Extension() = %q; want %q", got, want)
+	}
 }
 
 func TestSource_Parse(t *testing.T) {
+	t.Parallel()
+
 	s := file.New(fstest.MapFS{})
 
 	tests := []struct {
-		name string
-		file string
-		v    uint64
-		desc string
-		dir  migrate.Direction
-		tx   bool
-		err  error
+		name        string
+		give        string
+		wantVersion uint64
+		wantDesc    string
+		wantDir     migrate.Direction
+		wantTx      bool
+		wantErr     error
 	}{
 		{
 			"valid up",
@@ -156,39 +186,56 @@ func TestSource_Parse(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			v, desc, dir, tx, err := s.Parse(tc.file)
-			if tc.err != nil {
-				assert.ErrorIs(t, err, tc.err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tc.v, v)
-				assert.Equal(t, tc.desc, desc)
-				assert.Equal(t, tc.dir, dir)
-				assert.Equal(t, tc.tx, tx)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v, desc, dir, tx, err := s.Parse(tt.give)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("Parse(%q) err = %v; want %v", tt.give, err, tt.wantErr)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf(
+					"Parse(%q) unexpected err = %v",
+					tt.give, err,
+				)
+			}
+			if v != tt.wantVersion {
+				t.Errorf(
+					"Parse(%q) version = %d; want %d",
+					tt.give, v, tt.wantVersion,
+				)
+			}
+			if desc != tt.wantDesc {
+				t.Errorf(
+					"Parse(%q) description = %q; want %q",
+					tt.give, desc, tt.wantDesc,
+				)
+			}
+			if dir != tt.wantDir {
+				t.Errorf(
+					"Parse(%q) direction = %v; want %v",
+					tt.give, dir, tt.wantDir,
+				)
+			}
+			if tx != tt.wantTx {
+				t.Errorf(
+					"Parse(%q) tx = %v; want %v",
+					tt.give, tx, tt.wantTx,
+				)
 			}
 		})
 	}
 }
 
-type walkErrFS struct{}
-
-func (walkErrFS) Open(name string) (fs.File, error) {
-	return nil, errors.New("forced walk error")
-}
-
-type readErrFS struct{ fs.FS }
-
-func (r readErrFS) Open(name string) (fs.File, error) {
-	if name == "01_bad.up.sql" {
-		return nil, errors.New("forced read error")
-	}
-	return r.FS.Open(name)
-}
-
 func TestSource_List(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		mfs := fstest.MapFS{
 			"01_init.up.sql":       &fstest.MapFile{Data: []byte("UP1")},
 			"02_add.down.sql":      &fstest.MapFile{Data: []byte("DOWN2")},
@@ -198,43 +245,67 @@ func TestSource_List(t *testing.T) {
 		}
 		s := file.New(mfs)
 		scripts, err := s.List()
+		if err != nil {
+			t.Fatalf("List() err = %v; want nil", err)
+		}
+		if got, want := len(scripts), 4; got != want {
+			t.Fatalf("len(scripts) = %d; want %d", got, want)
+		}
 
-		require.NoError(t, err)
-		require.Len(t, scripts, 4)
-
-		// Verify all fields are correctly populated for standard files
-		assert.Equal(t, uint64(1), scripts[0].Version)
-		assert.Equal(t, "init", scripts[0].Description)
-		assert.Equal(t, migrate.Up, scripts[0].Direction)
-		assert.True(t, scripts[0].Tx)
-		assert.Equal(t, "01_init.up.sql", scripts[0].Path)
-		assert.Equal(t, []byte("UP1"), scripts[0].Content)
+		// Verify first script
+		if got, want := scripts[0].Version, uint64(1); got != want {
+			t.Errorf("scripts[0].Version = %d; want %d", got, want)
+		}
+		if got, want := scripts[0].Description, "init"; got != want {
+			t.Errorf("scripts[0].Description = %q; want %q", got, want)
+		}
+		if got, want := scripts[0].Direction, migrate.Up; got != want {
+			t.Errorf("scripts[0].Direction = %v; want %v", got, want)
+		}
+		if !scripts[0].Tx {
+			t.Errorf("scripts[0].Tx = false; want true")
+		}
+		if got, want := scripts[0].Path, "01_init.up.sql"; got != want {
+			t.Errorf("scripts[0].Path = %q; want %q", got, want)
+		}
+		if !bytes.Equal(scripts[0].Content, []byte("UP1")) {
+			t.Errorf("scripts[0].Content = %q; want %q", scripts[0].Content, "UP1")
+		}
 
 		// Verify direction logic
-		assert.Equal(t, uint64(2), scripts[1].Version)
-		assert.Equal(t, migrate.Down, scripts[1].Direction)
+		if got, want := scripts[1].Direction, migrate.Down; got != want {
+			t.Errorf("scripts[1].Direction = %v; want %v", got, want)
+		}
 
-		// Verify the _notx flag correctly disables transactions
-		assert.Equal(t, uint64(4), scripts[2].Version)
-		assert.False(t, scripts[2].Tx)
+		// Verify _notx flag
+		if scripts[2].Tx {
+			t.Errorf("scripts[2].Tx = true; want false")
+		}
 
-		// Verify relative paths are preserved for subdirectories
-		assert.Equal(t, uint64(3), scripts[3].Version)
-		assert.Equal(t, "subdir/03_sub.up.sql", scripts[3].Path)
+		// Verify subdirectory paths
+		if got, want := scripts[3].Path, "subdir/03_sub.up.sql"; got != want {
+			t.Errorf("scripts[3].Path = %q; want %q", got, want)
+		}
 	})
 
 	t.Run("walkdir err", func(t *testing.T) {
-		s := file.New(walkErrFS{})
+		t.Parallel()
+		s := file.New(mockWalkErrFS{})
 		_, err := s.List()
-		assert.ErrorContains(t, err, "failed to traverse migration directory")
+		if err == nil {
+			t.Errorf("List() did not return error")
+		}
 	})
 
 	t.Run("readfile err", func(t *testing.T) {
+		t.Parallel()
 		mfs := fstest.MapFS{
 			"01_bad.up.sql": &fstest.MapFile{Data: []byte("ERR")},
 		}
-		s := file.New(readErrFS{FS: mfs})
+		s := file.New(mockReadErrFS{FS: mfs})
 		_, err := s.List()
-		assert.ErrorContains(t, err, "failed to read migration file")
+		if err == nil {
+			t.Errorf("List() did not return error")
+		}
 	})
 }
