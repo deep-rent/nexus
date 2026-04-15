@@ -462,3 +462,46 @@ func TestCircularDependency(t *testing.T) {
 		t.Errorf("error = %q; want to contain %q", got, want)
 	}
 }
+
+func TestTag(t *testing.T) {
+	t.Parallel()
+
+	t.Run("named slot", func(t *testing.T) {
+		t.Parallel()
+		slot := di.NewSlot[string]("config", "db", "host")
+
+		got := di.Tag(slot)
+		const want = "config.db.host@string"
+
+		if got != want {
+			t.Errorf("Tag() = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("unnamed slot", func(t *testing.T) {
+		t.Parallel()
+		slot := di.NewSlot[int]()
+
+		got := di.Tag(slot)
+		const want = "@int"
+
+		if got != want {
+			t.Errorf("Tag() = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("unknown slot", func(t *testing.T) {
+		t.Parallel()
+		slot := new(struct{})
+
+		got := di.Tag(slot)
+		const want = "0x"
+
+		if !strings.HasPrefix(got, want) {
+			t.Errorf(
+				"Tag(unknown) = %q; want prefix %q for pointer address",
+				got, want,
+			)
+		}
+	})
+}
