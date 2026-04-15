@@ -152,7 +152,7 @@ var slots = &sync.Map{}
 // retrieved later using the Tag function.
 func NewSlot[T any](keys ...string) Slot[T] {
 	s := new(struct{})
-	t := reflect.TypeOf((*T)(nil)).Elem().String()
+	t := reflect.TypeFor[T]().String()
 	var tag string
 	if len(keys) == 0 {
 		// Case 1: Unnamed slot, e.g., @string
