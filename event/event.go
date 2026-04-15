@@ -13,52 +13,39 @@
 // limitations under the License.
 
 // Package event provides a high-performance, in-memory event bus system.
-// It relies on a lock-free ring buffer for low-latency event publishing and an
-// atomic copy-on-write mechanism for thread-safe subscriber management.
 //
-// The package offers both standalone event streams (Bus) and a centralized
-// topic manager (Broker) for safely routing different event types across an
+// It relies on a lock-free ring buffer for low-latency event publishing and an
+// atomic copy-on-write mechanism for thread-safe subscriber management. The
+// package offers both standalone event streams ([Bus]) and a centralized topic
+// manager ([Broker]) for safely routing different event types across an
 // application.
 //
-// # Usage Example
+// # Usage
 //
-//	package main
+// A typical setup involves initializing a [Broker], retrieving a typed [Bus]
+// for a topic, and subscribing to or publishing events.
 //
-//	import (
-//	  "fmt"
-//	  "time"
-//	  "github.com/deep-rent/nexus/event"
-//	)
+// Example:
 //
 //	type UserCreated struct {
-//	  Email string
+//		Email string
 //	}
 //
-//	func main() {
-//	  // 1. Initialize the central broker with options applied to all its buses.
-//	  broker := event.NewBroker(
-//	    event.WithSyncDispatch(),
-//	  )
-//	  defer broker.Close()
+//	// 1. Initialize the central broker with options.
+//	broker := event.NewBroker(event.WithSyncDispatch())
+//	defer broker.Close()
 //
-//	  // 2. Retrieve a typed bus for a specific topic.
-//	  // If the bus does not exist, it is created using the broker's options.
-//	  bus := event.Topic[UserCreated](broker, "users.created")
+//	// 2. Retrieve a typed bus for a specific topic.
+//	bus := event.Topic[UserCreated](broker, "users.created")
 //
-//	  // 3. Subscribe to the event stream.
-//	  unsub := bus.Subscribe(func(e UserCreated) {
-//	    fmt.Println("New user registered:", e.Email)
-//	  })
-//	  defer unsub()
+//	// 3. Subscribe to the event stream.
+//	unsub := bus.Subscribe(func(e UserCreated) {
+//		fmt.Println("New user registered:", e.Email)
+//	})
+//	defer unsub()
 //
-//	  // 4. Publish an event.
-//	  // In a real application, you would retrieve the bus via event.Topic()
-//	  // in your publisher service and cache the pointer for fast publishing.
-//	  bus.Publish(UserCreated{Email: "alice@example.com"})
-//
-//	  // Allow a brief moment for asynchronous processes if needed.
-//	  time.Sleep(time.Millisecond * 10)
-//	}
+//	// 4. Publish an event.
+//	bus.Publish(UserCreated{Email: "alice@example.com"})
 package event
 
 import (
@@ -76,7 +63,6 @@ import (
 // OverflowMode determines how the bus behaves when the internal buffer is full.
 type OverflowMode = ring.Policy
 
-// Mirror the constants from the ring package:
 const (
 	// Block waits until space is available in the buffer.
 	Block = ring.Block
@@ -90,25 +76,25 @@ const (
 	// DefaultSize is the default capacity of the internal ring buffer.
 	// It is automatically rounded up to the nearest power of 2.
 	DefaultSize = 1024
-	// DefaultOverflowMode is the default overflow mode (Block).
+	// DefaultOverflowMode is the default overflow mode ([Block]).
 	DefaultOverflowMode = Block
 )
 
 // Subscriber is a callback function that handles events of type T.
 type Subscriber[T any] func(T)
 
-// WaitStrategy defines the idling behavior of the background processor
-// when the ring buffer is empty.
+// WaitStrategy defines the idling behavior of the background processor when the
+// ring buffer is empty.
 type WaitStrategy interface {
-	// Snooze is called when the buffer is empty. The idle parameter
-	// represents the number of consecutive empty polls.
+	// Snooze is called when the buffer is empty. The idle parameter represents
+	// the number of consecutive empty polls.
 	Snooze(idle int)
 	// Signal awakens the processor from a Snooze when a new event arrives.
 	Signal()
 }
 
-// adaptiveWait employs a spin-yield-sleep sequence to minimize latency
-// while preventing constant CPU burn during idle periods.
+// adaptiveWait employs a spin-yield-sleep sequence to minimize latency while
+// preventing constant CPU burn during idle periods.
 type adaptiveWait struct{}
 
 // Snooze scales the waiting mechanism based on how long the bus has been idle.
@@ -135,15 +121,14 @@ func (adaptiveWait) Snooze(idle int) {
 // Signal is a no-op because the loop actively wakes itself up.
 func (adaptiveWait) Signal() {}
 
-// blockingWait uses a semaphore channel to park the goroutine entirely
-// when idle, saving CPU cycles at the cost of a slight wakeup latency.
+// blockingWait uses a semaphore channel to park the goroutine entirely when
+// idle, saving CPU cycles at the cost of a slight wakeup latency.
 type blockingWait struct {
 	// sem is a buffered channel acting as a non-blocking signaling mechanism.
 	sem chan struct{}
 }
 
-// Snooze parks the goroutine until a value is received on the semaphore
-// channel.
+// Snooze parks the goroutine until a value is received on the semaphore channel.
 func (w *blockingWait) Snooze(_ int) { <-w.sem }
 
 // Signal attempts to send a wakeup token. If the channel already has a token,
@@ -159,13 +144,16 @@ func (w *blockingWait) Signal() {
 // dispatching. The identifier allows for constant-time unsubscription without
 // relying on function pointers.
 type handler[T any] struct {
+	// id is a unique identifier for the subscriber.
 	id uint64
+	// fn is the callback function to be executed.
 	fn Subscriber[T]
 }
 
 // dispatcher defines the internal strategy for delivering events to
 // subscribers.
 type dispatcher[T any] interface {
+	// dispatch delivers the event to the provided list of handlers.
 	dispatch(event T, handlers []handler[T])
 }
 
@@ -179,8 +167,8 @@ type basicDispatcher[T any] struct {
 // dispatch iterates through all handlers and executes them sequentially.
 func (d basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		// Isolate each handler call to prevent a panic in one subscriber
-		// from crashing the entire background processor.
+		// Isolate each handler call to prevent a panic in one subscriber from
+		// crashing the entire background processor.
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -221,20 +209,25 @@ func (d asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	}
 }
 
-// Option configures the Bus during initialization.
+// Option configures the [Bus] during initialization.
 type Option func(*config)
 
-// config aggregates all user-defined settings for the Bus.
+// config aggregates all user-defined settings for the [Bus].
 type config struct {
-	size   int
-	mode   OverflowMode
-	sync   bool
-	wait   WaitStrategy
+	// size is the internal buffer capacity.
+	size int
+	// mode is the behavior on buffer overflow.
+	mode OverflowMode
+	// sync determines if dispatching is sequential.
+	sync bool
+	// wait is the idling strategy for the background worker.
+	wait WaitStrategy
+	// logger is used for reporting errors and panics.
 	logger *slog.Logger
 }
 
 // WithSize sets the buffer capacity (rounded up to the nearest power of 2).
-// Defaults to DefaultSize. Non-positive values will be ignored.
+// Defaults to [DefaultSize]. Non-positive values will be ignored.
 func WithSize(size int) Option {
 	return func(o *config) {
 		if size > 0 {
@@ -244,7 +237,7 @@ func WithSize(size int) Option {
 }
 
 // WithOverflowMode defines how the bus deals with backpressure on buffer
-// exhaustion. Defaults to DefaultOverflowMode.
+// exhaustion. Defaults to [DefaultOverflowMode].
 func WithOverflowMode(mode OverflowMode) Option {
 	return func(o *config) {
 		o.mode = mode
@@ -259,25 +252,24 @@ func WithSyncDispatch() Option {
 	}
 }
 
-// WithAdaptiveWait uses a low-latency spin-yield-sleep strategy.
-// This is the default.
+// WithAdaptiveWait uses a low-latency spin-yield-sleep strategy. This is the
+// default.
 func WithAdaptiveWait() Option {
 	return func(o *config) {
 		o.wait = adaptiveWait{}
 	}
 }
 
-// WithBlockingWait uses a semaphore to park the CPU when idle.
-// Ideal for multi-tenant setups.
+// WithBlockingWait uses a semaphore to park the CPU when idle. Ideal for
+// multi-tenant setups.
 func WithBlockingWait() Option {
 	return func(o *config) {
 		o.wait = &blockingWait{sem: make(chan struct{}, 1)}
 	}
 }
 
-// WithCustomWaitStrategy injects a user-defined idling strategy.
-// Nil values are ignored.
-// Note: If passed to a Broker, the instance is shared across all buses.
+// WithCustomWaitStrategy injects a user-defined idling strategy. Nil values are
+// ignored. If passed to a [Broker], the instance is shared across all buses.
 func WithCustomWaitStrategy(strategy WaitStrategy) Option {
 	return func(o *config) {
 		if strategy != nil {
@@ -286,8 +278,8 @@ func WithCustomWaitStrategy(strategy WaitStrategy) Option {
 	}
 }
 
-// WithLogger sets the structured logger for recording subscriber panics.
-// If not provided, it defaults to slog.Default().
+// WithLogger sets the structured logger for recording subscriber panics. If not
+// provided, it defaults to [slog.Default].
 func WithLogger(logger *slog.Logger) Option {
 	return func(o *config) {
 		if logger != nil {
@@ -298,9 +290,6 @@ func WithLogger(logger *slog.Logger) Option {
 
 // Bus is a high-performance, strictly-typed event stream.
 type Bus[T any] struct {
-	// --- Hot path fields ---
-	// These are accessed heavily by the background processor.
-
 	// evts is the underlying lock-free ring buffer.
 	evts *ring.Buffer[T]
 	// disp is the configured strategy for calling subscriber functions.
@@ -311,10 +300,6 @@ type Bus[T any] struct {
 	subs atomic.Pointer[[]handler[T]]
 	// closed indicates whether the bus has been shut down.
 	closed atomic.Bool
-
-	// --- Cold path fields ---
-	// These are accessed only during subscription and teardown.
-
 	// mu protects write operations to the active subscriber list.
 	mu sync.Mutex
 	// id is an incrementing counter providing unique keys for new subscribers.
@@ -323,7 +308,7 @@ type Bus[T any] struct {
 	wg sync.WaitGroup
 }
 
-// NewBus initializes a Bus with the provided options.
+// NewBus initializes a [Bus] with the provided options.
 func NewBus[T any](opts ...Option) *Bus[T] {
 	cfg := config{
 		size: DefaultSize,
@@ -368,8 +353,8 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	return bus
 }
 
-// Subscribe adds a callback to the bus. It returns an unsubscribe function
-// that removes the callback when invoked.
+// Subscribe adds a callback to the bus. It returns an unsubscribe function that
+// removes the callback when invoked.
 func (b *Bus[T]) Subscribe(fn Subscriber[T]) (unsubscribe func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -415,7 +400,7 @@ func (b *Bus[T]) detach(id uint64) {
 }
 
 // Publish pushes an event to the bus. It returns false if the buffer is full
-// (and DropNewest policy is active) or if the bus is already closed.
+// (and [DropNewest] policy is active) or if the bus is already closed.
 func (b *Bus[T]) Publish(event T) bool {
 	// Guard against publishing to a stopped bus.
 	if b.closed.Load() {
@@ -432,19 +417,19 @@ func (b *Bus[T]) Publish(event T) bool {
 }
 
 // Close signals the background processor to drain remaining events and stop.
-// Further calls to Publish will immediately return false.
+// Further calls to [Bus.Publish] will immediately return false.
 //
 // Note: Producers must be externally synchronized to stop calling Publish
 // before Close is invoked to prevent stranded events.
 func (b *Bus[T]) Close() {
-	// Give straggling producers a few microseconds to finish their push
-	// before we officially close the gates.
+	// Give straggling producers a few microseconds to finish their push before
+	// we officially close the gates.
 	time.Sleep(time.Microsecond * 50)
 
 	// Atomically swap to closed. If it was already closed, do nothing.
 	if !b.closed.Swap(true) {
-		// Wake up the processor if it is blocking on a semaphore so it
-		// can perform its final drain and exit.
+		// Wake up the processor if it is blocking on a semaphore so it can
+		// perform its final drain and exit.
 		b.wait.Signal()
 
 		// Wait for the processor goroutine to finish.
@@ -478,7 +463,7 @@ func (b *Bus[T]) process() {
 							b.disp.dispatch(final, handlers)
 						}
 					} else {
-						// Queue is truly empty and bus is closed; exit the goroutine.
+						// Queue is truly empty and bus is closed; exit.
 						return
 					}
 				}
@@ -491,20 +476,24 @@ func (b *Bus[T]) process() {
 	}
 }
 
-// closer is an internal interface that allows the Broker to shut down
-// buses without knowing their generic type payloads.
+// closer is an internal interface that allows the [Broker] to shut down buses
+// without knowing their generic type payloads.
 type closer interface {
+	// Close signals the resource to shut down.
 	Close()
 }
 
 // Broker manages a collection of typed event buses segregated by topic strings.
 type Broker struct {
-	mu    sync.RWMutex
+	// mu protects the buses map.
+	mu sync.RWMutex
+	// buses maps topic names to their underlying typed Bus instances.
 	buses map[string]closer
-	opts  []Option
+	// opts are the default options applied to all buses created by this broker.
+	opts []Option
 }
 
-// NewBroker initializes an empty event broker with options applied to all
+// NewBroker initializes an empty event [Broker] with options applied to all
 // subsequently created buses.
 func NewBroker(opts ...Option) *Broker {
 	return &Broker{
@@ -513,7 +502,7 @@ func NewBroker(opts ...Option) *Broker {
 	}
 }
 
-// Topic retrieves an existing bus for the given topic or creates a new one
+// Topic retrieves an existing [Bus] for the given topic or creates a new one
 // using the broker's configured options. It panics if the topic already exists
 // but is registered to a different event type.
 func Topic[T any](b *Broker, name string) *Bus[T] {
@@ -527,7 +516,8 @@ func Topic[T any](b *Broker, name string) *Bus[T] {
 		bus, ok := existing.(*Bus[T])
 		if !ok {
 			panic(fmt.Sprintf(
-				"event: topic %q exists but expects a different event type", name,
+				"event: topic %q exists but expects a different event type",
+				name,
 			))
 		}
 		return bus
@@ -537,13 +527,14 @@ func Topic[T any](b *Broker, name string) *Bus[T] {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// Double-check locking in case another goroutine initialized it
-	// while we were waiting to acquire the write lock.
+	// Double-check locking in case another goroutine initialized it while we
+	// were waiting to acquire the write lock.
 	if existing, exists = b.buses[name]; exists {
 		bus, ok := existing.(*Bus[T])
 		if !ok {
 			panic(fmt.Sprintf(
-				"event: topic %q exists but expects a different event type", name,
+				"event: topic %q exists but expects a different event type",
+				name,
 			))
 		}
 		return bus
