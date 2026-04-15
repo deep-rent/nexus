@@ -15,11 +15,10 @@
 package rotor_test
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/deep-rent/nexus/internal/rotor"
 )
@@ -28,37 +27,54 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	t.Run("panics on empty slice", func(t *testing.T) {
-		assert.PanicsWithValue(t, "rotor: items slice must not be empty", func() {
-			rotor.New([]string{})
-		}, "New with an empty string slice should panic")
+		t.Parallel()
+		want := "rotor: items slice must not be empty"
 
-		assert.PanicsWithValue(t, "rotor: items slice must not be empty", func() {
-			rotor.New([]int{})
-		}, "New with an empty int slice should panic")
+		checkPanic := func(t *testing.T, fn func()) {
+			t.Helper()
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("expected panic with %q, but it did not panic", want)
+				}
+				if r != want {
+					t.Errorf("recover() = %v; want %q", r, want)
+				}
+			}()
+			fn()
+		}
+
+		checkPanic(t, func() { rotor.New([]string{}) })
+		checkPanic(t, func() { rotor.New([]int{}) })
 	})
 
 	t.Run("succeeds with non-empty slice", func(t *testing.T) {
+		t.Parallel()
 		items := []string{"a", "b", "c"}
+		r := rotor.New(items)
 
-		assert.NotPanics(t, func() {
-			r := rotor.New(items)
-			assert.NotNil(t, r)
-			assert.Equal(t, "a", r.Next())
-			assert.Equal(t, "b", r.Next())
-			assert.Equal(t, "c", r.Next())
-			assert.Equal(t, "a", r.Next())
-		})
+		if r == nil {
+			t.Fatal("New(items) = nil; want non-nil")
+		}
+
+		expected := []string{"a", "b", "c", "a"}
+		for i, want := range expected {
+			if got := r.Next(); got != want {
+				t.Errorf("Next() #%d = %q; want %q", i+1, got, want)
+			}
+		}
 	})
 
 	t.Run("succeeds with single item", func(t *testing.T) {
+		t.Parallel()
 		items := []string{"a"}
+		r := rotor.New(items)
 
-		assert.NotPanics(t, func() {
-			r := rotor.New(items)
-			assert.NotNil(t, r)
-			assert.Equal(t, "a", r.Next())
-			assert.Equal(t, "a", r.Next())
-		})
+		for range 2 {
+			if got, want := r.Next(), "a"; got != want {
+				t.Errorf("Next() = %q; want %q", got, want)
+			}
+		}
 	})
 }
 
@@ -69,46 +85,64 @@ func TestNew_Copy(t *testing.T) {
 	r := rotor.New(items)
 	items[0] = "Z"
 
-	assert.Equal(t, "a", r.Next(), "Rotor should make a copy")
-	assert.Equal(t, "b", r.Next())
-	assert.Equal(t, "c", r.Next())
-	assert.Equal(t, "a", r.Next(), "Rotor should wrap around to the original")
+	if got, want := r.Next(), "a"; got != want {
+		t.Errorf("Next() after external slice modification = %q; want %q",
+			got, want)
+	}
 }
 
 func TestRotor_Next_Sequential(t *testing.T) {
 	t.Parallel()
 
 	t.Run("string slice", func(t *testing.T) {
-		items := []string{"1st", "2nd", "3rd"}
-		r := rotor.New(items)
+		t.Parallel()
+		tests := []struct {
+			name string
+			give []string
+			want []string
+		}{
+			{
+				name: "multiple items",
+				give: []string{"1st", "2nd", "3rd"},
+				want: []string{"1st", "2nd", "3rd", "1st"},
+			},
+		}
 
-		assert.Equal(t, "1st", r.Next())
-		assert.Equal(t, "2nd", r.Next())
-		assert.Equal(t, "3rd", r.Next())
-
-		assert.Equal(t, "1st", r.Next())
-		assert.Equal(t, "2nd", r.Next())
-		assert.Equal(t, "3rd", r.Next())
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				r := rotor.New(tt.give)
+				for i, want := range tt.want {
+					if got := r.Next(); got != want {
+						t.Errorf("Next() #%d = %q; want %q", i+1, got, want)
+					}
+				}
+			})
+		}
 	})
 
 	t.Run("int slice", func(t *testing.T) {
+		t.Parallel()
 		items := []int{1, 2}
 		r := rotor.New(items)
 
-		assert.Equal(t, 1, r.Next())
-		assert.Equal(t, 2, r.Next())
-
-		assert.Equal(t, 1, r.Next())
-		assert.Equal(t, 2, r.Next())
+		sequence := []int{1, 2, 1, 2}
+		for i, want := range sequence {
+			if got := r.Next(); got != want {
+				t.Errorf("Next() #%d = %d; want %d", i+1, got, want)
+			}
+		}
 	})
 
 	t.Run("single item slice", func(t *testing.T) {
+		t.Parallel()
 		items := []bool{true}
 		r := rotor.New(items)
 
-		assert.Equal(t, true, r.Next())
-		assert.Equal(t, true, r.Next())
-		assert.Equal(t, true, r.Next())
+		for range 3 {
+			if got, want := r.Next(), true; got != want {
+				t.Errorf("Next() = %v; want %v", got, want)
+			}
+		}
 	})
 }
 
@@ -118,9 +152,11 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	items := []string{"a", "b", "c"}
 	r := rotor.New(items)
 
-	concurrency := 50
-	calls := 100
-	total := uint64(concurrency * calls)
+	const (
+		concurrency = 50
+		calls       = 100
+	)
+	totalExpected := uint64(concurrency * calls)
 
 	var countA, countB, countC, countD atomic.Uint64
 	var wg sync.WaitGroup
@@ -129,9 +165,8 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	for range concurrency {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < calls; j++ {
-				item := r.Next()
-				switch item {
+			for range calls {
+				switch item := r.Next(); item {
 				case "a":
 					countA.Add(1)
 				case "b":
@@ -146,18 +181,24 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	assert.Equal(t, uint64(0), countD.Load(), "Received an unexpected item")
+	if got := countD.Load(); got != 0 {
+		t.Errorf("received %d unexpected items", got)
+	}
 
-	a := countA.Load()
-	b := countB.Load()
-	c := countC.Load()
-	sum := a + b + c
+	a, b, c := countA.Load(), countB.Load(), countC.Load()
+	if got, want := a+b+c, totalExpected; got != want {
+		t.Errorf("total calls = %d; want %d", got, want)
+	}
 
-	assert.Equal(t, total, sum, "Total calls do not match expected")
-	count := float64(total) / float64(len(items))
-	tolerance := count * 0.1
+	avg := float64(totalExpected) / float64(len(items))
+	// 10% tolerance for distribution check
+	tolerance := avg * 0.1
 
-	assert.InDelta(t, count, a, tolerance, "Distribution for 'a' is uneven")
-	assert.InDelta(t, count, b, tolerance, "Distribution for 'b' is uneven")
-	assert.InDelta(t, count, c, tolerance, "Distribution for 'c' is uneven")
+	counts := map[string]uint64{"a": a, "b": b, "c": c}
+	for label, got := range counts {
+		if diff := math.Abs(float64(got) - avg); diff > tolerance {
+			t.Errorf("distribution for %q = %d; outside tolerance of %f from %f",
+				label, got, tolerance, avg)
+		}
+	}
 }
