@@ -140,9 +140,9 @@ type Slot[T any] *struct{}
 // slots is a global, concurrent map that stores the debug tag for each slot.
 var slots = &sync.Map{}
 
-// func Reset() {
-// 	slots = &sync.Map{}
-// }
+func Reset() {
+	slots = &sync.Map{}
+}
 
 // NewSlot creates a new, unique Slot for a given type T.
 //
