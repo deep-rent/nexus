@@ -18,154 +18,236 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/migrate"
 	"github.com/deep-rent/nexus/migrate/driver/mock"
 )
 
 func TestNewDriver(t *testing.T) {
+	t.Parallel()
+
 	d := mock.New()
-	require.NotNil(t, d)
-	require.NotNil(t, d.State())
-	require.NotNil(t, d.ParserFunc)
+	if d == nil {
+		t.Fatal("mock.New() = nil; want non-nil")
+	}
+	if d.State() == nil {
+		t.Error("d.State() = nil; want non-nil")
+	}
+	if d.ParserFunc == nil {
+		t.Error("d.ParserFunc = nil; want non-nil")
+	}
 
 	parser := d.Parser()
-	assert.Nil(t, parser(nil))
-	assert.Nil(t, parser([]byte{}))
-	assert.Equal(t, []string{"statement"}, parser([]byte("statement")))
+	if got := parser(nil); got != nil {
+		t.Errorf("parser(nil) = %v; want nil", got)
+	}
+	if got := parser([]byte{}); got != nil {
+		t.Errorf("parser([]) = %v; want nil", got)
+	}
+
+	want := []string{"statement"}
+	got := parser([]byte("statement"))
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("parser(statement) = %v; want %v", got, want)
+	}
 }
 
 func TestDriver_Init(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		err := d.Init(t.Context())
-		assert.NoError(t, err)
-		assert.True(t, d.IsInit)
+		if err := d.Init(t.Context()); err != nil {
+			t.Errorf("Init() err = %v; want nil", err)
+		}
+		if !d.IsInit {
+			t.Error("d.IsInit = false; want true")
+		}
 	})
 
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		expected := errors.New("init failed")
-		d.InitErr = expected
-		err := d.Init(t.Context())
-		assert.ErrorIs(t, err, expected)
-		assert.False(t, d.IsInit)
+		want := errors.New("init failed")
+		d.InitErr = want
+		if err := d.Init(t.Context()); !errors.Is(err, want) {
+			t.Errorf("Init() err = %v; want %v", err, want)
+		}
+		if d.IsInit {
+			t.Error("d.IsInit = true; want false")
+		}
 	})
 }
 
 func TestDriver_Lock(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		err := d.Lock(t.Context())
-		assert.NoError(t, err)
-		assert.True(t, d.IsLocked)
+		if err := d.Lock(t.Context()); err != nil {
+			t.Errorf("Lock() err = %v; want nil", err)
+		}
+		if !d.IsLocked {
+			t.Error("d.IsLocked = false; want true")
+		}
 	})
 
 	t.Run("error injected", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		expected := errors.New("lock failed")
-		d.LockErr = expected
-		err := d.Lock(t.Context())
-		assert.ErrorIs(t, err, expected)
-		assert.False(t, d.IsLocked)
+		want := errors.New("lock failed")
+		d.LockErr = want
+		if err := d.Lock(t.Context()); !errors.Is(err, want) {
+			t.Errorf("Lock() err = %v; want %v", err, want)
+		}
+		if d.IsLocked {
+			t.Error("d.IsLocked = true; want false")
+		}
 	})
 
 	t.Run("already locked", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		err := d.Lock(t.Context())
-		require.NoError(t, err)
+		_ = d.Lock(t.Context())
 
-		err = d.Lock(t.Context())
-		assert.EqualError(t, err, "mock: already locked")
+		want := "mock: already locked"
+		if err := d.Lock(t.Context()); err == nil || err.Error() != want {
+			t.Errorf("Lock() #2 err = %v; want %q", err, want)
+		}
 	})
 }
 
 func TestDriver_Unlock(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
 		d.IsLocked = true
-		err := d.Unlock(t.Context())
-		assert.NoError(t, err)
-		assert.False(t, d.IsLocked)
+		if err := d.Unlock(t.Context()); err != nil {
+			t.Errorf("Unlock() err = %v; want nil", err)
+		}
+		if d.IsLocked {
+			t.Error("d.IsLocked = true; want false")
+		}
 	})
 
 	t.Run("error injected", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
 		d.IsLocked = true
-		expected := errors.New("unlock failed")
-		d.UnlockErr = expected
-		err := d.Unlock(t.Context())
-		assert.ErrorIs(t, err, expected)
-		assert.True(t, d.IsLocked)
+		want := errors.New("unlock failed")
+		d.UnlockErr = want
+		if err := d.Unlock(t.Context()); !errors.Is(err, want) {
+			t.Errorf("Unlock() err = %v; want %v", err, want)
+		}
+		if !d.IsLocked {
+			t.Error("d.IsLocked = false; want true")
+		}
 	})
 
 	t.Run("not locked", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		err := d.Unlock(t.Context())
-		assert.EqualError(t, err, "mock: not locked")
+		want := "mock: not locked"
+		if err := d.Unlock(t.Context()); err == nil || err.Error() != want {
+			t.Errorf("Unlock() err = %v; want %q", err, want)
+		}
 	})
 }
 
 func TestDriver_Applied(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success sorted", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
 		d.Set(migrate.Record{Version: 3})
 		d.Set(migrate.Record{Version: 1})
 		d.Set(migrate.Record{Version: 2})
 
 		records, err := d.Applied(t.Context())
-		require.NoError(t, err)
-		require.Len(t, records, 3)
-		assert.Equal(t, uint64(1), records[0].Version)
-		assert.Equal(t, uint64(2), records[1].Version)
-		assert.Equal(t, uint64(3), records[2].Version)
+		if err != nil {
+			t.Fatalf("Applied() err = %v; want nil", err)
+		}
+		if got, want := len(records), 3; got != want {
+			t.Fatalf("len(records) = %d; want %d", got, want)
+		}
+		v1 := records[0].Version
+		v2 := records[1].Version
+		v3 := records[2].Version
+		if v1 != 1 || v2 != 2 || v3 != 3 {
+			t.Errorf(
+				"records version order = [%d, %d, %d]; want [1, 2, 3]",
+				v1, v2, v3,
+			)
+		}
 	})
 
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		expected := errors.New("applied failed")
-		d.AppliedErr = expected
+		want := errors.New("applied failed")
+		d.AppliedErr = want
 		records, err := d.Applied(t.Context())
-		assert.ErrorIs(t, err, expected)
-		assert.Nil(t, records)
+		if !errors.Is(err, want) {
+			t.Errorf("Applied() err = %v; want %v", err, want)
+		}
+		if records != nil {
+			t.Errorf("records = %v; want nil", records)
+		}
 	})
 }
 
 func TestDriver_Force(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
 		d.Set(migrate.Record{Version: 1, Dirty: false})
 		d.Set(migrate.Record{Version: 2, Dirty: true})
 		d.Set(migrate.Record{Version: 3, Dirty: false})
 
-		err := d.Force(t.Context(), 2)
-		assert.NoError(t, err)
+		if err := d.Force(t.Context(), 2); err != nil {
+			t.Errorf("Force() err = %v; want nil", err)
+		}
 
 		state := d.State()
-		assert.Len(t, state, 2)
-		assert.False(t, state[1].Dirty)
-		assert.False(t, state[2].Dirty)
-		_, exists := state[3]
-		assert.False(t, exists)
+		if len(state) != 2 {
+			t.Errorf("len(state) = %d; want 2", len(state))
+		}
+		if state[1].Dirty {
+			t.Error("state[1].Dirty = true; want false")
+		}
+		if state[2].Dirty {
+			t.Error("state[2].Dirty = true; want false")
+		}
+		if _, exists := state[3]; exists {
+			t.Error("state[3] exists; want removed")
+		}
 	})
 
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		expected := errors.New("force failed")
-		d.ForceErr = expected
-		err := d.Force(t.Context(), 1)
-		assert.ErrorIs(t, err, expected)
+		want := errors.New("force failed")
+		d.ForceErr = want
+		if err := d.Force(t.Context(), 1); !errors.Is(err, want) {
+			t.Errorf("Force() err = %v; want %v", err, want)
+		}
 	})
 }
 
 func TestDriver_Execute(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		setup    func(*mock.Driver)
 		script   migrate.ParsedScript
-		err      error
+		giveErr  error
 		validate func(*testing.T, *mock.Driver)
 	}{
 		{
@@ -176,26 +258,42 @@ func TestDriver_Execute(t *testing.T) {
 				Checksum:  [32]byte{1, 2, 3},
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
+				t.Helper()
 				rec, ok := d.Get(1)
-				require.True(t, ok)
-				assert.Equal(t, uint64(1), rec.Version)
-				assert.Equal(t, [32]byte{1, 2, 3}, rec.Checksum)
-				assert.False(t, rec.Dirty)
+				if !ok {
+					t.Fatalf("d.Get(1) returned false; want true")
+				}
+				if rec.Version != 1 {
+					t.Errorf("rec.Version = %d; want 1", rec.Version)
+				}
+				if rec.Checksum != [32]byte{1, 2, 3} {
+					t.Errorf("rec.Checksum mismatch")
+				}
+				if rec.Dirty {
+					t.Error("rec.Dirty = true; want false")
+				}
 			},
 		},
 		{
-			name: "up error",
-			err:  errors.New("execute error"),
+			name:    "up error",
+			giveErr: errors.New("execute error"),
 			script: migrate.ParsedScript{
 				Version:   2,
 				Direction: migrate.Up,
 				Checksum:  [32]byte{4, 5, 6},
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
+				t.Helper()
 				rec, ok := d.Get(2)
-				require.True(t, ok)
-				assert.Equal(t, uint64(2), rec.Version)
-				assert.True(t, rec.Dirty)
+				if !ok {
+					t.Fatalf("d.Get(2) returned false; want true")
+				}
+				if rec.Version != 2 {
+					t.Errorf("rec.Version = %d; want 2", rec.Version)
+				}
+				if !rec.Dirty {
+					t.Error("rec.Dirty = false; want true")
+				}
 			},
 		},
 		{
@@ -208,8 +306,10 @@ func TestDriver_Execute(t *testing.T) {
 				Direction: migrate.Down,
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
-				_, ok := d.Get(3)
-				assert.False(t, ok)
+				t.Helper()
+				if _, ok := d.Get(3); ok {
+					t.Error("d.Get(3) returned true; want false")
+				}
 			},
 		},
 		{
@@ -217,55 +317,73 @@ func TestDriver_Execute(t *testing.T) {
 			setup: func(d *mock.Driver) {
 				d.Set(migrate.Record{Version: 4, Dirty: false})
 			},
-			err: errors.New("execute error"),
+			giveErr: errors.New("execute error"),
 			script: migrate.ParsedScript{
 				Version:   4,
 				Direction: migrate.Down,
 			},
 			validate: func(t *testing.T, d *mock.Driver) {
+				t.Helper()
 				rec, ok := d.Get(4)
-				require.True(t, ok)
-				assert.True(t, rec.Dirty)
+				if !ok {
+					t.Fatalf("d.Get(4) returned false; want true")
+				}
+				if !rec.Dirty {
+					t.Error("rec.Dirty = false; want true")
+				}
 			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			d := mock.New()
-			if tc.setup != nil {
-				tc.setup(d)
+			if tt.setup != nil {
+				tt.setup(d)
 			}
-			d.ExecuteErr = tc.err
+			d.ExecuteErr = tt.giveErr
 
-			err := d.Execute(t.Context(), tc.script)
-			if tc.err != nil {
-				assert.ErrorIs(t, err, tc.err)
-			} else {
-				assert.NoError(t, err)
+			err := d.Execute(t.Context(), tt.script)
+			if tt.giveErr != nil {
+				if !errors.Is(err, tt.giveErr) {
+					t.Errorf("Execute() err = %v; want %v", err, tt.giveErr)
+				}
+			} else if err != nil {
+				t.Errorf("Execute() unexpected err = %v", err)
 			}
 
-			if tc.validate != nil {
-				tc.validate(t, d)
+			if tt.validate != nil {
+				tt.validate(t, d)
 			}
 		})
 	}
 }
 
 func TestDriver_Close(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		err := d.Close()
-		assert.NoError(t, err)
-		assert.True(t, d.IsClosed)
+		if err := d.Close(); err != nil {
+			t.Errorf("Close() err = %v; want nil", err)
+		}
+		if !d.IsClosed {
+			t.Error("d.IsClosed = false; want true")
+		}
 	})
 
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
 		d := mock.New()
-		expected := errors.New("close failed")
-		d.CloseErr = expected
-		err := d.Close()
-		assert.ErrorIs(t, err, expected)
-		assert.False(t, d.IsClosed)
+		want := errors.New("close failed")
+		d.CloseErr = want
+		if err := d.Close(); !errors.Is(err, want) {
+			t.Errorf("Close() err = %v; want %v", err, want)
+		}
+		if d.IsClosed {
+			t.Error("d.IsClosed = true; want false")
+		}
 	})
 }
