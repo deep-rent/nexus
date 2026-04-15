@@ -192,7 +192,7 @@ type Provider[T any] func(in *Injector) (T, error)
 
 // binding holds a provider and its associated resolution strategy.
 type binding struct {
-	provider any
+	provider func(in *Injector) (any, error)
 	resolver Resolver
 }
 
@@ -275,7 +275,7 @@ func Bind[T any](
 	}
 
 	in.bindings[slot] = &binding{
-		provider: provider,
+		provider: func(proxy *Injector) (any, error) { return provider(proxy) },
 		resolver: resolver,
 	}
 }
@@ -364,7 +364,7 @@ func Override[T any](
 	defer in.mu.Unlock()
 
 	in.bindings[slot] = &binding{
-		provider: provider,
+		provider: func(proxy *Injector) (any, error) { return provider(proxy) },
 		resolver: resolver,
 	}
 }
@@ -420,7 +420,7 @@ type Resolver interface {
 	// The visiting map tracks the current resolution path to detect cycles.
 	Resolve(
 		in *Injector,
-		provider any,
+		provider func(in *Injector) (any, error),
 		slot any,
 		visiting map[any]bool,
 	) (any, error)
@@ -435,7 +435,7 @@ type singleton struct {
 
 func (s *singleton) Resolve(
 	in *Injector,
-	provider any,
+	provider func(in *Injector) (any, error),
 	slot any,
 	visiting map[any]bool,
 ) (any, error) {
@@ -456,7 +456,7 @@ type transient struct{}
 
 func (transient) Resolve(
 	in *Injector,
-	provider any,
+	provider func(in *Injector) (any, error),
 	slot any,
 	visiting map[any]bool,
 ) (any, error) {
@@ -468,40 +468,24 @@ func (transient) Resolve(
 // circular dependency map.
 func provide(
 	in *Injector,
-	provider any,
+	provider func(in *Injector) (any, error),
 	slot any,
 	visiting map[any]bool,
 ) (instance any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf(
-				"panic during provider call for slot %s: %v",
-				Tag(slot), r,
+				"panic during provider call for slot %s: %v", Tag(slot), r,
 			)
-			instance = nil
 		}
 	}()
 
-	// Create a proxy injector for the provider call. This proxy carries the
-	// visiting map within its context. When the provider calls Use/Required,
-	// the proxy's Resolve method is called, which correctly propagates the map.
 	proxy := &Injector{
 		parent: in,
 		ctx:    context.WithValue(in.ctx, visitingKey{}, visiting),
 	}
 
-	// Use reflection to call the provider.
-	val := reflect.ValueOf(provider)
-	out := val.Call([]reflect.Value{reflect.ValueOf(proxy)})
-
-	// The provider signature is func(...) (T, error).
-	if out[1].IsNil() {
-		instance = out[0].Interface()
-	} else {
-		err = out[1].Interface().(error)
-	}
-
-	return instance, err
+	return provider(proxy)
 }
 
 // Transient returns a Resolver that creates a new instance of the service
@@ -526,7 +510,7 @@ type scoped struct{}
 
 func (s scoped) Resolve(
 	in *Injector,
-	provider any,
+	provider func(in *Injector) (any, error),
 	slot any,
 	visiting map[any]bool,
 ) (any, error) {
