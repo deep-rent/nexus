@@ -27,6 +27,8 @@
 // considered. The code snippet below showcases various field types and
 // struct tag options:
 //
+// Example:
+//
 //	type Config struct {
 //		Host     string        `env:",required"`
 //		Port     int           `env:",default:8080"`
@@ -57,56 +59,44 @@
 // The subsequent parts of the tag are options, which can be in a key:value
 // format or be boolean flags.
 //
-// Option "default"
-//
-// Sets a default value to be used if the environment variable is not set.
+// Option "default": Sets a default value to be used if the environment
+// variable is not set.
 //
 //	Port int `env:",default:8080"`
 //
-// Option "required"
-//
-// Marks the variable as required. Unmarshal will return an error if the
-// variable is not set and no default is provided.
+// Option "required": Marks the variable as required. [Unmarshal] will return
+// an error if the variable is not set and no default is provided.
 //
 //	APIKey string `env:",required"`
 //
-// Option "prefix"
-//
-// For nested struct fields, this overrides the default prefix. By default,
-// the prefix is the field's name in SNAKE_CASE followed by an underscore.
-// It can be set to an empty string to omit the prefix entirely.
+// Option "prefix": For nested struct fields, this overrides the default
+// prefix. By default, the prefix is the field's name in SNAKE_CASE followed by
+// an underscore. It can be set to an empty string to omit the prefix entirely.
 //
 //	DBConfig `env:",prefix:DB_"`
 //
-// Option "inline"
-//
-// When applied to an anonymous struct field, it flattens the struct,
-// effectively treating its fields as if they belonged to the parent struct.
+// Option "inline": When applied to an anonymous struct field, it flattens the
+// struct, effectively treating its fields as if they belonged to the parent
+// struct.
 //
 //	Nested `env:",inline"`
 //
-// Option "split"
-//
-// For slice types, this specifies the delimiter to split the environment
-// variable string. The default separator is a comma.
+// Option "split": For slice types, this specifies the delimiter to split the
+// environment variable string. The default separator is a comma.
 //
 //	Hosts []string `env:",split:';'"`
 //
-// Option "format"
-//
-// Provides a format specifier for special types. For time.Time it can
-// be a Go-compliant layout string (e.g., "2006-01-02") or one of the predefined
-// constants "unix", "dateTime", "date", and "time". Defaults to the RFC
-// 3339 format. For []byte, it can be "hex", "base32", or "base64" to alter
-// the encoding format.
+// Option "format": Provides a format specifier for special types. For
+// [time.Time] it can be a Go-compliant layout string (e.g., "2006-01-02") or
+// one of the predefined constants "unix", "dateTime", "date", and "time".
+// Defaults to the RFC 3339 format. For []byte, it can be "hex", "base32", or
+// "base64" to alter the encoding format.
 //
 //	StartDate time.Time `env:",format:date"`
 //
-// Option "unit"
-//
-// Specifies the unit for time.Time or time.Duration when parsing from an
-// integer. For time.Duration: "ns", "us" (or "μs"), "ms", "s", "m", "h".
-// For time.Time (with format:unix): "s", "ms", "us" (or "μs").
+// Option "unit": Specifies the unit for [time.Time] or [time.Duration] when
+// parsing from an integer. For [time.Duration]: "ns", "us" (or "μs"), "ms",
+// "s", "m", "h". For [time.Time] (with format:unix): "s", "ms", "us" (or "μs").
 //
 //	CacheTTL time.Duration `env:",unit:m,default:5"`
 package env
@@ -130,7 +120,7 @@ import (
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
-// It follows the signature of os.LookupEnv, returning the value and a boolean
+// It follows the signature of [os.LookupEnv], returning the value and a boolean
 // indicating whether the variable was present. This type allows for custom
 // lookup mechanisms, such as reading from sources other than the actual
 // environment, which is especially useful for testing.
@@ -145,11 +135,11 @@ type Unmarshaler interface {
 	UnmarshalEnv(value string) error
 }
 
-// Option is a function that configures the behavior of the Unmarshal and Expand
-// functions. It follows the functional options pattern.
+// Option is a function that configures the behavior of the [Unmarshal] and
+// [Expand] functions. It follows the functional options pattern.
 type Option func(*config)
 
-// WithPrefix returns an Option that adds a common prefix to all environment
+// WithPrefix returns an [Option] that adds a common prefix to all environment
 // variable keys looked up during unmarshaling. For example, WithPrefix("APP_")
 // would cause a field with the env tag "PORT" to look for the "APP_PORT"
 // variable.
@@ -159,9 +149,9 @@ func WithPrefix(prefix string) Option {
 	}
 }
 
-// WithLookup returns an Option that sets a custom lookup function for
-// retrieving environment variable values. If not customized, os.LookupEnv will
-// be used by default. This is useful for testing or if you need to load
+// WithLookup returns an [Option] that sets a custom [Lookup] function for
+// retrieving environment variable values. If not customized, [os.LookupEnv]
+// will be used by default. This is useful for testing or if you need to load
 // environment variables from alternative sources.
 func WithLookup(lookup Lookup) Option {
 	return func(o *config) {
@@ -174,7 +164,7 @@ func WithLookup(lookup Lookup) Option {
 // Unmarshal populates the fields of a struct with values from environment
 // variables. The given value v must be a non-nil pointer to a struct.
 //
-// By default, Unmarshal processes all exported fields. A field's environment
+// By default, [Unmarshal] processes all exported fields. A field's environment
 // variable name is derived from its name, converted to uppercase SNAKE_CASE.
 // To ignore a field, tag it with `env:"-"`. Unexported fields are always
 // excluded. If a variable is not set, the field remains unchanged unless a
@@ -243,14 +233,15 @@ func Expand(s string, opts ...Option) (string, error) {
 			i += 2 + end + 1
 
 		default:
-			// Case 3: Standard variable expansion ($KEY) or lone dollar sign. Scan
-			// ahead for valid identifier characters. The first character must be
-			// a letter or underscore; subsequent characters can include digits.
+			// Case 3: Standard variable expansion ($KEY) or lone dollar sign.
+			// Scan ahead for valid identifier characters. The first character
+			// must be a letter or underscore; subsequent characters can include
+			// digits.
 			n := 0
 			for j := i + 1; j < len(s); j++ {
 				c := s[j]
-				// Allow if it's a letter/underscore, OR if it's a digit but NOT the
-				// first character.
+				// Allow if it's a letter/underscore, OR if it's a digit but NOT
+				// the first character.
 				if (c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')) ||
 					(n > 0 && ('0' <= c && c <= '9')) {
 					n++
@@ -283,19 +274,30 @@ func Expand(s string, opts ...Option) (string, error) {
 
 // flags encapsulates the options parsed from an `env` struct tag.
 type flags struct {
-	Name     string  // Name of the environment variable.
-	Prefix   *string // Optional prefix for nested structs.
-	Split    string  // Delimiter for slice types.
-	Unit     string  // Unit for time.Time or time.Duration.
-	Format   string  // Format specifier for special types.
-	Default  string  // Fallback value if the variable is not found.
-	Inline   bool    // Whether to inline an anonymous struct field.
-	Required bool    // Whether the variable is required.
+	// Name is the name of the environment variable.
+	Name string
+	// Prefix is an optional prefix for nested structs.
+	Prefix *string
+	// Split is the delimiter for slice types.
+	Split string
+	// Unit is the unit for time.Time or time.Duration.
+	Unit string
+	// Format is the format specifier for special types.
+	Format string
+	// Default is the fallback value if the variable is not found.
+	Default string
+	// Inline indicates whether to inline an anonymous struct field.
+	Inline bool
+	// Required indicates whether the variable is required.
+	Required bool
 }
 
+// config holds configuration options for environment variable processing.
 type config struct {
-	Prefix string // Common prefix for all environment variable keys.
-	Lookup Lookup // Injectable callback for variable lookup.
+	// Prefix is a common prefix for all environment variable keys.
+	Prefix string
+	// Lookup is the injectable callback for variable lookup.
+	Lookup Lookup
 }
 
 // Cache types with special unmarshaling logic.
@@ -307,6 +309,7 @@ var (
 	typeUnmarshaler = reflect.TypeFor[Unmarshaler]()
 )
 
+// unmarshal is the internal implementation that orchestrates the unmarshaling.
 func unmarshal(v any, opts ...Option) error {
 	ptr := reflect.ValueOf(v)
 	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
@@ -340,11 +343,11 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 			continue
 		}
 
-		tag := ft.Tag.Get("env")
-		if tag == "-" {
+		tagValue := ft.Tag.Get("env")
+		if tagValue == "-" {
 			continue
 		}
-		opts, err := parse(tag)
+		opts, err := parse(tagValue)
 		if err != nil {
 			return fmt.Errorf("failed to parse tag for field %q: %w", ft.Name, err)
 		}
@@ -400,8 +403,8 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 		}
 
 		// If a field is required and set to "", it bypasses the errors above.
-		// For strings, setValue will correctly assign the empty string. For types
-		// like int or bool, setValue will return a natural parsing error.
+		// For strings, setValue will correctly assign the empty string. For
+		// types like int or bool, setValue will return a natural parsing error.
 		if err := setValue(fv, val, opts); err != nil {
 			return fmt.Errorf(
 				"error setting field %q from variable %q: %w",
@@ -412,6 +415,7 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 	return nil
 }
 
+// setValue assigns a string value to a reflect.Value based on its type.
 func setValue(rv reflect.Value, v string, f *flags) error {
 	if u, ok := asUnmarshaler(rv); ok {
 		// Use the custom unmarshaler if available.
@@ -474,11 +478,11 @@ func setOther(rv reflect.Value, v string, f *flags) error {
 		rv.SetUint(u)
 	case reflect.Float32, reflect.Float64:
 		b := rv.Type().Bits()
-		f, err := strconv.ParseFloat(v, b)
+		fval, err := strconv.ParseFloat(v, b)
 		if err != nil {
 			return fmt.Errorf("%q is not a float%d", v, b)
 		}
-		rv.SetFloat(f)
+		rv.SetFloat(fval)
 	case reflect.Complex64, reflect.Complex128:
 		b := rv.Type().Bits()
 		c, err := strconv.ParseComplex(v, b)
@@ -492,7 +496,7 @@ func setOther(rv reflect.Value, v string, f *flags) error {
 	return nil
 }
 
-// setTime parses and sets a time.Time value based on the provided format and
+// setTime parses and sets a [time.Time] value based on the provided format and
 // unit options.
 func setTime(rv reflect.Value, v string, f *flags) error {
 	var t time.Time
@@ -532,8 +536,8 @@ func setTime(rv reflect.Value, v string, f *flags) error {
 	return nil
 }
 
-// setDuration parses and sets a time.Duration value based on the provided unit
-// option.
+// setDuration parses and sets a [time.Duration] value based on the provided
+// unit option.
 func setDuration(rv reflect.Value, v string, f *flags) error {
 	var d time.Duration
 	var err error
@@ -568,7 +572,7 @@ func setDuration(rv reflect.Value, v string, f *flags) error {
 	return nil
 }
 
-// setLocation parses and sets a time.Location value.
+// setLocation parses and sets a [time.Location] value.
 func setLocation(rv reflect.Value, v string) error {
 	loc, err := time.LoadLocation(v)
 	if err != nil {
@@ -578,7 +582,7 @@ func setLocation(rv reflect.Value, v string) error {
 	return nil
 }
 
-// setURL parses and sets a url.URL value.
+// setURL parses and sets a [url.URL] value.
 func setURL(rv reflect.Value, v string) error {
 	u, err := url.Parse(v)
 	if err != nil {
@@ -690,10 +694,10 @@ func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
 	return true
 }
 
-// asUnmarshaler checks if the given reflect.Value implements the Unmarshaler
-// interface, either directly or via a pointer receiver. If it does, the
-// function returns the type-casted Unmarshaler and true. Otherwise, it returns
-// nil and false.
+// asUnmarshaler checks if the given [reflect.Value] implements the
+// [Unmarshaler] interface, either directly or via a pointer receiver. If it
+// does, the function returns the type-casted [Unmarshaler] and true.
+// Otherwise, it returns nil and false.
 func asUnmarshaler(rv reflect.Value) (Unmarshaler, bool) {
 	// Case 1: The field's type directly implements Unmarshaler.
 	// This works for pointer types (e.g., *reverse) or value types with
