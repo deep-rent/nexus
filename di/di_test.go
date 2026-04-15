@@ -53,54 +53,60 @@ var (
 	mockSlotI = di.NewSlot[I]("service", "i")
 	mockSlotX = di.NewSlot[mockServiceX]("cycle", "x")
 	mockSlotY = di.NewSlot[*mockServiceY]("cycle", "y")
+
+	errPanicSentinel = errors.New("provider panicked with error")
 )
 
-func mockProvideA(_ *di.Injector) (mockServiceA, error) {
+func mockProvideA(_ di.Container) (mockServiceA, error) {
 	return mockServiceA{ID: 1}, nil
 }
 
-func mockProvideB(in *di.Injector) (mockServiceB, error) {
-	a := di.Required(in, mockSlotA)
+func mockProvideB(c di.Container) (mockServiceB, error) {
+	a := di.Required(c, mockSlotA)
 	return mockServiceB{DepA: a}, nil
 }
 
-func mockProvideC(_ *di.Injector) (*mockServiceC, error) {
+func mockProvideC(_ di.Container) (*mockServiceC, error) {
 	return &mockServiceC{ID: 3}, nil
 }
 
-func mockProvideD(in *di.Injector) (mockServiceD, error) {
-	b := di.Required(in, mockSlotB)
+func mockProvideD(c di.Container) (mockServiceD, error) {
+	b := di.Required(c, mockSlotB)
 	return mockServiceD{DepB: b}, nil
 }
 
-func mockProvideE(in *di.Injector) (mockServiceE, error) {
-	c := di.Optional(in, mockSlotC)
-	return mockServiceE{DepC: c}, nil
+func mockProvideE(c di.Container) (mockServiceE, error) {
+	cInst := di.Optional(c, mockSlotC)
+	return mockServiceE{DepC: cInst}, nil
 }
 
-func mockProvideX(in *di.Injector) (mockServiceX, error) {
-	y := di.Required(in, mockSlotY)
+func mockProvideX(c di.Container) (mockServiceX, error) {
+	y := di.Required(c, mockSlotY)
 	return mockServiceX{DepY: y}, nil
 }
 
-func mockProvideY(in *di.Injector) (*mockServiceY, error) {
-	x := di.Required(in, mockSlotX)
+func mockProvideY(c di.Container) (*mockServiceY, error) {
+	x := di.Required(c, mockSlotX)
 	return &mockServiceY{DepX: x}, nil
 }
 
-func mockProvideNil(_ *di.Injector) (*mockServiceF, error) {
+func mockProvideNil(_ di.Container) (*mockServiceF, error) {
 	return nil, nil
 }
 
-func mockProvideError(_ *di.Injector) (mockServiceA, error) {
+func mockProvideError(_ di.Container) (mockServiceA, error) {
 	return mockServiceA{}, errors.New("provider failed")
 }
 
-func mockProvidePanic(_ *di.Injector) (mockServiceA, error) {
-	panic("provider panicked")
+func mockProvidePanicString(_ di.Container) (mockServiceA, error) {
+	panic("provider panicked with string")
 }
 
-func mockProvideI(_ *di.Injector) (I, error) {
+func mockProvidePanicError(_ di.Container) (mockServiceA, error) {
+	panic(errPanicSentinel)
+}
+
+func mockProvideI(_ di.Container) (I, error) {
 	return &mockI{}, nil
 }
 
@@ -137,7 +143,7 @@ func TestBinding(t *testing.T) {
 		in := di.NewInjector()
 		di.Bind(in, mockSlotA, mockProvideA, di.Transient())
 
-		di.Override(in, mockSlotA, func(_ *di.Injector) (mockServiceA, error) {
+		di.Override(in, mockSlotA, func(_ di.Container) (mockServiceA, error) {
 			return mockServiceA{ID: 99}, nil
 		}, di.Transient())
 
@@ -157,7 +163,7 @@ func TestResolution(t *testing.T) {
 	t.Run("transient", func(t *testing.T) {
 		t.Parallel()
 		var calls atomic.Int32
-		provider := func(_ *di.Injector) (mockServiceA, error) {
+		provider := func(_ di.Container) (mockServiceA, error) {
 			calls.Add(1)
 			return mockServiceA{}, nil
 		}
@@ -183,7 +189,7 @@ func TestResolution(t *testing.T) {
 		t.Parallel()
 		var calls atomic.Int32
 		slotAPtr := di.NewSlot[*mockServiceA]("service", "a-ptr")
-		provider := func(_ *di.Injector) (*mockServiceA, error) {
+		provider := func(_ di.Container) (*mockServiceA, error) {
 			calls.Add(1)
 			return &mockServiceA{}, nil
 		}
@@ -211,7 +217,7 @@ func TestResolution(t *testing.T) {
 	t.Run("singleton concurrent access", func(t *testing.T) {
 		t.Parallel()
 		var calls atomic.Int32
-		provider := func(_ *di.Injector) (mockServiceA, error) {
+		provider := func(_ di.Container) (mockServiceA, error) {
 			time.Sleep(10 * time.Millisecond)
 			calls.Add(1)
 			return mockServiceA{ID: 123}, nil
@@ -244,7 +250,7 @@ func TestResolution(t *testing.T) {
 		t.Parallel()
 		var calls atomic.Int32
 		slot := di.NewSlot[*mockServiceA]("service", "a-ptr")
-		provider := func(_ *di.Injector) (*mockServiceA, error) {
+		provider := func(_ di.Container) (*mockServiceA, error) {
 			calls.Add(1)
 			return &mockServiceA{}, nil
 		}
@@ -327,9 +333,8 @@ func TestInjection(t *testing.T) {
 		if err == nil {
 			t.Fatal("Use() expected error for unbound slot, got nil")
 		}
-		if got, want := err.Error(),
-			"no provider bound for slot"; !strings.Contains(got, want) {
-			t.Errorf("error = %q; want to contain %q", got, want)
+		if !errors.Is(err, di.ErrUnbound) {
+			t.Errorf("error expected to wrap ErrUnbound, got: %v", err)
 		}
 	})
 
@@ -347,10 +352,10 @@ func TestInjection(t *testing.T) {
 		}
 	})
 
-	t.Run("use recovers from provider panic", func(t *testing.T) {
+	t.Run("use recovers from provider panic with string", func(t *testing.T) {
 		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, mockSlotA, mockProvidePanic, di.Transient())
+		di.Bind(in, mockSlotA, mockProvidePanicString, di.Transient())
 
 		_, err := di.Use(in, mockSlotA)
 		if err == nil {
@@ -361,8 +366,22 @@ func TestInjection(t *testing.T) {
 			t.Errorf("error = %q; want to contain %q", got, want)
 		}
 		if got, want := err.Error(),
-			"provider panicked"; !strings.Contains(got, want) {
+			"provider panicked with string"; !strings.Contains(got, want) {
 			t.Errorf("error = %q; want to contain %q", got, want)
+		}
+	})
+
+	t.Run("use recovers from panic with wrapped error", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotA, mockProvidePanicError, di.Transient())
+
+		_, err := di.Use(in, mockSlotA)
+		if err == nil {
+			t.Fatal("Use() expected recovery error from panic, got nil")
+		}
+		if !errors.Is(err, errPanicSentinel) {
+			t.Errorf("error expected to wrap errPanicSentinel, got: %v", err)
 		}
 	})
 
@@ -436,9 +455,8 @@ func TestCircularDependency(t *testing.T) {
 	if err == nil {
 		t.Fatal("Use() expected error for circular dependency, got nil")
 	}
-	if got, want := err.Error(),
-		"circular dependency detected"; !strings.Contains(got, want) {
-		t.Errorf("error = %q; want to contain %q", got, want)
+	if !errors.Is(err, di.ErrCycle) {
+		t.Errorf("error expected to wrap ErrCycle, got: %v", err)
 	}
 	if got, want := err.Error(), di.Tag(mockSlotX); !strings.Contains(got, want) {
 		t.Errorf("error = %q; want to contain %q", got, want)
