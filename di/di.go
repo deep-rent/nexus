@@ -153,9 +153,7 @@ var (
 // It is a unique pointer that acts as a map key within the [Injector],
 // while the generic type T provides compile-time type safety.
 type Slot[T any] *struct {
-	// The embedded byte ensures a non-zero size, guaranteeing unique memory
-	// addresses.
-
+	// _ ensures a non-zero size, guaranteeing unique memory addresses.
 	_ byte
 }
 
@@ -216,9 +214,9 @@ type Container interface {
 // Provider defines the function signature for a service factory.
 //
 // When a service is requested, its provider is called with a [Container], which
-// it can then use to resolve any of its own dependencies (e.g., by calling Use).
-// How often the provider is called depends on the number of injection sites and
-// the resolution strategy used when binding the provider to a slot.
+// it can then use to resolve any of its own dependencies (e.g., by calling
+// Use). How often the provider is called depends on the number of injection
+// sites and the resolution strategy used when binding the provider to a slot.
 type Provider[T any] func(c Container) (T, error)
 
 // binding holds a provider and its associated resolution strategy.
