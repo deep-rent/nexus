@@ -96,8 +96,8 @@
 // Step 4: Assemble the Solution (Configure the Injector)
 //
 // Now, create an Injector and bind the concrete providers to their
-// respective role slots. We are telling the container that Sodium will act
-// as our Cation and Chloride will act as our Anion.
+// respective role slots. We use Transient scope to
+// obtain fresh ions each time we form a new salt molecule.
 //
 //	// 1. Create the injector.
 //	solution := di.NewInjector()
@@ -126,10 +126,17 @@ package di
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync"
+)
+
+// Sentinel errors for standard DI failure modes.
+var (
+	ErrCycle   = errors.New("circular dependency")
+	ErrUnbound = errors.New("unbound slot")
 )
 
 // Slot is an abstract, typed symbol for an injectable service.
@@ -394,8 +401,8 @@ func (in *Injector) Resolve(slot any) (any, error) {
 func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	if visiting[slot] {
 		return nil, fmt.Errorf(
-			"circular dependency detected while resolving slot %s",
-			Tag(slot),
+			"%w detected while resolving slot %s",
+			ErrCycle, Tag(slot),
 		)
 	}
 
@@ -405,7 +412,7 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	in.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("no provider bound for slot %s", Tag(slot))
+		return nil, fmt.Errorf("%w: no provider bound for slot %s", ErrUnbound, Tag(slot))
 	}
 
 	// Delegate to the resolver (e.g., Singleton), passing the visiting map.
@@ -474,9 +481,11 @@ func provide(
 ) (instance any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf(
-				"panic during provider call for slot %s: %v", Tag(slot), r,
-			)
+			if e, ok := r.(error); ok {
+				err = fmt.Errorf("panic during provider call for slot %s: %w", Tag(slot), e)
+			} else {
+				err = fmt.Errorf("panic during provider call for slot %s: %v", Tag(slot), r)
+			}
 		}
 	}()
 
