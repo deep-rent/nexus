@@ -505,6 +505,12 @@ func NewScope(ctx context.Context) context.Context {
 	return context.WithValue(ctx, scopedCacheKey{}, &sync.Map{})
 }
 
+type scopedEntry struct {
+	once sync.Once
+	val  any
+	err  error
+}
+
 // scoped is a Resolver that ties the service lifecycle to a context scope.
 type scoped struct{}
 
@@ -518,27 +524,20 @@ func (s scoped) Resolve(
 	cache, ok := val.(*sync.Map)
 	if !ok || cache == nil {
 		return nil, fmt.Errorf(
-			"no scope cache found in context for scoped slot %s",
-			Tag(slot),
+			"no scope cache found in context for scoped slot %s", Tag(slot),
 		)
 	}
-	// Check if an instance already exists in the scope's cache.
-	// The nil marker (`struct{}{}``) is used to handle the case where a provider
-	// legitimately returns nil, to prevent re-invocation.
-	if instance, loaded := cache.Load(slot); loaded {
-		return instance, nil
-	}
 
-	// If not found, create a new instance.
-	instance, err := provide(in, provider, slot, visiting)
-	if err != nil {
-		// Do not cache the slot if the provider failed.
-		return nil, err
-	}
+	// Retrieve or create the synchronization entry
+	act, _ := cache.LoadOrStore(slot, &scopedEntry{})
+	ent := act.(*scopedEntry)
 
-	// Store the new instance in the cache.
-	actual, _ := cache.LoadOrStore(slot, instance)
-	return actual, nil
+	// Ensure the provider runs exactly once per scope
+	ent.once.Do(func() {
+		ent.val, ent.err = provide(in, provider, slot, visiting)
+	})
+
+	return ent.val, ent.err
 }
 
 // Scoped returns a Resolver that ties the lifecycle of a service to a
