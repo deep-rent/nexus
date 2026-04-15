@@ -17,70 +17,112 @@ package buffer_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/deep-rent/nexus/internal/buffer"
 )
 
-func TestPanicOnInvalidSize(t *testing.T) {
-	assert.Panics(t, func() {
-		buffer.NewPool(0, 1024)
-	})
-	assert.Panics(t, func() {
-		buffer.NewPool(1024, 0)
-	})
-	assert.Panics(t, func() {
-		buffer.NewPool(-1, 1024)
-	})
-	assert.Panics(t, func() {
-		buffer.NewPool(1024, -1)
-	})
+func TestNewPool_PanicOnInvalidSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		min  int
+		max  int
+	}{
+		{"min zero", 0, 1024},
+		{"max zero", 1024, 0},
+		{"min negative", -1, 1024},
+		{"max negative", 1024, -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("NewPool(%d, %d) did not panic", tt.min, tt.max)
+				}
+			}()
+			buffer.NewPool(tt.min, tt.max)
+		})
+	}
 }
 
-func TestSizeClamping(t *testing.T) {
-	p1 := buffer.NewPool(100, 50)
-	assert.Equal(t, 50, cap(p1.Get()))
+func TestNewPool_SizeClamping(t *testing.T) {
+	t.Parallel()
 
-	p2 := buffer.NewPool(50, 100)
-	assert.Equal(t, 50, cap(p2.Get()))
+	tests := []struct {
+		name string
+		min  int
+		max  int
+		want int
+	}{
+		{"min larger than max", 100, 50, 50},
+		{"min smaller than max", 50, 100, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := buffer.NewPool(tt.min, tt.max)
+			if got := cap(p.Get()); got != tt.want {
+				t.Errorf("cap(p.Get()) = %d; want %d", got, tt.want)
+			}
+		})
+	}
 }
 
-func TestGetPut(t *testing.T) {
-	min := 64
-	max := 1024
+func TestPool_GetPut(t *testing.T) {
+	t.Parallel()
+
+	min, max := 64, 1024
 	p := buffer.NewPool(min, max)
 
 	b1 := p.Get()
-	assert.Equal(t, min, cap(b1))
+	if got, want := cap(b1), min; got != want {
+		t.Fatalf("cap(b1) = %d; want %d", got, want)
+	}
 
 	p.Put(b1)
 
 	b2 := p.Get()
-	assert.True(t, &b1[0] == &b2[0])
+	if &b1[0] != &b2[0] {
+		t.Errorf("p.Get() returned new buffer; want recycled buffer")
+	}
 }
 
-func TestPutDiscardOversized(t *testing.T) {
-	min := 64
-	max := 128
+func TestPool_Put_DiscardOversized(t *testing.T) {
+	t.Parallel()
+
+	min, max := 64, 128
 	p := buffer.NewPool(min, max)
 
 	b1 := p.Get()
 	b1[0] = 10
 	p.Put(b1)
 
+	// Buffer exceeds max capacity
 	bO := make([]byte, min, max+1)
 	bO[0] = 42
 	p.Put(bO)
 
 	bR := p.Get()
-	assert.True(t, &b1[0] == &bR[0])
-	assert.Equal(t, 10, int(bR[0]))
+	if &b1[0] != &bR[0] {
+		t.Errorf("p.Get() returned unexpected buffer; want recycled b1")
+	}
+	if got, want := int(bR[0]), 10; got != want {
+		t.Errorf("bR[0] = %d; want %d", got, want)
+	}
 
+	// Buffer at max capacity
 	bM := make([]byte, min, max)
 	bM[0] = 99
 	p.Put(bM)
 
 	bK := p.Get()
-	assert.True(t, &bM[0] == &bK[0])
-	assert.Equal(t, 99, int(bK[0]))
+	if &bM[0] != &bK[0] {
+		t.Errorf("p.Get() returned unexpected buffer; want recycled bM")
+	}
+	if got, want := int(bK[0]), 99; got != want {
+		t.Errorf("bK[0] = %d; want %d", got, want)
+	}
 }
