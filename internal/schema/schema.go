@@ -180,13 +180,11 @@ func (p *postgres) dollar(n int) {
 			end = j
 			break
 		}
-		// Inline ASCII word check to avoid casting overhead in the hot path
 		if !ascii.IsWord(rune(nc)) {
 			break
 		}
 	}
 	if end != -1 {
-		// Store the full tag including both dollar signs to make searching faster
 		p.tag = p.script[p.i : end+1]
 		p.i = end
 	}
