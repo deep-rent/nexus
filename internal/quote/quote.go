@@ -13,10 +13,33 @@
 // limitations under the License.
 
 // Package quote provides utility functions for working with quoted strings.
+//
+// It offers a suite of tools for detecting, applying, and stripping single or
+// double quotes from string data. These utilities are particularly helpful
+// when parsing configuration files, processing CLI arguments, or normalizing
+// user input where string literals may be wrapped in various quote styles.
+//
+// # Usage
+//
+// The package supports both single-layer operations and recursive unquoting.
+//
+// Example:
+//
+//	// Remove a single layer
+//	s := quote.Remove(`"hello"`) // returns: hello
+//
+//	// Remove nested layers
+//	s = quote.RemoveAll(`"'nested'"`) // returns: hello
+//
+//	// Wrap content
+//	s = quote.Double("content") // returns: "content"
 package quote
 
 // Remove strips a single layer of surrounding single or double quotes from a
-// string. If the string is not quoted or too short, it is returned unchanged.
+// string.
+//
+// If the string is not quoted or is too short to contain a matching pair, it is
+// returned unchanged.
 func Remove(s string) string {
 	if len(s) < 2 {
 		return s
@@ -36,8 +59,11 @@ func Remove(s string) string {
 	return s
 }
 
-// RemoveAll strips all layers of surrounding quotes from a string,
-// regardless of quote type mixing (e.g., "'hello'" becomes hello).
+// RemoveAll strips all layers of surrounding quotes from a string, regardless
+// of quote type mixing (e.g., "'hello'" becomes hello).
+//
+// It repeatedly applies [Remove] until no further changes are detected in the
+// input string.
 func RemoveAll(s string) string {
 	for {
 		unquoted := Remove(s)
@@ -49,8 +75,8 @@ func RemoveAll(s string) string {
 	return s
 }
 
-// Has returns true if the string is surrounded by a matching pair
-// of single or double quotes.
+// Has returns true if the string is surrounded by a matching pair of single or
+// double quotes.
 func Has(s string) bool {
 	if len(s) < 2 {
 		return false
@@ -63,16 +89,18 @@ func Has(s string) bool {
 }
 
 // Wrap surrounds the given string with the specified quote character.
-// Note: It does not escape existing quotes inside the string.
+//
+// Note: It does not escape existing quotes inside the string. It essentially
+// performs a simple concatenation of the quote rune and the content.
 func Wrap(s string, q rune) string {
 	r := string(q)
 	return r + s + r
 }
 
-// Double wraps a string in double quotes.
+// Double wraps a string in double quotes using [Wrap].
 func Double(s string) string { return Wrap(s, '"') }
 
-// Single wraps a string in single quotes.
+// Single wraps a string in single quotes using [Wrap].
 func Single(s string) string { return Wrap(s, '\'') }
 
 // Is checks if the given rune is a single or double quote character.
