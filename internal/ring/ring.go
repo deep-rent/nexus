@@ -13,19 +13,28 @@
 // limitations under the License.
 
 // Package ring provides a generic, lock-free ring buffer designed for
-// high-throughput concurrent queues. It relies on atomic compare-and-swap
-// operations to manage read and write positions, completely avoiding
-// mutex bottlenecks during high-load scenarios.
+// high-throughput concurrent queues.
 //
-// The buffer's capacity is strictly enforced as a power of two, allowing
-// for highly efficient bitwise operations when calculating array indices.
+// It relies on atomic compare-and-swap operations to manage read and write
+// positions, completely avoiding mutex bottlenecks during high-load scenarios.
+// The buffer's capacity is strictly enforced as a power of two, allowing for
+// highly efficient bitwise operations when calculating array indices.
 //
-// Usage Example:
+// # Usage
+//
+// To use the ring buffer, initialize it with a size and a overflow [Policy],
+// then use Push and Pop for concurrent data exchange.
+//
+// Example:
 //
 //	rb := ring.New[int](64, ring.DropOldest)
+//
+//	// Add an item to the queue
 //	rb.Push(42)
+//
+//	// Retrieve the item
 //	if val, ok := rb.Pop(); ok {
-//	    fmt.Println(val) // Output: 42
+//		fmt.Println(val) // Output: 42
 //	}
 package ring
 
@@ -35,13 +44,13 @@ import (
 	"sync/atomic"
 )
 
-// Policy dictates how the buffer behaves when a producer attempts to
-// push into a queue that has reached its maximum capacity (overflow).
+// Policy dictates how the buffer behaves when a producer attempts to push into
+// a queue that has reached its maximum capacity (overflow).
 type Policy int
 
 const (
-	// Block causes the producer to yield the processor to other goroutines
-	// (via runtime.Gosched) until space becomes available.
+	// Block causes the producer to yield the processor to other goroutines (via
+	// [runtime.Gosched]) until space becomes available.
 	Block Policy = iota
 
 	// DropOldest forcefully advances the read pointer, discarding the oldest
@@ -72,15 +81,16 @@ type Buffer[T any] struct {
 	// It is equal to (capacity - 1).
 	mask uint64
 
-	// policy defines the behavior of the Push operation when the
+	// policy defines the behavior of the [Buffer.Push] operation when the
 	// difference between tail and head reaches the buffer capacity.
 	policy Policy
 }
 
-// New creates a Buffer configured with the requested size and overflow policy.
+// New creates a [Buffer] configured with the requested size and overflow [Policy].
+//
 // If the provided size is less than 2, it defaults to 2. The final capacity is
 // always automatically rounded up to the nearest power of two to optimize
-// internal index masking.
+// internal index masking via the [Buffer.mask].
 func New[T any](size int, policy Policy) *Buffer[T] {
 	if size < 2 {
 		size = 2
@@ -95,10 +105,12 @@ func New[T any](size int, policy Policy) *Buffer[T] {
 	}
 }
 
-// Push adds an item to the tail of the buffer using atomic operations. It
-// returns true if the item was successfully written. If the buffer is full and
-// configured with the DropNewest policy, it safely discards the item and
-// returns false.
+// Push adds an item to the tail of the buffer using atomic operations.
+//
+// It returns true if the item was successfully written. If the buffer is full
+// and configured with the [DropNewest] policy, it safely discards the item and
+// returns false. For the [Block] policy, it will wait for space by calling
+// [runtime.Gosched].
 func (b *Buffer[T]) Push(item T) bool {
 	for {
 		head := atomic.LoadUint64(&b.head)
@@ -132,9 +144,11 @@ func (b *Buffer[T]) Push(item T) bool {
 	}
 }
 
-// Pop retrieves and removes the oldest item from the head of the buffer. It
-// returns the generic item and true on success. If the buffer is currently
-// empty, it returns the zero-value of type T and false.
+// Pop retrieves and removes the oldest item from the head of the buffer.
+//
+// It returns the generic item and true on success. If the buffer is currently
+// empty, it returns the zero-value of type T and false. This method is safe
+// for concurrent use by multiple consumers.
 func (b *Buffer[T]) Pop() (T, bool) {
 	var zero T // Used to return a zero-value on failure
 
