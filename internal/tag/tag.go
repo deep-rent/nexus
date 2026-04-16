@@ -13,8 +13,29 @@
 // limitations under the License.
 
 // Package tag provides utility for parsing Go struct tags that follow a
-// comma-separated key-value option format, similar to the `json` tag known from
-// the standard library.
+// comma-separated key-value option format.
+//
+// This format is similar to the `json` tag used in the standard library. The
+// package handles complex cases where options may contain nested values or
+// quoted strings, ensuring that commas within quotes do not break the parsing
+// logic.
+//
+// # Usage
+//
+// Use [Parse] to initialize a tag and the [Tag.Opts] iterator to process
+// individual options.
+//
+// Example:
+//
+//	const raw = "user_id,omitempty,default:'anonymous,guest'"
+//	t := tag.Parse(raw)
+//	// t.Name is "user_id"
+//
+//	for k, v := range t.Opts() {
+//		// Yields:
+//		// "omitempty", ""
+//		// "default", "anonymous,guest"
+//	}
 package tag
 
 import (
@@ -28,7 +49,10 @@ import (
 // Tag represents a parsed struct tag, separating the primary name from the
 // additional options.
 type Tag struct {
+	// Name is the primary identifier of the tag (the part before the first
+	// comma).
 	Name string
+	// opts is the raw string containing the remaining comma-separated options.
 	opts string
 }
 
@@ -37,9 +61,11 @@ type Tag struct {
 // Each element yielded is a key-value pair. If an option does not have an
 // explicit value (e.g., "omitempty"), the value string will be empty. Keys and
 // values are trimmed of surrounding whitespace. Values that were quoted in the
-// source string (e.g., `key:"value"`) will have the quotes removed. Commas
-// inside quoted values are preserved and not treated as option separators
-// (e.g., `key:"val1,val2"` is one option).
+// source string (e.g., `key:"value"`) will have the quotes removed via
+// [quote.Remove].
+//
+// Commas inside quoted values are preserved and not treated as option
+// separators (e.g., `key:"val1,val2"` is treated as one option).
 func (t *Tag) Opts() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		rest := t.opts
@@ -93,8 +119,11 @@ func (t *Tag) Opts() iter.Seq2[string, string] {
 	}
 }
 
-// Parse takes a raw tag string (e.g., `json:opt1,opt2:val`) and separates it
-// into the primary name and the options string.
+// Parse takes a raw tag string and separates it into the primary name and the
+// options string.
+//
+// For a string like `json:opt1,opt2:val`, it identifies the content before the
+// first comma as the [Tag.Name].
 func Parse(s string) *Tag {
 	name, opts, _ := strings.Cut(s, ",")
 	return &Tag{
