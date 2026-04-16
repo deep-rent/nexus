@@ -62,8 +62,10 @@ type Parser func(script []byte) []string
 // through recognized blocks and pre-allocates the statement slice based on
 // semicolon frequency.
 func Postgres(script []byte) []string {
+	script = bytes.TrimSpace(script)
+
 	// Early return for empty or whitespace-only scripts
-	if len(bytes.TrimSpace(script)) == 0 {
+	if len(script) == 0 {
 		return nil
 	}
 
