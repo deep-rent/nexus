@@ -14,6 +14,24 @@
 
 // Package schema provides utilities for parsing and manipulating database
 // schema definitions and migration scripts.
+//
+// Its primary responsibility is to safely split raw SQL scripts into individual
+// statements so they can be executed sequentially by a database driver. The
+// parsing logic is designed to be aware of database-specific syntax, such as
+// string literals, comments, and dollar-quoted strings in PostgreSQL, to
+// prevent false positives when splitting on statement terminators like
+// semicolons.
+//
+// # Usage
+//
+// Use the provided [Parser] implementations to break down SQL migration files
+// into executable chunks.
+//
+// Example:
+//
+//	script := []byte("CREATE TABLE users (id int); -- comment\nINSERT INTO users VALUES (1);")
+//	statements := schema.Postgres(script)
+//	// returns ["CREATE TABLE users (id int)", "INSERT INTO users VALUES (1)"]
 package schema
 
 import (
@@ -24,9 +42,25 @@ import (
 
 // Parser is a function that splits a raw SQL script into a slice of individual
 // executable statements.
+//
+// Implementations should handle database-specific syntax rules to ensure
+// statements are not prematurely split when terminators appear inside quotes or
+// comments.
 type Parser func(script []byte) []string
 
 // Postgres is a [Parser] implementation tailored for PostgreSQL scripts.
+//
+// It safely splits the script by semicolons (';'), while strictly ignoring
+// semicolons that appear within:
+//   - Single-line comments ("-- ...")
+//   - Multi-line block comments ("/* ... */"), supporting nested blocks.
+//   - Single-quoted string literals ('...')
+//   - Double-quoted identifiers ("...")
+//   - PostgreSQL dollar-quoted strings ($tag$...$tag$).
+//
+// To optimize performance, it uses [bytes] package operations to fast-forward
+// through recognized blocks and pre-allocates the statement slice based on
+// semicolon frequency.
 func Postgres(script []byte) []string {
 	// Early return for empty or whitespace-only scripts
 	if len(bytes.TrimSpace(script)) == 0 {
@@ -44,15 +78,26 @@ func Postgres(script []byte) []string {
 
 // postgres holds the internal state machine for parsing a PostgreSQL script.
 type postgres struct {
-	script         []byte
-	i              int
-	start          int
-	stmts          []string
+	// script is the raw SQL script being parsed.
+	script []byte
+	// i is the current cursor position (byte index) in the script.
+	i int
+	// start is the byte index where the current statement begins.
+	start int
+	// stmts is the collected slice of individual statements.
+	stmts []string
+
+	// inSingleQuotes is true if the cursor is within a single-quoted string.
 	inSingleQuotes bool
+	// inDoubleQuotes is true if the cursor is within a double-quoted string.
 	inDoubleQuotes bool
-	inComment      bool
-	depth          int
-	tag            []byte
+	// inComment is true if the cursor is within a single-line comment.
+	inComment bool
+
+	// depth tracks the nesting depth of multi-line block comments.
+	depth int
+	// tag is the active dollar-quote tag (e.g., "$BODY$") when inside one.
+	tag []byte
 }
 
 // parse iterates through the script, updating the state machine
@@ -172,6 +217,9 @@ func (p *postgres) parse() []string {
 }
 
 // dollar scans ahead to parse a PostgreSQL dollar-quote tag (e.g., "$tag$").
+//
+// It uses [ascii.IsWord] to validate the characters within the tag. If a valid
+// tag is found, the state is updated to track this [postgres.tag] block.
 func (p *postgres) dollar(n int) {
 	end := -1
 	for j := p.i + 1; j < n; j++ {
@@ -191,6 +239,10 @@ func (p *postgres) dollar(n int) {
 }
 
 // flush extracts the current statement from the script buffer.
+//
+// It trims surrounding whitespace using [bytes.TrimSpace]. If the extracted
+// statement is not empty, it is appended to the results list. It then advances
+// the [postgres.start] pointer.
 func (p *postgres) flush() {
 	if p.start >= len(p.script) {
 		return
