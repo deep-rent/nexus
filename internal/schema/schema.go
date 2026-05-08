@@ -108,7 +108,8 @@ func (p *postgres) parse() []string {
 	n := len(p.script)
 	for p.i < n {
 		// 1. Prioritize state checks and fast-forward using bytes operations
-		if p.inComment {
+		switch {
+		case p.inComment:
 			idx := bytes.IndexByte(p.script[p.i:], '\n')
 			if idx == -1 {
 				p.i = n // EOF
@@ -118,7 +119,7 @@ func (p *postgres) parse() []string {
 			p.inComment = false
 			continue
 
-		} else if p.depth > 0 {
+		case p.depth > 0:
 			// Fast-forward to next possible block comment boundary
 			idx := bytes.IndexAny(p.script[p.i:], "/*")
 			if idx == -1 {
@@ -137,7 +138,7 @@ func (p *postgres) parse() []string {
 			p.i++
 			continue
 
-		} else if len(p.tag) != 0 {
+		case len(p.tag) != 0:
 			// Fast-forward to the exact matching dollar-tag
 			idx := bytes.Index(p.script[p.i:], p.tag)
 			if idx == -1 {
@@ -148,7 +149,7 @@ func (p *postgres) parse() []string {
 			p.tag = nil
 			continue
 
-		} else if p.inSingleQuotes {
+		case p.inSingleQuotes:
 			idx := bytes.IndexByte(p.script[p.i:], '\'')
 			if idx == -1 {
 				p.i = n // EOF
@@ -163,7 +164,7 @@ func (p *postgres) parse() []string {
 			}
 			continue
 
-		} else if p.inDoubleQuotes {
+		case p.inDoubleQuotes:
 			idx := bytes.IndexByte(p.script[p.i:], '"')
 			if idx == -1 {
 				p.i = n // EOF
