@@ -12,4 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package mail provides abstractions for sending transactional emails.
 package mail
+
+import "context"
+
+// Address represents an email address and an optional display name.
+type Address struct {
+	Name    string
+	Address string
+}
+
+// Email represents a transactional email payload designed for dynamic templates.
+type Email struct {
+	From         Address
+	To           []Address
+	Cc           []Address
+	Bcc          []Address
+	ReplyTo      *Address // Optional Reply-To address
+	TemplateID   string
+	TemplateData map[string]any // Data to populate the dynamic template
+}
+
+// Sender is the interface that wraps the Send method.
+type Sender interface {
+	Send(ctx context.Context, email *Email) error
+}
