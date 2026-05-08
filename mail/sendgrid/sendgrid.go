@@ -173,11 +173,11 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 		return fmt.Errorf("sendgrid: failed to marshal payload: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s/mail/send", c.baseURL)
+	url := fmt.Sprintf("%s/mail/send", c.baseURL)
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		endpoint,
+		url,
 		bytes.NewReader(body),
 	)
 	if err != nil {
@@ -189,23 +189,32 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 
 	c.logger.DebugContext(ctx, "sending email via sendgrid",
 		slog.String("template_id", email.TemplateID),
-		slog.String("endpoint", endpoint),
+		slog.String("url", url),
 	)
 
-	resp, err := c.client.Do(req)
+	res, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("sendgrid: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err := res.Body.Close()
+		if err != nil {
+			c.logger.WarnContext(
+				ctx,
+				"Failed to close response body",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		err := &APIError{StatusCode: resp.StatusCode, Body: string(body)}
+	if res.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		err := &APIError{StatusCode: res.StatusCode, Body: string(body)}
 		return err
 	}
 
 	c.logger.DebugContext(ctx, "email successfully dispatched to sendgrid",
-		slog.Int("status_code", resp.StatusCode),
+		slog.Int("status_code", res.StatusCode),
 	)
 
 	return nil
