@@ -27,8 +27,9 @@
 //	msg := mail.NewEmail(
 //		mail.NewAddress("no-reply@example.com", "My App"),
 //		"template-id-123",
-//	).AddTo(mail.NewAddress("user@example.com", "Alice")).
-//	  WithData("name", "Alice")
+//		mail.NewPersonalization(mail.NewAddress("user@example.com", "Alice")).
+//			WithData("name", "Alice"),
+//	)
 //
 //	err := sender.Send(ctx, msg)
 package mail
@@ -70,51 +71,87 @@ func (a Address) String() string {
 	return fmt.Sprintf("%s <%s>", a.Name, a.Address)
 }
 
-// Email represents a transactional email payload designed for dynamic
-// templates.
-type Email struct {
-	// From is the sender's address.
-	From Address
+// Personalization represents a single intended recipient or group of recipients,
+// along with the specific template data to be used for them.
+type Personalization struct {
 	// To contains the primary recipients.
 	To []Address
 	// CC contains the carbon copy recipients.
 	CC []Address
 	// BCC contains the blind carbon copy recipients.
 	BCC []Address
+	// TemplateData holds the key-value pairs used to populate the template
+	// variables for this specific personalization.
+	TemplateData map[string]any
+}
+
+// NewPersonalization creates a new Personalization with the required recipients.
+func NewPersonalization(to ...Address) *Personalization {
+	return &Personalization{
+		To: to,
+	}
+}
+
+// AddTo appends one or more recipients to the "To" list.
+func (p *Personalization) AddTo(addrs ...Address) *Personalization {
+	p.To = append(p.To, addrs...)
+	return p
+}
+
+// AddCC appends one or more recipients to the "CC" list.
+func (p *Personalization) AddCC(addrs ...Address) *Personalization {
+	p.CC = append(p.CC, addrs...)
+	return p
+}
+
+// AddBCC appends one or more recipients to the "BCC" list.
+func (p *Personalization) AddBCC(addrs ...Address) *Personalization {
+	p.BCC = append(p.BCC, addrs...)
+	return p
+}
+
+// WithData adds or updates a key-value pair in the template data map.
+func (p *Personalization) WithData(key string, value any) *Personalization {
+	if p.TemplateData == nil {
+		p.TemplateData = make(map[string]any)
+	}
+	p.TemplateData[key] = value
+	return p
+}
+
+// SetData replaces the entire template data map.
+func (p *Personalization) SetData(data map[string]any) *Personalization {
+	p.TemplateData = data
+	return p
+}
+
+// Email represents a transactional email payload designed for dynamic
+// templates.
+type Email struct {
+	// From is the sender's address.
+	From Address
+	// Personalizations contains groups of recipients and their specific
+	// template data.
+	Personalizations []*Personalization
 	// ReplyTo is an optional address where replies should be directed.
 	ReplyTo *Address
 	// TemplateID is the provider-specific identifier of the dynamic template to
 	// use.
 	TemplateID string
-	// TemplateData holds the key-value pairs used to populate the template
-	// variables.
-	TemplateData map[string]any
 }
 
 // NewEmail creates a new Email with the required fields.
-func NewEmail(from Address, templateID string, to ...Address) *Email {
+func NewEmail(from Address, templateID string, personalizations ...*Personalization) *Email {
 	return &Email{
-		From:       from,
-		TemplateID: templateID,
-		To:         to,
+		From:             from,
+		TemplateID:       templateID,
+		Personalizations: personalizations,
 	}
 }
 
-// AddTo appends one or more recipients to the "To" list.
-func (e *Email) AddTo(addrs ...Address) *Email {
-	e.To = append(e.To, addrs...)
-	return e
-}
-
-// AddCC appends one or more recipients to the "CC" list.
-func (e *Email) AddCC(addrs ...Address) *Email {
-	e.CC = append(e.CC, addrs...)
-	return e
-}
-
-// AddBCC appends one or more recipients to the "BCC" list.
-func (e *Email) AddBCC(addrs ...Address) *Email {
-	e.BCC = append(e.BCC, addrs...)
+// AddPersonalization appends a Personalization to the email.
+func (e *Email) AddPersonalization(p *Personalization) *Email {
+	e.Personalizations = append(e.Personalizations, p)
 	return e
 }
 
@@ -124,28 +161,18 @@ func (e *Email) WithReplyTo(addr Address) *Email {
 	return e
 }
 
-// WithData adds or updates a key-value pair in the template data map.
-func (e *Email) WithData(key string, value any) *Email {
-	if e.TemplateData == nil {
-		e.TemplateData = make(map[string]any)
-	}
-	e.TemplateData[key] = value
-	return e
-}
-
-// SetData replaces the entire template data map.
-func (e *Email) SetData(data map[string]any) *Email {
-	e.TemplateData = data
-	return e
-}
-
 // Validate checks if the email has the minimum required fields for sending.
 func (e *Email) Validate() error {
 	if e == nil {
 		return ErrNilEmail
 	}
-	if len(e.To) == 0 {
+	if len(e.Personalizations) == 0 {
 		return ErrNoRecipients
+	}
+	for _, p := range e.Personalizations {
+		if len(p.To) == 0 {
+			return ErrNoRecipients
+		}
 	}
 	if e.TemplateID == "" {
 		return ErrNoTemplateID

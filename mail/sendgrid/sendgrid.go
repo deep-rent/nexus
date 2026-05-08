@@ -261,15 +261,18 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 
 // payload maps the domain email model to the SendGrid JSON structure.
 func (c *Sender) payload(email *mail.Email) payload {
-	pers := personalization{
-		To:           addresses(email.To),
-		CC:           addresses(email.CC),
-		BCC:          addresses(email.BCC),
-		TemplateData: email.TemplateData,
+	var pers []personalization
+	for _, p := range email.Personalizations {
+		pers = append(pers, personalization{
+			To:           addresses(p.To),
+			CC:           addresses(p.CC),
+			BCC:          addresses(p.BCC),
+			TemplateData: p.TemplateData,
+		})
 	}
 
 	p := payload{
-		Personalizations: []personalization{pers},
+		Personalizations: pers,
 		From: address{
 			Email: email.From.Address,
 			Name:  email.From.Name,
