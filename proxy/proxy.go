@@ -12,10 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package proxy provides a configurable reverse proxy handler. It constructs an
-// httputil.ReverseProxy, starting with sensible defaults, integrating a
-// reusable buffer pool, structured logging, and robust error handling
-// via a functional options API.
+// Package proxy provides a configurable reverse proxy handler.
+//
+// Package proxy constructs an [httputil.ReverseProxy], starting with sensible
+// defaults, integrating a reusable buffer pool, structured logging, and robust
+// error handling via a functional options API.
+//
+// # Usage
+//
+// Create a new proxy handler by providing a target URL and optional
+// configuration functions.
+//
+// Example:
+//
+//	target, _ := url.Parse("https://backend.internal")
+//	proxyHandler := proxy.NewHandler(target,
+//	    proxy.WithFlushInterval(100*time.Millisecond),
+//	    proxy.WithMaxBufferSize(512<<10),
+//	)
+//
+//	http.ListenAndServe(":8080", proxyHandler)
 package proxy
 
 import (
@@ -31,17 +47,19 @@ import (
 )
 
 const (
-	// DefaultMinBufferSize is the default minimum size of pooled buffers.
-	DefaultMinBufferSize = 32 << 10 // 32 KiB
-	// DefaultMaxBufferSize is the default maximum size of pooled buffers.
-	DefaultMaxBufferSize = 256 << 10 // 256 KiB
+	// DefaultMinBufferSize is the default minimum size of pooled buffers (32 KiB).
+	DefaultMinBufferSize = 32 << 10
+	// DefaultMaxBufferSize is the default maximum size of pooled buffers (256 KiB).
+	DefaultMaxBufferSize = 256 << 10
 )
 
-// Handler is an alias of http.Handler representing a reverse proxy.
+// Handler is an alias of [http.Handler] representing a reverse proxy.
 type Handler = http.Handler
 
 // NewHandler creates a new reverse proxy handler that routes to the target URL.
-// The behavior of the proxy can be customized through the given options.
+//
+// The behavior of the proxy can be customized through the given options. It
+// avoids the deprecated Director hook in favor of the modern Rewrite API.
 func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 	cfg := handlerConfig{
 		transport:       http.DefaultTransport.(*http.Transport).Clone(),
@@ -79,39 +97,40 @@ func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 	return h
 }
 
-// RewriteFunc defines a function to modify the proxy request before it is sent
-// to the upstream target.
+// RewriteFunc defines a function to modify requests before they go upstream.
 //
-// The signature matches httputil.ReverseProxy.Rewrite.
+// The signature matches [httputil.ReverseProxy.Rewrite].
 type RewriteFunc func(*httputil.ProxyRequest)
 
-// RewriteFactory creates a RewriteFunc using the provided original RewriteFunc.
-// The returned RewriteFunc may call original to retain its behavior.
+// RewriteFactory creates a [RewriteFunc] using the provided original
+// [RewriteFunc].
+//
+// The returned [RewriteFunc] may call original to retain its behavior.
 type RewriteFactory = func(original RewriteFunc) RewriteFunc
 
-// NewRewrite is the default RewriteFactory for the proxy.
-// It returns the original RewriteFunc unmodified.
+// NewRewrite is the default [RewriteFactory] for the proxy.
+//
+// It returns the original [RewriteFunc] unmodified. The default rewrite already
+// sets X-Forwarded-Host, X-Forwarded-Proto, and X-Forwarded-For headers, and
+// correctly rewrites the Host header to match the target.
 func NewRewrite(original RewriteFunc) RewriteFunc {
-	// The default rewrite need not be overridden; it already sets the
-	// X-Forwarded-Host, X-Forwarded-Proto, and X-Forwarded-For headers, which is
-	// exactly what most proxies expect. It also correctly rewrites the Host header
-	// to match the target (required for sidecar setups to function).
 	return original
 }
 
-// ErrorHandler defines a function for handling errors that occur during the
-// reverse proxy's operation.
+// ErrorHandler defines a function for handling proxy operation errors.
 //
-// The signature matches httputil.ReverseProxy.ErrorHandler.
+// The signature matches [httputil.ReverseProxy.ErrorHandler].
 type ErrorHandler = func(http.ResponseWriter, *http.Request, error)
 
-// ErrorHandlerFactory creates an ErrorHandler using the provided logger.
+// ErrorHandlerFactory creates an [ErrorHandler] using the provided logger.
+//
 // It receives the configured logger to be used for error reporting.
 type ErrorHandlerFactory = func(*slog.Logger) ErrorHandler
 
-// NewErrorHandler is the default ErrorHandlerFactory for the proxy.
-// It creates an error handler that logs upstream errors using
-// the provided logger and maps them to appropriate HTTP status codes.
+// NewErrorHandler is the default [ErrorHandlerFactory] for the proxy.
+//
+// It creates an error handler that logs upstream errors and maps them to
+// appropriate HTTP status codes, while silencing client-initiated disconnects.
 func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if errors.Is(err, context.Canceled) {
@@ -147,22 +166,29 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 
 // handlerConfig holds the configurable settings for the proxy handler.
 type handlerConfig struct {
-	transport       *http.Transport
-	flushInterval   time.Duration
-	minBufferSize   int
-	maxBufferSize   int
-	newRewrite      RewriteFactory
+	// transport handles the network communication with the upstream.
+	transport *http.Transport
+	// flushInterval is the periodic flush interval for response body copying.
+	flushInterval time.Duration
+	// minBufferSize is the minimum size of pooled buffers.
+	minBufferSize int
+	// maxBufferSize is the maximum size of pooled buffers.
+	maxBufferSize int
+	// newRewrite is the factory for creating the request rewrite function.
+	newRewrite RewriteFactory
+	// newErrorHandler is the factory for creating the error handling function.
 	newErrorHandler ErrorHandlerFactory
-	logger          *slog.Logger
+	// logger is the structured logger for error reporting.
+	logger *slog.Logger
 }
 
 // HandlerOption defines a function for setting reverse proxy options.
 type HandlerOption func(*handlerConfig)
 
-// WithTransport sets the http.Transport for upstream requests.
+// WithTransport sets the [http.Transport] for upstream requests.
 //
-// Use this option to tune connection pooling, timeouts (e.g., Dial,
-// TLSHandshake), and keep-alives. If nil is given, this option is ignored.
+// Use this option to tune connection pooling, timeouts, and keep-alives. If nil
+// is given, this option is ignored.
 func WithTransport(t *http.Transport) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if t != nil {
@@ -171,33 +197,22 @@ func WithTransport(t *http.Transport) HandlerOption {
 	}
 }
 
-// WithFlushInterval specifies the periodic flush interval for copying the
-// response body to the client.
+// WithFlushInterval specifies the periodic flush interval for the response.
 //
-// A zero value (default) disables periodic flushing. A negative value tells
-// the proxy to flush immediately after each write to the client. The proxy is
-// smart enough to recognize streaming responses, ignoring the flush interval
-// in such cases.
-//
-// Adjust this setting if you observe high latencies for responses that are
-// fully buffered by the proxy before being sent to the client. A lower value
-// reduces latency at the cost of increased CPU usage.
+// A zero value (default) disables periodic flushing. A negative value tells the
+// proxy to flush immediately after each write. Adjust this if you observe high
+// latencies for responses buffered by the proxy.
 func WithFlushInterval(d time.Duration) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.flushInterval = d
 	}
 }
 
-// WithMinBufferSize specifies the minimum size of buffers allocated by the
-// buffer pool. This helps to reduce allocations for large response bodies.
+// WithMinBufferSize specifies the minimum size of pooled buffers.
 //
-// Non-positive values are ignored, and DefaultMinBufferSize is used. The
-// value will be capped at MaxBufferSize.
-//
-// The pool will automatically adjust itself for larger, common responses
-// and the MaxBufferSize will protect from memory bloat. You only need to
-// adapt this setting if you know from profiling that 99% of your responses
-// are, for example, larger than 100 KB.
+// Non-positive values are ignored. The value will be capped at MaxBufferSize.
+// Adapt this if you know from profiling that most responses are larger than the
+// default 32 KiB.
 func WithMinBufferSize(n int) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if n > 0 {
@@ -206,15 +221,11 @@ func WithMinBufferSize(n int) HandlerOption {
 	}
 }
 
-// WithMaxBufferSize specifies the maximum size of buffers to be returned to
-// the buffer pool. Buffers that grow larger than this size will be discarded
-// after use to prevent memory bloat.
+// WithMaxBufferSize specifies the maximum size of buffers to be pooled.
 //
-// Non-positive values are ignored, and DefaultMaxBufferSize is used.
-//
-// This is a critical tuning parameter. If your typical (e.g., P95)
-// response size is larger than this value, the pool will be
-// ineffective, as most buffers will be discarded instead of being reused.
+// Buffers that grow larger than this size will be discarded after use to
+// prevent memory bloat. If your P95 response size is larger than this value,
+// the pool will be ineffective.
 func WithMaxBufferSize(n int) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if n > 0 {
@@ -223,9 +234,9 @@ func WithMaxBufferSize(n int) HandlerOption {
 	}
 }
 
-// WithRewrite provides a custom RewriteFactory for the proxy.
+// WithRewrite provides a custom [RewriteFactory] for the proxy.
 //
-// If nil is given, this option is ignored. By default, NewRewrite is used.
+// If nil is given, this option is ignored. By default, [NewRewrite] is used.
 func WithRewrite(f RewriteFactory) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if f != nil {
@@ -234,9 +245,10 @@ func WithRewrite(f RewriteFactory) HandlerOption {
 	}
 }
 
-// WithErrorHandler provides a custom ErrorHandlerFactory for the proxy.
+// WithErrorHandler provides a custom [ErrorHandlerFactory] for the proxy.
 //
-// If nil is given, this option is ignored. By default, NewErrorHandler is used.
+// If nil is given, this option is ignored. By default, [NewErrorHandler] is
+// used.
 func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if f != nil {
@@ -245,11 +257,10 @@ func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 	}
 }
 
-// WithLogger sets the logger to be used by the proxy's ErrorHandler.
+// WithLogger sets the logger to be used by the proxy's [ErrorHandler].
 //
-// If nil is given, this option is ignored. By default, slog.Default() is used.
-// The default error handler (NewErrorHandler) uses this logger for capturing
-// upstream errors.
+// If nil is given, this option is ignored. The default error handler uses this
+// logger for capturing upstream errors.
 func WithLogger(logger *slog.Logger) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if logger != nil {
