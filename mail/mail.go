@@ -27,7 +27,7 @@
 //	msg := mail.NewEmail(
 //		mail.NewAddress("no-reply@example.com", "My App"),
 //		"template-id-123",
-//		mail.NewPersonalization(mail.NewAddress("user@example.com", "Alice")).
+//		mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
 //			WithData("name", "Alice"),
 //	)
 //
@@ -71,9 +71,9 @@ func (a Address) String() string {
 	return fmt.Sprintf("%s <%s>", a.Name, a.Address)
 }
 
-// Personalization represents a single intended recipient or group of
-// recipients, along with the specific template data to be used for them.
-type Personalization struct {
+// Recipient represents a single intended recipient or group of receivers,
+// along with the specific template data to be used for them.
+type Recipient struct {
 	// To contains the primary recipients.
 	To []Address
 	// CC contains the carbon copy recipients.
@@ -81,49 +81,57 @@ type Personalization struct {
 	// BCC contains the blind carbon copy recipients.
 	BCC []Address
 	// TemplateData holds the key-value pairs used to populate the template
-	// variables for this specific personalization.
+	// variables for this specific recipient group.
 	TemplateData map[string]any
 }
 
-// NewPersonalization creates a new Personalization with the required
-// recipients.
-func NewPersonalization(to ...Address) *Personalization {
-	return &Personalization{
+// NewRecipient creates a new Recipient group with the required primary
+// destinations.
+func NewRecipient(to ...Address) *Recipient {
+	return &Recipient{
 		To: to,
 	}
 }
 
 // AddTo appends one or more recipients to the "To" list.
-func (p *Personalization) AddTo(addrs ...Address) *Personalization {
-	p.To = append(p.To, addrs...)
-	return p
+func (r *Recipient) AddTo(addrs ...Address) *Recipient {
+	r.To = append(r.To, addrs...)
+	return r
 }
 
 // AddCC appends one or more recipients to the "CC" list.
-func (p *Personalization) AddCC(addrs ...Address) *Personalization {
-	p.CC = append(p.CC, addrs...)
-	return p
+func (r *Recipient) AddCC(addrs ...Address) *Recipient {
+	r.CC = append(r.CC, addrs...)
+	return r
 }
 
 // AddBCC appends one or more recipients to the "BCC" list.
-func (p *Personalization) AddBCC(addrs ...Address) *Personalization {
-	p.BCC = append(p.BCC, addrs...)
-	return p
+func (r *Recipient) AddBCC(addrs ...Address) *Recipient {
+	r.BCC = append(r.BCC, addrs...)
+	return r
 }
 
 // WithData adds or updates a key-value pair in the template data map.
-func (p *Personalization) WithData(key string, value any) *Personalization {
-	if p.TemplateData == nil {
-		p.TemplateData = make(map[string]any)
+func (r *Recipient) WithData(key string, value any) *Recipient {
+	if r.TemplateData == nil {
+		r.TemplateData = make(map[string]any)
 	}
-	p.TemplateData[key] = value
-	return p
+	r.TemplateData[key] = value
+	return r
 }
 
 // SetData replaces the entire template data map.
-func (p *Personalization) SetData(data map[string]any) *Personalization {
-	p.TemplateData = data
-	return p
+func (r *Recipient) SetData(data map[string]any) *Recipient {
+	r.TemplateData = data
+	return r
+}
+
+// Validate checks if the recipient group has at least one primary destination.
+func (r *Recipient) Validate() error {
+	if r == nil || len(r.To) == 0 {
+		return ErrNoRecipients
+	}
+	return nil
 }
 
 // Email represents a transactional email payload designed for dynamic
@@ -131,9 +139,8 @@ func (p *Personalization) SetData(data map[string]any) *Personalization {
 type Email struct {
 	// From is the sender's address.
 	From Address
-	// Personalizations contains groups of recipients and their specific
-	// template data.
-	Personalizations []*Personalization
+	// Recipients contains groups of receivers and their specific template data.
+	Recipients []*Recipient
 	// ReplyTo is an optional address where replies should be directed.
 	ReplyTo *Address
 	// TemplateID is the provider-specific identifier of the dynamic template to
@@ -145,18 +152,18 @@ type Email struct {
 func NewEmail(
 	from Address,
 	templateID string,
-	personalizations ...*Personalization,
+	recipients ...*Recipient,
 ) *Email {
 	return &Email{
 		From:             from,
 		TemplateID:       templateID,
-		Personalizations: personalizations,
+		Recipients:       recipients,
 	}
 }
 
-// AddPersonalization appends a Personalization to the email.
-func (e *Email) AddPersonalization(p *Personalization) *Email {
-	e.Personalizations = append(e.Personalizations, p)
+// AddRecipient appends a Recipient group to the email.
+func (e *Email) AddRecipient(r *Recipient) *Email {
+	e.Recipients = append(e.Recipients, r)
 	return e
 }
 
@@ -171,12 +178,12 @@ func (e *Email) Validate() error {
 	if e == nil {
 		return ErrNilEmail
 	}
-	if len(e.Personalizations) == 0 {
+	if len(e.Recipients) == 0 {
 		return ErrNoRecipients
 	}
-	for _, p := range e.Personalizations {
-		if len(p.To) == 0 {
-			return ErrNoRecipients
+	for _, r := range e.Recipients {
+		if err := r.Validate(); err != nil {
+			return err
 		}
 	}
 	if e.TemplateID == "" {

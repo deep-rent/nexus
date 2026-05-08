@@ -63,13 +63,17 @@ var ErrMissingAPIKey = errors.New("sendgrid: missing API key")
 // (e.g., to detect 429 Too Many Requests or 400 Bad Request) and parse
 // the raw JSON body returned by SendGrid for specific validation errors.
 type APIError struct {
+	// StatusCode is the HTTP status code returned by the SendGrid API.
 	StatusCode int
-	Body       string
+	// Body is the response body returned by the SendGrid API.
+	Body string
 }
 
 func (e *APIError) Error() string {
 	return fmt.Sprintf("sendgrid: API error %d: %s", e.StatusCode, e.Body)
 }
+
+var _ error = (*APIError)(nil)
 
 // Sender is a SendGrid email sender that implements [mail.Sender].
 //
@@ -212,7 +216,7 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 		return fmt.Errorf("sendgrid: failed to marshal payload: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/mail/send", c.baseURL)
+	url := c.baseURL + "/mail/send"
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -261,13 +265,13 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 
 // payload maps the domain email model to the SendGrid JSON structure.
 func (c *Sender) payload(email *mail.Email) payload {
-	var pers []personalization
-	for _, p := range email.Personalizations {
+	pers := make([]personalization, 0, len(email.Recipients))
+	for _, r := range email.Recipients {
 		pers = append(pers, personalization{
-			To:           addresses(p.To),
-			CC:           addresses(p.CC),
-			BCC:          addresses(p.BCC),
-			TemplateData: p.TemplateData,
+			To:           addresses(r.To),
+			CC:           addresses(r.CC),
+			BCC:          addresses(r.BCC),
+			TemplateData: r.TemplateData,
 		})
 	}
 
@@ -290,18 +294,18 @@ func (c *Sender) payload(email *mail.Email) payload {
 	return p
 }
 
-// addresses is a helper to convert domain addresses to internal addresses.
+// addresses converts domain mail addresses into SendGrid-specific address
+// structs.
 func addresses(addrs []mail.Address) []address {
 	if len(addrs) == 0 {
 		return nil
 	}
-
-	out := make([]address, 0, len(addrs))
-	for _, addr := range addrs {
-		out = append(out, address{
+	out := make([]address, len(addrs))
+	for i, addr := range addrs {
+		out[i] = address{
 			Email: addr.Address,
 			Name:  addr.Name,
-		})
+		}
 	}
 	return out
 }
