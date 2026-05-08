@@ -187,7 +187,7 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	c.logger.DebugContext(ctx, "sending email via sendgrid",
+	c.logger.DebugContext(ctx, "Sending email via SendGrid",
 		slog.String("template_id", email.TemplateID),
 		slog.String("url", url),
 	)
@@ -213,7 +213,7 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 		return err
 	}
 
-	c.logger.DebugContext(ctx, "email successfully dispatched to sendgrid",
+	c.logger.DebugContext(ctx, "Email successfully dispatched to SendGrid",
 		slog.Int("status_code", res.StatusCode),
 	)
 
