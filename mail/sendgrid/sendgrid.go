@@ -201,10 +201,6 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		err := &APIError{StatusCode: resp.StatusCode, Body: string(body)}
-		c.logger.ErrorContext(ctx, "sendgrid API error",
-			slog.Int("status_code", err.StatusCode),
-			slog.String("response", err.Body),
-		)
 		return err
 	}
 
