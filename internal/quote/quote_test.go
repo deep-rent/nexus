@@ -17,19 +17,17 @@ package quote_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/deep-rent/nexus/internal/quote"
 )
 
 func TestRemove(t *testing.T) {
-	type test struct {
-		name string
-		in   string
-		want string
-	}
+	t.Parallel()
 
-	tests := []test{
+	tests := []struct {
+		name string
+		give string
+		want string
+	}{
 		{"double quotes", `"hello"`, "hello"},
 		{"single quotes", "'world'", "world"},
 		{"no quotes", "no change", "no change"},
@@ -46,22 +44,24 @@ func TestRemove(t *testing.T) {
 		{"short string with quote", `"`, `"`},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.Remove(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Remove(tt.give); got != tt.want {
+				t.Errorf("Remove(%q) = %q; want %q", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestRemoveAll(t *testing.T) {
-	type test struct {
-		name string
-		in   string
-		want string
-	}
+	t.Parallel()
 
-	tests := []test{
+	tests := []struct {
+		name string
+		give string
+		want string
+	}{
 		{"single layer double", `"hello"`, "hello"},
 		{"single layer single", `'hello'`, "hello"},
 		{"nested mixed quotes", `"'hello'"`, "hello"},
@@ -74,22 +74,24 @@ func TestRemoveAll(t *testing.T) {
 		{"only quotes stripped to empty", `""''""`, ""},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.RemoveAll(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.RemoveAll(tt.give); got != tt.want {
+				t.Errorf("RemoveAll(%q) = %q; want %q", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestHas(t *testing.T) {
-	type test struct {
-		name string
-		in   string
-		want bool
-	}
+	t.Parallel()
 
-	tests := []test{
+	tests := []struct {
+		name string
+		give string
+		want bool
+	}{
 		{"double quoted", `"hello"`, true},
 		{"single quoted", `'hello'`, true},
 		{"empty double quotes", `""`, true},
@@ -103,23 +105,25 @@ func TestHas(t *testing.T) {
 		{"quote inside", `he"llo`, false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.Has(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Has(tt.give); got != tt.want {
+				t.Errorf("Has(%q) = %v; want %v", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestWrap(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name string
-		in   string
+		give string
 		q    rune
 		want string
-	}
-
-	tests := []test{
+	}{
 		{"wrap with double quote", "hello", '"', `"hello"`},
 		{"wrap with single quote", "world", '\'', `'world'`},
 		{"wrap empty string", "", '"', `""`},
@@ -127,66 +131,72 @@ func TestWrap(t *testing.T) {
 		{"wrap string already containing quotes", `"hello"`, '\'', `'"hello"'`},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.Wrap(tc.in, tc.q)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Wrap(tt.give, tt.q); got != tt.want {
+				t.Errorf("Wrap(%q, %q) = %q; want %q", tt.give, tt.q, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestDouble(t *testing.T) {
-	type test struct {
-		name string
-		in   string
-		want string
-	}
+	t.Parallel()
 
-	tests := []test{
+	tests := []struct {
+		name string
+		give string
+		want string
+	}{
 		{"standard string", "hello", `"hello"`},
 		{"empty string", "", `""`},
 		{"string with spaces", "hello world", `"hello world"`},
 		{"string already double quoted", `"hello"`, `""hello""`},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.Double(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Double(tt.give); got != tt.want {
+				t.Errorf("Double(%q) = %q; want %q", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestSingle(t *testing.T) {
-	type test struct {
-		name string
-		in   string
-		want string
-	}
+	t.Parallel()
 
-	tests := []test{
+	tests := []struct {
+		name string
+		give string
+		want string
+	}{
 		{"standard string", "hello", `'hello'`},
 		{"empty string", "", `''`},
 		{"string with spaces", "hello world", `'hello world'`},
 		{"string already single quoted", `'hello'`, `''hello''`},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.Single(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Single(tt.give); got != tt.want {
+				t.Errorf("Single(%q) = %q; want %q", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestIs(t *testing.T) {
-	type test struct {
-		name string
-		in   rune
-		want bool
-	}
+	t.Parallel()
 
-	tests := []test{
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
 		{"double quote", '"', true},
 		{"single quote", '\'', true},
 		{"backtick", '`', false},
@@ -195,10 +205,12 @@ func TestIs(t *testing.T) {
 		{"null rune", '\x00', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := quote.Is(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Is(tt.give); got != tt.want {
+				t.Errorf("Is(%q) = %v; want %v", tt.give, got, tt.want)
+			}
 		})
 	}
 }

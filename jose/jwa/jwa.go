@@ -12,16 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package jwa provides implementations for asymmetric JSON Web Algorithms
-// (JWA) as defined in RFC 7518.
+// Package jwa provides implementations for asymmetric JSON Web Algorithms.
 //
-// It provides a unified interface for signature verification using public
-// keys and signature creation using crypto.Signer. This abstraction handles
-// algorithm-specific complexities such as hash function selection, padding
-// schemes (e.g., PSS vs PKCS1v15), and signature format transcoding (e.g.,
-// converting ECDSA ASN.1 DER to raw concatenation).
+// Package jwa provides implementations for asymmetric JSON Web Algorithms (JWA)
+// as defined in RFC 7518. It provides a unified interface for signature
+// verification using public keys and signature creation using [crypto.Signer].
+// This abstraction handles algorithm-specific complexities such as hash
+// function selection, padding schemes (e.g., PSS vs PKCS1v15), and signature
+// format transcoding (e.g., converting ECDSA ASN.1 DER to raw concatenation).
 //
 // Note: Symmetric algorithms (such as HMAC) are not supported.
+//
+// # Usage
+//
+// This package is typically used to verify or sign JWS payloads by selecting
+// a specific [Algorithm] instance like [RS256] or [EdDSA].
+//
+// Example:
+//
+//	// Verify a signature using RS256
+//	valid := jwa.RS256.Verify(publicKey, message, signature)
 package jwa
 
 import (
@@ -44,7 +54,7 @@ import (
 // verifying and calculating signatures. The type parameter T specifies the type
 // of public key that the algorithm works with.
 type Algorithm[T crypto.PublicKey] interface {
-	// fmt.Stringer provides the standard JWA name for the algorithm.
+	// String provides the standard JWA name for the algorithm.
 	fmt.Stringer
 
 	// Verify checks a signature against a message using the provided public key.
@@ -60,11 +70,13 @@ type Algorithm[T crypto.PublicKey] interface {
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
 type rs struct {
+	// name is the JWA identifier.
 	name string
+	// pool is the internal hash pool for thread-safe operations.
 	pool *hashPool
 }
 
-// newRS creates a new Algorithm for RSASSA-PKCS1-v1_5 signatures
+// newRS creates a new [Algorithm] for RSASSA-PKCS1-v1_5 signatures
 // with the given JWA name and hash function.
 func newRS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
 	return &rs{
@@ -73,6 +85,7 @@ func newRS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
 	}
 }
 
+// Verify checks an RSASSA-PKCS1-v1_5 signature.
 func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	h := a.pool.Get()
 	defer func() { a.pool.Put(h) }()
@@ -81,6 +94,7 @@ func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	return rsa.VerifyPKCS1v15(key, a.pool.Hash, digest, sig) == nil
 }
 
+// Sign creates an RSASSA-PKCS1-v1_5 signature using the provided [crypto.Signer].
 func (a *rs) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
@@ -89,6 +103,7 @@ func (a *rs) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	return signer.Sign(rand.Reader, digest, a.pool.Hash)
 }
 
+// String returns the JWA algorithm name.
 func (a *rs) String() string {
 	return a.name
 }
@@ -104,11 +119,13 @@ var RS512 = newRS("RS512", crypto.SHA512)
 
 // ps implements the RSASSA-PSS family of algorithms (PSxxx).
 type ps struct {
+	// name is the JWA identifier.
 	name string
+	// pool is the internal hash pool for thread-safe operations.
 	pool *hashPool
 }
 
-// newPS creates a new Algorithm for RSASSA-PSS signatures
+// newPS creates a new [Algorithm] for RSASSA-PSS signatures
 // with the given JWA name and hash function.
 func newPS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
 	return &ps{
@@ -117,6 +134,7 @@ func newPS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
 	}
 }
 
+// Verify checks an RSASSA-PSS signature.
 func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	h := a.pool.Get()
 	defer func() { a.pool.Put(h) }()
@@ -127,6 +145,7 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	return rsa.VerifyPSS(key, a.pool.Hash, digest, sig, opts) == nil
 }
 
+// Sign creates an RSASSA-PSS signature using the provided [crypto.Signer].
 func (a *ps) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
@@ -139,6 +158,7 @@ func (a *ps) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	return signer.Sign(rand.Reader, digest, opts)
 }
 
+// String returns the JWA algorithm name.
 func (a *ps) String() string {
 	return a.name
 }
@@ -154,11 +174,13 @@ var PS512 = newPS("PS512", crypto.SHA512)
 
 // es implements the ECDSA family of algorithms (ESxxx).
 type es struct {
+	// name is the JWA identifier.
 	name string
+	// pool is the internal hash pool for thread-safe operations.
 	pool *hashPool
 }
 
-// newES creates a new Algorithm for ECDSA signatures
+// newES creates a new [Algorithm] for ECDSA signatures
 // with the given JWA name and hash function.
 func newES(name string, hash crypto.Hash) Algorithm[*ecdsa.PublicKey] {
 	return &es{
@@ -167,6 +189,7 @@ func newES(name string, hash crypto.Hash) Algorithm[*ecdsa.PublicKey] {
 	}
 }
 
+// Verify checks an ECDSA signature.
 func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	// The signature is the concatenation of two integers of the same size
 	// as the curve's order.
@@ -186,6 +209,7 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	return ecdsa.Verify(key, digest, r, s)
 }
 
+// Sign creates an ECDSA signature and transcodes it from ASN.1 DER to raw format.
 func (a *es) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
@@ -213,6 +237,7 @@ func (a *es) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	return out, nil
 }
 
+// String returns the JWA algorithm name.
 func (a *es) String() string {
 	return a.name
 }
@@ -229,6 +254,7 @@ var ES512 = newES("ES512", crypto.SHA512)
 // ed implements the EdDSA family of algorithms.
 type ed struct{}
 
+// Verify checks an EdDSA signature, supporting both Ed25519 and Ed448.
 func (a *ed) Verify(key, msg, sig []byte) bool {
 	switch len(key) {
 	case ed448.PublicKeySize:
@@ -244,10 +270,12 @@ func (a *ed) Verify(key, msg, sig []byte) bool {
 	}
 }
 
+// Sign creates an EdDSA signature using the provided [crypto.Signer].
 func (a *ed) Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	return signer.Sign(rand.Reader, msg, crypto.Hash(0))
 }
 
+// String returns the JWA algorithm name.
 func (a *ed) String() string {
 	return "EdDSA"
 }
@@ -256,13 +284,15 @@ func (a *ed) String() string {
 // and Ed448 curves. The curve is determined by the size of the public key.
 var EdDSA Algorithm[[]byte] = &ed{}
 
-// hashPool manages a pool of hash.Hash objects to reduce allocations.
+// hashPool manages a pool of [hash.Hash] objects to reduce allocations.
 type hashPool struct {
+	// Hash is the underlying hash identifier.
 	Hash crypto.Hash
+	// pool is the [sync.Pool] containing initialized [hash.Hash] instances.
 	pool *sync.Pool
 }
 
-// newHashPool creates a new hashPool for the given hash function.
+// newHashPool creates a new [hashPool] for the given hash function.
 func newHashPool(hash crypto.Hash) *hashPool {
 	pool := &sync.Pool{
 		New: func() any {
@@ -275,13 +305,13 @@ func newHashPool(hash crypto.Hash) *hashPool {
 	}
 }
 
-// Get retrieves a hash.Hash from the pool.
+// Get retrieves a [hash.Hash] from the pool.
 func (p *hashPool) Get() hash.Hash {
 	h := p.pool.Get()
 	return h.(hash.Hash)
 }
 
-// Put returns a hash.Hash to the pool after resetting it.
+// Put returns a [hash.Hash] to the pool after resetting it.
 func (p *hashPool) Put(h hash.Hash) {
 	h.Reset()
 	p.pool.Put(h)

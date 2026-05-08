@@ -12,20 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package middleware provides a standard approach for chaining and composing
-// HTTP transport middleware.
+// Package middleware provides a standard approach for HTTP transport
+// middleware.
 //
-// This package focuses on low-level HTTP operations (like logging, CORS,
-// and compression) that operate directly on [http.Handler]. For higher-level
-// business logic that requires structured error handling and API contexts,
-// see the Middleware definitions in the router package. The router provides
-// an adapter to seamlessly integrate the transport pipes defined here within
-// its richer handler ecosystem.
+// Package middleware provides a standard approach for chaining and composing
+// HTTP transport middleware. This package focuses on low-level HTTP operations
+// (like logging, CORS, and compression) that operate directly on
+// [http.Handler].
+//
+// For higher-level business logic that requires structured error handling and
+// API contexts, see the Middleware definitions in the router package. The
+// router provides an adapter to seamlessly integrate the transport pipes
+// defined here within its richer handler ecosystem.
 //
 // # Usage
 //
-// The core type is Pipe, an adapter that wraps an http.Handler to add
-// functionality. The Chain function composes these pipes into a single handler.
+// The core type is [Pipe], an adapter that wraps an [http.Handler] to add
+// functionality. The [Chain] function composes these pipes into a single
+// handler.
 //
 // Example:
 //
@@ -57,17 +61,18 @@ import (
 	"time"
 )
 
-// Pipe is a middleware function. It's an adapter that takes an http.Handler
-// and returns a new http.Handler, allowing functionality to be composed in
-// layers.
+// Pipe is a middleware function.
+//
+// Pipe is an adapter that takes an [http.Handler] and returns a new
+// [http.Handler], allowing functionality to be composed in layers.
 type Pipe func(http.Handler) http.Handler
 
-// Chain combines a handler with multiple middleware Pipes. The pipes are
-// applied in reverse order, meaning the first pipe in the list is the outermost
-// and executes first.
+// Chain combines a handler with multiple middleware Pipes.
 //
-// For example, Chain(h, A, B, C) results in a handler equivalent to A(B(C(h))).
-// Any nil pipes in the list are safely ignored.
+// The pipes are applied in reverse order, meaning the first pipe in the list is
+// the outermost and executes first. For example, Chain(h, A, B, C) results in a
+// handler equivalent to A(B(C(h))). Any nil pipes in the list are safely
+// ignored.
 func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 	for i := len(pipes) - 1; i >= 0; i-- {
 		if pipe := pipes[i]; pipe != nil {
@@ -77,12 +82,13 @@ func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 	return h
 }
 
-// Recover produces a middleware Pipe that catches panics in downstream
-// handlers. It uses the provided logger to report the exception with a stack
-// trace and returns an empty response with status code 500 to the client. The
-// log entry also pinpoints the request method and URL that caused the panic.
-// For maximum effectiveness, this should be the first (outermost) middleware
-// in the chain.
+// Recover produces a middleware [Pipe] that catches panics in downstream
+// handlers.
+//
+// It uses the provided logger to report the exception with a stack trace and
+// returns an empty response with status code 500 to the client. The log entry
+// also pinpoints the request method and URL that caused the panic. For maximum
+// effectiveness, this should be the first (outermost) middleware in the chain.
 func Recover(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -105,19 +111,21 @@ func Recover(logger *slog.Logger) Pipe {
 	}
 }
 
-type contextKey struct{} // Prevents collisions with other packages.
+// contextKey prevents collisions with other packages.
+type contextKey struct{}
 
 // requestIDKey is the key under which the request ID is stored in the request
 // context.
 var requestIDKey contextKey
 
-// RequestID returns a middleware Pipe that injects a unique ID into each
-// request. It adds the ID to the response via the "X-Request-ID" header and to
-// the request's context for downstream use.
+// RequestID returns a middleware [Pipe] that injects a unique ID into each
+// request.
 //
-// Downstream handlers and other middleware can retrieve the ID using
-// GetRequestID. If a unique ID cannot be generated from the random source, this
-// middleware does nothing and passes the request to the next handler.
+// It adds the ID to the response via the "X-Request-ID" header and to the
+// request's context for downstream use. Downstream handlers and other
+// middleware can retrieve the ID using [GetRequestID]. If a unique ID cannot be
+// generated from the random source, this middleware does nothing and passes
+// the request to the next handler.
 func RequestID() Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,23 +141,27 @@ func RequestID() Pipe {
 	}
 }
 
-// GetRequestID retrieves the request ID from a given context. It returns an
-// empty string if the ID is not found.
+// GetRequestID retrieves the request ID from a given context.
+//
+// It returns an empty string if the ID is not found.
 func GetRequestID(ctx context.Context) string {
 	id, _ := ctx.Value(requestIDKey).(string)
 	return id
 }
 
-// SetRequestID sets the request ID in the provided context, returning a new
-// context that carries the ID.
+// SetRequestID sets the request ID in the provided context.
+//
+// It returns a new context that carries the ID.
 func SetRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey, id)
 }
 
-// interceptor is used to wrap the original http.ResponseWriter to
-// capture the status code.
+// interceptor is used to wrap the original [http.ResponseWriter] to capture
+// the status code.
 type interceptor struct {
+	// ResponseWriter is the original writer.
 	http.ResponseWriter
+	// statusCode is the captured HTTP response code.
 	statusCode int
 }
 
@@ -159,13 +171,13 @@ func (i *interceptor) WriteHeader(code int) {
 	i.ResponseWriter.WriteHeader(code)
 }
 
-// Log returns a middleware Pipe that logs a summary of each HTTP request. It
-// captures the final HTTP status code by wrapping the http.ResponseWriter.
+// Log returns a middleware [Pipe] that logs a summary of each HTTP request.
 //
+// It captures the final HTTP status code by wrapping the [http.ResponseWriter].
 // The log entry is generated at the debug level after the request has been
-// handled. It includes the method, URL, status code, duration, and other
-// common attributes. To include a request ID in the log, this middleware should
-// be placed after the RequestID middleware in the chain.
+// handled. It includes the method, URL, status code, duration, and other common
+// attributes. To include a request ID in the log, this middleware should be
+// placed after the [RequestID] middleware in the chain.
 func Log(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +198,8 @@ func Log(logger *slog.Logger) Pipe {
 	}
 }
 
-// Volatile returns a middleware Pipe that prevents caching of the response.
+// Volatile returns a middleware [Pipe] that prevents caching of the response.
+//
 // It sets standard HTTP headers (Cache-Control, Pragma, Expires) to ensure
 // clients and proxies always fetch a fresh copy of the resource.
 func Volatile() Pipe {
@@ -206,36 +219,35 @@ func Volatile() Pipe {
 	}
 }
 
-// SecurityConfig defines the headers applied by the Secure middleware.
+// SecurityConfig defines the headers applied by the [Secure] middleware.
 type SecurityConfig struct {
-	// STSMaxAge is the maximum age for HSTS in seconds.
-	// If 0, the header is not set.
+	// STSMaxAge is the maximum age for HSTS in seconds. If 0, the header is
+	// not set.
 	STSMaxAge int64
 	// STSIncludeSubdomains adds the "includeSubDomains" directive to HSTS.
 	STSIncludeSubdomains bool
-	// FrameOptions sets the X-Frame-Options header (e.g., "DENY", "SAMEORIGIN").
-	// If empty, the header is not set.
+	// FrameOptions sets the X-Frame-Options header (e.g., "DENY",
+	// "SAMEORIGIN"). If empty, the header is not set.
 	FrameOptions string
-	// NoSniff sets X-Content-Type-Options to "nosniff" if true.
-	// This helps prevent MIME type sniffing by browsers.
+	// NoSniff sets X-Content-Type-Options to "nosniff" if true. This helps
+	// prevent MIME type sniffing by browsers.
 	NoSniff bool
-	// CSP sets the Content-Security-Policy header.
-	// If empty, it is not set.
+	// CSP sets the Content-Security-Policy header. If empty, it is not set.
 	CSP string
-	// ReferrerPolicy sets the Referrer-Policy header.
-	// If empty, it is not set.
+	// ReferrerPolicy sets the Referrer-Policy header. If empty, it is not set.
 	ReferrerPolicy string
-	// PermissionsPolicy sets the Permissions-Policy header.
-	// Example: "geolocation=(), microphone=()"
+	// PermissionsPolicy sets the Permissions-Policy header. Example:
+	// "geolocation=(), microphone=()"
 	PermissionsPolicy string
 	// CrossOriginOpenerPolicy sets the Cross-Origin-Opener-Policy header.
 	// Recommended: "same-origin"
 	CrossOriginOpenerPolicy string
 }
 
-// DefaultSecurityConfig provides a baseline configuration that enables HSTS
-// for 1 year, disables MIME sniffing, and protects against clickjacking by
-// denying framing.
+// DefaultSecurityConfig provides a baseline configuration.
+//
+// It enables HSTS for 1 year, disables MIME sniffing, and protects against
+// clickjacking by denying framing.
 var DefaultSecurityConfig = SecurityConfig{
 	STSMaxAge:               31536000,
 	STSIncludeSubdomains:    true,
@@ -245,8 +257,9 @@ var DefaultSecurityConfig = SecurityConfig{
 	CrossOriginOpenerPolicy: "same-origin",
 }
 
-// Secure returns a middleware Pipe that sets various security-related HTTP
-// headers based on the provided configuration.
+// Secure returns a middleware [Pipe] that sets security-related HTTP headers.
+//
+// Headers are set based on the provided configuration.
 func Secure(cfg SecurityConfig) Pipe {
 	// Pre-calculate HSTS header to avoid string allocation on every request.
 	hsts := ""

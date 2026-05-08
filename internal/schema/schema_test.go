@@ -17,15 +17,15 @@ package schema_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/internal/schema"
 )
 
 func TestPostgres(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		script string
@@ -118,19 +118,24 @@ func TestPostgres(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := schema.Postgres([]byte(tc.script))
-			assert.Equal(t, tc.want, actual)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := schema.Postgres([]byte(tt.script))
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Postgres(%q) = %v; want %v", tt.script, got, tt.want)
+			}
 		})
 	}
 }
 
 func TestPostgres_TestData(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		file string
-		want int // Expected number of statements
+		want int
 	}{
 		{
 			name: "initial schema",
@@ -149,14 +154,18 @@ func TestPostgres_TestData(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join("testdata", tc.file)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join("testdata", tt.file)
 			content, err := os.ReadFile(path) //nolint:gosec
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("os.ReadFile(%q) err = %v; want nil", path, err)
+			}
 
-			actual := schema.Postgres(content)
-			assert.Len(t, actual, tc.want)
+			if got := len(schema.Postgres(content)); got != tt.want {
+				t.Errorf("len(Postgres(%s)) = %d; want %d", tt.file, got, tt.want)
+			}
 		})
 	}
 }
@@ -175,7 +184,7 @@ func BenchmarkPostgres_Complex(b *testing.B) {
 	path := filepath.Join("testdata", "00002_audit_triggers.up.sql")
 	script, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
-		b.Fatal(err)
+		b.Fatalf("failed to read testdata: %v", err)
 	}
 
 	b.ReportAllocs()
@@ -187,7 +196,7 @@ func BenchmarkPostgres_Complex(b *testing.B) {
 
 func BenchmarkPostgres_Massive(b *testing.B) {
 	stmt := []byte("INSERT INTO users (email) VALUES ('test@example.com');\n")
-	iterations := 10000
+	const iterations = 10000
 	script := make([]byte, 0, len(stmt)*iterations)
 
 	for range iterations {

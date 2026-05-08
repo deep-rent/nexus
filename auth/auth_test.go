@@ -21,9 +21,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
@@ -43,13 +40,19 @@ func TestClaims_HasRole(t *testing.T) {
 	t.Parallel()
 	c := &auth.Claims{Roles: []string{"a", "b"}}
 
-	assert.True(t, c.HasRole("a"))
-	assert.False(t, c.HasRole("c"))
+	wantRoleA := "a"
+	if !c.HasRole(wantRoleA) {
+		t.Errorf("Claims.HasRole(%q) = %t; want %t", wantRoleA, false, true)
+	}
+
+	wantRoleC := "c"
+	if c.HasRole(wantRoleC) {
+		t.Errorf("Claims.HasRole(%q) = %t; want %t", wantRoleC, true, false)
+	}
 }
 
 func TestRules(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
 	c := &auth.Claims{Roles: []string{"a", "b"}}
 
 	tests := []struct {
@@ -65,14 +68,18 @@ func TestRules(t *testing.T) {
 		{"AllRoles failure", auth.AllRoles[*auth.Claims]("a", "c"), true},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := tc.rule.Eval(ctx, c)
-			if tc.wantErr {
-				assert.Error(t, err)
+			err := tt.rule.Eval(t.Context(), c)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("rule.Eval() = nil; want error")
+				}
 			} else {
-				assert.NoError(t, err)
+				if err != nil {
+					t.Errorf("rule.Eval() = %v; want nil", err)
+				}
 			}
 		})
 	}
@@ -133,21 +140,21 @@ func TestGuard_Secure(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			mv := &mockVerifier[*auth.Claims]{
 				verify: func(in []byte) (*auth.Claims, error) {
-					if tc.mockErr != nil {
-						return nil, tc.mockErr
+					if tt.mockErr != nil {
+						return nil, tt.mockErr
 					}
 					return &auth.Claims{Roles: []string{"b"}}, nil
 				},
 			}
 
 			guard := auth.NewGuard(mv)
-			handler := guard.Secure(tc.rules...)(
+			handler := guard.Secure(tt.rules...)(
 				router.HandlerFunc(func(e *router.Exchange) error {
 					e.Status(http.StatusOK)
 					return nil
@@ -155,8 +162,8 @@ func TestGuard_Secure(t *testing.T) {
 			)
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			if tc.token != "" {
-				req.Header.Set("Authorization", tc.token)
+			if tt.token != "" {
+				req.Header.Set("Authorization", tt.token)
 			}
 
 			rec := httptest.NewRecorder()
@@ -164,14 +171,34 @@ func TestGuard_Secure(t *testing.T) {
 
 			err := handler.ServeHTTP(e)
 
-			if tc.wantStatus == http.StatusOK {
-				assert.NoError(t, err)
-				assert.Equal(t, http.StatusOK, rec.Code)
+			if tt.wantStatus == http.StatusOK {
+				if err != nil {
+					t.Errorf("handler.ServeHTTP() = %v; want nil", err)
+				}
+				if rec.Code != tt.wantStatus {
+					t.Errorf("recorder.Code = %d; want %d", rec.Code, tt.wantStatus)
+				}
 			} else {
 				var re *router.Error
-				require.True(t, errors.As(err, &re))
-				assert.Equal(t, tc.wantStatus, re.Status)
-				assert.Equal(t, tc.wantReason, re.Reason)
+				if !errors.As(err, &re) {
+					t.Fatalf(
+						"handler.ServeHTTP() error = %v; want type *router.Error", err,
+					)
+				}
+				if re.Status != tt.wantStatus {
+					t.Errorf(
+						"router.Error.Status = %d; want %d",
+						re.Status,
+						tt.wantStatus,
+					)
+				}
+				if re.Reason != tt.wantReason {
+					t.Errorf(
+						"router.Error.Reason = %q; want %q",
+						re.Reason,
+						tt.wantReason,
+					)
+				}
 			}
 		})
 	}
@@ -179,27 +206,52 @@ func TestGuard_Secure(t *testing.T) {
 
 func TestContextExtraction(t *testing.T) {
 	t.Parallel()
-
 	want := &auth.Claims{Roles: []string{"tester"}}
-	mv := &mockVerifier[*auth.Claims]{
+
+	v := &mockVerifier[*auth.Claims]{
 		verify: func(in []byte) (*auth.Claims, error) {
 			return want, nil
 		},
 	}
 
-	guard := auth.NewGuard(mv)
+	guard := auth.NewGuard(v)
+
 	handler := guard.Secure()(router.HandlerFunc(func(e *router.Exchange) error {
 		c1, ok1 := auth.From[*auth.Claims](e)
-		assert.True(t, ok1)
-		assert.Equal(t, want, c1)
+		if !ok1 {
+			t.Errorf(
+				"auth.From(e) ok = %t; want %t", ok1, true,
+			)
+		}
+		if c1 != want {
+			t.Errorf(
+				"auth.From(e) claims = %v; want %v", c1, want,
+			)
+		}
 
 		c2, ok2 := auth.FromRequest[*auth.Claims](e.R)
-		assert.True(t, ok2)
-		assert.Equal(t, want, c2)
+		if !ok2 {
+			t.Errorf(
+				"auth.FromRequest(e.R) ok = %t; want %t", ok2, true,
+			)
+		}
+		if c2 != want {
+			t.Errorf(
+				"auth.FromRequest(e.R) claims = %v; want %v", c2, want,
+			)
+		}
 
 		c3, ok3 := auth.FromContext[*auth.Claims](e.Context())
-		assert.True(t, ok3)
-		assert.Equal(t, want, c3)
+		if !ok3 {
+			t.Errorf(
+				"auth.FromContext(e.Context()) ok = %t; want %t", ok3, true,
+			)
+		}
+		if c3 != want {
+			t.Errorf(
+				"auth.FromContext(e.Context()) claims = %v; want %v", c3, want,
+			)
+		}
 
 		e.Status(http.StatusOK)
 		return nil
@@ -211,5 +263,7 @@ func TestContextExtraction(t *testing.T) {
 	e := &router.Exchange{R: req, W: res}
 
 	err := handler.ServeHTTP(e)
-	assert.NoError(t, err)
+	if err != nil {
+		t.Errorf("handler.ServeHTTP() = %v; want nil", err)
+	}
 }

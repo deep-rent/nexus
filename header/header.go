@@ -23,7 +23,7 @@
 //   - Calculating cache lifetime from Cache-Control and Expires headers.
 //   - Determining throttle delays from Retry-After and X-Ratelimit-* headers.
 //
-// It also provides a convenient http.RoundTripper implementation for
+// It also provides a convenient [http.RoundTripper] implementation for
 // automatically attaching a static set of headers to all outgoing requests.
 package header
 
@@ -203,7 +203,7 @@ func Accepts(s, key string) bool {
 // It returns the media type in lowercase, trimmed of whitespace. If the header
 // is empty or malformed, it returns an empty string.
 //
-// This function is similar to mime.ParseMediaType but does not return any
+// This function is similar to [mime.ParseMediaType] but does not return any
 // parameters and ignores parsing errors.
 func MediaType(h http.Header) string {
 	v := h.Get("Content-Type")
@@ -225,17 +225,17 @@ func MediaType(h http.Header) string {
 func Links(s string) iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		for part := range strings.SplitSeq(s, ",") {
-			s := strings.IndexByte(part, '<')
-			e := strings.IndexByte(part, '>')
+			sidx := strings.IndexByte(part, '<')
+			eidx := strings.IndexByte(part, '>')
 
 			// Ensure the URL brackets are present and valid.
-			if s == -1 || e == -1 || s >= e {
+			if sidx == -1 || eidx == -1 || sidx >= eidx {
 				continue
 			}
-			url := part[s+1 : e]
+			url := part[sidx+1 : eidx]
 
 			// Parse the parameters following the URL.
-			params := strings.SplitSeq(part[e+1:], ";")
+			params := strings.SplitSeq(part[eidx+1:], ";")
 			for p := range params {
 				p = strings.TrimSpace(p)
 				k, v, found := strings.Cut(p, "=")
@@ -289,8 +289,10 @@ func Filename(h http.Header) string {
 
 // Header represents a single HTTP header key-value pair.
 type Header struct {
-	Key   string // Key is the canonicalized header name.
-	Value string // Value is the raw value of the header.
+	// Key is the canonicalized header name.
+	Key string
+	// Value is the raw value of the header.
+	Value string
 }
 
 // String formats the header as "Key: Value".
@@ -298,7 +300,7 @@ func (h Header) String() string {
 	return h.Key + ": " + h.Value
 }
 
-// New creates a new Header with the given key and value. The key is
+// New creates a new [Header] with the given key and value. The key is
 // automatically canonicalized to the standard HTTP header format.
 func New(key, value string) Header {
 	return Header{
@@ -324,11 +326,15 @@ func UserAgent(name, version, comment string) Header {
 	}
 }
 
+// transport is an internal [http.RoundTripper] that injects static headers.
 type transport struct {
+	// wrapped is the underlying RoundTripper.
 	wrapped http.RoundTripper
+	// headers are the static headers to be injected into each request.
 	headers []Header
 }
 
+// RoundTrip clones the request and adds static headers before delegating.
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	for _, h := range t.headers {

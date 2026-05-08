@@ -13,8 +13,27 @@
 // limitations under the License.
 
 // Package buffer provides a sync.Pool-backed implementation of
-// httputil.BufferPool for reusing byte slices, aiming to save memory and
-// reduce GC pressure when dealing with large response bodies.
+// [httputil.BufferPool] for reusing byte slices.
+//
+// It is designed to save memory and reduce GC pressure when dealing with large
+// response bodies by recycling memory buffers. This implementation helps
+// stabilize heap usage in high-throughput proxies or servers that frequently
+// allocate temporary buffers for I/O operations.
+//
+// # Usage
+//
+// Create a new [Pool] and pass it to a reverse proxy or any component requiring
+// a [httputil.BufferPool].
+//
+// Example:
+//
+//	// Create a pool with 32KB initial buffers, capped at 1MB for reuse.
+//	pool := buffer.NewPool(32*1024, 1024*1024)
+//
+//	proxy := &httputil.ReverseProxy{
+//		Director:   director,
+//		BufferPool: pool,
+//	}
 package buffer
 
 import (
@@ -22,18 +41,21 @@ import (
 	"sync"
 )
 
-// Pool implements httputil.Pool backed by a sync.Pool internally.
+// Pool implements [httputil.BufferPool] backed by a [sync.Pool] internally.
+//
 // It reduces allocations for large response bodies by reusing byte slices,
 // thus lowering GC pressure.
 type Pool struct {
+	// pool is the underlying [sync.Pool] storing buffer pointers.
 	pool sync.Pool
+	// size is the maximum capacity of a buffer allowed back into the pool.
 	size int
 }
 
-// NewPool creates a new Pool that returns buffers of at least minSize
-// bytes. Buffers that grow beyond maxSize will be discarded.
+// NewPool creates a new [Pool] that returns buffers of at least minSize bytes.
 //
-// Both numbers must be positive, or else the function panics; minSize will be
+// Buffers that grow beyond maxSize will be discarded during [Pool.Put]. Both
+// numbers must be positive, or else the function panics; minSize will be
 // clamped by maxSize.
 func NewPool(minSize, maxSize int) *Pool {
 	if minSize <= 0 {
@@ -44,7 +66,7 @@ func NewPool(minSize, maxSize int) *Pool {
 	}
 	minSize = min(minSize, maxSize)
 	// Store a pointer to a slice to avoid allocations when storing in the
-	// interface-typed pool
+	// interface-typed pool.
 	alloc := func() any {
 		buf := make([]byte, minSize)
 		return &buf
@@ -55,18 +77,22 @@ func NewPool(minSize, maxSize int) *Pool {
 	}
 }
 
-// Get returns a reusable buffer slice.
+// Get returns a reusable byte slice from the [Pool].
 func (b *Pool) Get() []byte {
 	return *b.pool.Get().(*[]byte)
 }
 
-// Put returns the buffer to the pool unless it grew beyond the size limit.
+// Put returns the buffer to the [Pool] unless it grew beyond the size limit.
+//
+// If the capacity of the provided slice exceeds the maxSize defined during
+// initialization, the buffer is dropped to allow the GC to reclaim memory and
+// prevent the pool from holding onto excessively large slices.
 func (b *Pool) Put(buf []byte) {
-	// Avoid holding on to overly large buffers
+	// Avoid holding on to overly large buffers.
 	if cap(buf) <= b.size {
 		b.pool.Put(&buf)
 	}
 }
 
-// Ensure Pool satisfies the httputil.BufferPool interface.
+// Ensure Pool satisfies the [httputil.BufferPool] interface.
 var _ httputil.BufferPool = (*Pool)(nil)

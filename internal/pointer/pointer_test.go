@@ -18,49 +18,63 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/internal/pointer"
 )
 
 func TestAlloc(t *testing.T) {
+	t.Parallel()
+
 	t.Run("allocates settable nil pointer", func(t *testing.T) {
+		t.Parallel()
 		var i *int
 		rv := reflect.ValueOf(&i).Elem()
 
-		require.True(t, rv.IsNil(), "precondition: pointer should be nil")
-		require.True(t, rv.CanSet(), "precondition: pointer should be settable")
+		if !rv.IsNil() {
+			t.Fatal("precondition: pointer should be nil")
+		}
+		if !rv.CanSet() {
+			t.Fatal("precondition: pointer should be settable")
+		}
 
 		pointer.Alloc(rv)
-		assert.NotNil(t, i, "pointer should now point to a value")
-		assert.Equal(t, 0, *i, "value should be the zero value for its type")
+		if i == nil {
+			t.Errorf("pointer should now point to a value")
+		} else if got, want := *i, 0; got != want {
+			t.Errorf("*i = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("panics on non-settable pointer", func(t *testing.T) {
+		t.Parallel()
 		type foobar struct{ v *int } //nolint:unused
 		rv := reflect.ValueOf(foobar{}).FieldByName("v")
-		require.False(t, rv.CanSet(), "precondition: value should not be settable")
-		assert.Panics(t, func() {
-			pointer.Alloc(rv)
-		}, "Alloc should panic because it cannot set the pointer")
+		if rv.CanSet() {
+			t.Fatal("precondition: value should not be settable")
+		}
+
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("Alloc did not panic on non-settable pointer")
+			}
+		}()
+		pointer.Alloc(rv)
 	})
 }
 
 func TestDeref(t *testing.T) {
-	type test struct {
-		name     string
-		setup    func() (in, root reflect.Value)
-		wantKind reflect.Kind
-		assert   func(t *testing.T, out, root reflect.Value)
-	}
+	t.Parallel()
 
 	type foobar struct {
 		V *int
 		v *int
 	}
 
-	tests := []test{
+	tests := []struct {
+		name     string
+		setup    func() (in, root reflect.Value)
+		wantKind reflect.Kind
+		check    func(t *testing.T, out, root reflect.Value)
+	}{
 		{
 			name: "non-pointer value",
 			setup: func() (reflect.Value, reflect.Value) {
@@ -68,8 +82,10 @@ func TestDeref(t *testing.T) {
 				return reflect.ValueOf(v), reflect.ValueOf(v)
 			},
 			wantKind: reflect.Int,
-			assert: func(t *testing.T, out, _ reflect.Value) {
-				assert.Equal(t, int64(42), out.Int())
+			check: func(t *testing.T, out, _ reflect.Value) {
+				if got, want := out.Int(), int64(42); got != want {
+					t.Errorf("out.Int() = %d; want %d", got, want)
+				}
 			},
 		},
 		{
@@ -80,8 +96,10 @@ func TestDeref(t *testing.T) {
 				return reflect.ValueOf(p), reflect.ValueOf(p)
 			},
 			wantKind: reflect.Int,
-			assert: func(t *testing.T, out, _ reflect.Value) {
-				assert.Equal(t, int64(42), out.Int())
+			check: func(t *testing.T, out, _ reflect.Value) {
+				if got, want := out.Int(), int64(42); got != want {
+					t.Errorf("out.Int() = %d; want %d", got, want)
+				}
 			},
 		},
 		{
@@ -93,8 +111,10 @@ func TestDeref(t *testing.T) {
 				return reflect.ValueOf(p2), reflect.ValueOf(p2)
 			},
 			wantKind: reflect.Int,
-			assert: func(t *testing.T, out, _ reflect.Value) {
-				assert.Equal(t, int64(42), out.Int())
+			check: func(t *testing.T, out, _ reflect.Value) {
+				if got, want := out.Int(), int64(42); got != want {
+					t.Errorf("out.Int() = %d; want %d", got, want)
+				}
 			},
 		},
 		{
@@ -105,11 +125,16 @@ func TestDeref(t *testing.T) {
 				return rvp.Elem(), rvp
 			},
 			wantKind: reflect.Int,
-			assert: func(t *testing.T, out, root reflect.Value) {
+			check: func(t *testing.T, out, root reflect.Value) {
 				p := root.Elem().Interface().(*int)
-				assert.NotNil(t, p)
-				assert.Equal(t, 0, *p)
-				assert.Equal(t, int64(0), out.Int())
+				if p == nil {
+					t.Errorf("root pointer should not be nil")
+				} else if got, want := *p, 0; got != want {
+					t.Errorf("*p = %d; want %d", got, want)
+				}
+				if got, want := out.Int(), int64(0); got != want {
+					t.Errorf("out.Int() = %d; want %d", got, want)
+				}
 			},
 		},
 		{
@@ -120,12 +145,17 @@ func TestDeref(t *testing.T) {
 				return rv.Elem(), rv
 			},
 			wantKind: reflect.Int,
-			assert: func(t *testing.T, out, root reflect.Value) {
+			check: func(t *testing.T, out, root reflect.Value) {
 				p := root.Elem().Interface().(**int)
-				require.NotNil(t, p)
-				require.NotNil(t, *p)
-				assert.Equal(t, 0, **p)
-				assert.Equal(t, int64(0), out.Int())
+				if p == nil || *p == nil {
+					t.Fatalf("pointers were not allocated")
+				}
+				if got, want := **p, 0; got != want {
+					t.Errorf("**p = %d; want %d", got, want)
+				}
+				if got, want := out.Int(), int64(0); got != want {
+					t.Errorf("out.Int() = %d; want %d", got, want)
+				}
 			},
 		},
 		{
@@ -136,10 +166,14 @@ func TestDeref(t *testing.T) {
 				return rv, reflect.ValueOf(fb)
 			},
 			wantKind: reflect.Pointer,
-			assert: func(t *testing.T, out, root reflect.Value) {
+			check: func(t *testing.T, out, root reflect.Value) {
 				fb := root.Interface().(*foobar)
-				assert.Nil(t, fb.v)
-				assert.True(t, out.IsNil(), "output should be the nil")
+				if fb.v != nil {
+					t.Errorf("fb.v should remain nil")
+				}
+				if !out.IsNil() {
+					t.Errorf("output should be nil")
+				}
 			},
 		},
 		{
@@ -150,23 +184,32 @@ func TestDeref(t *testing.T) {
 				return rv, reflect.ValueOf(fb)
 			},
 			wantKind: reflect.Int,
-			assert: func(t *testing.T, out, root reflect.Value) {
+			check: func(t *testing.T, out, root reflect.Value) {
 				fb := root.Interface().(*foobar)
-				require.NotNil(t, fb.V)
-				assert.Equal(t, 0, *fb.V)
-				assert.Equal(t, int64(0), out.Int())
+				if fb.V == nil {
+					t.Fatalf("fb.V was not allocated")
+				}
+				if got, want := *fb.V, 0; got != want {
+					t.Errorf("*fb.V = %d; want %d", got, want)
+				}
+				if got, want := out.Int(), int64(0); got != want {
+					t.Errorf("out.Int() = %d; want %d", got, want)
+				}
 			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			in, root := tc.setup()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			in, root := tt.setup()
 			out := pointer.Deref(in)
 
-			assert.Equal(t, tc.wantKind, out.Kind(), "output kind mismatch")
-			if tc.assert != nil {
-				tc.assert(t, out, root)
+			if got, want := out.Kind(), tt.wantKind; got != want {
+				t.Errorf("Deref().Kind() = %v; want %v", got, want)
+			}
+			if tt.check != nil {
+				tt.check(t, out, root)
 			}
 		})
 	}

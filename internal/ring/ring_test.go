@@ -19,12 +19,11 @@ import (
 	"testing"
 
 	"github.com/deep-rent/nexus/internal/ring"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		size int
@@ -40,76 +39,117 @@ func TestNew(t *testing.T) {
 		{"large", 1000, 1024},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			b := ring.New[int](tc.size, ring.DropNewest)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := ring.New[int](tt.size, ring.DropNewest)
 			c := 0
 			for b.Push(c) {
 				c++
 			}
-			assert.Equal(t, tc.want, c)
+			if got, want := c, tt.want; got != want {
+				t.Errorf("New(%d) final count = %d; want %d", tt.size, got, want)
+			}
 		})
 	}
 }
 
-func TestPushPop(t *testing.T) {
+func TestRing_Push_Pop(t *testing.T) {
+	t.Parallel()
+
 	b := ring.New[string](4, ring.Block)
 
-	_, ok := b.Pop()
-	assert.False(t, ok)
+	if _, ok := b.Pop(); ok {
+		t.Errorf("Pop() on empty ring = _, true; want _, false")
+	}
 
-	assert.True(t, b.Push("a"))
-	assert.True(t, b.Push("b"))
+	if !b.Push("a") {
+		t.Errorf("Push(%q) = false; want true", "a")
+	}
+	if !b.Push("b") {
+		t.Errorf("Push(%q) = false; want true", "b")
+	}
 
-	v, ok := b.Pop()
-	require.True(t, ok)
-	assert.Equal(t, "a", v)
+	v1, ok1 := b.Pop()
+	if !ok1 {
+		t.Fatalf("Pop() #1 = _, false; want _, true")
+	}
+	if got, want := v1, "a"; got != want {
+		t.Errorf("Pop() #1 = %q; want %q", got, want)
+	}
 
-	v, ok = b.Pop()
-	require.True(t, ok)
-	assert.Equal(t, "b", v)
+	v2, ok2 := b.Pop()
+	if !ok2 {
+		t.Fatalf("Pop() #2 = _, false; want _, true")
+	}
+	if got, want := v2, "b"; got != want {
+		t.Errorf("Pop() #2 = %q; want %q", got, want)
+	}
 
-	_, ok = b.Pop()
-	assert.False(t, ok)
+	if _, ok := b.Pop(); ok {
+		t.Errorf("Pop() after drain = _, true; want _, false")
+	}
 }
 
-func TestDropNewest(t *testing.T) {
+func TestRing_Push_DropNewest(t *testing.T) {
+	t.Parallel()
+
 	b := ring.New[int](4, ring.DropNewest)
 
 	for i := range 4 {
-		assert.True(t, b.Push(i))
+		if !b.Push(i) {
+			t.Errorf("Push(%d) = false; want true", i)
+		}
 	}
 
-	assert.False(t, b.Push(4))
+	if b.Push(4) {
+		t.Errorf("Push(4) to full DropNewest ring = true; want false")
+	}
 
 	v, ok := b.Pop()
-	require.True(t, ok)
-	assert.Equal(t, 0, v)
+	if !ok {
+		t.Fatalf("Pop() = _, false; want _, true")
+	}
+	if got, want := v, 0; got != want {
+		t.Errorf("Pop() = %d; want %d", got, want)
+	}
 }
 
-func TestDropOldest(t *testing.T) {
+func TestRing_Push_DropOldest(t *testing.T) {
+	t.Parallel()
+
 	b := ring.New[int](4, ring.DropOldest)
 
 	for i := range 6 {
 		b.Push(i)
 	}
 
-	v, ok := b.Pop()
-	require.True(t, ok)
-	assert.Equal(t, 2, v)
+	v1, ok1 := b.Pop()
+	if !ok1 {
+		t.Fatalf("Pop() #1 = _, false; want _, true")
+	}
+	if got, want := v1, 2; got != want {
+		t.Errorf("Pop() #1 = %d; want %d", got, want)
+	}
 
-	v, ok = b.Pop()
-	require.True(t, ok)
-	assert.Equal(t, 3, v)
+	v2, ok2 := b.Pop()
+	if !ok2 {
+		t.Fatalf("Pop() #2 = _, false; want _, true")
+	}
+	if got, want := v2, 3; got != want {
+		t.Errorf("Pop() #2 = %d; want %d", got, want)
+	}
 }
 
-func TestConcurrentMPSC(t *testing.T) {
+func TestRing_ConcurrentMPSC(t *testing.T) {
+	t.Parallel()
+
 	b := ring.New[int](1024, ring.Block)
 	var wg sync.WaitGroup
 
 	p := 4
 	i := 10000
-	n := p * i
+	total := p * i
 
 	wg.Add(p)
 	for range p {
@@ -117,24 +157,28 @@ func TestConcurrentMPSC(t *testing.T) {
 			defer wg.Done()
 			for range i {
 				for !b.Push(1) {
+					// Busy wait simulation
 				}
 			}
 		}()
 	}
 
-	var c int
-	d := make(chan struct{})
+	var count int
+	done := make(chan struct{})
 
 	go func() {
-		for c < n {
+		for count < total {
 			if _, ok := b.Pop(); ok {
-				c++
+				count++
 			}
 		}
-		close(d)
+		close(done)
 	}()
 
 	wg.Wait()
-	<-d
-	assert.Equal(t, n, c)
+	<-done
+
+	if got, want := count, total; got != want {
+		t.Errorf("count = %d; want %d", got, want)
+	}
 }

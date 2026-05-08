@@ -21,13 +21,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/deep-rent/nexus/middleware/cors"
 )
 
 func TestMiddleware(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name           string
 		opts           []cors.Option
 		reqMethod      string
@@ -35,11 +35,9 @@ func TestMiddleware(t *testing.T) {
 		wantStatusCode int
 		wantResHeaders map[string]string
 		wantNextCalled bool
-	}
-
-	tests := []test{
+	}{
 		{
-			name:           "Non-CORS request without Origin header",
+			name:           "non-cors request without origin header",
 			opts:           []cors.Option{cors.WithAllowedOrigins("http://a.com")},
 			reqMethod:      http.MethodGet,
 			reqHeaders:     nil,
@@ -48,7 +46,7 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: true,
 		},
 		{
-			name:           "Actual request with default settings (allow all)",
+			name:           "actual request with default settings",
 			opts:           nil,
 			reqMethod:      http.MethodGet,
 			reqHeaders:     map[string]string{"Origin": "http://a.com"},
@@ -60,7 +58,7 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: true,
 		},
 		{
-			name:      "Preflight request with default settings",
+			name:      "preflight request with default settings",
 			opts:      nil,
 			reqMethod: http.MethodOptions,
 			reqHeaders: map[string]string{
@@ -75,8 +73,10 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: false,
 		},
 		{
-			name:           "Invalid preflight request without method passes through",
-			opts:           []cors.Option{cors.WithAllowedMethods(http.MethodPut)},
+			name: "invalid preflight request without method passes through",
+			opts: []cors.Option{
+				cors.WithAllowedMethods(http.MethodPut),
+			},
 			reqMethod:      http.MethodOptions,
 			reqHeaders:     map[string]string{"Origin": "http://a.com"},
 			wantStatusCode: http.StatusOK,
@@ -84,8 +84,10 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: true,
 		},
 		{
-			name:           "Request with disallowed origin passes through",
-			opts:           []cors.Option{cors.WithAllowedOrigins("http://a.com")},
+			name: "request with disallowed origin passes through",
+			opts: []cors.Option{
+				cors.WithAllowedOrigins("http://a.com"),
+			},
 			reqMethod:      http.MethodGet,
 			reqHeaders:     map[string]string{"Origin": "http://b.com"},
 			wantStatusCode: http.StatusOK,
@@ -93,7 +95,7 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: true,
 		},
 		{
-			name: "Preflight request with full configuration",
+			name: "preflight request with full configuration",
 			opts: []cors.Option{
 				cors.WithAllowedOrigins("http://a.com"),
 				cors.WithAllowedMethods(http.MethodPut, http.MethodPatch),
@@ -117,7 +119,7 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: false,
 		},
 		{
-			name: "Actual request with exposed headers",
+			name: "actual request with exposed headers",
 			opts: []cors.Option{
 				cors.WithAllowedOrigins("http://a.com"),
 				cors.WithExposedHeaders("X-Pagination-Total"),
@@ -133,7 +135,7 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: true,
 		},
 		{
-			name: "Actual request with credentials + allowed origin reflects origin",
+			name: "actual request with credentials reflecting origin",
 			opts: []cors.Option{
 				cors.WithAllowCredentials(true),
 				cors.WithAllowedOrigins("http://a.com", "http://b.com"),
@@ -150,33 +152,48 @@ func TestMiddleware(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			called := false
-			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var called bool
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				called = true
 				w.WriteHeader(http.StatusOK)
 			})
 
-			handler := cors.New(tc.opts...)(next)
-			r := httptest.NewRequest(tc.reqMethod, "/", nil)
-			for k, v := range tc.reqHeaders {
+			handler := cors.New(tt.opts...)(next)
+			r := httptest.NewRequest(tt.reqMethod, "/", nil)
+			for k, v := range tt.reqHeaders {
 				r.Header.Set(k, v)
 			}
 
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, r)
 
-			assert.Equal(t, tc.wantStatusCode, w.Code)
-			assert.Equal(t, tc.wantNextCalled, called)
+			if got, want := w.Code, tt.wantStatusCode; got != want {
+				t.Errorf("Middleware(%s) status = %d; want %d",
+					tt.name, got, want)
+			}
 
-			if tc.wantResHeaders == nil {
+			if got, want := called, tt.wantNextCalled; got != want {
+				t.Errorf("Middleware(%s) next called = %v; want %v",
+					tt.name, got, want)
+			}
+
+			if tt.wantResHeaders == nil {
 				for h := range w.Header() {
-					assert.NotContains(t, strings.ToLower(h), "access-control-")
+					if strings.Contains(strings.ToLower(h), "access-control-") {
+						t.Errorf("Middleware(%s) found unexpected CORS header: %s",
+							tt.name, h)
+					}
 				}
 			} else {
-				for k, v := range tc.wantResHeaders {
-					assert.Equal(t, v, w.Header().Get(k))
+				for k, want := range tt.wantResHeaders {
+					if got := w.Header().Get(k); got != want {
+						t.Errorf("Middleware(%s) header %q = %q; want %q",
+							tt.name, k, got, want)
+					}
 				}
 			}
 		})

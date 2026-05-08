@@ -12,24 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package scheduler provides a flexible framework for running recurring tasks
-// concurrently.
+// Package scheduler provides a flexible framework for running recurring tasks.
 //
-// The core of the package is the Scheduler interface, which manages the
-// lifecycle of scheduled jobs. The basic unit of work is a Task, which can be
-// adapted into a schedulable Tick. A Tick is a self-repeating job that
-// determines its own next run time by returning a duration after each
-// execution.
+// Package scheduler manages the lifecycle of concurrent, scheduled jobs. The
+// basic unit of work is a [Task], which can be adapted into a schedulable
+// [Tick]. A [Tick] is a self-repeating job that determines its own next run
+// time by returning a duration after each execution.
 //
 // # Usage
 //
-// Helpers like Every and After are provided to easily convert a simple Task
-// into a Tick with common scheduling patterns:
+// Helpers like [Every] and [After] are provided to easily convert a simple
+// [Task] into a [Tick] with common scheduling patterns:
 //
-//   - Every(d, task): Creates a drift-free Tick that runs at a fixed
-//     cadence of duration d, accounting for the task's own execution time.
-//   - After(d, task): Creates a drifting Tick that waits for a fixed
-//     duration d after the previous run completes.
+//   - [Every]: Creates a drift-free Tick that runs at a fixed cadence,
+//     accounting for the task's own execution time.
+//   - [After]: Creates a drifting Tick that waits for a fixed duration after
+//     the previous run completes.
 //
 // Example:
 //
@@ -64,25 +62,29 @@ type Tick interface {
 	Run(ctx context.Context) time.Duration
 }
 
-// TickFn is an adapter to allow the use of ordinary functions as Ticks.
+// TickFn is an adapter to allow the use of ordinary functions as [Tick]s.
 type TickFn func(ctx context.Context) time.Duration
 
+// Run implements [Tick].
 func (f TickFn) Run(ctx context.Context) time.Duration { return f(ctx) }
 
-// Task represents a unit of work to be executed in a scheduler's execution
-// loop. Helpers like After and Every adapt a Task into a Tick.
+// Task represents a unit of work to be executed in a scheduler loop.
+//
+// Helpers like [After] and [Every] adapt a [Task] into a [Tick].
 type Task interface {
 	// Run executes the job. It accepts a context for cancellation and
 	// timeout control.
 	Run(ctx context.Context)
 }
 
-// TaskFn is an adapter to allow the use of ordinary functions as Tasks.
+// TaskFn is an adapter to allow the use of ordinary functions as [Task]s.
 type TaskFn func(ctx context.Context)
 
+// Run implements [Task].
 func (f TaskFn) Run(ctx context.Context) { f(ctx) }
 
-// After creates a drifting Tick that runs after a fixed delay.
+// After creates a drifting [Tick] that runs after a fixed delay.
+//
 // The scheduler waits for the full delay after the task has completed, so
 // the effective cadence will vary based on the task's execution time.
 func After(d time.Duration, task Task) Tick {
@@ -92,12 +94,11 @@ func After(d time.Duration, task Task) Tick {
 	})
 }
 
-// Every creates a drift-free Tick that runs at a fixed interval.
-// The wrapper measures the Task's execution time and subtracts it from the
-// specified interval, ensuring the task starts at a consistent cadence.
+// Every creates a drift-free [Tick] that runs at a fixed interval.
 //
-// If a task's execution time exceeds the interval, the next run will
-// start immediately.
+// The wrapper measures the [Task] execution time and subtracts it from the
+// specified interval, ensuring the task starts at a consistent cadence. If a
+// task's execution time exceeds the interval, the next run starts immediately.
 func Every(d time.Duration, task Task) Tick {
 	return TickFn(func(ctx context.Context) time.Duration {
 		start := time.Now()
@@ -107,7 +108,7 @@ func Every(d time.Duration, task Task) Tick {
 	})
 }
 
-// Scheduler manages the non-blocking execution of Ticks at their intervals.
+// Scheduler manages the non-blocking execution of [Tick]s at their intervals.
 type Scheduler interface {
 	// Context returns the scheduler's context. This context is cancelled when
 	// Shutdown is called. Users can select on this context's Done channel to
@@ -118,15 +119,15 @@ type Scheduler interface {
 	// until the scheduler is shut down. Multiple ticks can be dispatched
 	// concurrently without blocking each other.
 	Dispatch(tick Tick)
-	// Shutdown gracefully stops the scheduler. It cancels the scheduler's context
-	// and waits for all its pending tasks to complete. Shutdown blocks until all
-	// dispatched goroutines have finished.
+	// Shutdown gracefully stops the scheduler. It cancels the scheduler's
+	// context and waits for all its pending tasks to complete. Shutdown blocks
+	// until all dispatched goroutines have finished.
 	Shutdown()
 }
 
-// New creates a new Scheduler whose lifecycle is tied to the provided
-// parent context. Cancelling this context will also cause the scheduler to
-// shut down.
+// New creates a new [Scheduler] tied to the provided parent context.
+//
+// Cancelling this context will also cause the scheduler to shut down.
 func New(ctx context.Context) Scheduler {
 	ctx, cancel := context.WithCancel(ctx)
 	return &scheduler{
@@ -135,31 +136,42 @@ func New(ctx context.Context) Scheduler {
 	}
 }
 
+// scheduler is the concrete implementation of the [Scheduler] interface.
 type scheduler struct {
-	ctx    context.Context
+	// ctx is the internal lifecycle context.
+	ctx context.Context
+	// cancel stops all dispatched goroutines.
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	// wg tracks active task goroutines.
+	wg sync.WaitGroup
 }
 
+// Context implements [Scheduler].
 func (s *scheduler) Context() context.Context {
 	return s.ctx
 }
 
+// Dispatch implements [Scheduler].
 func (s *scheduler) Dispatch(tick Tick) {
-	s.wg.Go(func() {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
 		timer := time.NewTimer(0)
+		defer timer.Stop()
+
 		for {
 			select {
 			case <-s.ctx.Done():
-				timer.Stop()
 				return
 			case <-timer.C:
-				timer.Reset(tick.Run(s.ctx))
+				wait := tick.Run(s.ctx)
+				timer.Reset(wait)
 			}
 		}
-	})
+	}()
 }
 
+// Shutdown implements [Scheduler].
 func (s *scheduler) Shutdown() {
 	s.cancel()
 	s.wg.Wait()
@@ -167,22 +179,28 @@ func (s *scheduler) Shutdown() {
 
 var _ Scheduler = (*scheduler)(nil)
 
-// Once creates a synchronous Scheduler that runs each dispatched Tick exactly
-// once. Its Dispatch method is blocking and runs the Tick in the calling
-// goroutine.
+// Once creates a synchronous [Scheduler] that runs each [Tick] exactly once.
 //
-// This implementation is useful for testing or for executing a task with the
-// same interface but without true background scheduling.
+// Its [Scheduler.Dispatch] method is blocking and runs the [Tick] in the
+// calling goroutine. This implementation is useful for testing or executing a
+// task without true background scheduling.
 func Once(ctx context.Context) Scheduler {
 	return &once{ctx: ctx}
 }
 
+// once is a [Scheduler] implementation for synchronous, single execution.
 type once struct {
+	// ctx is the context passed to executed ticks.
 	ctx context.Context
 }
 
+// Context implements [Scheduler].
 func (o *once) Context() context.Context { return o.ctx }
-func (o *once) Dispatch(tick Tick)       { tick.Run(o.ctx) }
-func (o *once) Shutdown()                {}
+
+// Dispatch implements [Scheduler].
+func (o *once) Dispatch(tick Tick) { tick.Run(o.ctx) }
+
+// Shutdown implements [Scheduler].
+func (o *once) Shutdown() {}
 
 var _ Scheduler = (*once)(nil)

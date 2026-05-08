@@ -12,8 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ports provides integration test helpers to find available network
-// ports and block until they accept connections.
+// Package ports provides integration test helpers for network port management.
+//
+// Package ports offers utilities to find available network ports and block
+// until those ports begin accepting connections. These helpers are primarily
+// intended for integration testing scenarios where services are started on
+// dynamic ports to avoid collisions.
+//
+// # Usage
+//
+// Find a free port and wait for a service to become ready on it.
+//
+// Example:
+//
+//	port := ports.FreeT(t)
+//	go startService(port)
+//	ports.WaitT(t, "127.0.0.1", port)
 package ports
 
 import (
@@ -25,6 +39,9 @@ import (
 )
 
 // Free asks the kernel for a free, open port that is ready to use.
+//
+// It opens a temporary TCP listener on a random port and returns the assigned
+// port number.
 func Free() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -37,8 +54,9 @@ func Free() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-// FreeT is a test helper that wraps Free. It fails the test immediately if
-// a free port cannot be found.
+// FreeT is a test helper that wraps [Free].
+//
+// It fails the test immediately if a free port cannot be found.
 func FreeT(t testing.TB) int {
 	t.Helper()
 	port, err := Free()
@@ -48,8 +66,10 @@ func FreeT(t testing.TB) int {
 	return port
 }
 
-// Wait blocks until the specified host and port are accepting TCP connections,
-// or until the context is canceled/times out.
+// Wait blocks until a TCP connection is accepted at the specified address.
+//
+// It periodically attempts to dial the host and port until it succeeds or the
+// provided [context.Context] is canceled or its deadline is exceeded.
 func Wait(ctx context.Context, host string, port int) error {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	var d net.Dialer
@@ -75,8 +95,10 @@ func Wait(ctx context.Context, host string, port int) error {
 	}
 }
 
-// WaitT is a test helper that wraps Wait. It fails the test immediately if
-// the port does not become available before the test context expires.
+// WaitT is a test helper that wraps [Wait].
+//
+// It fails the test immediately if the port does not become available before
+// the test context expires.
 func WaitT(t testing.TB, host string, port int) {
 	t.Helper()
 	if err := Wait(t.Context(), host, port); err != nil {

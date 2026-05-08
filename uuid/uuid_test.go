@@ -21,23 +21,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/uuid"
 )
 
-func TestNew_Structure(t *testing.T) {
+func TestStructure(t *testing.T) {
+	t.Parallel()
+
 	u := uuid.New()
 
-	version := u[6] >> 4
-	assert.Equal(t, byte(7), version)
+	if got, want := u[6]>>4, byte(7); got != want {
+		t.Errorf("u[6] version bits = %d; want %d", got, want)
+	}
 
-	variant := u[8] & 0xc0
-	assert.Equal(t, byte(0x80), variant)
+	if got, want := u[8]&0xc0, byte(0x80); got != want {
+		t.Errorf("u[8] variant bits = %x; want %x", got, want)
+	}
 }
 
-func TestNew_TimeAccuracy(t *testing.T) {
+func TestTimeAccuracy(t *testing.T) {
+	t.Parallel()
+
 	u := uuid.New()
 	now := time.Now()
 
@@ -49,11 +52,17 @@ func TestNew_TimeAccuracy(t *testing.T) {
 	ts |= int64(u[4]) << 8
 	ts |= int64(u[5])
 
-	assert.WithinDuration(t, now, time.UnixMilli(ts), 100*time.Millisecond)
+	got := time.UnixMilli(ts)
+	if diff := now.Sub(got); diff < 0 || diff > 100*time.Millisecond {
+		t.Errorf("UUID timestamp = %v; current time = %v; diff = %v",
+			got, now, diff)
+	}
 }
 
-func TestNew_Monotonicity(t *testing.T) {
-	count := 10000
+func TestMonotonicity(t *testing.T) {
+	t.Parallel()
+
+	const count = 10000
 	uuids := make([]uuid.UUIDv7, count)
 
 	for i := range count {
@@ -64,32 +73,43 @@ func TestNew_Monotonicity(t *testing.T) {
 		prev := uuids[i-1]
 		curr := uuids[i]
 
-		assert.True(
-			t,
-			bytes.Compare(curr[:], prev[:]) > 0,
-			"UUIDs must be strictly monotonic",
-		)
+		if bytes.Compare(curr[:], prev[:]) <= 0 {
+			t.Errorf("UUID[%d] (%s) is not greater than UUID[%d] (%s)",
+				i, curr, i-1, prev)
+		}
 	}
 }
 
-func TestString_Format(t *testing.T) {
+func TestString(t *testing.T) {
+	t.Parallel()
+
 	u := uuid.New()
 	s := u.String()
 
-	assert.Len(t, s, 36)
-	assert.Equal(t, byte('-'), s[8])
-	assert.Equal(t, byte('-'), s[13])
-	assert.Equal(t, byte('-'), s[18])
-	assert.Equal(t, byte('-'), s[23])
+	if got, want := len(s), 36; got != want {
+		t.Errorf("len(u.String()) = %d; want %d", got, want)
+	}
+
+	indices := []int{8, 13, 18, 23}
+	for _, idx := range indices {
+		if s[idx] != '-' {
+			t.Errorf("s[%d] = %q; want '-'", idx, s[idx])
+		}
+	}
 
 	parsed, err := uuid.Parse(s)
-	require.NoError(t, err)
-	assert.Equal(t, u, parsed)
+	if err != nil {
+		t.Fatalf("uuid.Parse(%q) err = %v", s, err)
+	}
+	if parsed != u {
+		t.Errorf("uuid.Parse(%q) = %v; want %v", s, parsed, u)
+	}
 }
 
 func TestParse(t *testing.T) {
-	v7 := uuid.New()
+	t.Parallel()
 
+	v7 := uuid.New()
 	v4 := v7
 	v4[6] = (v4[6] & 0x0f) | 0x40
 
@@ -129,13 +149,13 @@ func TestParse(t *testing.T) {
 			errMsg:  "uuid: invalid format",
 		},
 		{
-			name:    "wrong version", // v4 instead of v7
+			name:    "wrong version",
 			input:   v4.String(),
 			wantErr: true,
 			errMsg:  "uuid: invalid version: expected v7",
 		},
 		{
-			name: "wrong variant", // Microsoft legacy GUID
+			name: "wrong variant",
 			input: func() string {
 				u := v7
 				u[8] = 0xC0
@@ -146,20 +166,33 @@ func TestParse(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := uuid.Parse(tc.input)
-			if tc.wantErr {
-				require.Error(t, err)
-				assert.ErrorContains(t, err, tc.errMsg)
-			} else {
-				require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := uuid.Parse(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Parse(%q) err = nil; want error %q",
+						tt.input, tt.errMsg)
+				}
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("err = %q; want to contain %q",
+						err.Error(), tt.errMsg)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Parse(%q) err = %v; want nil", tt.input, err)
 			}
 		})
 	}
 }
 
 func TestParseBytes(t *testing.T) {
+	t.Parallel()
+
 	v7 := uuid.New()
 	v4 := v7
 	v4[6] = (v4[6] & 0x0f) | 0x40
@@ -188,13 +221,13 @@ func TestParseBytes(t *testing.T) {
 			errMsg:  "uuid: invalid length",
 		},
 		{
-			name:    "wrong version", // v4 instead of v7
+			name:    "wrong version",
 			input:   v4[:],
 			wantErr: true,
 			errMsg:  "uuid: invalid version: expected v7",
 		},
 		{
-			name: "wrong variant", // Variant 0 (NCS)
+			name: "wrong variant",
 			input: func() []byte {
 				u := v7
 				u[8] = 0x00
@@ -205,32 +238,51 @@ func TestParseBytes(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			buf := make([]byte, len(tc.input))
-			copy(buf, tc.input)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			buf := make([]byte, len(tt.input))
+			copy(buf, tt.input)
 
 			u, err := uuid.ParseBytes(buf)
 
-			if tc.wantErr {
-				require.Error(t, err)
-				assert.ErrorContains(t, err, tc.errMsg)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, v7, u)
-				for i := range buf { // Safety check for mutation
-					buf[i] ^= 0xFF
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ParseBytes() err = nil; want error %q",
+						tt.errMsg)
 				}
-				assert.Equal(t, v7, u)
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("err = %q; want to contain %q",
+						err.Error(), tt.errMsg)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ParseBytes() err = %v; want nil", err)
+			}
+			if u != v7 {
+				t.Errorf("ParseBytes() = %v; want %v", u, v7)
+			}
+
+			// Mutation safety check
+			for i := range buf {
+				buf[i] ^= 0xFF
+			}
+			if u != v7 {
+				t.Error("ParseBytes result was mutated by modifying input buffer")
 			}
 		})
 	}
 }
 
-func TestConcurrency(t *testing.T) {
+func TestNew_Concurrency_Unique(t *testing.T) {
+	t.Parallel()
+
 	var wg sync.WaitGroup
-	count := 100
-	routines := 50
+	const count = 100
+	const routines = 50
 
 	ids := make(chan uuid.UUIDv7, count*routines)
 
@@ -247,10 +299,12 @@ func TestConcurrency(t *testing.T) {
 	wg.Wait()
 	close(ids)
 
-	seen := make(map[uuid.UUIDv7]bool)
+	seen := make(map[uuid.UUIDv7]struct{})
 	for id := range ids {
-		assert.False(t, seen[id], "Duplicate UUID generated: %s", id)
-		seen[id] = true
+		if _, exists := seen[id]; exists {
+			t.Errorf("Duplicate UUID generated: %s", id)
+		}
+		seen[id] = struct{}{}
 	}
 }
 

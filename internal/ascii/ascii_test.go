@@ -17,39 +17,43 @@ package ascii_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 func TestIsUpper(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"lower bound", 'A', true},
 		{"upper bound", 'Z', true},
 		{"mid range", 'M', true},
-		{"just before A", '@', false},
-		{"just after Z", '[', false},
+		{"just before a", '@', false},
+		{"just after z", '[', false},
 		{"lowercase", 'a', false},
 		{"digit", '5', false},
 		{"symbol", '$', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsUpper(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsUpper(tt.give), tt.want; got != want {
+				t.Errorf("IsUpper(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestIsLower(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"lower bound", 'a', true},
@@ -62,18 +66,22 @@ func TestIsLower(t *testing.T) {
 		{"symbol", '$', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsLower(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsLower(tt.give), tt.want; got != want {
+				t.Errorf("IsLower(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestIsDigit(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"lower bound", '0', true},
@@ -84,18 +92,22 @@ func TestIsDigit(t *testing.T) {
 		{"letter", 'a', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsDigit(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsDigit(tt.give), tt.want; got != want {
+				t.Errorf("IsDigit(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestIsAlpha(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"uppercase", 'G', true},
@@ -105,18 +117,22 @@ func TestIsAlpha(t *testing.T) {
 		{"space", ' ', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsAlpha(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsAlpha(tt.give), tt.want; got != want {
+				t.Errorf("IsAlpha(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestIsAlphaNum(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"uppercase", 'G', true},
@@ -126,18 +142,22 @@ func TestIsAlphaNum(t *testing.T) {
 		{"underscore", '_', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsAlphaNum(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsAlphaNum(tt.give), tt.want; got != want {
+				t.Errorf("IsAlphaNum(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestIsWord(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"uppercase", 'X', true},
@@ -148,18 +168,22 @@ func TestIsWord(t *testing.T) {
 		{"space", ' ', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsWord(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsWord(tt.give), tt.want; got != want {
+				t.Errorf("IsWord(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestIsSlug(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want bool
 	}{
 		{"uppercase", 'X', true},
@@ -170,39 +194,47 @@ func TestIsSlug(t *testing.T) {
 		{"space", ' ', false},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.IsSlug(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsSlug(tt.give), tt.want; got != want {
+				t.Errorf("IsSlug(%q) = %v; want %v", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestToLower(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want rune
 	}{
-		{"uppercase A", 'A', 'a'},
-		{"uppercase Z", 'Z', 'z'},
+		{"uppercase a", 'A', 'a'},
+		{"uppercase z", 'Z', 'z'},
 		{"already lowercase", 'g', 'g'},
 		{"digit", '5', '5'},
 		{"symbol", '#', '#'},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.ToLower(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.ToLower(tt.give), tt.want; got != want {
+				t.Errorf("ToLower(%q) = %q; want %q", tt.give, got, want)
+			}
 		})
 	}
 }
 
 func TestToUpper(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
-		in   rune
+		give rune
 		want rune
 	}{
 		{"lowercase a", 'a', 'A'},
@@ -212,10 +244,12 @@ func TestToUpper(t *testing.T) {
 		{"symbol", '#', '#'},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ascii.ToUpper(tc.in)
-			assert.Equal(t, tc.want, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.ToUpper(tt.give), tt.want; got != want {
+				t.Errorf("ToUpper(%q) = %q; want %q", tt.give, got, want)
+			}
 		})
 	}
 }

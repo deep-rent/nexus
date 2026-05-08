@@ -23,21 +23,23 @@ import (
 	"testing"
 
 	"github.com/cloudflare/circl/sign/ed448"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 )
 
-var msg = []byte("payload")
+var mockMsg = []byte("payload")
 
-func TestRSA(t *testing.T) {
+func TestAlgorithm_RSASignVerify(t *testing.T) {
+	t.Parallel()
+
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey() error = %v", err)
+	}
 
 	tests := []struct {
-		n string
-		a jwa.Algorithm[*rsa.PublicKey]
+		name string
+		a    jwa.Algorithm[*rsa.PublicKey]
 	}{
 		{"RS256", jwa.RS256},
 		{"RS384", jwa.RS384},
@@ -47,54 +49,84 @@ func TestRSA(t *testing.T) {
 		{"PS512", jwa.PS512},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.n, func(t *testing.T) {
-			sig, err := tc.a.Sign(k, msg)
-			require.NoError(t, err)
-			assert.True(t, tc.a.Verify(&k.PublicKey, msg, sig))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sig, err := tt.a.Sign(k, mockMsg)
+			if err != nil {
+				t.Fatalf("%s.Sign() error = %v", tt.name, err)
+			}
+			if !tt.a.Verify(&k.PublicKey, mockMsg, sig) {
+				t.Errorf("%s.Verify() = false; want true", tt.name)
+			}
 		})
 	}
 }
 
-func TestECDSA(t *testing.T) {
+func TestAlgorithm_ECDSASignVerify(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		n string
-		a jwa.Algorithm[*ecdsa.PublicKey]
-		c elliptic.Curve
+		name  string
+		a     jwa.Algorithm[*ecdsa.PublicKey]
+		curve elliptic.Curve
 	}{
 		{"ES256", jwa.ES256, elliptic.P256()},
 		{"ES384", jwa.ES384, elliptic.P384()},
 		{"ES512", jwa.ES512, elliptic.P521()},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.n, func(t *testing.T) {
-			k, err := ecdsa.GenerateKey(tc.c, rand.Reader)
-			require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			k, err := ecdsa.GenerateKey(tt.curve, rand.Reader)
+			if err != nil {
+				t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+			}
 
-			sig, err := tc.a.Sign(k, msg)
-			require.NoError(t, err)
-			assert.True(t, tc.a.Verify(&k.PublicKey, msg, sig))
+			sig, err := tt.a.Sign(k, mockMsg)
+			if err != nil {
+				t.Fatalf("%s.Sign() error = %v", tt.name, err)
+			}
+			if !tt.a.Verify(&k.PublicKey, mockMsg, sig) {
+				t.Errorf("%s.Verify() = false; want true", tt.name)
+			}
 		})
 	}
 }
 
-func TestEdDSA(t *testing.T) {
-	t.Run("Ed25519", func(t *testing.T) {
-		pub, prv, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
+func TestAlgorithm_EdDSASignVerify(t *testing.T) {
+	t.Parallel()
 
-		sig, err := jwa.EdDSA.Sign(prv, msg)
-		require.NoError(t, err)
-		assert.True(t, jwa.EdDSA.Verify(pub, msg, sig))
+	t.Run("ed25519", func(t *testing.T) {
+		t.Parallel()
+		pub, prv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("ed25519.GenerateKey() error = %v", err)
+		}
+
+		sig, err := jwa.EdDSA.Sign(prv, mockMsg)
+		if err != nil {
+			t.Fatalf("EdDSA.Sign(Ed25519) error = %v", err)
+		}
+		if !jwa.EdDSA.Verify(pub, mockMsg, sig) {
+			t.Errorf("EdDSA.Verify(Ed25519) = false; want true")
+		}
 	})
 
-	t.Run("Ed448", func(t *testing.T) {
+	t.Run("ed448", func(t *testing.T) {
+		t.Parallel()
 		pub, prv, err := ed448.GenerateKey(rand.Reader)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("ed448.GenerateKey() error = %v", err)
+		}
 
-		sig, err := jwa.EdDSA.Sign(prv, msg)
-		require.NoError(t, err)
-		assert.True(t, jwa.EdDSA.Verify(pub, msg, sig))
+		sig, err := jwa.EdDSA.Sign(prv, mockMsg)
+		if err != nil {
+			t.Fatalf("EdDSA.Sign(Ed448) error = %v", err)
+		}
+		if !jwa.EdDSA.Verify(pub, mockMsg, sig) {
+			t.Errorf("EdDSA.Verify(Ed448) = false; want true")
+		}
 	})
 }

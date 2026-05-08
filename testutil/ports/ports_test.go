@@ -21,50 +21,72 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/testutil/ports"
 )
 
 func TestFree(t *testing.T) {
+	t.Parallel()
+
 	p, err := ports.Free()
-	require.NoError(t, err)
-	require.Greater(t, p, 0)
+	if err != nil {
+		t.Fatalf("ports.Free() err = %v", err)
+	}
+	if p <= 0 {
+		t.Errorf("ports.Free() = %d; want > 0", p)
+	}
 }
 
 func TestFreeT(t *testing.T) {
+	t.Parallel()
+
 	p := ports.FreeT(t)
-	require.Greater(t, p, 0)
+	if p <= 0 {
+		t.Errorf("ports.FreeT(t) = %d; want > 0", p)
+	}
 }
 
 func TestWait(t *testing.T) {
+	t.Parallel()
+
 	p := ports.FreeT(t)
-	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
-	require.NoError(t, err)
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(p))
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("net.Listen(tcp, %q) err = %v", addr, err)
+	}
 	defer func() {
 		_ = l.Close()
 	}()
 
-	ctx, c := context.WithTimeout(t.Context(), time.Second)
-	defer c()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
 
-	err = ports.Wait(ctx, "127.0.0.1", p)
-	require.NoError(t, err)
+	if err := ports.Wait(ctx, "127.0.0.1", p); err != nil {
+		t.Errorf("ports.Wait(ctx, 127.0.0.1, %d) err = %v", p, err)
+	}
 }
 
-func TestWaitTimeout(t *testing.T) {
-	p := ports.FreeT(t)
-	ctx, c := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer c()
+func TestWait_Timeout(t *testing.T) {
+	t.Parallel()
 
-	err := ports.Wait(ctx, "127.0.0.1", p)
-	require.Error(t, err)
+	p := ports.FreeT(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	if err := ports.Wait(ctx, "127.0.0.1", p); err == nil {
+		t.Error("ports.Wait() err = nil; want timeout error")
+	}
 }
 
 func TestWaitT(t *testing.T) {
+	t.Parallel()
+
 	p := ports.FreeT(t)
-	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
-	require.NoError(t, err)
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(p))
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("net.Listen(tcp, %q) err = %v", addr, err)
+	}
 	defer func() {
 		_ = l.Close()
 	}()
@@ -72,13 +94,18 @@ func TestWaitT(t *testing.T) {
 	ports.WaitT(t, "127.0.0.1", p)
 }
 
-func TestWaitT_Timeout(t *testing.T) {
+func TestWaitT_TimeoutCondition(t *testing.T) {
+	t.Parallel()
+
 	p := ports.FreeT(t)
 	t.Run("fails on timeout", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 
-		err := ports.Wait(ctx, "127.0.0.1", p)
-		require.Error(t, err)
+		if err := ports.Wait(ctx, "127.0.0.1", p); err == nil {
+			t.Error("ports.Wait() err = nil; want error")
+		}
 	})
 }

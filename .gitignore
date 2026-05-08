@@ -5,6 +5,7 @@
 *.tmp
 *.tmp.*
 *~
+/.github/prompts/
 $RECYCLE.BIN/
 Thumbs.db
 UserInterfaceState.xcuserstate

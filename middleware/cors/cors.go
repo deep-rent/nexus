@@ -12,25 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package cors provides a configurable CORS middleware for http.Handlers.
+//
 // Package cors provides a configurable CORS (Cross-Origin Resource Sharing)
-// middleware for http.Handlers.
+// middleware for [http.Handler] instances. It automatically handles preflight
+// (OPTIONS) requests and injects the appropriate CORS headers into responses
+// for actual requests.
 //
 // # Usage
 //
-// The New function creates the middleware pipe, which can be configured with
-// functional options (e.g., WithAllowedOrigins, WithAllowedMethods). The
-// middleware automatically handles preflight (OPTIONS) requests and injects the
-// appropriate CORS headers into responses for actual requests.
+// The [New] function creates the middleware pipe, which can be configured with
+// functional options (e.g., [WithAllowedOrigins], [WithAllowedMethods]).
 //
 // Example:
 //
 //	// Configure CORS to allow requests from a specific origin with
 //	// restricted methods and additional headers.
 //	pipe := cors.New(
-//		cors.WithAllowedOrigins("https://example.com"),
-//		cors.WithAllowedMethods(http.MethodGet, http.MethodOptions),
-//		cors.WithAllowedHeaders("Authorization", "Content-Type"),
-//		cors.WithMaxAge(12*time.Hour),
+//	  cors.WithAllowedOrigins("https://example.com"),
+//	  cors.WithAllowedMethods(http.MethodGet, http.MethodOptions),
+//	  cors.WithAllowedHeaders("Authorization", "Content-Type"),
+//	  cors.WithMaxAge(12*time.Hour),
 //	)
 //
 //	handler := http.HandlerFunc( ... )
@@ -56,12 +58,18 @@ const wildcard = "*"
 
 // config stores the pre-computed configuration for internal use.
 type config struct {
-	allowedOrigins   map[string]struct{}
-	allowedMethods   string
-	allowedHeaders   string
-	exposedHeaders   string
+	// allowedOrigins is the whitelist of permitted Origin values.
+	allowedOrigins map[string]struct{}
+	// allowedMethods is the pre-joined string for Access-Control-Allow-Methods.
+	allowedMethods string
+	// allowedHeaders is the pre-joined string for Access-Control-Allow-Headers.
+	allowedHeaders string
+	// exposedHeaders is the pre-joined string for Access-Control-Expose-Headers.
+	exposedHeaders string
+	// allowCredentials maps to the Access-Control-Allow-Credentials header.
 	allowCredentials bool
-	maxAge           string
+	// maxAge is the string representation of Access-Control-Max-Age in seconds.
+	maxAge string
 }
 
 // Option is a function that configures the CORS middleware.
@@ -70,11 +78,11 @@ type Option func(*config)
 // WithAllowedOrigins sets the allowed origins for CORS requests.
 //
 // By default, all origins are allowed. The same behavior can be achieved by
-// leaving the list empty or by manually including the special wildcard "*".
-// In other cases, this option restricts requests to a specific whitelist. If
-// credentials are enabled via WithAllowCredentials, browsers forbid a wildcard
-// origin, and this middleware will dynamically reflect the request's Origin
-// header if it is in the allowed list.
+// leaving the list empty or by manually including the special wildcard "*". In
+// other cases, this option restricts requests to a specific whitelist. If
+// credentials are enabled via [WithAllowCredentials], browsers forbid a
+// wildcard origin, and this middleware will dynamically reflect the request's
+// Origin header if it is in the allowed list.
 func WithAllowedOrigins(origins ...string) Option {
 	return func(c *config) {
 		if len(origins) != 0 && !slices.Contains(origins, wildcard) {
@@ -113,8 +121,7 @@ func WithAllowedHeaders(headers ...string) Option {
 	}
 }
 
-// WithExposedHeaders sets the HTTP headers that are safe to expose to the
-// API of a CORS API specification.
+// WithExposedHeaders sets the HTTP headers safe to expose to the API.
 //
 // By default, client-side scripts can only access a limited set of simple
 // response headers. This option lists additional headers (like a custom
@@ -127,8 +134,7 @@ func WithExposedHeaders(headers ...string) Option {
 	}
 }
 
-// WithAllowCredentials indicates whether the response to the request can be
-// exposed when the credentials flag is true.
+// WithAllowCredentials indicates if the response can be exposed with credentials.
 //
 // When used as part of a response to a preflight request, it indicates that the
 // actual request can include cookies and other user credentials. This option
@@ -140,8 +146,7 @@ func WithAllowCredentials(allow bool) Option {
 	}
 }
 
-// WithMaxAge indicates how long the results of a preflight request can be
-// cached by the browser, in seconds.
+// WithMaxAge indicates how long preflight results can be cached, in seconds.
 //
 // If set to 0 (the default), the header is omitted. Be aware that browsers
 // have a default internal limit (usually 5 seconds) when this header is
@@ -156,8 +161,7 @@ func WithMaxAge(d time.Duration) Option {
 	}
 }
 
-// New creates a middleware Pipe that handles CORS based on the provided
-// options.
+// New creates a middleware [middleware.Pipe] that handles CORS requests.
 //
 // The middleware distinguishes between preflight and actual requests. Preflight
 // (OPTIONS) requests are intercepted and terminated with a 204 No Content
@@ -178,9 +182,11 @@ func New(opts ...Option) middleware.Pipe {
 	}
 }
 
-// handle processes CORS headers and returns true if the request should
-// be passed to the next handler. It returns false if the request has been
-// fully handled, such as in a preflight request.
+// handle processes CORS headers for the given request.
+//
+// It returns true if the request should be passed to the next handler. It
+// returns false if the request has been fully handled, such as in a preflight
+// request.
 func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	// Pass through non-CORS requests.

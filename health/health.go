@@ -13,10 +13,20 @@
 // limitations under the License.
 
 // Package health provides a registry and HTTP handlers for application health
-// monitoring. It allows for the registration of pluggable health checks with
-// built-in TTL-based caching to prevent overloading downstream dependencies.
+// monitoring.
 //
-// Basic Usage:
+// It allows for the registration of pluggable health checks with built-in
+// TTL-based caching to prevent overloading downstream dependencies. The package
+// handles the orchestration of these checks, providing thread-safe execution
+// and aggregation of results into standardized [Report] formats suitable for
+// automated monitoring systems and human inspection.
+//
+// # Usage
+//
+// To use the health monitor, create a new instance, attach your dependency
+// checks, and mount the handlers to your router.
+//
+// Example:
 //
 //	monitor := health.NewMonitor()
 //
@@ -65,21 +75,26 @@ type Result struct {
 type Report struct {
 	// Status is the overall health state of the application.
 	Status Status `json:"status"`
-	// Checks maps the name of each registered check to its specific result.
+	// Checks maps the name of each registered check to its specific [Result].
 	Checks map[string]Result `json:"checks"`
 }
 
 // CheckFunc defines the signature for a pluggable health check. It receives
 // the request context to allow for cancellation and should return the
-// perceived Status and an error if applicable.
+// perceived [Status] and an error if applicable.
 type CheckFunc func(ctx context.Context) (Status, error)
 
 // check wraps a registered check with its caching state and mutex.
 type check struct {
+	// name is the identifier for the health check.
 	name string
-	fn   CheckFunc
-	ttl  time.Duration
-	mu   sync.RWMutex
+	// fn is the [CheckFunc] to execute.
+	fn CheckFunc
+	// ttl is the duration for which the [Result] is considered fresh.
+	ttl time.Duration
+	// mu protects access to the cached last result.
+	mu sync.RWMutex
+	// last is the most recently recorded [Result].
 	last Result
 }
 
@@ -132,13 +147,15 @@ func (c *check) run(ctx context.Context) (res Result) {
 }
 
 // Monitor manages the registry of health checks and provides the
-// router-compatible handlers. It is safe for concurrent use.
+// [router]-compatible handlers. It is safe for concurrent use.
 type Monitor struct {
-	mu     sync.RWMutex
+	// mu protects access to the internal map of checks.
+	mu sync.RWMutex
+	// checks stores registered health checks indexed by name.
 	checks map[string]*check
 }
 
-// NewMonitor creates a fresh health monitor instance.
+// NewMonitor creates a fresh [Monitor] instance.
 func NewMonitor() *Monitor {
 	return &Monitor{
 		checks: make(map[string]*check),
@@ -150,8 +167,8 @@ func NewMonitor() *Monitor {
 //
 // The name should be formatted in snake_case (e.g., "redis_primary").
 // The TTL (Time-To-Live) parameter defines the minimum duration between
-// consecutive executions of the check function; subsequent calls within this
-// window return the cached result to prevent overloading the dependency.
+// consecutive executions of the [CheckFunc]; subsequent calls within this
+// window return the cached [Result] to prevent overloading the dependency.
 func (m *Monitor) Attach(name string, ttl time.Duration, fn CheckFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -170,7 +187,7 @@ func (m *Monitor) Detach(name string) {
 	delete(m.checks, name)
 }
 
-// run runs all registered checks concurrently and compiles the overall status
+// run runs all registered checks concurrently and compiles the overall [Status]
 // from the gathered results.
 func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 	m.mu.RLock()
@@ -208,7 +225,7 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 }
 
 // Live returns a handler that indicates if the application process is alive.
-// It always returns StatusHealthy and HTTP 200 without checking dependencies,
+// It always returns [StatusHealthy] and HTTP 200 without checking dependencies,
 // serving as a basic liveness probe to detect process hangs.
 func (m *Monitor) Live() router.HandlerFunc {
 	return func(e *router.Exchange) error {
@@ -220,7 +237,7 @@ func (m *Monitor) Live() router.HandlerFunc {
 
 // Ready returns a handler that evaluates all registered checks.
 // It returns HTTP 503 (Service Unavailable) if any check results in
-// StatusSick. Otherwise, it returns HTTP 200.
+// [StatusSick]. Otherwise, it returns HTTP 200.
 func (m *Monitor) Ready() router.HandlerFunc {
 	return func(e *router.Exchange) error {
 		overall, results := m.run(e.Context())
@@ -237,13 +254,15 @@ func (m *Monitor) Ready() router.HandlerFunc {
 	}
 }
 
-// Handler is an alias for Ready. It provides a detailed JSON breakdown
-// of all checks, suitable for monitoring scrapers and dashboards.
+// Handler is an alias for [Monitor.Ready]. It provides a detailed JSON
+// breakdown of all checks, suitable for monitoring scrapers and dashboards.
 func (m *Monitor) Handler() router.HandlerFunc {
 	return m.Ready()
 }
 
-// Mount registers the standard health check routes on the provided router.
+// Mount registers the standard health check routes on the provided
+// [router.Router].
+//
 // It exposes:
 //   - GET /health: Detailed summary of all checks.
 //   - GET /health/live: Shallow liveness probe.

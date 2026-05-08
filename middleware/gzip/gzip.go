@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package gzip provides an HTTP middleware for compressing response bodies.
+//
 // Package gzip provides an HTTP middleware for compressing response bodies
 // using the gzip algorithm. It automatically adds the "Content-Encoding: gzip"
 // header and compresses the payload for clients that support it (indicated by
@@ -19,25 +21,25 @@
 //
 // # Usage
 //
-// The middleware is designed to be efficient. It pools gzip writers to reduce
-// memory allocations and gracefully skips compression for responses tha
-// already have a "Content-Encoding" header set.
+// The middleware is designed to be efficient. It pools [gzip.Writer] instances
+// to reduce memory allocations and gracefully skips compression for responses
+// that already have a "Content-Encoding" header set.
 //
 // Example:
 //
 //	// Create the final handler.
 //	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//		w.Header().Set("Content-Type", "text/plain")
-//		w.Write([]byte("This is a long string that will be compressed."))
+//	  w.Header().Set("Content-Type", "text/plain")
+//	  w.Write([]byte("This is a long string that will be compressed."))
 //	})
 //
-//	// Create a gzip middleware pipe with the highest level if compression.
+//	// Create a gzip middleware pipe with the highest level of compression.
 //	pipe := gzip.New(
-//		gzip.WithCompressionLevel(gzip.BestCompression),
-//		gzip.WithExcludeMimeTypes("text/*", "application/font-woff"),
+//	  gzip.WithCompressionLevel(gzip.BestCompression),
+//	  gzip.WithExcludeMimeTypes("text/*", "application/font-woff"),
 //	)
 //
-//	// Apply the CORS middleware as one of the first layers.
+//	// Apply the middleware as one of the first layers.
 //	chainedHandler := middleware.Chain(handler, pipe)
 //
 //	http.ListenAndServe(":8080", chainedHandler)
@@ -57,13 +59,17 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 )
 
-// Mirror constants from the compress/gzip package for easy access without
+// Mirror constants from the [compress/gzip] package for easy access without
 // requiring an extra import.
 const (
-	BestCompression    = gzip.BestCompression
-	BestSpeed          = gzip.BestSpeed
+	// BestCompression provides the highest level of compression.
+	BestCompression = gzip.BestCompression
+	// BestSpeed provides the fastest compression time.
+	BestSpeed = gzip.BestSpeed
+	// DefaultCompression provides a balance between speed and ratio.
 	DefaultCompression = gzip.DefaultCompression
-	NoCompression      = gzip.NoCompression
+	// NoCompression disables compression entirely.
+	NoCompression = gzip.NoCompression
 )
 
 // defaultExcludeList lists common media types that are already compressed.
@@ -81,23 +87,34 @@ var defaultExcludeList = []string{
 	"application/wasm",
 }
 
-// interceptor wraps an http.ResponseWriter to transparently compress the
-// response body with gzip. It also implements http.Hijacker and http.Flusher to
-// support protocol upgrades and streaming.
+// interceptor wraps an [http.ResponseWriter] to compress the response body.
+//
+// It transparently compresses the response body with gzip. It also implements
+// [http.Hijacker] and [http.Flusher] to support protocol upgrades and
+// streaming.
 type interceptor struct {
+	// ResponseWriter is the underlying writer being wrapped.
 	http.ResponseWriter
-	gz       *gzip.Writer
-	level    int
-	exclude  []string
-	pool     *sync.Pool
-	wrote    bool // Tracks if WriteHeader has been called.
-	hijacked bool // Tracks if the connection has been hijacked.
-	skip     bool // Decide whether to skip compression.
+	// gz is the active gzip writer for the current response.
+	gz *gzip.Writer
+	// level is the compression level to use.
+	level int
+	// exclude is the list of MIME types to skip.
+	exclude []string
+	// pool is the sync.Pool used for gzip writer reuse.
+	pool *sync.Pool
+	// wrote tracks if WriteHeader has been called.
+	wrote bool
+	// hijacked tracks if the connection has been hijacked.
+	hijacked bool
+	// skip determines whether to skip compression for this response.
+	skip bool
 }
 
-// WriteHeader sets the Content-Encoding header and deletes Content-Length
-// before writing the status code. Deleting Content-Length is crucial, as the
-// size of the compressed content is unknown until it's fully written.
+// WriteHeader sets the Content-Encoding header and deletes Content-Length.
+//
+// Deleting Content-Length is crucial, as the size of the compressed content is
+// unknown until it is fully written.
 func (w *interceptor) WriteHeader(statusCode int) {
 	if w.wrote {
 		return
@@ -135,7 +152,9 @@ func (w *interceptor) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
-// Write compresses the data and writes it to the underlying ResponseWriter.
+// Write compresses the data and writes it to the underlying
+// [http.ResponseWriter].
+//
 // It also handles setting the Content-Encoding header on the first write.
 func (w *interceptor) Write(b []byte) (int, error) {
 	if !w.wrote {
@@ -147,8 +166,8 @@ func (w *interceptor) Write(b []byte) (int, error) {
 	return w.gz.Write(b)
 }
 
-// Close flushes any buffered data, closes the gzip writer, and returns it to
-// the pool.
+// Close flushes buffered data, closes the gzip writer, and returns it to the
+// pool.
 func (w *interceptor) Close() {
 	// If the connection was hijacked, don't write the gzip footer.
 	// Just return the writer to the pool.
@@ -162,8 +181,10 @@ func (w *interceptor) Close() {
 	}
 }
 
-// Hijack implements the http.Hijacker interface, allowing the underlying
-// connection to be taken over for protocol upgrades like WebSockets.
+// Hijack implements the [http.Hijacker] interface.
+//
+// It allows the underlying connection to be taken over for protocol upgrades
+// like WebSockets.
 func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := w.ResponseWriter.(http.Hijacker)
 	if !ok {
@@ -173,8 +194,10 @@ func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return hijacker.Hijack()
 }
 
-// Flush implements the http.Flusher interface, enabling incremental flushing of
-// the response body, which is useful for streaming data.
+// Flush implements the [http.Flusher] interface.
+//
+// It enables incremental flushing of the response body, which is useful for
+// streaming data.
 func (w *interceptor) Flush() {
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		if w.gz != nil {
@@ -191,8 +214,7 @@ var (
 	_ http.Flusher        = (*interceptor)(nil)
 )
 
-// New creates a middleware Pipe that compresses HTTP responses using gzip
-// with the specified options.
+// New creates a middleware [middleware.Pipe] that compresses HTTP responses.
 //
 // The middleware is a no-op if the client does not send an Accept-Encoding
 // header including "gzip" or if the response already has a non-empty
@@ -243,17 +265,20 @@ func New(opts ...Option) middleware.Pipe {
 
 // config holds the middleware configuration.
 type config struct {
-	level   int
+	// level is the compression level.
+	level int
+	// exclude is the list of MIME types to skip.
 	exclude []string
 }
 
 // Option is a function that configures the middleware.
 type Option func(*config)
 
-// WithCompressionLevel sets the compression level. It accepts values ranging
-// from BestSpeed (1) to BestCompression (9). For other values, it will fall
-// back to DefaultCompression, a good balance between speed and
-// compression ratio.
+// WithCompressionLevel sets the compression level.
+//
+// It accepts values ranging from [BestSpeed] (1) to [BestCompression] (9). For
+// other values, it will fall back to [DefaultCompression], a good balance
+// between speed and compression ratio.
 func WithCompressionLevel(level int) Option {
 	return func(c *config) {
 		if level >= NoCompression && level <= BestCompression {
@@ -262,12 +287,11 @@ func WithCompressionLevel(level int) Option {
 	}
 }
 
-// WithExcludeMimeTypes adds MIME types to the list of content types that
-// should not be compressed. This option is additive and can be called
-// multiple times; it appends to the default exclusion list rather than
-// replacing it.
+// WithExcludeMimeTypes adds MIME types to the exclusion list.
 //
-// The matching logic supports two formats:
+// This option is additive and can be called multiple times; it appends to the
+// default exclusion list rather than replacing it. The matching logic supports
+// two formats:
 //
 //   - Exact: Provide the full MIME type (e.g., "application/pdf").
 //   - Prefix: End the MIME type with a wildcard "*" (e.g., "image/*")

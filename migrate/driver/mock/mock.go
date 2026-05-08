@@ -12,8 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package mock provides an in-memory implementation of the migrate.Driver
-// interface designed strictly for unit testing.
+// Package mock provides an in-memory implementation of the migrate.Driver.
+//
+// Package mock provides an in-memory implementation of the [migrate.Driver]
+// interface designed strictly for unit testing. It is safe for concurrent use
+// and allows injecting errors for every operation to test the Migrator's error
+// handling and rollback logic.
+//
+// # Usage
+//
+// Create a new mock driver and use its exported fields to assert that specific
+// database operations (like locking or initialization) were performed by the
+// migrator.
+//
+// Example:
+//
+//	drv := mock.New()
+//	m := migrate.New(migrate.WithDriver(drv), migrate.WithSource(src))
+//	_ = m.Up(ctx)
+//
+//	if !drv.IsInit {
+//	    t.Error("expected driver to be initialized")
+//	}
 package mock
 
 import (
@@ -28,35 +48,43 @@ import (
 	"github.com/deep-rent/nexus/migrate"
 )
 
-// Driver is an in-memory implementation of migrate.Driver.
+// Driver is an in-memory implementation of [migrate.Driver].
+//
 // It is safe for concurrent use and allows injecting errors for every operation
 // to test the Migrator's error handling and rollback logic.
 type Driver struct {
-	mu      sync.Mutex
+	// mu protects the internal state of the mock driver.
+	mu sync.Mutex
+	// records stores the simulated migration state.
 	records map[uint64]migrate.Record
 
-	// Exported state for test assertions:
-
+	// IsLocked indicates if the mock advisory lock is currently held.
 	IsLocked bool
+	// IsClosed indicates if the driver has been closed.
 	IsClosed bool
-	IsInit   bool
+	// IsInit indicates if the tracking table initialization was called.
+	IsInit bool
 
-	// Injectable behaviors:
-
+	// ParserFunc allows injecting a custom statement parser.
 	ParserFunc schema.Parser
 
-	// Injectable errors for testing failure paths:
-
-	InitErr    error
-	LockErr    error
-	UnlockErr  error
+	// InitErr is returned by the Init method if non-nil.
+	InitErr error
+	// LockErr is returned by the Lock method if non-nil.
+	LockErr error
+	// UnlockErr is returned by the Unlock method if non-nil.
+	UnlockErr error
+	// AppliedErr is returned by the Applied method if non-nil.
 	AppliedErr error
-	ForceErr   error
+	// ForceErr is returned by the Force method if non-nil.
+	ForceErr error
+	// ExecuteErr is returned by the Execute method if non-nil.
 	ExecuteErr error
-	CloseErr   error
+	// CloseErr is returned by the Close method if non-nil.
+	CloseErr error
 }
 
-// New creates a new in-memory Driver with an empty state.
+// New creates a new in-memory [Driver] with an empty state.
 func New() *Driver {
 	return &Driver{
 		records: make(map[uint64]migrate.Record),
@@ -71,14 +99,14 @@ func New() *Driver {
 	}
 }
 
-// Set write a Record to the in-memory table.
+// Set writes a [migrate.Record] to the in-memory table.
 func (d *Driver) Set(rec migrate.Record) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.records[rec.Version] = rec
 }
 
-// Get reads a Record from the in-memory table.
+// Get reads a [migrate.Record] from the in-memory table.
 func (d *Driver) Get(version uint64) (migrate.Record, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -95,7 +123,7 @@ func (d *Driver) State() map[uint64]migrate.Record {
 	return out
 }
 
-// Parser returns the injected ParserFunc.
+// Parser returns the injected [Driver.ParserFunc].
 func (d *Driver) Parser() schema.Parser {
 	return d.ParserFunc
 }
@@ -166,8 +194,10 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	return out, nil
 }
 
-// Force manually sets the database to the specified version, clearing the dirty
-// flag for that version and removing any records greater than it.
+// Force manually sets the database version.
+//
+// It clears the dirty flag for that version and removes any records greater
+// than it.
 func (d *Driver) Force(ctx context.Context, version uint64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -190,8 +220,10 @@ func (d *Driver) Force(ctx context.Context, version uint64) error {
 	return nil
 }
 
-// Execute simulates running a migration script. If ExecuteErr is set, it
-// correctly simulates a failure by leaving the target version in a dirty state.
+// Execute simulates running a migration script.
+//
+// If [Driver.ExecuteErr] is set, it correctly simulates a failure by leaving
+// the target version in a dirty state.
 func (d *Driver) Execute(
 	ctx context.Context,
 	script migrate.ParsedScript,

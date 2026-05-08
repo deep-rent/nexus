@@ -15,10 +15,9 @@
 package backoff_test
 
 import (
+	"math"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/internal/jitter"
@@ -30,7 +29,8 @@ func (m *mockRand) Float64() float64 { return m.val }
 
 var _ jitter.Rand = (*mockRand)(nil)
 
-func TestConstant(t *testing.T) {
+func TestBackoffConstant(t *testing.T) {
+	t.Parallel()
 	unit := time.Millisecond
 	type test struct {
 		name  string
@@ -55,21 +55,35 @@ func TestConstant(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			s := backoff.Constant(tc.delay)
-			assert.Equal(t, tc.want, s.MinDelay(), "MinDelay")
-			assert.Equal(t, tc.want, s.MaxDelay(), "MaxDelay")
-			assert.Equal(t, tc.want, s.Next(), "1st call to Next()")
-			assert.Equal(t, tc.want, s.Next(), "2nd call to Next()")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := backoff.Constant(tt.delay)
+
+			if got := s.MinDelay(); got != tt.want {
+				t.Errorf("MinDelay() = %v; want %v", got, tt.want)
+			}
+			if got := s.MaxDelay(); got != tt.want {
+				t.Errorf("MaxDelay() = %v; want %v", got, tt.want)
+			}
+
+			if got := s.Next(); got != tt.want {
+				t.Errorf("Next() 1st call = %v; want %v", got, tt.want)
+			}
+			if got := s.Next(); got != tt.want {
+				t.Errorf("Next() 2nd call = %v; want %v", got, tt.want)
+			}
 
 			s.Done()
-			assert.Equal(t, tc.want, s.Next(), "Next() after Done()")
+			if got := s.Next(); got != tt.want {
+				t.Errorf("Next() after Done() = %v; want %v", got, tt.want)
+			}
 		})
 	}
 }
 
-func TestNew(t *testing.T) {
+func TestBackoffNew(t *testing.T) {
+	t.Parallel()
 	unit := time.Millisecond
 	type test struct {
 		name    string
@@ -156,21 +170,39 @@ func TestNew(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			s := backoff.New(tc.opts...)
-			assert.InDelta(t, tc.wantMin, s.MinDelay(), float64(unit))
-			assert.InDelta(t, tc.wantMax, s.MaxDelay(), float64(unit))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := backoff.New(tt.opts...)
 
-			if tc.seq != nil {
-				for i, want := range tc.seq {
+			if got, want := s.MinDelay(),
+				tt.wantMin; math.Abs(float64(got-want)) > float64(unit) {
+				t.Errorf("MinDelay() = %v; want %v (delta %v)", got, want, unit)
+			}
+
+			if got, want := s.MaxDelay(),
+				tt.wantMax; math.Abs(float64(got-want)) > float64(unit) {
+				t.Errorf("MaxDelay() = %v; want %v (delta %v)", got, want, unit)
+			}
+
+			if tt.seq != nil {
+				for i, want := range tt.seq {
 					got := s.Next()
-					assert.InDeltaf(t, want, got, float64(unit), "sequence index %d", i)
+					if math.Abs(float64(got-want)) > float64(unit) {
+						t.Errorf(
+							"Next() sequence index %d = %v; want %v (delta %v)",
+							i, got, want, unit,
+						)
+					}
 				}
-
 				s.Done()
 				got := s.Next()
-				assert.InDeltaf(t, tc.seq[0], got, float64(unit), "after Done()")
+				if math.Abs(float64(got-tt.seq[0])) > float64(unit) {
+					t.Errorf(
+						"Next() after Done() = %v; want %v (delta %v)",
+						got, tt.seq[0], unit,
+					)
+				}
 			}
 		})
 	}

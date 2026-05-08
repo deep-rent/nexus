@@ -17,6 +17,11 @@ test:
 	@echo "Testing..."
 	@$(FLAGS) go test -v -cover -coverprofile=coverage.out $(PACKAGES)
 
+
+fix:
+	@echo "Fixing..."
+	@$(FLAGS) go fix $(PACKAGES)
+
 help:
 	@echo "Targets:"
 	@echo ""

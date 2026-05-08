@@ -12,25 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package check provides a collection of standard health check constructors
-// for common infrastructure dependencies like TCP, HTTP, DNS, and Databases.
+// Package check provides a collection of standard health check constructors for
+// common infrastructure dependencies.
 //
-// These functions return a health.CheckFunc that can be registered with a
-// health.Monitor.
+// It includes implementations for TCP connectivity, HTTP responsiveness, DNS
+// resolution, and database pings. These functions return a [health.CheckFunc]
+// that can be registered with a [health.Monitor] to automate dependency
+// monitoring.
+//
+// # Usage
+//
+// The constructors in this package are designed to be passed directly into the
+// Attach method of a [health.Monitor].
 //
 // Example:
 //
 //	monitor := health.NewMonitor()
 //
 //	// Check a Redis instance via TCP
-//	monitor.Register(
+//	monitor.Attach(
 //		"redis",
 //		2*time.Second,
 //		check.TCP("localhost:6379", 1*time.Second),
 //	)
 //
 //	// Check an external API with a custom HTTP client
-//	monitor.Register(
+//	monitor.Attach(
 //		"stripe",
 //		10*time.Second,
 //		check.HTTP(client, "https://api.stripe.com/health"),
@@ -49,8 +56,10 @@ import (
 )
 
 // TCP returns a health check that attempts to establish a TCP connection
-// to the specified address. It returns health.StatusSick if the connection
-// cannot be established within the provided timeout.
+// to the specified address.
+//
+// It returns [health.StatusSick] if the connection cannot be established within
+// the provided timeout.
 func TCP(addr string, timeout time.Duration) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		d := net.Dialer{Timeout: timeout}
@@ -64,14 +73,15 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 }
 
 // HTTP returns a health check that performs a GET request to the specified URL.
-// If client is nil, http.DefaultClient is employed.
 //
-// The check logic includes:
+// If client is nil, [http.DefaultClient] is employed. The check logic includes:
+//
 //  1. Fallback Timeout: If neither the client nor the request context has a
 //     deadline, a 10-second timeout is applied.
 //  2. Connection Hygiene: The response body is fully drained and closed
 //     to ensure the underlying TCP connection can be reused.
-//  3. Status Codes: Any status code in the 2xx or 3xx range is considered healthy.
+//  3. Status Codes: Any status code in the 2xx or 3xx range is considered
+//     healthy.
 func HTTP(client *http.Client, url string) health.CheckFunc {
 	const defaultTimeout = 10 * time.Second
 
@@ -120,13 +130,17 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 }
 
 // Pinger is an interface for types that support context-aware connectivity
-// checks. This is most commonly satisfied by *sql.DB from the standard library.
+// checks.
+//
+// This is most commonly satisfied by [*database/sql.DB] from the standard
+// library.
 type Pinger interface {
 	// PingContext verifies a connection to the target system is still alive.
 	PingContext(ctx context.Context) error
 }
 
-// Ping returns a health check that calls PingContext on the provided Pinger.
+// Ping returns a health check that calls PingContext on the provided [Pinger].
+//
 // It is ideal for monitoring the health of SQL database connections.
 func Ping(p Pinger) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
@@ -150,8 +164,10 @@ func DNS(host string) health.CheckFunc {
 }
 
 // Wrap converts a simple function that returns an error into a health check
-// callback. The resulting check is not context-aware and will ignore the
-// context passed during execution.
+// callback.
+//
+// The resulting check is not context-aware and will ignore the context passed
+// during execution.
 func Wrap(fn func() error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := fn(); err != nil {
@@ -162,8 +178,9 @@ func Wrap(fn func() error) health.CheckFunc {
 }
 
 // WrapContext converts a context-aware function into a health check callback.
-// This is used for custom checks that need to respect timeouts or
-// cancellation signals.
+//
+// This is used for custom checks that need to respect timeouts or cancellation
+// signals provided by the [health.Monitor].
 func WrapContext(fn func(context.Context) error) health.CheckFunc {
 	return func(ctx context.Context) (health.Status, error) {
 		if err := fn(ctx); err != nil {

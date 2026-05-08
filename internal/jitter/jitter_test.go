@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/deep-rent/nexus/internal/jitter"
 )
 
@@ -32,62 +30,87 @@ func (m mockRand) Float64() float64 {
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	j1 := jitter.New(0.5, nil)
-	assert.NotNil(t, j1)
+	if j1 == nil {
+		t.Fatal("jitter.New(0.5, nil) = nil; want non-nil")
+	}
 
 	j2 := jitter.New(0.5, mockRand{val: 0.1})
-	assert.NotNil(t, j2)
+	if j2 == nil {
+		t.Fatal("jitter.New(0.5, mockRand) = nil; want non-nil")
+	}
 }
 
-func TestApply(t *testing.T) {
+func TestJitter_Apply(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name     string
-		p        float64
-		rand     float64
-		input    time.Duration
-		expected time.Duration
+		name string
+		p    float64
+		rand float64
+		give time.Duration
+		want time.Duration
 	}{
-		{"no_jitter_rand_0", 0.5, 0.0, 100 * time.Second, 100 * time.Second},
-		{"half_jitter_rand_1", 0.5, 1.0, 100 * time.Second, 50 * time.Second},
-		{"small_jitter_rand_1", 0.1, 1.0, 100 * time.Second, 90 * time.Second},
-		{"mid_jitter", 0.5, 0.5, 100 * time.Second, 75 * time.Second},
+		{"no jitter rand 0", 0.5, 0.0, 100 * time.Second, 100 * time.Second},
+		{"half jitter rand 1", 0.5, 1.0, 100 * time.Second, 50 * time.Second},
+		{"small jitter rand 1", 0.1, 1.0, 100 * time.Second, 90 * time.Second},
+		{"mid jitter", 0.5, 0.5, 100 * time.Second, 75 * time.Second},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			j := jitter.New(tt.p, mockRand{val: tt.rand})
-			got := j.Apply(tt.input)
-			assert.Equal(t, tt.expected, got)
+			if got := j.Apply(tt.give); got != tt.want {
+				t.Errorf("Apply(%v) = %v; want %v", tt.give, got, tt.want)
+			}
 		})
 	}
 }
 
-func TestFloor(t *testing.T) {
-	j := jitter.New(0.5, nil) // p = 0.5
+func TestJitter_Floor(t *testing.T) {
+	t.Parallel()
+
+	j := jitter.New(0.5, nil)
 
 	tests := []struct {
-		d        time.Duration
-		f        float64
-		expected time.Duration
+		name string
+		give time.Duration
+		f    float64
+		want time.Duration
 	}{
-		{100 * time.Second, 0.0, 100 * time.Second},
-		{100 * time.Second, 1.0, 50 * time.Second},
-		{100 * time.Second, 0.5, 75 * time.Second},
+		{"zero factor", 100 * time.Second, 0.0, 100 * time.Second},
+		{"full factor", 100 * time.Second, 1.0, 50 * time.Second},
+		{"half factor", 100 * time.Second, 0.5, 75 * time.Second},
 	}
 
 	for _, tt := range tests {
-		got := j.Floor(tt.d, tt.f)
-		assert.Equal(t, tt.expected, got)
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := j.Floor(tt.give, tt.f); got != tt.want {
+				t.Errorf("Floor(%v, %f) = %v; want %v", tt.give, tt.f, got, tt.want)
+			}
+		})
 	}
 }
 
-// func TestRealRand(t *testing.T) {
-// 	j := jitter.New(0.1, nil)
-// 	d := 100 * time.Millisecond
+func TestJitter_Apply_RealRand(t *testing.T) {
+	t.Parallel()
 
-// 	for range 100 {
-// 		got := j.Apply(d)
-// 		assert.LessOrEqual(t, got, d)
-// 		assert.GreaterOrEqual(t, got, time.Duration(float64(d)*0.9))
-// 	}
-// }
+	p := 0.1
+	j := jitter.New(p, nil)
+	d := 100 * time.Millisecond
+	min := time.Duration(float64(d) * (1 - p))
+
+	for range 100 {
+		got := j.Apply(d)
+		if got > d {
+			t.Errorf("Apply(%v) = %v; want <= %v", d, got, d)
+		}
+		if got < min {
+			t.Errorf("Apply(%v) = %v; want >= %v", d, got, min)
+		}
+	}
+}

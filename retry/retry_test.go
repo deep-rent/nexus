@@ -15,21 +15,16 @@
 package retry_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/retry"
@@ -66,7 +61,9 @@ func (m *mockRoundTripper) Calls() int {
 	return m.calls
 }
 
-func newResponse(statusCode int, body string) *http.Response {
+var _ http.RoundTripper = (*mockRoundTripper)(nil)
+
+func mockResponse(statusCode int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(strings.NewReader(body)),
@@ -104,87 +101,101 @@ func (m *mockBackoff) MaxDelay() time.Duration { return 0 }
 
 var _ backoff.Strategy = (*mockBackoff)(nil)
 
-func TestAttempt(t *testing.T) {
-	t.Run("Idempotent", func(t *testing.T) {
-		type test struct {
-			method string
-			want   bool
-		}
-		tests := []test{
-			{http.MethodGet, true},
-			{http.MethodHead, true},
-			{http.MethodOptions, true},
-			{http.MethodTrace, true},
-			{http.MethodPut, true},
-			{http.MethodDelete, true},
-			{http.MethodPost, false},
-			{http.MethodPatch, false},
-			{http.MethodConnect, false},
-		}
-		for _, tc := range tests {
-			t.Run(tc.method, func(t *testing.T) {
-				req, _ := http.NewRequest(tc.method, "/", nil)
-				a := retry.Attempt{Request: req}
-				assert.Equal(t, tc.want, a.Idempotent())
-			})
-		}
-	})
+func TestAttempt_Idempotent(t *testing.T) {
+	t.Parallel()
 
-	t.Run("Temporary", func(t *testing.T) {
-		type test struct {
-			status int
-			want   bool
-		}
-		tests := []test{
-			{http.StatusRequestTimeout, true},
-			{http.StatusTooManyRequests, true},
-			{http.StatusInternalServerError, true},
-			{http.StatusBadGateway, true},
-			{http.StatusServiceUnavailable, true},
-			{http.StatusGatewayTimeout, true},
-			{http.StatusOK, false},
-			{http.StatusBadRequest, false},
-		}
-		for _, tc := range tests {
-			t.Run(http.StatusText(tc.status), func(t *testing.T) {
-				a := retry.Attempt{Response: &http.Response{StatusCode: tc.status}}
-				assert.Equal(t, tc.want, a.Temporary())
-			})
-		}
-	})
+	tests := []struct {
+		method string
+		want   bool
+	}{
+		{http.MethodGet, true},
+		{http.MethodHead, true},
+		{http.MethodOptions, true},
+		{http.MethodTrace, true},
+		{http.MethodPut, true},
+		{http.MethodDelete, true},
+		{http.MethodPost, false},
+		{http.MethodPatch, false},
+		{http.MethodConnect, false},
+	}
 
-	t.Run("Transient", func(t *testing.T) {
-		type test struct {
-			name string
-			err  error
-			want bool
-		}
-		tests := []test{
-			{"nil error", nil, false},
-			{"context canceled", context.Canceled, false},
-			{"context deadline exceeded", context.DeadlineExceeded, false},
-			{"unexpected EOF", io.ErrUnexpectedEOF, true},
-			{"EOF", io.EOF, true},
-			{"net timeout error", &mockError{isTimeout: true}, true},
-			{"net non-timeout error", &mockError{isTimeout: false}, false},
-			{"other error", errors.New("other"), false},
-		}
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				a := retry.Attempt{Error: tc.err}
-				assert.Equal(t, tc.want, a.Transient())
-			})
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			t.Parallel()
+			req, _ := http.NewRequest(tt.method, "/", nil)
+			a := retry.Attempt{Request: req}
+			if got := a.Idempotent(); got != tt.want {
+				t.Errorf("Attempt.Idempotent() = %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAttempt_Temporary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		status int
+		want   bool
+	}{
+		{http.StatusRequestTimeout, true},
+		{http.StatusTooManyRequests, true},
+		{http.StatusInternalServerError, true},
+		{http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true},
+		{http.StatusGatewayTimeout, true},
+		{http.StatusOK, false},
+		{http.StatusBadRequest, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(http.StatusText(tt.status), func(t *testing.T) {
+			t.Parallel()
+			a := retry.Attempt{Response: &http.Response{StatusCode: tt.status}}
+			if got := a.Temporary(); got != tt.want {
+				t.Errorf("Attempt.Temporary() = %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAttempt_Transient(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"context canceled", context.Canceled, false},
+		{"context deadline exceeded", context.DeadlineExceeded, false},
+		{"unexpected EOF", io.ErrUnexpectedEOF, true},
+		{"EOF", io.EOF, true},
+		{"net timeout error", &mockError{isTimeout: true}, true},
+		{"net non-timeout error", &mockError{isTimeout: false}, false},
+		{"other error", errors.New("other"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := retry.Attempt{Error: tt.err}
+			if got := a.Transient(); got != tt.want {
+				t.Errorf("Attempt.Transient() = %v; want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestDefaultPolicy(t *testing.T) {
-	type test struct {
+	t.Parallel()
+
+	tests := []struct {
 		name    string
 		attempt retry.Attempt
 		want    bool
-	}
-	tests := []test{
+	}{
 		{
 			name: "idempotent and temporary",
 			attempt: retry.Attempt{
@@ -220,96 +231,144 @@ func TestDefaultPolicy(t *testing.T) {
 	}
 
 	policy := retry.DefaultPolicy()
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, policy(tc.attempt))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := policy(tt.attempt); got != tt.want {
+				t.Errorf("DefaultPolicy(attempt) = %v; want %v", got, tt.want)
+			}
 		})
 	}
 }
 
-func TestLimitAttempts(t *testing.T) {
+func TestPolicy_LimitAttempts(t *testing.T) {
+	t.Parallel()
+
 	always := func(retry.Attempt) bool { return true }
-	limited := retry.Policy(always).LimitAttempts(3)
 
-	assert.True(t, limited(retry.Attempt{Count: 1}), "attempt 1 should pass")
-	assert.True(t, limited(retry.Attempt{Count: 2}), "attempt 2 should pass")
-	assert.False(t, limited(retry.Attempt{Count: 3}), "attempt 3 should fail")
+	t.Run("limit positive", func(t *testing.T) {
+		t.Parallel()
+		limited := retry.Policy(always).LimitAttempts(3)
+		if !limited(retry.Attempt{Count: 1}) {
+			t.Error("attempt 1 should pass")
+		}
+		if !limited(retry.Attempt{Count: 2}) {
+			t.Error("attempt 2 should pass")
+		}
+		if limited(retry.Attempt{Count: 3}) {
+			t.Error("attempt 3 should fail")
+		}
+	})
 
-	unlimited := retry.Policy(always).LimitAttempts(0)
-	assert.True(t, unlimited(retry.Attempt{Count: 99}))
+	t.Run("limit zero", func(t *testing.T) {
+		t.Parallel()
+		unlimited := retry.Policy(always).LimitAttempts(0)
+		if !unlimited(retry.Attempt{Count: 99}) {
+			t.Error("attempt 99 should pass when limit is 0")
+		}
+	})
 }
 
-func TestTransport(t *testing.T) {
+func TestTransport_RoundTrip(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success on first try", func(t *testing.T) {
-		mock := &mockRoundTripper{trips: []mockTrip{
-			{res: newResponse(http.StatusOK, "ok")},
+		t.Parallel()
+		m := &mockRoundTripper{trips: []mockTrip{
+			{res: mockResponse(http.StatusOK, "ok")},
 		}}
-		transport := retry.NewTransport(mock)
+		transport := retry.NewTransport(m)
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusOK, res.StatusCode)
-		assert.Equal(t, 1, mock.Calls())
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+		if got, want := res.StatusCode, http.StatusOK; got != want {
+			t.Errorf("res.StatusCode = %d; want %d", got, want)
+		}
+		if got, want := m.Calls(), 1; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("retry on temporary error", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
-				{res: newResponse(http.StatusServiceUnavailable, "fail")},
-				{res: newResponse(http.StatusOK, "ok")},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
+				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(mock, retry.WithAttemptLimit(3))
+		transport := retry.NewTransport(m, retry.WithAttemptLimit(3))
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusOK, res.StatusCode)
-		assert.Equal(t, 2, mock.Calls())
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+		if got, want := res.StatusCode, http.StatusOK; got != want {
+			t.Errorf("res.StatusCode = %d; want %d", got, want)
+		}
+		if got, want := m.Calls(), 2; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("retry on transient error", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
 				{err: &mockError{isTimeout: true}},
-				{res: newResponse(http.StatusOK, "ok")},
+				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(mock, retry.WithAttemptLimit(3))
+		transport := retry.NewTransport(m, retry.WithAttemptLimit(3))
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusOK, res.StatusCode)
-		assert.Equal(t, 2, mock.Calls())
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+		if got, want := res.StatusCode, http.StatusOK; got != want {
+			t.Errorf("res.StatusCode = %d; want %d", got, want)
+		}
+		if got, want := m.Calls(), 2; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("fails after limit reached", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
-				{res: newResponse(http.StatusServiceUnavailable, "fail1")},
-				{res: newResponse(http.StatusServiceUnavailable, "fail2")},
-				{res: newResponse(http.StatusServiceUnavailable, "fail3")},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail1")},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail2")},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail3")},
 			},
 		}
-		transport := retry.NewTransport(mock, retry.WithAttemptLimit(2))
+		transport := retry.NewTransport(m, retry.WithAttemptLimit(2))
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
-		assert.Equal(t, 2, mock.Calls())
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+		if got, want := res.StatusCode, http.StatusServiceUnavailable; got != want {
+			t.Errorf("res.StatusCode = %d; want %d", got, want)
+		}
+		if got, want := m.Calls(), 2; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("context cancellation stops retries", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
-				{res: newResponse(http.StatusServiceUnavailable, "fail")},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
 			},
 		}
-		transport := retry.NewTransport(mock, retry.WithBackoff(
+		transport := retry.NewTransport(m, retry.WithBackoff(
 			backoff.Constant(100*time.Millisecond),
 		))
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		req, _ := http.NewRequestWithContext(ctx, "GET", "/", nil)
 
 		go func() {
@@ -318,60 +377,74 @@ func TestTransport(t *testing.T) {
 		}()
 
 		_, err := transport.RoundTrip(req)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
-		assert.Equal(t, 1, mock.Calls())
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("RoundTrip() err = %v; want %v", err, context.Canceled)
+		}
+		if got, want := m.Calls(), 1; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("non-rewindable body prevents retry", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
-				{
-					res: newResponse(http.StatusServiceUnavailable, "fail"),
-				},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
 			},
 		}
-		transport := retry.NewTransport(mock)
+		transport := retry.NewTransport(m)
 		req, _ := http.NewRequest("PUT", "/", http.NoBody)
 		res, err := transport.RoundTrip(req)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
-		assert.Equal(t, 1, mock.Calls())
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+		if got, want := res.StatusCode, http.StatusServiceUnavailable; got != want {
+			t.Errorf("res.StatusCode = %d; want %d", got, want)
+		}
+		if got, want := m.Calls(), 1; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("rewindable body allows retry", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
-				{res: newResponse(http.StatusServiceUnavailable, "fail")},
-				{res: newResponse(http.StatusOK, "ok")},
+				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
+				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(mock)
+		transport := retry.NewTransport(m)
 		body := "body"
 		req, _ := http.NewRequest("PUT", "/", strings.NewReader(body))
 		req.GetBody = func() (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(body)), nil
 		}
 		res, err := transport.RoundTrip(req)
-		require.NoError(t, err)
-
-		assert.Equal(t, http.StatusOK, res.StatusCode)
-		assert.Equal(t, 2, mock.Calls())
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+		if got, want := res.StatusCode, http.StatusOK; got != want {
+			t.Errorf("res.StatusCode = %d; want %d", got, want)
+		}
+		if got, want := m.Calls(), 2; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
-	t.Run("respects Retry-After header", func(t *testing.T) {
+	t.Run("respects retry-after header", func(t *testing.T) {
+		t.Parallel()
 		now := time.Now()
-		resp := newResponse(http.StatusTooManyRequests, "rate limited")
+		resp := mockResponse(http.StatusTooManyRequests, "rate limited")
 		resp.Header.Set("Retry-After", "1")
 
-		mock := &mockRoundTripper{
+		m := &mockRoundTripper{
 			trips: []mockTrip{
 				{res: resp},
-				{res: newResponse(http.StatusOK, "ok")},
+				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(mock,
+		transport := retry.NewTransport(m,
 			retry.WithBackoff(backoff.Constant(100*time.Millisecond)),
 			retry.WithClock(func() time.Time { return now }),
 		)
@@ -379,21 +452,27 @@ func TestTransport(t *testing.T) {
 
 		start := time.Now()
 		_, err := transport.RoundTrip(req)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
 
-		d := time.Since(start)
-		assert.GreaterOrEqual(t, d, time.Second, "should wait at least 1 second")
-		assert.Equal(t, 2, mock.Calls())
+		if d := time.Since(start); d < time.Second {
+			t.Errorf("time.Since(start) = %v; want >= 1s", d)
+		}
+		if got, want := m.Calls(), 2; got != want {
+			t.Errorf("m.Calls() = %d; want %d", got, want)
+		}
 	})
 
 	t.Run("custom options are used", func(t *testing.T) {
-		mock := &mockRoundTripper{
+		t.Parallel()
+		m := &mockRoundTripper{
 			trips: []mockTrip{
-				{res: newResponse(http.StatusOK, "ok")},
+				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
 		var seen, seenBackoff bool
-		transport := retry.NewTransport(mock,
+		transport := retry.NewTransport(m,
 			retry.WithPolicy(func(retry.Attempt) bool {
 				seen = true
 				return false
@@ -404,15 +483,20 @@ func TestTransport(t *testing.T) {
 					return 0
 				},
 			}),
-			retry.WithLogger(slog.New(slog.NewTextHandler(new(bytes.Buffer), nil))),
 			retry.WithAttemptLimit(5),
 		)
 
 		req, _ := http.NewRequest("GET", "/", nil)
 		_, err := transport.RoundTrip(req)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
 
-		assert.True(t, seen, "policy should be called")
-		assert.False(t, seenBackoff, "backoff should not have advanced")
+		if !seen {
+			t.Error("policy was not called")
+		}
+		if seenBackoff {
+			t.Error("backoff should not have advanced for a successful call")
+		}
 	})
 }

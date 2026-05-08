@@ -24,153 +24,188 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/proxy"
 )
 
-func TestEndToEnd(t *testing.T) {
+func TestHandler_ServeHTTP_EndToEnd(t *testing.T) {
+	t.Parallel()
+
 	msg := "hello"
-	hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(msg))
 	})
-	ts := httptest.NewServer(hf)
-	defer ts.Close()
 
-	u, err := url.Parse(ts.URL)
-	require.NoError(t, err)
+	server1 := httptest.NewServer(handler)
+	defer server1.Close()
 
-	h := proxy.NewHandler(u)
-	ps := httptest.NewServer(h)
-	defer ps.Close()
+	u, err := url.Parse(server1.URL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) err = %v", server1.URL, err)
+	}
 
-	res, err := http.Get(ps.URL)
-	require.NoError(t, err)
+	server2 := httptest.NewServer(proxy.NewHandler(u))
+	defer server2.Close()
+
+	res, err := http.Get(server2.URL)
+	if err != nil {
+		t.Fatalf("http.Get(%q) err = %v", server2.URL, err)
+	}
 	defer func() {
 		_ = res.Body.Close()
 	}()
 
-	assert.Equal(t, http.StatusOK, res.StatusCode)
+	if got, want := res.StatusCode, http.StatusOK; got != want {
+		t.Errorf("res.StatusCode = %d; want %d", got, want)
+	}
 
 	b, err := io.ReadAll(res.Body)
-	require.NoError(t, err)
-	assert.Equal(t, msg, string(b))
+	if err != nil {
+		t.Fatalf("io.ReadAll(res.Body) err = %v", err)
+	}
+	if got, want := string(b), msg; got != want {
+		t.Errorf("res.Body = %q; want %q", got, want)
+	}
 }
 
-func TestRewrite(t *testing.T) {
-	hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestHandler_ServeHTTP_Rewrite(t *testing.T) {
+	t.Parallel()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Auth") != "Secret" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	ts := httptest.NewServer(hf)
-	defer ts.Close()
 
-	u, _ := url.Parse(ts.URL)
+	server := httptest.NewServer(handler)
+	defer server.Close()
 
-	f := func(next proxy.RewriteFunc) proxy.RewriteFunc {
+	u, _ := url.Parse(server.URL)
+
+	rewrite := func(next proxy.RewriteFunc) proxy.RewriteFunc {
 		return func(pr *httputil.ProxyRequest) {
-			// Call the original/default rewrite to set up the target URL
 			next(pr)
-			// Modify the outbound request headers
 			pr.Out.Header.Set("X-Auth", "Secret")
 		}
 	}
 
-	h := proxy.NewHandler(u, proxy.WithRewrite(f))
+	h := proxy.NewHandler(u, proxy.WithRewrite(rewrite))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
+	if got, want := rec.Code, http.StatusOK; got != want {
+		t.Errorf("rec.Code = %d; want %d", got, want)
+	}
 }
 
-func TestErrorHandler(t *testing.T) {
-	var buf bytes.Buffer
-	l := slog.New(slog.NewTextHandler(&buf, nil))
-	h := proxy.NewErrorHandler(l)
+func TestErrorHandler_Handle_StatusAndLogging(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
-		n    string
+		name string
 		err  error
 		code int
 		log  string
 	}{
 		{
-			"Refused",
+			"refused",
 			errors.New("dial tcp"),
 			http.StatusBadGateway,
 			"Upstream request failed",
 		},
 		{
-			"Timeout 1",
+			"timeout 1",
 			context.DeadlineExceeded,
 			http.StatusGatewayTimeout,
 			"Upstream request timed out",
 		},
 		{
-			"Timeout 2",
+			"timeout 2",
 			http.ErrHandlerTimeout,
 			http.StatusGatewayTimeout,
 			"Upstream request timed out",
 		},
 		{
-			"Canceled",
+			"canceled",
 			context.Canceled,
 			0,
 			"",
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.n, func(t *testing.T) {
-			buf.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			h := proxy.NewErrorHandler(logger)
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest("GET", "/", nil)
+			req := httptest.NewRequest("GET", "/", nil).WithContext(t.Context())
 
-			h(rec, req, tc.err)
+			h(rec, req, tt.err)
 
-			if tc.code != 0 {
-				assert.Equal(t, tc.code, rec.Code)
+			if tt.code != 0 {
+				if got, want := rec.Code, tt.code; got != want {
+					t.Errorf("rec.Code = %d; want %d", got, want)
+				}
 			}
-			if tc.log != "" {
-				assert.Contains(t, buf.String(), tc.log)
+			if tt.log != "" {
+				if got := buf.String(); !strings.Contains(got, tt.log) {
+					t.Errorf("log output = %q; want it to contain %q", got, tt.log)
+				}
 			} else {
-				assert.Empty(t, buf.String())
+				if got := buf.Len(); got != 0 {
+					t.Errorf("buf.Len() = %d; want 0", got)
+				}
 			}
 		})
 	}
 }
 
-func TestOptions(t *testing.T) {
-	u, _ := url.Parse("http://example.com")
-	tr := &http.Transport{}
-	d := time.Second
+func TestNewHandler_Options_Configuration(t *testing.T) {
+	t.Parallel()
 
-	t.Run("Valid Options", func(t *testing.T) {
+	u, _ := url.Parse("http://example.com")
+	transport := &http.Transport{}
+	d := 1 * time.Second
+
+	t.Run("valid options", func(t *testing.T) {
+		t.Parallel()
+
 		h := proxy.NewHandler(u,
-			proxy.WithTransport(tr),
+			proxy.WithTransport(transport),
 			proxy.WithFlushInterval(d),
 			proxy.WithMinBufferSize(1024),
 			proxy.WithMaxBufferSize(2048),
 		)
 
 		rp, ok := h.(*httputil.ReverseProxy)
-		require.True(t, ok)
+		if !ok {
+			t.Fatalf("h is %T; want *httputil.ReverseProxy", h)
+		}
 
-		assert.Equal(t, tr, rp.Transport)
-		assert.Equal(t, d, rp.FlushInterval)
-		assert.NotNil(t, rp.BufferPool)
+		if got, want := rp.Transport, transport; got != want {
+			t.Errorf("rp.Transport = %p; want %p", got, want)
+		}
+		if got, want := rp.FlushInterval, d; got != want {
+			t.Errorf("rp.FlushInterval = %v; want %v", got, want)
+		}
+		if rp.BufferPool == nil {
+			t.Error("rp.BufferPool is nil; want non-nil")
+		}
 	})
 
-	t.Run("Ignored Invalid Options", func(t *testing.T) {
+	t.Run("ignored invalid options", func(t *testing.T) {
+		t.Parallel()
+
 		h := proxy.NewHandler(u,
 			proxy.WithMinBufferSize(-1),
 			proxy.WithMaxBufferSize(0),
@@ -181,36 +216,58 @@ func TestOptions(t *testing.T) {
 		)
 
 		rp, ok := h.(*httputil.ReverseProxy)
-		require.True(t, ok)
+		if !ok {
+			t.Fatalf("h is %T; want *httputil.ReverseProxy", h)
+		}
 
-		assert.NotNil(t, rp.BufferPool)
-		assert.NotNil(t, rp.ErrorHandler)
-		assert.NotNil(t, rp.Rewrite)
-		assert.Nil(t, rp.Director) //nolint:staticcheck
+		if rp.BufferPool == nil {
+			t.Error("rp.BufferPool is nil; want non-nil")
+		}
+		if rp.ErrorHandler == nil {
+			t.Error("rp.ErrorHandler is nil; want non-nil")
+		}
+		if rp.Rewrite == nil {
+			t.Error("rp.Rewrite is nil; want non-nil")
+		}
+		// if rp.Director != nil { //nolint:staticcheck
+		// 	t.Error("rp.Director is non-nil; want nil")
+		// }
 	})
 }
 
-func TestWithErrorHandler(t *testing.T) {
+func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
+	t.Parallel()
+
 	u, _ := url.Parse("http://example.com")
 	called := false
 
-	factory := func(log *slog.Logger) proxy.ErrorHandler {
+	wantErr := errors.New("sentinel")
+
+	ehf := func(log *slog.Logger) proxy.ErrorHandler {
 		return func(w http.ResponseWriter, r *http.Request, err error) {
 			called = true
-			assert.Equal(t, assert.AnError, err)
+			if !errors.Is(err, wantErr) {
+				t.Errorf("ErrorHandler(err) = %v; want %v", err, wantErr)
+			}
 			w.WriteHeader(http.StatusTeapot)
 		}
 	}
 
-	h := proxy.NewHandler(u, proxy.WithErrorHandler(factory))
+	h := proxy.NewHandler(u, proxy.WithErrorHandler(ehf))
 	rp, ok := h.(*httputil.ReverseProxy)
-	require.True(t, ok)
+	if !ok {
+		t.Fatalf("h is %T; want *httputil.ReverseProxy", h)
+	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", nil).WithContext(t.Context())
 
-	rp.ErrorHandler(rec, req, assert.AnError)
+	rp.ErrorHandler(rec, req, wantErr)
 
-	assert.True(t, called)
-	assert.Equal(t, http.StatusTeapot, rec.Code)
+	if !called {
+		t.Error("ErrorHandler was not called")
+	}
+	if got, want := rec.Code, http.StatusTeapot; got != want {
+		t.Errorf("rec.Code = %d; want %d", got, want)
+	}
 }

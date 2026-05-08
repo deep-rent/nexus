@@ -13,25 +13,47 @@
 // limitations under the License.
 
 // Package pointer provides reflection-based helpers for working with pointers.
+//
 // These functions are useful for dynamically allocating and dereferencing
-// variables in contexts like configuration loading or data mapping.
+// variables in contexts like configuration loading or data mapping. By using
+// the [reflect] package, this package allows for the manipulation of types
+// where the concrete structure is not known at compile time.
+//
+// # Usage
+//
+// The primary helpers allow for safe allocation and deep dereferencing of
+// [reflect.Value] types.
+//
+// Example:
+//
+//	var str *string
+//	rv := reflect.ValueOf(&str).Elem()
+//
+//	// Allocates a new string and sets the pointer
+//	pointer.Alloc(rv)
+//
+//	// Deeply dereferences even nested pointers like **int
+//	final := pointer.Deref(rv)
 package pointer
 
 import "reflect"
 
 // Alloc allocates a new value for a nil pointer and sets the pointer to it.
 //
-// This function causes a panic if rv is not a settable pointer.
+// This function causes a panic if rv is not a settable pointer. It uses
+// [reflect.New] to create a zero value of the pointer's element type and
+// applies it to the provided [reflect.Value].
 func Alloc(rv reflect.Value) {
 	rv.Set(reflect.New(rv.Type().Elem()))
 }
 
 // Deref follows pointers until it reaches a non-pointer, allocating if nil.
 //
-// If a nil pointer is encountered along the way, Deref will attempt to allocate
-// a new value for it. If it encounters an un-settable nil pointer (e.g., one
-// within an unexported struct field), it stops and returns that pointer to
-// prevent a panic. The final, non-pointer value is returned.
+// If a nil pointer is encountered along the way, [Deref] will attempt to
+// allocate a new value for it using [Alloc]. If it encounters an un-settable
+// nil pointer (e.g., one within an unexported struct field), it stops and
+// returns that pointer to prevent a panic. The final, non-pointer value is
+// returned as a [reflect.Value].
 func Deref(rv reflect.Value) reflect.Value {
 	// Loop through multi-level pointers to handle cases like **int.
 	for rv.Kind() == reflect.Pointer {

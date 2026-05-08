@@ -17,338 +17,491 @@ package di_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/di"
 )
 
 type (
-	ServiceA struct{ ID int }
-	ServiceB struct{ DepA ServiceA }
-	ServiceC struct{ ID int }
-	ServiceD struct{ DepB ServiceB }
-	ServiceE struct{ DepC *ServiceC }
-	ServiceF struct{}
-	ServiceX struct{ DepY *ServiceY }
-	ServiceY struct{ DepX ServiceX }
-	I        interface{ Work() }
-	serviceI struct{ done atomic.Bool }
+	mockServiceA struct{ ID int }
+	mockServiceB struct{ DepA mockServiceA }
+	mockServiceC struct{ ID int }
+	mockServiceD struct{ DepB mockServiceB }
+	mockServiceE struct{ DepC *mockServiceC }
+	mockServiceF struct{}
+	mockServiceX struct{ DepY *mockServiceY }
+	mockServiceY struct{ DepX mockServiceX }
+	I            interface{ Work() }
+	mockI        struct{ done atomic.Bool }
 )
 
-func (c *serviceI) Work() { c.done.Store(true) }
+func (c *mockI) Work() { c.done.Store(true) }
+
+var _ I = (*mockI)(nil)
 
 var (
-	SlotA = di.NewSlot[ServiceA]("service", "a")
-	SlotB = di.NewSlot[ServiceB]("service", "b")
-	SlotC = di.NewSlot[*ServiceC]("service", "c")
-	SlotD = di.NewSlot[ServiceD]("service", "d")
-	SlotE = di.NewSlot[ServiceE]("service", "e")
-	SlotF = di.NewSlot[*ServiceF]("service", "f")
-	SlotI = di.NewSlot[I]("service", "i")
-	SlotX = di.NewSlot[ServiceX]("cycle", "x")
-	SlotY = di.NewSlot[*ServiceY]("cycle", "y")
+	mockSlotA = di.NewSlot[mockServiceA]("service", "a")
+	mockSlotB = di.NewSlot[mockServiceB]("service", "b")
+	mockSlotC = di.NewSlot[*mockServiceC]("service", "c")
+	mockSlotD = di.NewSlot[mockServiceD]("service", "d")
+	mockSlotE = di.NewSlot[mockServiceE]("service", "e")
+	mockSlotF = di.NewSlot[*mockServiceF]("service", "f")
+	mockSlotI = di.NewSlot[I]("service", "i")
+	mockSlotX = di.NewSlot[mockServiceX]("cycle", "x")
+	mockSlotY = di.NewSlot[*mockServiceY]("cycle", "y")
+
+	errPanicSentinel = errors.New("provider panicked with error")
 )
 
-func ProvideA(in *di.Injector) (ServiceA, error) {
-	return ServiceA{ID: 1}, nil
+func mockProvideA(_ di.Container) (mockServiceA, error) {
+	return mockServiceA{ID: 1}, nil
 }
 
-func ProvideB(in *di.Injector) (ServiceB, error) {
-	a := di.Required(in, SlotA)
-	return ServiceB{DepA: a}, nil
+func mockProvideB(c di.Container) (mockServiceB, error) {
+	a := di.Required(c, mockSlotA)
+	return mockServiceB{DepA: a}, nil
 }
 
-func ProvideC(in *di.Injector) (*ServiceC, error) {
-	return &ServiceC{ID: 3}, nil
+func mockProvideC(_ di.Container) (*mockServiceC, error) {
+	return &mockServiceC{ID: 3}, nil
 }
 
-func ProvideD(in *di.Injector) (ServiceD, error) {
-	b := di.Required(in, SlotB)
-	return ServiceD{DepB: b}, nil
+func mockProvideD(c di.Container) (mockServiceD, error) {
+	b := di.Required(c, mockSlotB)
+	return mockServiceD{DepB: b}, nil
 }
 
-func ProvideE(in *di.Injector) (ServiceE, error) {
-	c := di.Optional(in, SlotC)
-	return ServiceE{DepC: c}, nil
+func mockProvideE(c di.Container) (mockServiceE, error) {
+	cInst := di.Optional(c, mockSlotC)
+	return mockServiceE{DepC: cInst}, nil
 }
 
-func ProvideX(in *di.Injector) (ServiceX, error) {
-	y := di.Required(in, SlotY)
-	return ServiceX{DepY: y}, nil
+func mockProvideX(c di.Container) (mockServiceX, error) {
+	y := di.Required(c, mockSlotY)
+	return mockServiceX{DepY: y}, nil
 }
 
-func ProvideY(in *di.Injector) (*ServiceY, error) {
-	x := di.Required(in, SlotX)
-	return &ServiceY{DepX: x}, nil
+func mockProvideY(c di.Container) (*mockServiceY, error) {
+	x := di.Required(c, mockSlotX)
+	return &mockServiceY{DepX: x}, nil
 }
 
-func ProvideNil(in *di.Injector) (*ServiceF, error) {
+func mockProvideNil(_ di.Container) (*mockServiceF, error) {
 	return nil, nil
 }
 
-func ProvideError(in *di.Injector) (ServiceA, error) {
-	return ServiceA{}, errors.New("provider failed")
+func mockProvideError(_ di.Container) (mockServiceA, error) {
+	return mockServiceA{}, errors.New("provider failed")
 }
 
-func ProvidePanic(in *di.Injector) (ServiceA, error) {
-	panic("provider panicked")
+func mockProvidePanicString(_ di.Container) (mockServiceA, error) {
+	panic("provider panicked with string")
 }
 
-func ProvideI(in *di.Injector) (I, error) {
-	return &serviceI{}, nil
+func mockProvidePanicError(_ di.Container) (mockServiceA, error) {
+	panic(errPanicSentinel)
 }
 
-func TestInjector_Basics(t *testing.T) {
-	t.Run("NewInjector with context", func(t *testing.T) {
+func mockProvideI(_ di.Container) (I, error) {
+	return &mockI{}, nil
+}
+
+func TestBinding(t *testing.T) {
+	t.Parallel()
+
+	t.Run("new injector with context", func(t *testing.T) {
+		t.Parallel()
 		type key string
-		ctx := context.WithValue(context.Background(), key("id"), "test1")
+		ctx := context.WithValue(t.Context(), key("id"), "test1")
 		in := di.NewInjector(di.WithContext(ctx))
-		require.NotNil(t, in)
-		assert.Equal(t, "test1", in.Context().Value(key("id")))
+		if in == nil {
+			t.Fatal("NewInjector() = nil; want non-nil")
+		}
+		if got, want := in.Context().Value(key("id")), "test1"; got != want {
+			t.Errorf("Value(%q) = %v; want %v", "id", got, want)
+		}
 	})
 
-	t.Run("Bind panics on duplicate slot", func(t *testing.T) {
+	t.Run("bind panics on duplicate slot", func(t *testing.T) {
+		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, SlotA, ProvideA, di.Transient())
-		assert.Panics(t, func() {
-			di.Bind(in, SlotA, ProvideA, di.Transient())
-		})
+		di.Bind(in, mockSlotA, mockProvideA, di.Transient())
+		defer func() {
+			if recover() == nil {
+				t.Error("Bind() did not panic on duplicate slot")
+			}
+		}()
+		di.Bind(in, mockSlotA, mockProvideA, di.Transient())
 	})
 
-	t.Run("Override replaces existing binding", func(t *testing.T) {
+	t.Run("override replaces existing binding", func(t *testing.T) {
+		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, SlotA, ProvideA, di.Transient())
-		di.Override(in, SlotA, func(in *di.Injector) (ServiceA, error) {
-			return ServiceA{ID: 99}, nil
+		di.Bind(in, mockSlotA, mockProvideA, di.Transient())
+
+		di.Override(in, mockSlotA, func(_ di.Container) (mockServiceA, error) {
+			return mockServiceA{ID: 99}, nil
 		}, di.Transient())
 
-		instance, err := di.Use(in, SlotA)
-		require.NoError(t, err)
-		assert.Equal(t, 99, instance.ID)
+		instance, err := di.Use(in, mockSlotA)
+		if err != nil {
+			t.Fatalf("Use() unexpected error: %v", err)
+		}
+		if got, want := instance.ID, 99; got != want {
+			t.Errorf("ID = %d; want %d", got, want)
+		}
 	})
 }
 
-func TestResolvers(t *testing.T) {
-	t.Run("Transient", func(t *testing.T) {
-		var calls int32
-		provider := func(in *di.Injector) (ServiceA, error) {
-			atomic.AddInt32(&calls, 1)
-			return ServiceA{}, nil
+func TestResolution(t *testing.T) {
+	t.Parallel()
+
+	t.Run("transient", func(t *testing.T) {
+		t.Parallel()
+		var calls atomic.Int32
+		provider := func(_ di.Container) (mockServiceA, error) {
+			calls.Add(1)
+			return mockServiceA{}, nil
 		}
 
 		in := di.NewInjector()
-		di.Bind(in, SlotA, provider, di.Transient())
+		di.Bind(in, mockSlotA, provider, di.Transient())
 
-		_, err := di.Use(in, SlotA)
-		require.NoError(t, err)
-		_, err = di.Use(in, SlotA)
-		require.NoError(t, err)
+		_, err := di.Use(in, mockSlotA)
+		if err != nil {
+			t.Fatalf("Use() unexpected error: %v", err)
+		}
+		_, err = di.Use(in, mockSlotA)
+		if err != nil {
+			t.Fatalf("Use() unexpected error: %v", err)
+		}
 
-		assert.EqualValues(t, 2, calls, "provider should be invoked twice")
-
-		a1 := di.Required(in, SlotA)
-		a2 := di.Required(in, SlotA)
-		assert.NotSame(t, &a1, &a2, "should return new instances")
+		if got, want := calls.Load(), int32(2); got != want {
+			t.Errorf("calls = %d; want %d", got, want)
+		}
 	})
 
-	t.Run("Singleton", func(t *testing.T) {
-		var calls int32
-		SlotAPtr := di.NewSlot[*ServiceA]("service", "a-ptr")
-		provider := func(in *di.Injector) (*ServiceA, error) {
-			atomic.AddInt32(&calls, 1)
-			return &ServiceA{}, nil
+	t.Run("singleton", func(t *testing.T) {
+		t.Parallel()
+		var calls atomic.Int32
+		slotAPtr := di.NewSlot[*mockServiceA]("service", "a-ptr")
+		provider := func(_ di.Container) (*mockServiceA, error) {
+			calls.Add(1)
+			return &mockServiceA{}, nil
 		}
 
 		in := di.NewInjector()
-		di.Bind(in, SlotAPtr, provider, di.Singleton())
+		di.Bind(in, slotAPtr, provider, di.Singleton())
 
-		_, err := di.Use(in, SlotAPtr)
-		require.NoError(t, err)
+		a1, err := di.Use(in, slotAPtr)
+		if err != nil {
+			t.Fatalf("Use() unexpected error: %v", err)
+		}
+		a2, err := di.Use(in, slotAPtr)
+		if err != nil {
+			t.Fatalf("Use() unexpected error: %v", err)
+		}
 
-		_, err = di.Use(in, SlotAPtr)
-		require.NoError(t, err)
-
-		assert.EqualValues(t, 1, calls, "provider should be called only once")
-
-		a1 := di.Required(in, SlotAPtr)
-		a2 := di.Required(in, SlotAPtr)
-		assert.Same(t, a1, a2, "should return the same instance")
+		if got, want := calls.Load(), int32(1); got != want {
+			t.Errorf("calls = %d; want %d", got, want)
+		}
+		if a1 != a2 {
+			t.Errorf("Use() instances differ; want same")
+		}
 	})
 
-	t.Run("Singleton concurrent access", func(t *testing.T) {
-		var calls int32
-		provider := func(in *di.Injector) (ServiceA, error) {
+	t.Run("singleton concurrent access", func(t *testing.T) {
+		t.Parallel()
+		var calls atomic.Int32
+		provider := func(_ di.Container) (mockServiceA, error) {
 			time.Sleep(10 * time.Millisecond)
-			atomic.AddInt32(&calls, 1)
-			return ServiceA{ID: 123}, nil
+			calls.Add(1)
+			return mockServiceA{ID: 123}, nil
 		}
 
 		in := di.NewInjector()
-		di.Bind(in, SlotA, provider, di.Singleton())
+		di.Bind(in, mockSlotA, provider, di.Singleton())
 
 		var wg sync.WaitGroup
 		for range 100 {
 			wg.Go(func() {
-				instance, err := di.Use(in, SlotA)
-				require.NoError(t, err)
-				assert.Equal(t, 123, instance.ID)
+				instance, err := di.Use(in, mockSlotA)
+				if err != nil {
+					t.Errorf("Use() unexpected error: %v", err)
+					return
+				}
+				if instance.ID != 123 {
+					t.Errorf("ID = %d; want 123", instance.ID)
+				}
 			})
 		}
 		wg.Wait()
 
-		assert.EqualValues(t, 1, calls, "provider should be called only once")
+		if got, want := calls.Load(), int32(1); got != want {
+			t.Errorf("calls = %d; want %d", got, want)
+		}
 	})
 
-	t.Run("Scoped", func(t *testing.T) {
-		var calls int32
-		SlotAPtr := di.NewSlot[*ServiceA]("service", "a-ptr")
-		provider := func(in *di.Injector) (*ServiceA, error) {
-			atomic.AddInt32(&calls, 1)
-			return &ServiceA{}, nil
+	t.Run("scoped", func(t *testing.T) {
+		t.Parallel()
+		var calls atomic.Int32
+		slot := di.NewSlot[*mockServiceA]("service", "a-ptr")
+		provider := func(_ di.Container) (*mockServiceA, error) {
+			calls.Add(1)
+			return &mockServiceA{}, nil
 		}
 
 		ctx1 := di.NewScope(t.Context())
 		ctx2 := di.NewScope(t.Context())
 
 		in1 := di.NewInjector(di.WithContext(ctx1))
-		di.Bind(in1, SlotAPtr, provider, di.Scoped())
-		s1_a1 := di.Required(in1, SlotAPtr)
-		s1_a2 := di.Required(in1, SlotAPtr)
+		di.Bind(in1, slot, provider, di.Scoped())
+		s1a1 := di.Required(in1, slot)
+		s1a2 := di.Required(in1, slot)
 
-		assert.Same(t, s1_a1, s1_a2, "should be same instance within same scope")
+		if s1a1 != s1a2 {
+			t.Error("instances in same scope differ; want same")
+		}
 
 		in2 := di.NewInjector(di.WithContext(ctx2))
-		di.Bind(in2, SlotAPtr, provider, di.Scoped())
-		s2_a1 := di.Required(in2, SlotAPtr)
+		di.Bind(in2, slot, provider, di.Scoped())
+		s2a1 := di.Required(in2, slot)
 
-		assert.NotSame(t, s1_a1, s2_a1, "should be different instances")
-		assert.EqualValues(t, 2, calls, "provider should be called once per scope")
-	})
-
-	t.Run("Scoped fails without scope", func(t *testing.T) {
-		in := di.NewInjector()
-		di.Bind(in, SlotA, ProvideA, di.Scoped())
-		_, err := di.Use(in, SlotA)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no scope cache found in context")
-	})
-}
-
-func TestResolution(t *testing.T) {
-	t.Run("Full dependency graph", func(t *testing.T) {
-		in := di.NewInjector()
-		di.Bind(in, SlotA, ProvideA, di.Singleton())
-		di.Bind(in, SlotB, ProvideB, di.Singleton())
-		di.Bind(in, SlotC, ProvideC, di.Singleton())
-		di.Bind(in, SlotD, ProvideD, di.Singleton())
-		di.Bind(in, SlotE, ProvideE, di.Singleton())
-
-		d, err := di.Use(in, SlotD)
-		require.NoError(t, err)
-		assert.Equal(t, 1, d.DepB.DepA.ID)
-
-		e, err := di.Use(in, SlotE)
-		require.NoError(t, err)
-		require.NotNil(t, e.DepC)
-		assert.Equal(t, 3, e.DepC.ID)
-	})
-
-	t.Run("Use returns error for unbound slot", func(t *testing.T) {
-		in := di.NewInjector()
-		_, err := di.Use(in, SlotA)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no provider bound for slot")
-	})
-
-	t.Run("Use returns error from provider", func(t *testing.T) {
-		in := di.NewInjector()
-		di.Bind(in, SlotA, ProvideError, di.Transient())
-		_, err := di.Use(in, SlotA)
-		require.Error(t, err)
-		assert.EqualError(t, err, "provider failed")
-	})
-
-	t.Run("Use recovers from provider panic", func(t *testing.T) {
-		in := di.NewInjector()
-		di.Bind(in, SlotA, ProvidePanic, di.Transient())
-		_, err := di.Use(in, SlotA)
-		require.Error(t, err, "provider panic should be recovered")
-		if err != nil {
-			assert.Contains(t, err.Error(), "panic during provider call")
-			assert.Contains(t, err.Error(), "provider panicked")
+		if s1a1 == s2a1 {
+			t.Error("instances across scopes are same; want different")
+		}
+		if got, want := calls.Load(), int32(2); got != want {
+			t.Errorf("calls = %d; want %d", got, want)
 		}
 	})
 
-	t.Run("Optional returns nil without panic", func(t *testing.T) {
+	t.Run("scoped fails without scope", func(t *testing.T) {
+		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, SlotF, ProvideNil, di.Transient())
-		instance := di.Optional(in, SlotF)
-		assert.Nil(t, instance)
+		di.Bind(in, mockSlotA, mockProvideA, di.Scoped())
+		_, err := di.Use(in, mockSlotA)
+		if err == nil {
+			t.Fatal("Use() expected error for missing scope, got nil")
+		}
+		if got, want := err.Error(),
+			"no scope cache found in context"; !strings.Contains(got, want) {
+			t.Errorf("error = %q; want to contain %q", got, want)
+		}
+	})
+}
+
+func TestInjection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("full dependency graph", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotA, mockProvideA, di.Singleton())
+		di.Bind(in, mockSlotB, mockProvideB, di.Singleton())
+		di.Bind(in, mockSlotC, mockProvideC, di.Singleton())
+		di.Bind(in, mockSlotD, mockProvideD, di.Singleton())
+		di.Bind(in, mockSlotE, mockProvideE, di.Singleton())
+
+		d, err := di.Use(in, mockSlotD)
+		if err != nil {
+			t.Fatalf("Use(SlotD) error: %v", err)
+		}
+		if got, want := d.DepB.DepA.ID, 1; got != want {
+			t.Errorf("ID = %d; want %d", got, want)
+		}
+
+		e, err := di.Use(in, mockSlotE)
+		if err != nil {
+			t.Fatalf("Use(SlotE) error: %v", err)
+		}
+		if e.DepC == nil {
+			t.Fatal("DepC is nil; want non-nil")
+		}
+		if got, want := e.DepC.ID, 3; got != want {
+			t.Errorf("DepC.ID = %d; want %d", got, want)
+		}
 	})
 
-	t.Run("Required panics on nil value", func(t *testing.T) {
+	t.Run("use returns error for unbound slot", func(t *testing.T) {
+		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, SlotF, ProvideNil, di.Transient())
-		assert.Panics(t, func() {
-			di.Required(in, SlotF)
-		})
+		_, err := di.Use(in, mockSlotA)
+		if err == nil {
+			t.Fatal("Use() expected error for unbound slot, got nil")
+		}
+		if !errors.Is(err, di.ErrUnbound) {
+			t.Errorf("error expected to wrap ErrUnbound, got: %v", err)
+		}
 	})
 
-	t.Run("Required does not panic on non-nil value", func(t *testing.T) {
+	t.Run("use returns error from provider", func(t *testing.T) {
+		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, SlotC, ProvideC, di.Transient())
-		assert.NotPanics(t, func() {
-			c := di.Required(in, SlotC)
-			assert.NotNil(t, c)
-		})
+		di.Bind(in, mockSlotA, mockProvideError, di.Transient())
+
+		_, err := di.Use(in, mockSlotA)
+		if err == nil {
+			t.Fatal("Use() expected provider error, got nil")
+		}
+		if got, want := err.Error(), "provider failed"; got != want {
+			t.Errorf("error = %q; want %q", got, want)
+		}
 	})
 
-	t.Run("Interface binding", func(t *testing.T) {
+	t.Run("use recovers from provider panic with string", func(t *testing.T) {
+		t.Parallel()
 		in := di.NewInjector()
-		di.Bind(in, SlotI, ProvideI, di.Singleton())
-		instance, err := di.Use(in, SlotI)
-		require.NoError(t, err)
-		require.NotNil(t, instance)
+		di.Bind(in, mockSlotA, mockProvidePanicString, di.Transient())
+
+		_, err := di.Use(in, mockSlotA)
+		if err == nil {
+			t.Fatal("Use() expected recovery error from panic, got nil")
+		}
+		if got, want := err.Error(),
+			"panic during provider call"; !strings.Contains(got, want) {
+			t.Errorf("error = %q; want to contain %q", got, want)
+		}
+		if got, want := err.Error(),
+			"provider panicked with string"; !strings.Contains(got, want) {
+			t.Errorf("error = %q; want to contain %q", got, want)
+		}
+	})
+
+	t.Run("use recovers from panic with wrapped error", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotA, mockProvidePanicError, di.Transient())
+
+		_, err := di.Use(in, mockSlotA)
+		if err == nil {
+			t.Fatal("Use() expected recovery error from panic, got nil")
+		}
+		if !errors.Is(err, errPanicSentinel) {
+			t.Errorf("error expected to wrap errPanicSentinel, got: %v", err)
+		}
+	})
+
+	t.Run("optional returns nil without panic", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotF, mockProvideNil, di.Transient())
+
+		instance := di.Optional(in, mockSlotF)
+		if instance != nil {
+			t.Errorf("Optional() = %v; want nil", instance)
+		}
+	})
+
+	t.Run("required panics on nil value", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotF, mockProvideNil, di.Transient())
+
+		defer func() {
+			if recover() == nil {
+				t.Error("Required() did not panic on nil value")
+			}
+		}()
+
+		di.Required(in, mockSlotF)
+	})
+
+	t.Run("required does not panic on non-nil value", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotC, mockProvideC, di.Transient())
+
+		c := di.Required(in, mockSlotC)
+		if c == nil {
+			t.Error("Required() = nil; want non-nil")
+		}
+	})
+
+	t.Run("interface binding", func(t *testing.T) {
+		t.Parallel()
+		in := di.NewInjector()
+		di.Bind(in, mockSlotI, mockProvideI, di.Singleton())
+
+		instance, err := di.Use(in, mockSlotI)
+		if err != nil {
+			t.Fatalf("Use() unexpected error: %v", err)
+		}
+		if instance == nil {
+			t.Fatal("Use() = nil; want non-nil")
+		}
 		instance.Work()
 
-		c, ok := instance.(*serviceI)
-		require.True(t, ok)
-		assert.True(t, c.done.Load())
+		c, ok := instance.(*mockI)
+		if !ok {
+			t.Fatalf("instance is %T; want *mockI", instance)
+		}
+		if !c.done.Load() {
+			t.Error("done = false; want true")
+		}
 	})
 }
 
 func TestCircularDependency(t *testing.T) {
+	t.Parallel()
 	in := di.NewInjector()
-	di.Bind(in, SlotX, ProvideX, di.Transient())
-	di.Bind(in, SlotY, ProvideY, di.Transient())
+	di.Bind(in, mockSlotX, mockProvideX, di.Transient())
+	di.Bind(in, mockSlotY, mockProvideY, di.Transient())
 
-	_, err := di.Use(in, SlotX)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "circular dependency detected")
-	assert.Contains(t, err.Error(), di.Tag(SlotX))
+	_, err := di.Use(in, mockSlotX)
+	if err == nil {
+		t.Fatal("Use() expected error for circular dependency, got nil")
+	}
+	if !errors.Is(err, di.ErrCycle) {
+		t.Errorf("error expected to wrap ErrCycle, got: %v", err)
+	}
+	if got, want := err.Error(), di.Tag(mockSlotX); !strings.Contains(got, want) {
+		t.Errorf("error = %q; want to contain %q", got, want)
+	}
 }
 
-// func TestTag(t *testing.T) {
-// 	t.Cleanup(di.Reset)
+func TestTag(t *testing.T) {
+	t.Parallel()
 
-// 	t.Run("Unnamed", func(t *testing.T) {
-// 		slot := di.NewSlot[string]()
-// 		assert.Equal(t, "@string", di.Tag(slot))
-// 	})
+	t.Run("named slot", func(t *testing.T) {
+		t.Parallel()
+		slot := di.NewSlot[string]("config", "db", "host")
 
-// 	t.Run("Named", func(t *testing.T) {
-// 		slot := di.NewSlot[int]("a", "b", "c")
-// 		assert.Equal(t, "a.b.c@int", di.Tag(slot))
-// 	})
+		got := di.Tag(slot)
+		const want = "config.db.host@string"
 
-// 	t.Run("Unknown", func(t *testing.T) {
-// 		var slot di.Slot[bool] = new(struct{})
-// 		assert.Equal(t, fmt.Sprintf("%p", slot), di.Tag(slot))
-// 	})
-// }
+		if got != want {
+			t.Errorf("Tag() = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("unnamed slot", func(t *testing.T) {
+		t.Parallel()
+		slot := di.NewSlot[int]()
+
+		got := di.Tag(slot)
+		const want = "@int"
+
+		if got != want {
+			t.Errorf("Tag() = %q; want %q", got, want)
+		}
+	})
+
+	t.Run("unknown slot", func(t *testing.T) {
+		t.Parallel()
+		slot := new(struct{})
+
+		got := di.Tag(slot)
+		const want = "0x"
+
+		if !strings.HasPrefix(got, want) {
+			t.Errorf(
+				"Tag(unknown) = %q; want prefix %q for pointer address",
+				got, want,
+			)
+		}
+	})
+}

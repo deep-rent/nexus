@@ -16,55 +16,86 @@ package mock_test
 
 import (
 	"errors"
+	"reflect"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/deep-rent/nexus/migrate"
 	"github.com/deep-rent/nexus/migrate/source/mock"
 )
 
-func TestNewSource(t *testing.T) {
+func TestNew(t *testing.T) {
+	t.Parallel()
+
 	scripts := []migrate.SourceScript{
 		{Version: 1, Description: "init"},
 	}
 	s := mock.New(scripts...)
 
-	require.NotNil(t, s)
-	assert.Equal(t, scripts, s.Scripts)
+	if s == nil {
+		t.Fatal("mock.New() = nil; want non-nil")
+	}
+
+	if !reflect.DeepEqual(s.Scripts, scripts) {
+		t.Errorf("New(%v).Scripts = %v; want %v", scripts, s.Scripts, scripts)
+	}
 }
 
 func TestSource_List(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
-		expected := []migrate.SourceScript{
+		t.Parallel()
+
+		want := []migrate.SourceScript{
 			{Version: 1, Description: "1st", Content: []byte("SELECT 1;")},
 			{Version: 2, Description: "2nd", Content: []byte("SELECT 2;")},
 		}
-		s := mock.New(expected...)
+		s := mock.New(want...)
 
-		actual, err := s.List()
-		require.NoError(t, err)
-		assert.Equal(t, expected, actual)
+		got, err := s.List()
+		if err != nil {
+			t.Fatalf("List() err = %v; want nil", err)
+		}
 
-		actual[0].Version = 999
-		assert.NotEqual(t, s.Scripts[0].Version, actual[0].Version)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("List() = %v; want %v", got, want)
+		}
+
+		// Verify deep copy by mutating result
+		got[0].Version = 999
+		if s.Scripts[0].Version == got[0].Version {
+			t.Errorf("List() returned reference; want deep copy")
+		}
 	})
 
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
 		wantErr := errors.New("list failed")
 		s := mock.New()
 		s.ListErr = wantErr
 
-		scripts, err := s.List()
-		assert.ErrorIs(t, err, wantErr)
-		assert.Nil(t, scripts)
+		got, err := s.List()
+		if !errors.Is(err, wantErr) {
+			t.Errorf("List() err = %v; want %v", err, wantErr)
+		}
+
+		if got != nil {
+			t.Errorf("List() = %v; want nil", got)
+		}
 	})
 
 	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+
 		s := mock.New()
-		scripts, err := s.List()
-		assert.NoError(t, err)
-		assert.Empty(t, scripts)
+		got, err := s.List()
+		if err != nil {
+			t.Fatalf("List() err = %v; want nil", err)
+		}
+
+		if len(got) != 0 {
+			t.Errorf("len(List()) = %d; want 0", len(got))
+		}
 	})
 }

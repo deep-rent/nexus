@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,36 +30,45 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/scheduler"
 )
 
-type Resource struct {
+type mockRoundTripper struct {
+	roundTrip func(*http.Request) (*http.Response, error)
+}
+
+func (m *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return m.roundTrip(r)
+}
+
+var _ http.RoundTripper = (*mockRoundTripper)(nil)
+
+type mockResource struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
 
-var mapper cache.Mapper[Resource] = func(r *cache.Response) (Resource, error) {
-	var resource Resource
-	err := json.Unmarshal(r.Body, &resource)
-	return resource, err
+var mockMapper cache.Mapper[mockResource] = func(
+	r *cache.Response,
+) (mockResource, error) {
+	var res mockResource
+	err := json.Unmarshal(r.Body, &res)
+	return res, err
 }
 
-var errorMapper cache.Mapper[Resource] = func(
+var mockErrorMapper cache.Mapper[mockResource] = func(
 	*cache.Response,
-) (Resource, error) {
-	return Resource{}, errors.New("parsing failed")
+) (mockResource, error) {
+	return mockResource{}, errors.New("parsing failed")
 }
 
 type mockHandler struct {
 	mu        sync.Mutex
 	status    int
-	header    http.Header
 	reqHeader http.Header
+	resHeader http.Header
 	body      string
 	count     atomic.Int32
 	sleep     time.Duration
@@ -79,7 +89,7 @@ func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.count.Add(1)
 	h.reqHeader = r.Header.Clone()
 
-	for k, v := range h.header {
+	for k, v := range h.resHeader {
 		for _, val := range v {
 			w.Header().Add(k, val)
 		}
@@ -90,108 +100,123 @@ func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *mockHandler) getReqCount() int {
+func (h *mockHandler) Count() int {
 	return int(h.count.Load())
 }
 
-func (h *mockHandler) getReqHeader(key string) string {
+func (h *mockHandler) RequestHeader(key string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.reqHeader.Get(key)
 }
 
 func TestController_GetAndReady(t *testing.T) {
+	t.Parallel()
 	h := &mockHandler{
 		status: http.StatusOK,
 		body:   `{"id":1, "name":"test"}`,
 	}
 	s := httptest.NewServer(h)
 	defer s.Close()
-	c := cache.NewController(s.URL, mapper)
+
+	c := cache.NewController(s.URL, mockMapper)
+
 	_, ok := c.Get()
-	assert.False(t, ok, "Get should return false before first fetch")
+	if ok {
+		t.Errorf("Get() ok = %t; want %t", ok, false)
+	}
+
 	select {
 	case <-c.Ready():
-		t.Fatal("Ready channel should block before first fetch")
+		t.Fatal("Ready() channel should block before first fetch")
 	default:
 	}
-	d := c.Run(context.Background())
-	assert.NotZero(t, d, "Run should return a non-zero delay")
+
+	d := c.Run(t.Context())
+	if d == 0 {
+		t.Errorf("Run() delay = %v; want non-zero", d)
+	}
+
 	r, ok := c.Get()
-	assert.True(t, ok, "Get should return true after successful fetch")
-	assert.Equal(t, Resource{ID: 1, Name: "test"}, r)
+	if !ok {
+		t.Errorf("Get() ok = %t; want %t", ok, true)
+	}
+	if got, want := r, (mockResource{ID: 1, Name: "test"}); got != want {
+		t.Errorf("Get() resource = %v; want %v", got, want)
+	}
 	select {
 	case <-c.Ready():
 	case <-time.After(10 * time.Millisecond):
 		t.Fatal("Ready channel should be closed after successful fetch")
 	}
-	<-c.Ready()
 }
 
 func TestController_Run(t *testing.T) {
-	h := &mockHandler{}
-	s := httptest.NewServer(h)
-	defer s.Close()
-	minInt := 1 * time.Minute
-	maxInt := 1 * time.Hour
-	goodRes := Resource{ID: 42, Name: "success"}
-	goodBody, _ := json.Marshal(goodRes)
+	t.Parallel()
+	const (
+		minInt = 1 * time.Minute
+		maxInt = 1 * time.Hour
+	)
+
+	goodResource := mockResource{ID: 42, Name: "success"}
+	goodBody, _ := json.Marshal(goodResource)
+
 	tests := []struct {
 		name           string
 		handler        *mockHandler
-		mapper         cache.Mapper[Resource]
+		mapper         cache.Mapper[mockResource]
 		wantDelay      time.Duration
 		wantDelayDelta time.Duration
-		wantResource   Resource
+		wantResource   mockResource
 		wantOK         bool
 		wantLogs       string
 	}{
 		{
 			name: "success with max-age",
 			handler: &mockHandler{
-				status: http.StatusOK,
-				body:   string(goodBody),
-				header: http.Header{"Cache-Control": {"max-age=120"}},
+				status:    http.StatusOK,
+				body:      string(goodBody),
+				resHeader: http.Header{"Cache-Control": {"max-age=120"}},
 			},
-			mapper:       mapper,
+			mapper:       mockMapper,
 			wantDelay:    2 * time.Minute,
-			wantResource: goodRes,
+			wantResource: goodResource,
 			wantOK:       true,
 		},
 		{
 			name: "clamp to min interval",
 			handler: &mockHandler{
-				status: http.StatusOK,
-				body:   string(goodBody),
-				header: http.Header{"Cache-Control": {"max-age=30"}},
+				status:    http.StatusOK,
+				body:      string(goodBody),
+				resHeader: http.Header{"Cache-Control": {"max-age=30"}},
 			},
-			mapper:       mapper,
+			mapper:       mockMapper,
 			wantDelay:    minInt,
-			wantResource: goodRes,
+			wantResource: goodResource,
 			wantOK:       true,
 		},
 		{
 			name: "clamp to max interval",
 			handler: &mockHandler{
-				status: http.StatusOK,
-				body:   string(goodBody),
-				header: http.Header{"Cache-Control": {"max-age=7200"}},
+				status:    http.StatusOK,
+				body:      string(goodBody),
+				resHeader: http.Header{"Cache-Control": {"max-age=7200"}},
 			},
-			mapper:       mapper,
+			mapper:       mockMapper,
 			wantDelay:    maxInt,
-			wantResource: goodRes,
+			wantResource: goodResource,
 			wantOK:       true,
 		},
 		{
 			name: "no-store header",
 			handler: &mockHandler{
-				status: http.StatusOK,
-				body:   string(goodBody),
-				header: http.Header{"Cache-Control": {"no-store"}},
+				status:    http.StatusOK,
+				body:      string(goodBody),
+				resHeader: http.Header{"Cache-Control": {"no-store"}},
 			},
-			mapper:       mapper,
+			mapper:       mockMapper,
 			wantDelay:    minInt,
-			wantResource: goodRes,
+			wantResource: goodResource,
 			wantOK:       true,
 		},
 		{
@@ -200,82 +225,96 @@ func TestController_Run(t *testing.T) {
 				status: http.StatusInternalServerError,
 				body:   "error",
 			},
-			mapper:       mapper,
+			mapper:       mockMapper,
 			wantDelay:    minInt,
-			wantResource: Resource{},
+			wantResource: mockResource{},
 			wantOK:       false,
 			wantLogs:     "Received a non-retriable HTTP status code",
 		},
 		{
-			name:         "mapper error",
-			handler:      &mockHandler{status: http.StatusOK, body: `invalid`},
-			mapper:       errorMapper,
+			name: "mapper error",
+			handler: &mockHandler{
+				status: http.StatusOK,
+				body:   `invalid`,
+			},
+			mapper:       mockErrorMapper,
 			wantDelay:    minInt,
-			wantResource: Resource{},
+			wantResource: mockResource{},
 			wantOK:       false,
 			wantLogs:     "Couldn't parse response body",
 		},
 		{
-			name:         "body read error",
-			handler:      &mockHandler{status: http.StatusOK, body: "ok"},
-			mapper:       mapper,
+			name: "body read error",
+			handler: &mockHandler{
+				status: http.StatusOK,
+				body:   "ok",
+			},
+			mapper:       mockMapper,
 			wantDelay:    minInt,
-			wantResource: Resource{},
+			wantResource: mockResource{},
 			wantOK:       false,
 			wantLogs:     "Failed to read response body",
 		},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			h.mu.Lock()
-			h.status = tc.handler.status
-			h.header = tc.handler.header
-			h.body = tc.handler.body
-			h.sleep = tc.handler.sleep
-			h.count.Store(0)
-			h.mu.Unlock()
-			if tc.name == "body read error" {
-				s.Config.Handler = http.HandlerFunc(func(
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var s *httptest.Server
+			if tt.name == "body read error" {
+				s = httptest.NewServer(http.HandlerFunc(func(
 					w http.ResponseWriter, _ *http.Request,
 				) {
 					w.Header().Set("Content-Length", "10")
 					w.WriteHeader(http.StatusOK)
 					_, _ = io.WriteString(w, "short")
-				})
+				}))
 			} else {
-				s.Config.Handler = h
+				s = httptest.NewServer(tt.handler)
 			}
+			defer s.Close()
+
 			var buf bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&buf, nil))
-			c := cache.NewController(s.URL, tc.mapper,
+
+			c := cache.NewController(s.URL, tt.mapper,
 				cache.WithMinInterval(minInt),
 				cache.WithMaxInterval(maxInt),
 				cache.WithLogger(logger),
 				cache.WithRetryOptions(retry.WithAttemptLimit(1)),
 			)
-			d := c.Run(context.Background())
-			if tc.wantDelayDelta > 0 {
-				assert.InDelta(
-					t,
-					tc.wantDelayDelta,
-					d,
-					float64(time.Second),
-					"Delay should be approximately correct",
-				)
-			} else {
-				assert.Equal(t, tc.wantDelay, d)
+			d := c.Run(t.Context())
+
+			if tt.wantDelayDelta > 0 {
+				diff := math.Abs(float64(tt.wantDelayDelta - d))
+				if diff > float64(time.Second) {
+					t.Errorf("Run() delay = %v; want %v (delta %v)",
+						d, tt.wantDelayDelta, time.Second)
+				}
+			} else if d != tt.wantDelay {
+				t.Errorf("Run() delay = %v; want %v", d, tt.wantDelay)
 			}
+
 			res, ok := c.Get()
-			assert.Equal(t, tc.wantOK, ok)
-			assert.Equal(t, tc.wantResource, res)
-			if tc.wantLogs != "" {
-				assert.Contains(t, buf.String(), tc.wantLogs)
+			if ok != tt.wantOK {
+				t.Errorf("Get() ok = %t; want %t", ok, tt.wantOK)
 			}
-			if tc.wantOK {
+			if res != tt.wantResource {
+				t.Errorf("Get() resource = %v; want %v", res, tt.wantResource)
+			}
+
+			if tt.wantLogs != "" {
+				if got := buf.String(); !strings.Contains(got, tt.wantLogs) {
+					t.Errorf("logs = %q; want to contain %q", got, tt.wantLogs)
+				}
+			}
+
+			if tt.wantOK {
 				select {
 				case <-c.Ready():
 				default:
-					t.Error("Ready() should be closed on success")
+					t.Error("Ready() channel should be closed on success")
 				}
 			}
 		})
@@ -283,121 +322,171 @@ func TestController_Run(t *testing.T) {
 }
 
 func TestController_Run_ConditionalHeaders(t *testing.T) {
+	t.Parallel()
 	h := &mockHandler{}
 	s := httptest.NewServer(h)
 	defer s.Close()
-	c := cache.NewController(s.URL, mapper)
+
+	c := cache.NewController(s.URL, mockMapper)
+
+	h.mu.Lock()
 	h.status = http.StatusOK
 	h.body = `{"id":1}`
-	h.header = http.Header{
+	h.resHeader = http.Header{
 		"Etag":          {`"v1"`},
 		"Last-Modified": {"some-date"},
 	}
-	c.Run(context.Background())
-	require.Equal(t, 1, h.getReqCount(), "Expected 1 request")
-	assert.Empty(t, h.getReqHeader("If-None-Match"))
-	assert.Empty(t, h.getReqHeader("If-Modified-Since"))
+	h.mu.Unlock()
+
+	const (
+		ifNoneMatch     = "If-None-Match"
+		ifModifiedSince = "If-Modified-Since"
+	)
+
+	c.Run(t.Context())
+	if got, want := h.Count(), 1; got != want {
+		t.Fatalf("Count() = %d; want %d", got, want)
+	}
+	if got := h.RequestHeader(ifNoneMatch); len(got) != 0 {
+		t.Errorf("RequestHeader(%q) = %q; want empty", ifNoneMatch, got)
+	}
+	if got := h.RequestHeader(ifModifiedSince); len(got) != 0 {
+		t.Errorf("RequestHeader(%q) = %q; want empty", ifModifiedSince, got)
+	}
+
+	h.mu.Lock()
 	h.status = http.StatusNotModified
 	h.body = ""
-	c.Run(context.Background())
-	require.Equal(t, 2, h.getReqCount(), "Expected 2 requests")
-	assert.Equal(t, `"v1"`, h.getReqHeader("If-None-Match"))
-	assert.Equal(t, "some-date", h.getReqHeader("If-Modified-Since"))
+	h.mu.Unlock()
+
+	c.Run(t.Context())
+	if got, want := h.Count(), 2; got != want {
+		t.Fatalf("Count() = %d; want %d", got, want)
+	}
+	if got, want := h.RequestHeader(ifNoneMatch), `"v1"`; got != want {
+		t.Errorf("RequestHeader(%q) = %q; want %q", ifNoneMatch, got, want)
+	}
+	if got, want := h.RequestHeader(ifModifiedSince), "some-date"; got != want {
+		t.Errorf("RequestHeader(%q) = %q; want %q", ifModifiedSince, got, want)
+	}
+
 	res, ok := c.Get()
-	require.True(t, ok)
-	assert.Equal(t, 1, res.ID)
+	if !ok {
+		t.Fatalf("Get() ok = %t; want %t", ok, true)
+	}
+	if got, want := res.ID, 1; got != want {
+		t.Errorf("Get().ID = %d; want %d", got, want)
+	}
 }
 
-func TestController_WithScheduler(t *testing.T) {
+func TestController_Get_WithScheduler(t *testing.T) {
+	t.Parallel()
 	h := &mockHandler{
-		status: http.StatusOK,
-		body:   `{"id":123, "name":"scheduled"}`,
-		header: http.Header{"Cache-Control": {"max-age=1"}},
+		status:    http.StatusOK,
+		body:      `{"id":123, "name":"scheduled"}`,
+		resHeader: http.Header{"Cache-Control": {"max-age=1"}},
 	}
+
 	s := httptest.NewServer(h)
 	defer s.Close()
-	sched := scheduler.New(context.Background())
-	c := cache.NewController(s.URL, mapper)
+
+	sched := scheduler.New(t.Context())
+	defer sched.Shutdown()
+
+	c := cache.NewController(s.URL, mockMapper)
 	sched.Dispatch(c)
+
 	select {
 	case <-c.Ready():
 	case <-time.After(1 * time.Second):
-		t.Fatal("Timed out waiting for cache to become ready")
+		t.Fatal("timeout waiting for cache to become ready")
 	}
-	sched.Shutdown()
+
 	res, ok := c.Get()
-	assert.True(t, ok)
-	assert.Equal(t, Resource{ID: 123, Name: "scheduled"}, res)
-	assert.GreaterOrEqual(
-		t,
-		h.getReqCount(),
-		1,
-		"Handler should have been called at least once",
-	)
+	if !ok {
+		t.Errorf("Get() ok = %t; want %t", ok, true)
+	}
+	if got, want := res, (mockResource{ID: 123, Name: "scheduled"}); got != want {
+		t.Errorf("Get() resource = %v; want %v", got, want)
+	}
+	if got := h.Count(); got < 1 {
+		t.Errorf("Count() = %d; want >= 1", got)
+	}
 }
 
 func TestController_Run_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	h := &mockHandler{
 		sleep:  100 * time.Millisecond,
 		status: http.StatusOK,
 	}
+
 	s := httptest.NewServer(h)
 	defer s.Close()
-	c := cache.NewController(s.URL, mapper)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	c := cache.NewController(s.URL, mockMapper)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
+
 	c.Run(ctx)
-	assert.Zero(
-		t,
-		h.getReqCount(),
-		"No request should complete if context is cancelled",
-	)
+	if got, want := h.Count(), 0; got != want {
+		t.Errorf("Count() = %d; want %d", got, want)
+	}
 }
 
 func TestNewController_Options(t *testing.T) {
-	t.Run("WithClient overrides others", func(t *testing.T) {
-		var transportUsed bool
-		mockTransport := &mockRoundTripper{
-			roundTripFunc: func(r *http.Request) (*http.Response, error) {
-				transportUsed = true
-				assert.Empty(
-					t,
-					r.Header.Get("X-Test"),
-					"Header should not be set on custom client",
-				)
+	t.Run("with client overrides others", func(t *testing.T) {
+		t.Parallel()
+		var used atomic.Bool
+		transport := &mockRoundTripper{
+			roundTrip: func(r *http.Request) (*http.Response, error) {
+				used.Store(true)
+				if got := r.Header.Get("X-Test"); len(got) != 0 {
+					t.Errorf("Header X-Test = %q; want empty", got)
+				}
 				return &http.Response{
 					StatusCode: http.StatusNoContent,
 					Body:       io.NopCloser(strings.NewReader("")),
 				}, nil
 			},
 		}
-		cli := &http.Client{Transport: mockTransport}
-		c := cache.NewController("http://a.b", mapper,
+		cli := &http.Client{Transport: transport}
+		c := cache.NewController("http://a.b", mockMapper,
 			cache.WithClient(cli),
 			cache.WithHeader("X-Test", "value"),
 			cache.WithTimeout(1*time.Nanosecond),
 		)
-		c.Run(context.Background())
-		assert.True(t, transportUsed, "Custom client's transport was not used")
+		c.Run(t.Context())
+		if !used.Load() {
+			t.Error("custom client's transport was not used")
+		}
 	})
-	t.Run("WithHeader", func(t *testing.T) {
+
+	t.Run("with header", func(t *testing.T) {
+		t.Parallel()
 		h := &mockHandler{status: http.StatusNoContent}
 		s := httptest.NewServer(h)
 		defer s.Close()
-		c := cache.NewController(s.URL, mapper,
-			cache.WithHeader("X-Foo", "bar"),
-			cache.WithHeader("X-Baz", "qux"),
+
+		const (
+			xFoo = "X-Foo"
+			xBaz = "X-Baz"
 		)
-		c.Run(context.Background())
-		assert.Equal(t, "bar", h.getReqHeader("X-Foo"))
-		assert.Equal(t, "qux", h.getReqHeader("X-Baz"))
+
+		c := cache.NewController(
+			s.URL,
+			mockMapper,
+			cache.WithHeader(xFoo, "bar"),
+			cache.WithHeader(xBaz, "qux"),
+		)
+
+		c.Run(t.Context())
+
+		if got, want := h.RequestHeader(xFoo), "bar"; got != want {
+			t.Errorf("RequestHeader(%q) = %q; want %q", xFoo, got, want)
+		}
+		if got, want := h.RequestHeader(xBaz), "qux"; got != want {
+			t.Errorf("RequestHeader(%q) = %q; want %q", xBaz, got, want)
+		}
 	})
-}
-
-type mockRoundTripper struct {
-	roundTripFunc func(*http.Request) (*http.Response, error)
-}
-
-func (m *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	return m.roundTripFunc(r)
 }
