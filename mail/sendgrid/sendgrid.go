@@ -178,10 +178,10 @@ type address struct {
 }
 
 type personalization struct {
-	To                  []address      `json:"to"`
-	Cc                  []address      `json:"cc,omitzero"`
-	Bcc                 []address      `json:"bcc,omitzero"`
-	DynamicTemplateData map[string]any `json:"dynamic_template_data,omitzero"`
+	To           []address      `json:"to"`
+	CC           []address      `json:"cc,omitzero"`
+	BCC          []address      `json:"bcc,omitzero"`
+	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
 }
 
 type payload struct {
@@ -262,10 +262,10 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 // payload maps the domain email model to the SendGrid JSON structure.
 func (c *Sender) payload(email *mail.Email) payload {
 	pers := personalization{
-		To:                  addresses(email.To),
-		Cc:                  addresses(email.Cc),
-		Bcc:                 addresses(email.Bcc),
-		DynamicTemplateData: email.TemplateData,
+		To:           addresses(email.To),
+		CC:           addresses(email.CC),
+		BCC:          addresses(email.BCC),
+		TemplateData: email.TemplateData,
 	}
 
 	p := payload{

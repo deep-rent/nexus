@@ -50,7 +50,9 @@ var (
 
 // Address represents an email address and an optional display name.
 type Address struct {
-	Name    string
+	// Name is an optional display name (e.g., "Alice Smith").
+	Name string
+	// Address is the actual email address (e.g., "alice@example.com").
 	Address string
 }
 
@@ -68,15 +70,25 @@ func (a Address) String() string {
 	return fmt.Sprintf("%s <%s>", a.Name, a.Address)
 }
 
-// Email represents a transactional email payload designed for dynamic templates.
+// Email represents a transactional email payload designed for dynamic
+// templates.
 type Email struct {
-	From         Address
-	To           []Address
-	Cc           []Address
-	Bcc          []Address
-	ReplyTo      *Address // Optional Reply-To address
-	TemplateID   string
-	TemplateData map[string]any // Data to populate the dynamic template
+	// From is the sender's address.
+	From Address
+	// To contains the primary recipients.
+	To []Address
+	// CC contains the carbon copy recipients.
+	CC []Address
+	// BCC contains the blind carbon copy recipients.
+	BCC []Address
+	// ReplyTo is an optional address where replies should be directed.
+	ReplyTo *Address
+	// TemplateID is the provider-specific identifier of the dynamic template to
+	// use.
+	TemplateID string
+	// TemplateData holds the key-value pairs used to populate the template
+	// variables.
+	TemplateData map[string]any
 }
 
 // NewEmail creates a new Email with the required fields.
@@ -94,15 +106,15 @@ func (e *Email) AddTo(addrs ...Address) *Email {
 	return e
 }
 
-// AddCC appends one or more recipients to the "Cc" list.
+// AddCC appends one or more recipients to the "CC" list.
 func (e *Email) AddCC(addrs ...Address) *Email {
-	e.Cc = append(e.Cc, addrs...)
+	e.CC = append(e.CC, addrs...)
 	return e
 }
 
-// AddBCC appends one or more recipients to the "Bcc" list.
+// AddBCC appends one or more recipients to the "BCC" list.
 func (e *Email) AddBCC(addrs ...Address) *Email {
-	e.Bcc = append(e.Bcc, addrs...)
+	e.BCC = append(e.BCC, addrs...)
 	return e
 }
 
