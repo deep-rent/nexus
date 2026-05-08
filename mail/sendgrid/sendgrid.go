@@ -24,22 +24,28 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/deep-rent/nexus/mail"
+	"github.com/deep-rent/nexus/retry"
 )
 
 const defaultBaseURL = "https://api.sendgrid.com/v3"
 
-var (
-	// ErrMissingAPIKey is returned when the SendGrid API key is not provided.
-	ErrMissingAPIKey = errors.New("sendgrid: missing API key")
-	// ErrNilEmail is returned when a nil email is passed to Send.
-	ErrNilEmail = errors.New("sendgrid: email cannot be nil")
-	// ErrNoRecipients is returned when an email has no recipients.
-	ErrNoRecipients = errors.New("sendgrid: at least one recipient is required")
-)
+// ErrMissingAPIKey is returned when the SendGrid API key is not provided.
+var ErrMissingAPIKey = errors.New("sendgrid: missing API key")
+
+// APIError represents an error response from the SendGrid API.
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("sendgrid: API error %d: %s", e.StatusCode, e.Body)
+}
 
 // Client is a SendGrid email sender that implements mail.Sender.
 type Client struct {
@@ -48,6 +54,7 @@ type Client struct {
 	timeout    time.Duration
 	httpClient *http.Client
 	logger     *slog.Logger
+	retryOpts  []retry.Option
 }
 
 // Option defines the functional option pattern for configuring the Client.
@@ -77,6 +84,14 @@ func WithTimeout(d time.Duration) Option {
 	}
 }
 
+// WithRetryOptions configures the retry mechanism for the default HTTP client.
+// If a custom HTTP client is provided via WithHTTPClient, these options are ignored.
+func WithRetryOptions(opts ...retry.Option) Option {
+	return func(client *Client) {
+		client.retryOpts = append(client.retryOpts, opts...)
+	}
+}
+
 // WithLogger injects a structured logger into the client.
 func WithLogger(logger *slog.Logger) Option {
 	return func(client *Client) {
@@ -101,8 +116,20 @@ func New(apiKey string, opts ...Option) *Client {
 
 	// Initialize the default HTTP client if a custom one wasn't provided
 	if c.httpClient == nil {
+		d := &net.Dialer{
+			Timeout: c.timeout / 3,
+		}
+		var t http.RoundTripper = &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           d.DialContext,
+			TLSHandshakeTimeout:   c.timeout / 3,
+			ResponseHeaderTimeout: c.timeout * 9 / 10,
+			DisableKeepAlives:     true,
+		}
+		t = retry.NewTransport(t, c.retryOpts...)
 		c.httpClient = &http.Client{
-			Timeout: c.timeout,
+			Timeout:   c.timeout,
+			Transport: t,
 		}
 	}
 
@@ -135,11 +162,8 @@ func (c *Client) Send(ctx context.Context, email *mail.Email) error {
 	if c.apiKey == "" {
 		return ErrMissingAPIKey
 	}
-	if email == nil {
-		return ErrNilEmail
-	}
-	if len(email.To) == 0 {
-		return ErrNoRecipients
+	if err := email.Validate(); err != nil {
+		return err
 	}
 
 	p := c.buildPayload(email)
@@ -175,12 +199,13 @@ func (c *Client) Send(ctx context.Context, email *mail.Email) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		err := &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
 		c.logger.ErrorContext(ctx, "sendgrid API error",
-			slog.Int("status_code", resp.StatusCode),
-			slog.String("response", string(respBody)),
+			slog.Int("status_code", err.StatusCode),
+			slog.String("response", err.Body),
 		)
-		return fmt.Errorf("sendgrid: API error %d: %s", resp.StatusCode, string(respBody))
+		return err
 	}
 
 	c.logger.DebugContext(ctx, "email successfully dispatched to sendgrid",
