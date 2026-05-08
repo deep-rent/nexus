@@ -13,6 +13,24 @@
 // limitations under the License.
 
 // Package mail provides abstractions for sending transactional emails.
+//
+// It defines a generic payload model ([Email]) and a common [Sender]
+// interface that can be implemented by various email service providers
+// (e.g., SendGrid, Mailgun, SMTP). This decouples the application's
+// business logic from the specific delivery mechanism.
+//
+// # Usage
+//
+// Typically, you construct an Email using the fluent API and pass it
+// to a Sender:
+//
+//	msg := mail.NewEmail(
+//		mail.NewAddress("no-reply@example.com", "My App"),
+//		"template-id-123",
+//	).AddTo(mail.NewAddress("user@example.com", "Alice")).
+//	  WithData("name", "Alice")
+//
+//	err := sender.Send(ctx, msg)
 package mail
 
 import (
@@ -124,6 +142,13 @@ func (e *Email) Validate() error {
 }
 
 // Sender is the interface that wraps the Send method.
+//
+// Implementations of this interface are expected to be safe for concurrent
+// use by multiple goroutines. They should respect the provided context for
+// timeouts and cancellation.
 type Sender interface {
+	// Send dispatches the provided email payload to the underlying provider.
+	// It returns an error if the email is invalid, if the network request
+	// fails, or if the provider rejects the payload.
 	Send(ctx context.Context, email *Email) error
 }
