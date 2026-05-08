@@ -12,8 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sendgrid implements the mail.Sender interface for the SendGrid v3
-// API.
+// Package sendgrid implements the [mail.Sender] interface using the
+// SendGrid v3 Web API.
+//
+// It provides a robust HTTP client configured with sensible defaults,
+// including timeouts, connection pooling, and automatic retries for
+// transient network errors (via the retry package).
+//
+// # Usage
+//
+// Create a new Sender with your API key:
+//
+//	sender := sendgrid.New(
+//		"SG.your.api.key",
+//		sendgrid.WithTimeout(15 * time.Second),
+//	)
+//
+//	err := sender.Send(ctx, email)
+//
+// If the SendGrid API returns an error status code, Send returns an
+// [*APIError] which can be inspected for the specific HTTP status code
+// and response body.
 package sendgrid
 
 import (
@@ -32,12 +51,17 @@ import (
 	"github.com/deep-rent/nexus/retry"
 )
 
+// DefaultBaseURL is the standard API endpoint for SendGrid v3.
 const DefaultBaseURL = "https://api.sendgrid.com/v3"
 
 // ErrMissingAPIKey is returned when the SendGrid API key is not provided.
 var ErrMissingAPIKey = errors.New("sendgrid: missing API key")
 
 // APIError represents an error response from the SendGrid API.
+//
+// It allows consumers to programmatically inspect the HTTP status code
+// (e.g., to detect 429 Too Many Requests or 400 Bad Request) and parse
+// the raw JSON body returned by SendGrid for specific validation errors.
 type APIError struct {
 	StatusCode int
 	Body       string
@@ -47,7 +71,11 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("sendgrid: API error %d: %s", e.StatusCode, e.Body)
 }
 
-// Sender is a SendGrid email sender that implements mail.Sender.
+// Sender is a SendGrid email sender that implements [mail.Sender].
+//
+// It manages the HTTP client and authentication state required to interact
+// with the SendGrid API. Once initialized via [New], a Sender is safe for
+// concurrent use by multiple goroutines.
 type Sender struct {
 	apiKey    string
 	baseURL   string
@@ -104,6 +132,12 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // New creates a configured SendGrid client.
+//
+// It initializes the client with a default base URL, a sensible timeout,
+// and a standard logger. These defaults can be overridden by passing one or
+// more [Option] functions. If no custom HTTP client is provided, it builds
+// an internal client optimized for API calls with connection pooling and
+// automatic retry capabilities.
 func New(apiKey string, opts ...Option) *Sender {
 	c := &Sender{
 		apiKey:  apiKey,
@@ -158,6 +192,11 @@ type payload struct {
 }
 
 // Send executes the HTTP request to the SendGrid API.
+//
+// It maps the domain [mail.Email] payload into SendGrid's expected JSON
+// structure and dispatches the request. It respects the provided context
+// for timeouts and cancellation. If the API responds with an HTTP status
+// code >= 400, it returns an [*APIError] containing the raw response body.
 func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 	if c.apiKey == "" {
 		return ErrMissingAPIKey
