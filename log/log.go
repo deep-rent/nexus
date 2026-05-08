@@ -12,28 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package log provides a configurable constructor for the standard slog.Logger,
-// allowing for easy setup using the functional options pattern.
+// Package log provides a configurable constructor for the standard slog.Logger.
 //
+// Package log provides a configurable constructor for the standard
+// [slog.Logger], allowing for easy setup using the functional options pattern.
 // It simplifies the creation of a structured logger by abstracting away the
 // handler setup and providing flexible options for setting the level, format,
 // and output from common types like strings.
 //
-// # Usage:
+// # Usage
 //
 // Create a logger that outputs JSON at a debug level to standard error:
 //
+// Example:
+//
 //	logger := log.New(
-//		log.WithLevel("debug"),
-//		log.WithFormat("json"),
-//		log.WithWriter(os.Stderr),
-//		log.WithAddSource(true), // Include file and line number.
+//	  log.WithLevel("debug"),
+//	  log.WithFormat("json"),
+//	  log.WithWriter(os.Stderr),
+//	  log.WithAddSource(true), // Include file and line number.
 //	)
 //
 //	slog.SetDefault(logger)
 //	slog.Debug("This is a debug message")
 //
 // Create a multi-target logger using Combine and NewHandler:
+//
+// Example:
 //
 //	h1 := log.NewHandler(
 //	  log.WithLevel("debug"),
@@ -61,17 +66,22 @@ import (
 
 // Default configuration values for a new logger.
 const (
-	DefaultLevel     = slog.LevelInfo
+	// DefaultLevel is the level used when none is specified.
+	DefaultLevel = slog.LevelInfo
+	// DefaultAddSource is the default setting for including source information.
 	DefaultAddSource = false
-	DefaultFormat    = FormatText
+	// DefaultFormat is the format used when none is specified.
+	DefaultFormat = FormatText
 )
 
 // Format defines the log output format, such as JSON or plain text.
 type Format uint8
 
 const (
-	FormatText Format = iota // Human-readable text format.
-	FormatJSON               // JSON format suitable for machine parsing.
+	// FormatText produces human-readable text format.
+	FormatText Format = iota
+	// FormatJSON produces JSON format suitable for machine parsing.
+	FormatJSON
 )
 
 // String returns the lower-case string representation of the log format.
@@ -84,22 +94,22 @@ func (f Format) String() string {
 	}
 }
 
-// New creates and configures a new slog.Logger. By default, it logs at
-// slog.LevelInfo in plain text to os.Stdout, without source information.
-// These defaults can be overridden by passing in one or more Option functions.
+// New creates and configures a new [slog.Logger]. By default, it logs at
+// [slog.LevelInfo] in plain text to [os.Stdout], without source information.
+// These defaults can be overridden by passing in one or more [Option] functions.
 func New(opts ...Option) *slog.Logger {
 	return slog.New(NewHandler(opts...))
 }
 
-// Combine creates a new slog.Logger that broadcasts log records to multiple
-// provided slog.Handlers simultaneously using slog.NewMultiHandler.
+// Combine creates a new [slog.Logger] that broadcasts log records to multiple
+// provided [slog.Handler] instances simultaneously using [slog.NewMultiHandler].
 func Combine(handlers ...slog.Handler) *slog.Logger {
 	return slog.New(slog.NewMultiHandler(handlers...))
 }
 
-// NewHandler creates and configures a new slog.Handler. By default, it
-// sets up a text handler logging at slog.LevelInfo to os.Stdout.
-// These defaults can be overridden by passing in one or more Option functions.
+// NewHandler creates and configures a new [slog.Handler]. By default, it
+// sets up a text handler logging at [slog.LevelInfo] to [os.Stdout].
+// These defaults can be overridden by passing in one or more [Option] functions.
 func NewHandler(opts ...Option) slog.Handler {
 	c := config{
 		Level:     DefaultLevel,
@@ -130,19 +140,23 @@ func NewHandler(opts ...Option) slog.Handler {
 
 // config holds the configuration settings for the logger.
 type config struct {
-	Level     slog.Level
+	// Level is the minimum log level enabled.
+	Level slog.Level
+	// AddSource determines if file/line information is included.
 	AddSource bool
-	Format    Format
-	Writer    io.Writer
+	// Format determines the output encoding.
+	Format Format
+	// Writer is the output destination.
+	Writer io.Writer
 }
 
 // Option defines a function that modifies the logger configuration.
 type Option func(*config)
 
-// WithLevel sets the minimum log level. It accepts either a slog.Level constant
-// (e.g., slog.LevelDebug) or a case-insensitive string (e.g., "debug") as
-// handled by ParseLevel. If an invalid string or type is provided, the option
-// is a no-op.
+// WithLevel sets the minimum log level. It accepts either a [slog.Level]
+// constant (e.g., [slog.LevelDebug]) or a case-insensitive string (e.g.,
+// "debug") as handled by [ParseLevel]. If an invalid string or type is
+// provided, the option is a no-op.
 func WithLevel(v any) Option {
 	return func(c *config) {
 		switch t := v.(type) {
@@ -157,10 +171,10 @@ func WithLevel(v any) Option {
 	}
 }
 
-// WithFormat sets the log output format. It accepts either a Format constant
-// (FormatText or FormatJSON) or a case-insensitive string ("text" or "json")
-// as handled by ParseFormat. If an invalid string or type is provided, the
-// option is a no-op.
+// WithFormat sets the log output format. It accepts either a [Format] constant
+// ([FormatText] or [FormatJSON]) or a case-insensitive string ("text" or
+// "json") as handled by [ParseFormat]. If an invalid string or type is
+// provided, the option is a no-op.
 func WithFormat(v any) Option {
 	return func(c *config) {
 		switch t := v.(type) {
@@ -186,8 +200,8 @@ func WithAddSource(add bool) Option {
 	}
 }
 
-// WithWriter returns an Option that sets the output destination for the logs.
-// If the provided io.Writer is nil, it is ignored.
+// WithWriter returns an [Option] that sets the output destination for the logs.
+// If the provided [io.Writer] is nil, it is ignored.
 func WithWriter(w io.Writer) Option {
 	return func(c *config) {
 		if w != nil {
@@ -196,7 +210,7 @@ func WithWriter(w io.Writer) Option {
 	}
 }
 
-// ParseLevel converts a case-insensitive string into a slog.Level.
+// ParseLevel converts a case-insensitive string into a [slog.Level].
 // It accepts standard level names like "debug", "info", "warn", and "error".
 // It returns an error if the string is not a valid level.
 func ParseLevel(s string) (level slog.Level, err error) {
@@ -206,7 +220,7 @@ func ParseLevel(s string) (level slog.Level, err error) {
 	return level, err
 }
 
-// ParseFormat converts a case-insensitive string into a Format.
+// ParseFormat converts a case-insensitive string into a [Format].
 // Valid inputs are "text" and "json". It returns an error for any other value.
 func ParseFormat(s string) (format Format, err error) {
 	switch strings.ToLower(s) {
