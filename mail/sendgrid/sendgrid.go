@@ -166,7 +166,7 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 		return err
 	}
 
-	p := c.buildPayload(email)
+	p := c.payload(email)
 
 	body, err := json.Marshal(p)
 	if err != nil {
@@ -215,12 +215,12 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 	return nil
 }
 
-// buildPayload maps the domain email model to the SendGrid JSON structure.
-func (c *Sender) buildPayload(email *mail.Email) payload {
+// payload maps the domain email model to the SendGrid JSON structure.
+func (c *Sender) payload(email *mail.Email) payload {
 	pers := personalization{
-		To:                  buildAddresses(email.To),
-		Cc:                  buildAddresses(email.Cc),
-		Bcc:                 buildAddresses(email.Bcc),
+		To:                  addresses(email.To),
+		Cc:                  addresses(email.Cc),
+		Bcc:                 addresses(email.Bcc),
 		DynamicTemplateData: email.TemplateData,
 	}
 
@@ -243,8 +243,8 @@ func (c *Sender) buildPayload(email *mail.Email) payload {
 	return p
 }
 
-// buildAddresses is a helper to convert domain addresses to internal addresses.
-func buildAddresses(addrs []mail.Address) []address {
+// addresses is a helper to convert domain addresses to internal addresses.
+func addresses(addrs []mail.Address) []address {
 	if len(addrs) == 0 {
 		return nil
 	}
