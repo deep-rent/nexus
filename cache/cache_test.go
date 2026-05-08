@@ -58,10 +58,12 @@ var mockMapper cache.Mapper[mockResource] = func(
 	return res, err
 }
 
+var errParsingFailed = errors.New("parsing failed")
+
 var mockErrorMapper cache.Mapper[mockResource] = func(
 	*cache.Response,
 ) (mockResource, error) {
-	return mockResource{}, errors.New("parsing failed")
+	return mockResource{}, errParsingFailed
 }
 
 type mockHandler struct {
