@@ -36,6 +36,11 @@ type Address struct {
 	Address string
 }
 
+// NewAddress creates a new Address with an optional display name.
+func NewAddress(addr, name string) Address {
+	return Address{Address: addr, Name: name}
+}
+
 // String returns the string representation of the address (e.g.,
 // "Name <email@example.com>").
 func (a Address) String() string {
@@ -54,6 +59,54 @@ type Email struct {
 	ReplyTo      *Address // Optional Reply-To address
 	TemplateID   string
 	TemplateData map[string]any // Data to populate the dynamic template
+}
+
+// NewEmail creates a new Email with the required fields.
+func NewEmail(from Address, templateID string, to ...Address) *Email {
+	return &Email{
+		From:       from,
+		TemplateID: templateID,
+		To:         to,
+	}
+}
+
+// AddTo appends one or more recipients to the "To" list.
+func (e *Email) AddTo(addrs ...Address) *Email {
+	e.To = append(e.To, addrs...)
+	return e
+}
+
+// AddCC appends one or more recipients to the "Cc" list.
+func (e *Email) AddCC(addrs ...Address) *Email {
+	e.Cc = append(e.Cc, addrs...)
+	return e
+}
+
+// AddBCC appends one or more recipients to the "Bcc" list.
+func (e *Email) AddBCC(addrs ...Address) *Email {
+	e.Bcc = append(e.Bcc, addrs...)
+	return e
+}
+
+// WithReplyTo sets an optional Reply-To address.
+func (e *Email) WithReplyTo(addr Address) *Email {
+	e.ReplyTo = &addr
+	return e
+}
+
+// WithData adds or updates a key-value pair in the template data map.
+func (e *Email) WithData(key string, value any) *Email {
+	if e.TemplateData == nil {
+		e.TemplateData = make(map[string]any)
+	}
+	e.TemplateData[key] = value
+	return e
+}
+
+// SetData replaces the entire template data map.
+func (e *Email) SetData(data map[string]any) *Email {
+	e.TemplateData = data
+	return e
 }
 
 // Validate checks if the email has the minimum required fields for sending.
