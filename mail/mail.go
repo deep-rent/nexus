@@ -15,12 +15,33 @@
 // Package mail provides abstractions for sending transactional emails.
 package mail
 
-import "context"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
+
+var (
+	// ErrNilEmail is returned when a nil email is passed to Send.
+	ErrNilEmail = errors.New("mail: email cannot be nil")
+	// ErrNoRecipients is returned when an email has no recipients.
+	ErrNoRecipients = errors.New("mail: at least one recipient is required")
+	// ErrNoTemplateID is returned when an email has no template ID.
+	ErrNoTemplateID = errors.New("mail: template ID is required")
+)
 
 // Address represents an email address and an optional display name.
 type Address struct {
 	Name    string
 	Address string
+}
+
+// String returns the string representation of the address (e.g., "Name <email@example.com>").
+func (a Address) String() string {
+	if a.Name == "" {
+		return a.Address
+	}
+	return fmt.Sprintf("%s <%s>", a.Name, a.Address)
 }
 
 // Email represents a transactional email payload designed for dynamic templates.
@@ -32,6 +53,20 @@ type Email struct {
 	ReplyTo      *Address // Optional Reply-To address
 	TemplateID   string
 	TemplateData map[string]any // Data to populate the dynamic template
+}
+
+// Validate checks if the email has the minimum required fields for sending.
+func (e *Email) Validate() error {
+	if e == nil {
+		return ErrNilEmail
+	}
+	if len(e.To) == 0 {
+		return ErrNoRecipients
+	}
+	if e.TemplateID == "" {
+		return ErrNoTemplateID
+	}
+	return nil
 }
 
 // Sender is the interface that wraps the Send method.
