@@ -14,17 +14,23 @@
 
 // Package file provides a file system-based source for database migrations.
 //
-// It implements the migrate.Source interface by reading migration scripts
-// from any implementation of the standard library's fs.FS interface (such
-// as os.DirFS or embed.FS). It parses filenames to extract the migration
-// version, description, execution direction (up/down), and whether the
-// migration should run inside a transaction.
+// Package file implements the [migrate.Source] interface by reading migration
+// scripts from any implementation of the standard library's [fs.FS] interface
+// (such as [os.DirFS] or [embed.FS]). It parses filenames to extract the
+// migration version, description, execution direction (up/down), and whether
+// the migration should run inside a transaction.
+//
+// # Filename Format
 //
 // The expected filename format is:
 //
 //	<version>_<description>.<direction>[_notx]<extension>
 //
-// Example Usage:
+// # Usage
+//
+// Initialize a source by providing a filesystem and optional configuration.
+//
+// Example:
 //
 //	// Using an embedded filesystem
 //	//go:embed sql/*.sql
@@ -51,7 +57,7 @@ const (
 	DefaultExtension = ".sql"
 )
 
-// Errors explaining why the Parse method has failed:
+// Errors explaining why the [Source.Parse] method has failed:
 var (
 	// ErrExtension is returned when a filename does not end with the configured
 	// file extension.
@@ -59,8 +65,8 @@ var (
 	// ErrMissingDirection is returned when a filename lacks the dot separator
 	// preceding the direction segment.
 	ErrMissingDirection = errors.New("missing direction segment")
-	// ErrIllegalDirection is returned when the direction segment is neither "up"
-	// nor "down".
+	// ErrIllegalDirection is returned when the direction segment is neither
+	// "up" nor "down".
 	ErrIllegalDirection = errors.New("illegal direction")
 	// ErrMissingSeparator is returned when a filename lacks the underscore
 	// separating the version from the description.
@@ -75,16 +81,19 @@ var (
 
 // config holds the internal configuration options for the file source.
 type config struct {
-	ext    string
+	// ext is the file extension to filter for.
+	ext string
+	// logger is the structured logger for reporting skipped files.
 	logger *slog.Logger
 }
 
-// Option configures a Source instance.
+// Option configures a [Source] instance.
 type Option func(*config)
 
 // WithExtension sets a custom file extension for migration files.
-// It automatically prepends a leading dot if one is missing.
-// Empty string values are ignored.
+//
+// It automatically prepends a leading dot if one is missing. Empty string
+// values are ignored.
 func WithExtension(ext string) Option {
 	return func(c *config) {
 		if ext == "" {
@@ -98,7 +107,8 @@ func WithExtension(ext string) Option {
 }
 
 // WithLogger injects a structured logger to record file parsing skipped files.
-// Nil values are ignored, falling back to slog.Default().
+//
+// Nil values are ignored, falling back to [slog.Default].
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
@@ -107,17 +117,22 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// Source implements the migrate.Source interface for an fs.FS.
+// Source implements the [migrate.Source] interface for an [fs.FS].
+//
 // It scans the file system to discover and parse migration files.
 type Source struct {
-	dir    fs.FS        // File system containing the migration scripts
-	ext    string       // File extension used to filter relevant scripts
-	logger *slog.Logger // Logger used for debugging missed conventions
+	// dir is the filesystem containing the migration scripts.
+	dir fs.FS
+	// ext is the file extension used to filter relevant scripts.
+	ext string
+	// logger is the logger used for debugging missed conventions.
+	logger *slog.Logger
 }
 
-// New creates a new Source instance that reads from the provided fs.FS.
-// Options can be provided to customize behavior, such as changing the
-// expected file extension.
+// New creates a new [Source] instance that reads from the provided [fs.FS].
+//
+// Options can be provided to customize behavior, such as changing the expected
+// file extension.
 func New(dir fs.FS, opts ...Option) *Source {
 	cfg := &config{
 		ext:    DefaultExtension,
@@ -146,10 +161,11 @@ func (s *Source) Extension() string {
 	return s.ext
 }
 
-// Parse extracts the version, description, execution direction, and transaction
-// flag from a given filename. It returns an error if the filename does not
-// match the strict <version>_<description>.<direction>[_notx]<extension>
-// format.
+// Parse extracts metadata from a given filename.
+//
+// It extracts the version, description, execution direction, and transaction
+// flag. It returns an error if the filename does not match the strict
+// <version>_<description>.<direction>[_notx]<extension> format.
 func (s *Source) Parse(name string) (
 	version uint64,
 	desc string,
@@ -223,8 +239,10 @@ func (s *Source) Parse(name string) (
 	return version, desc, direction, tx, nil
 }
 
-// List reads the underlying file system, parses all files matching the
-// configured extension, and returns a complete list of valid migrations.
+// List reads the underlying file system and returns all valid migrations.
+//
+// It parses all files matching the configured extension. Files that do not
+// match the naming convention are skipped and logged at the debug level.
 func (s *Source) List() ([]migrate.SourceScript, error) {
 	var scripts []migrate.SourceScript
 
