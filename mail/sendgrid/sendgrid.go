@@ -32,6 +32,15 @@ import (
 
 const defaultBaseURL = "https://api.sendgrid.com/v3"
 
+var (
+	// ErrMissingAPIKey is returned when the SendGrid API key is not provided.
+	ErrMissingAPIKey = errors.New("sendgrid: missing API key")
+	// ErrNilEmail is returned when a nil email is passed to Send.
+	ErrNilEmail = errors.New("sendgrid: email cannot be nil")
+	// ErrNoRecipients is returned when an email has no recipients.
+	ErrNoRecipients = errors.New("sendgrid: at least one recipient is required")
+)
+
 // Client is a SendGrid email sender that implements mail.Sender.
 type Client struct {
 	apiKey     string
@@ -124,13 +133,13 @@ type payload struct {
 // Send executes the HTTP request to the SendGrid API.
 func (c *Client) Send(ctx context.Context, email *mail.Email) error {
 	if c.apiKey == "" {
-		return errors.New("sendgrid: missing API key")
+		return ErrMissingAPIKey
 	}
 	if email == nil {
-		return errors.New("sendgrid: email cannot be nil")
+		return ErrNilEmail
 	}
 	if len(email.To) == 0 {
-		return errors.New("sendgrid: at least one recipient is required")
+		return ErrNoRecipients
 	}
 
 	p := c.buildPayload(email)
