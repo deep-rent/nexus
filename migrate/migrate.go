@@ -13,10 +13,19 @@
 // limitations under the License.
 
 // Package migrate provides the core orchestration logic for database
-// migrations. It manages the loading, sorting, verification, and execution
-// of migration files against a database driver.
+// migrations.
 //
-// Example usage:
+// Package migrate manages the loading, sorting, verification, and execution of
+// migration files against a database driver. It ensures that migrations are
+// applied in a consistent, reproducible order and tracks the state of the
+// database to prevent duplicate or conflicting changes.
+//
+// # Usage
+//
+// To perform migrations, initialize a source and a driver, then create a new
+// [Migrator].
+//
+// Example:
 //
 //	src := file.New(os.DirFS("./migrations"))
 //	drv := postgres.New(db)
@@ -52,7 +61,7 @@ const (
 	Down
 )
 
-// String implements the fmt.Stringer interface.
+// String implements [fmt.Stringer].
 func (d Direction) String() string {
 	switch d {
 	case Up:
@@ -78,11 +87,12 @@ type Record struct {
 }
 
 // Driver is the interface that database-specific backends must implement.
-// It abstracts all direct database interactions, locking mechanisms, and
-// state tracking away from the core migration logic.
+//
+// It abstracts all direct database interactions, locking mechanisms, and state
+// tracking away from the core migration logic.
 type Driver interface {
-	// Parser returns a database-specific statement parser to safely split
-	// raw SQL scripts into individual executable statements.
+	// Parser returns a database-specific statement parser to safely split raw
+	// SQL scripts into individual executable statements.
 	Parser() schema.Parser
 	// Init ensures the migration tracking table exists in the database.
 	Init(ctx context.Context) error
@@ -111,7 +121,8 @@ type Source interface {
 	List() ([]SourceScript, error)
 }
 
-// SourceScript represents an unhashed migration script retrieved from a Source.
+// SourceScript represents an unhashed migration script retrieved from a
+// [Source].
 type SourceScript struct {
 	// Version is the unique sequence number of the migration.
 	Version uint64
@@ -154,22 +165,22 @@ type Migration struct {
 	// Direction indicates whether this script applies (Up) or reverts (Down)
 	// changes.
 	Direction Direction
-	// Path is the location identifier of the script within the source from which
-	// the migration stems.
+	// Path is the location identifier of the script within the source from
+	// which the migration stems.
 	Path string
 	// Checksum is the SHA-256 hash of the content.
 	Checksum [32]byte
-	// Content is the raw SQL content of the migration, which can contain multiple
-	// statements.
+	// Content is the raw SQL content of the migration, which can contain
+	// multiple statements.
 	Content []byte
 	// Tx indicates whether to run all statements together in a transaction.
 	Tx bool
 }
 
 // Compare returns an integer comparing two migrations to establish a strict
-// ordering. The result will be 0 if m == other, -1 if m < other, and +1 if
-// m > other.
+// ordering.
 //
+// The result will be 0 if m == other, -1 if m < other, and +1 if m > other.
 // Migrations are ordered primarily by version in ascending order. If two
 // migrations share the same version, they are secondarily ordered by direction
 // (so "up" comes before "down") to guarantee deterministic sorting.
@@ -182,16 +193,21 @@ func (m Migration) Compare(other Migration) int {
 
 // Migrator orchestrates the execution of database migrations.
 type Migrator struct {
+	// source is the provider for migration files.
 	source Source
+	// driver is the backend database implementation.
 	driver Driver
-	dryRun bool // Determines if execution should be skipped
+	// dryRun determines if execution should be skipped.
+	dryRun bool
+	// logger is the structured logger for migration events.
 	logger *slog.Logger
 }
 
-// Option configures a Migrator instance.
+// Option configures a [Migrator] instance.
 type Option func(*Migrator)
 
 // WithSource sets the migration source.
+//
 // This option is mandatory.
 func WithSource(source Source) Option {
 	return func(m *Migrator) {
@@ -200,6 +216,7 @@ func WithSource(source Source) Option {
 }
 
 // WithDriver sets the database driver.
+//
 // This option is mandatory.
 func WithDriver(driver Driver) Option {
 	return func(m *Migrator) {
@@ -207,8 +224,9 @@ func WithDriver(driver Driver) Option {
 	}
 }
 
-// WithDryRun enables a mode where the Migrator computes the checksums and
-// logs the parsed statements without executing them against the database.
+// WithDryRun enables a mode where the [Migrator] computes checksums and logs.
+//
+// It logs the parsed statements without executing them against the database.
 func WithDryRun(enabled bool) Option {
 	return func(m *Migrator) {
 		m.dryRun = enabled
@@ -216,6 +234,7 @@ func WithDryRun(enabled bool) Option {
 }
 
 // WithLogger sets the logger for the migrator.
+//
 // A nil value will be ignored.
 func WithLogger(logger *slog.Logger) Option {
 	return func(m *Migrator) {
@@ -225,8 +244,10 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// New creates a new Migrator instance. It panics if the required dependencies
-// (Source and Driver) are not provided.
+// New creates a new [Migrator] instance.
+//
+// It panics if the required dependencies ([Source] and [Driver]) are not
+// provided.
 func New(opts ...Option) *Migrator {
 	m := &Migrator{
 		logger: slog.Default(),
@@ -243,9 +264,10 @@ func New(opts ...Option) *Migrator {
 	return m
 }
 
-// lock is a helper that acquires the driver lock, ensures the tracking table is
-// initialized, executes the provided function, and guarantees the lock is
-// released afterward.
+// lock is a helper that acquires the driver lock and initializes tracking.
+//
+// It ensures the tracking table is initialized, executes the provided
+// function, and guarantees the lock is released afterward.
 func (m *Migrator) lock(
 	ctx context.Context,
 	fn func(context.Context) error,
@@ -267,9 +289,10 @@ func (m *Migrator) lock(
 	return fn(ctx)
 }
 
-// files fetches all available migrations from the source, calculates their
-// cryptographic checksums, maps them to domain objects, and strictly sorts
-// them.
+// files fetches migrations from the source and prepares them.
+//
+// It calculates cryptographic checksums, maps them to domain objects, and
+// strictly sorts them.
 func (m *Migrator) files() ([]Migration, error) {
 	files, err := m.source.List()
 	if err != nil {
@@ -311,15 +334,17 @@ func (m *Migrator) filter(ctx context.Context, up bool) ([]Migration, error) {
 }
 
 // Up applies all pending migrations in ascending order.
+//
 // It acquires an exclusive database lock before delegating to the internal
 // up implementation.
 func (m *Migrator) Up(ctx context.Context) error {
 	return m.lock(ctx, m.up)
 }
 
-// up is the internal implementation of Up. It determines which migrations are
-// pending and executes them sequentially. It assumes the caller has already
-// acquired the necessary database locks.
+// up is the internal implementation of [Migrator.Up].
+//
+// It determines which migrations are pending and executes them sequentially.
+// It assumes the caller has already acquired the necessary database locks.
 func (m *Migrator) up(ctx context.Context) error {
 	// 1. Identify which migrations have not yet been applied.
 	pending, err := m.Pending(ctx)
@@ -352,15 +377,18 @@ func (m *Migrator) up(ctx context.Context) error {
 }
 
 // Down reverts the most recently applied migration.
+//
 // It acquires an exclusive database lock before delegating to the internal
 // down implementation.
 func (m *Migrator) Down(ctx context.Context) error {
 	return m.lock(ctx, m.down)
 }
 
-// down is the internal implementation of Down. It identifies the most recently
-// applied migration, locates its corresponding down script from the source, and
-// executes it. It assumes the caller has already acquired the database lock.
+// down is the internal implementation of [Migrator.Down].
+//
+// It identifies the most recently applied migration, locates its corresponding
+// down script from the source, and executes it. It assumes the caller has
+// already acquired the database lock.
 func (m *Migrator) down(ctx context.Context) error {
 	// 1. Fetch the historical record of all applied migrations.
 	applied, err := m.Applied(ctx)
@@ -406,9 +434,9 @@ func (m *Migrator) down(ctx context.Context) error {
 	)
 }
 
-// Force manually sets the database to the specified version and clears the
-// dirty flag. It should be used to resolve a dirty state after human
-// intervention.
+// Force manually sets the database version and clears the dirty flag.
+//
+// It should be used to resolve a dirty state after human intervention.
 func (m *Migrator) Force(ctx context.Context, version uint64) error {
 	fn := func(c context.Context) error {
 		if err := m.driver.Force(c, version); err != nil {
@@ -483,6 +511,7 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 }
 
 // run reads the migration payload and executes it via the driver.
+//
 // If dry run is enabled, it logs the statements and skips execution.
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	m.logger.Info(
@@ -530,8 +559,10 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	return nil
 }
 
-// load loads applied records and available files, ensuring that there are no
-// missing files or checksum mismatches for previously applied migrations.
+// load loads applied records and available files.
+//
+// It ensures that there are no missing files or checksum mismatches for
+// previously applied migrations.
 func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 	files, err := m.files()
 	if err != nil {
