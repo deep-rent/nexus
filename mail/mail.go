@@ -71,8 +71,8 @@ func (a Address) String() string {
 	return fmt.Sprintf("%s <%s>", a.Name, a.Address)
 }
 
-// Personalization represents a single intended recipient or group of recipients,
-// along with the specific template data to be used for them.
+// Personalization represents a single intended recipient or group of
+// recipients, along with the specific template data to be used for them.
 type Personalization struct {
 	// To contains the primary recipients.
 	To []Address
@@ -85,7 +85,8 @@ type Personalization struct {
 	TemplateData map[string]any
 }
 
-// NewPersonalization creates a new Personalization with the required recipients.
+// NewPersonalization creates a new Personalization with the required
+// recipients.
 func NewPersonalization(to ...Address) *Personalization {
 	return &Personalization{
 		To: to,
@@ -141,7 +142,11 @@ type Email struct {
 }
 
 // NewEmail creates a new Email with the required fields.
-func NewEmail(from Address, templateID string, personalizations ...*Personalization) *Email {
+func NewEmail(
+	from Address,
+	templateID string,
+	personalizations ...*Personalization,
+) *Email {
 	return &Email{
 		From:             from,
 		TemplateID:       templateID,
