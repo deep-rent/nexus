@@ -16,7 +16,7 @@
 // Tokens (JWTs).
 //
 // This package uses generics to allow users to define their own custom claims
-// structures. A common pattern is to embed the provided Reserved claims
+// structures. A common pattern is to embed the provided [Reserved] claims
 // struct and add extra fields for any other claims present in the token.
 //
 // # Basic Verification
@@ -24,12 +24,12 @@
 // Start by defining custom claims:
 //
 //	type Claims struct {
-//		jwt.Reserved
-//		Scope string         `json:"scp"`
-//		Extra map[string]any `json:",unknown"`
+//	  jwt.Reserved
+//	  Scope string         `json:"scp"`
+//	  Extra map[string]any `json:",unknown"`
 //	}
 //
-// The top-level Verify function can be used for simple, one-off signature
+// The top-level [Verify] function can be used for simple, one-off signature
 // verification without claim validation:
 //
 //	keySet, err := jwk.ParseSet(`{"keys": [...]}`)
@@ -39,15 +39,15 @@
 // # Advanced Validation
 //
 // For advanced validation of claims like issuer, audience, and token age,
-// create a reusable Verifier with the desired configuration using functional
+// create a reusable [Verifier] with the desired configuration using functional
 // options:
 //
 //	verifier := jwt.NewVerifier[Claims](
-//		keySet,
-//		jwt.WithIssuers("foo", "bar"),
-//		jwt.WithAudiences("baz"),
-//		jwt.WithLeeway(1 * time.Minute),
-//		jwt.WithMaxAge(1 * time.Hour),
+//	  keySet,
+//	  jwt.WithIssuers("foo", "bar"),
+//	  jwt.WithAudiences("baz"),
+//	  jwt.WithLeeway(1 * time.Minute),
+//	  jwt.WithMaxAge(1 * time.Hour),
 //	)
 //
 //	claims, err := verifier.Verify([]byte("eyJhb..."))
@@ -56,7 +56,7 @@
 //
 // # Basic Signing
 //
-// The top-level Sign function can be used to create signed tokens from any
+// The top-level [Sign] function can be used to create signed tokens from any
 // JSON-serializable struct or map. This is useful for simple tokens where
 // you manually handle all claims:
 //
@@ -67,21 +67,30 @@
 // # Advanced Signing
 //
 // To enforce policies like expiration or consistent issuers, create a reusable
-// Signer. Your claims struct must implement MutableClaims (embedding
-// jwt.Reserved handles this automatically).
+// [Signer]. Your claims struct must implement [MutableClaims] (embedding
+// [Reserved] handles this automatically).
 //
 //	signer := jwt.NewSigner(
-//		[]jwk.KeyPair{keyPair},
-//		jwt.WithIssuer("https://api.example.com"),
-//		jwt.WithLifetime(1 * time.Hour),
+//	  []jwk.KeyPair{keyPair},
+//	  jwt.WithIssuer("https://api.example.com"),
+//	  jwt.WithLifetime(1 * time.Hour),
 //	)
 //
 //	// The signer will automatically set "iss", "iat", and "exp" on the struct.
 //	claims := &MyClaims{
-//		Reserved: jwt.Reserved{Subject: "user_123"},
-//		Scope:    "admin",
+//	  Reserved: jwt.Reserved{Subject: "user_123"},
+//	  Scope:    "admin",
 //	}
 //	token, err := signer.Sign(claims)
+//
+// # Usage
+//
+// Verify a JWT using a custom claims struct and standard validation rules.
+//
+// Example:
+//
+//	verifier := jwt.NewVerifier[MyClaims](keySet, jwt.WithIssuers("trusted"))
+//	claims, err := verifier.Verify(tokenBytes)
 package jwt
 
 import (
@@ -102,22 +111,33 @@ import (
 // cryptographic algorithm used to sign the token and identifiers for the
 // signing key.
 //
-// It is an alias for jwk.Hint, allowing it to be passed directly to a
-// jwk.Set's Find method to locate the appropriate verification key.
+// It is an alias for [jwk.Hint], allowing it to be passed directly to a
+// [jwk.Set]'s Find method to locate the appropriate verification key.
 type Header jwk.Hint
 
-// header is the concrete implementation of the Header interface, providing
+// header is the concrete implementation of the [Header] interface, providing
 // JSON tags for standard JWS header parameters.
 type header struct {
+	// Typ is the media type of the JWT.
 	Typ string `json:"typ,omitempty"`
+	// Alg is the JWA algorithm identifier.
 	Alg string `json:"alg"`
+	// Kid is the key identifier.
 	Kid string `json:"kid,omitempty"`
+	// X5t is the SHA-256 thumbprint of the X.509 certificate.
 	X5t string `json:"x5t#S256,omitempty"`
 }
 
-func (h *header) Type() string       { return h.Typ }
-func (h *header) Algorithm() string  { return h.Alg }
-func (h *header) KeyID() string      { return h.Kid }
+// Type returns the "typ" parameter from the header.
+func (h *header) Type() string { return h.Typ }
+
+// Algorithm implements [jwk.Hint].
+func (h *header) Algorithm() string { return h.Alg }
+
+// KeyID implements [jwk.Hint].
+func (h *header) KeyID() string { return h.Kid }
+
+// Thumbprint implements [jwk.Hint].
 func (h *header) Thumbprint() string { return h.X5t }
 
 var _ Header = (*header)(nil)
@@ -143,18 +163,25 @@ type Token[T Claims] interface {
 	Verify(set jwk.Set) error
 }
 
-// audience is a custom type to handle the JWT "aud" claim, which can be
-// either a single string or an array of strings.
+// token is the internal implementation of the [Token] interface.
 type token[T Claims] struct {
+	// header contains the JWS header fields.
 	header Header
+	// claims contains the unmarshaled payload.
 	claims T
-	msg    []byte
-	sig    []byte
+	// msg is the raw JWS Protected Header and JWS Payload.
+	msg []byte
+	// sig is the raw JWS Signature.
+	sig []byte
 }
 
+// Header implements [Token].
 func (t *token[T]) Header() Header { return t.header }
-func (t *token[T]) Claims() T      { return t.claims }
 
+// Claims implements [Token].
+func (t *token[T]) Claims() T { return t.claims }
+
+// Verify implements [Token].
 func (t *token[T]) Verify(set jwk.Set) error {
 	key := set.Find(t.header)
 	if key == nil {
@@ -177,6 +204,7 @@ var _ Token[Claims] = (*token[Claims])(nil)
 // logic to ensure it is always handled as a slice of strings internally.
 type audience []string
 
+// UnmarshalJSON handles the polymorphic nature of the "aud" claim.
 func (a *audience) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err == nil {
@@ -192,7 +220,7 @@ func (a *audience) UnmarshalJSON(b []byte) error {
 }
 
 // Claims provides access to the standard JWT claims.
-// It is used by Verifier for claim validation.
+// It is used by [Verifier] for claim validation.
 type Claims interface {
 	// ID returns the "jti" (JWT ID) claim, or an empty string if absent.
 	ID() string
@@ -210,7 +238,7 @@ type Claims interface {
 	NotBefore() time.Time
 }
 
-// MutableClaims extends Claims with setters for standard JWT claims.
+// MutableClaims extends [Claims] with setters for standard JWT claims.
 //
 // The setter methods are not safe for concurrent use and should only be called
 // during token creation.
@@ -234,7 +262,7 @@ type MutableClaims interface {
 }
 
 // Reserved contains the standard registered claims for a JWT. It implements
-// the Claims interface and should be embedded in custom claims structs to
+// the [Claims] interface and should be embedded in custom claims structs to
 // enable standard claim handling.
 type Reserved struct {
 	Jti string    `json:"jti,omitempty"`            // JWT ID
@@ -246,39 +274,68 @@ type Reserved struct {
 	Nbf time.Time `json:"nbf,omitzero,format:unix"` // Not Before
 }
 
-func (r *Reserved) ID() string               { return r.Jti }
-func (r *Reserved) SetID(id string)          { r.Jti = id }
-func (r *Reserved) Subject() string          { return r.Sub }
-func (r *Reserved) SetSubject(sub string)    { r.Sub = sub }
-func (r *Reserved) Issuer() string           { return r.Iss }
-func (r *Reserved) SetIssuer(iss string)     { r.Iss = iss }
-func (r *Reserved) Audience() []string       { return r.Aud }
+// ID implements [Claims].
+func (r *Reserved) ID() string { return r.Jti }
+
+// SetID implements [MutableClaims].
+func (r *Reserved) SetID(id string) { r.Jti = id }
+
+// Subject implements [Claims].
+func (r *Reserved) Subject() string { return r.Sub }
+
+// SetSubject implements [MutableClaims].
+func (r *Reserved) SetSubject(sub string) { r.Sub = sub }
+
+// Issuer implements [Claims].
+func (r *Reserved) Issuer() string { return r.Iss }
+
+// SetIssuer implements [MutableClaims].
+func (r *Reserved) SetIssuer(iss string) { r.Iss = iss }
+
+// Audience implements [Claims].
+func (r *Reserved) Audience() []string { return r.Aud }
+
+// SetAudience implements [MutableClaims].
 func (r *Reserved) SetAudience(aud []string) { r.Aud = aud }
-func (r *Reserved) IssuedAt() time.Time      { return r.Iat }
-func (r *Reserved) SetIssuedAt(t time.Time)  { r.Iat = t }
-func (r *Reserved) ExpiresAt() time.Time     { return r.Exp }
+
+// IssuedAt implements [Claims].
+func (r *Reserved) IssuedAt() time.Time { return r.Iat }
+
+// SetIssuedAt implements [MutableClaims].
+func (r *Reserved) SetIssuedAt(t time.Time) { r.Iat = t }
+
+// ExpiresAt implements [Claims].
+func (r *Reserved) ExpiresAt() time.Time { return r.Exp }
+
+// SetExpiresAt implements [MutableClaims].
 func (r *Reserved) SetExpiresAt(t time.Time) { r.Exp = t }
-func (r *Reserved) NotBefore() time.Time     { return r.Nbf }
+
+// NotBefore implements [Claims].
+func (r *Reserved) NotBefore() time.Time { return r.Nbf }
+
+// SetNotBefore implements [MutableClaims].
 func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
 
 // Ensure Reserved implements the MutableClaims interface.
 var _ MutableClaims = (*Reserved)(nil)
 
 // DynamicClaims represents a standard JWT payload extended with arbitrary
-// custom claims. It embeds the standard Reserved claims and captures any
+// custom claims. It embeds the standard [Reserved] claims and captures any
 // unmapped JSON properties into the Other map.
 //
-// By applying jsontext.Value and the `json:",inline"` tag from the
+// By applying [jsontext.Value] and the `json:",inline"` tag from the
 // encoding/json/v2 package, custom claims are retained as raw JSON bytes.
 // This defers parsing until the exact target type is known, avoiding the
 // common pitfalls of default map[string]any unmarshaling (such as all
 // numbers defaulting to float64).
 type DynamicClaims struct {
+	// Reserved contains the standard registered JWT claims.
 	Reserved
+	// Other captures all custom claims as raw JSON.
 	Other map[string]jsontext.Value `json:",inline"`
 }
 
-// Get retrieves a specific custom claim by key from the DynamicClaims
+// Get retrieves a specific custom claim by key from the [DynamicClaims]
 // payload and unmarshals it into the requested type T.
 //
 // It safely handles nil pointers, missing keys, and parsing errors. If the
@@ -307,7 +364,7 @@ func Get[T any](c *DynamicClaims, key string) (T, bool) {
 // dot is the byte value for the delimiting character of JWS segments.
 const dot = byte('.')
 
-// Parse decodes a JWT from its compact serialization format into a Token
+// Parse decodes a JWT from its compact serialization format into a [Token]
 // without verifying the signature. The type parameter T specifies the target
 // struct for the token's claims. If the token is malformed or the payload does
 // not unmarshal into T (using encoding/json/v2), an error is returned.
@@ -365,8 +422,8 @@ func decode(src []byte) ([]byte, error) {
 //
 // This function only checks the cryptographic signature, not the content of the
 // claims. For claim validation (e.g., issuer, audience, expiration), create and
-// configure a Verifier. It is a shorthand for Parse followed by calling Verify
-// on the resulting Token.
+// configure a [Verifier]. It is a shorthand for [Parse] followed by calling
+// [Token.Verify] on the resulting [Token].
 func Verify[T Claims](set jwk.Set, in []byte) (T, error) {
 	tok, err := Parse[T](in)
 	if err != nil {
@@ -398,7 +455,7 @@ var (
 
 // Verifier defines the interface for a configured, reusable JWT verifier. The
 // type parameter T is the user-defined struct for the token's claims. It must
-// implement the Claims interface, or else verification will always fail.
+// implement the [Claims] interface, or else verification will always fail.
 type Verifier[T Claims] interface {
 	// Verify parses a token from its compact serialization, verifies its
 	// signature against the verifier's key set, and validates its claims
@@ -406,16 +463,21 @@ type Verifier[T Claims] interface {
 	Verify(in []byte) (T, error)
 }
 
-// VerifierOption defines a functional option for configuring a Verifier.
+// VerifierOption defines a functional option for configuring a [Verifier].
 type VerifierOption func(*verifierConfig)
 
-// verifierConfig holds the configuration options for a Verifier.
+// verifierConfig holds the configuration options for a [Verifier].
 type verifierConfig struct {
-	issuers   []string
+	// issuers is the list of trusted issuers.
+	issuers []string
+	// audiences is the list of trusted audiences.
 	audiences []string
-	leeway    time.Duration
-	age       time.Duration
-	now       func() time.Time
+	// leeway is the clock skew tolerance.
+	leeway time.Duration
+	// age is the maximum allowed token age.
+	age time.Duration
+	// now is the time source for validation.
+	now func() time.Time
 }
 
 // WithIssuers adds one or more trusted issuers to the verifier. If a token's
@@ -463,7 +525,7 @@ func WithMaxAge(d time.Duration) VerifierOption {
 
 // WithVerifierClock sets the function used to retrieve the current time during
 // validation. This is useful for deterministic testing or synchronizing with
-// an external time source. The default is time.Now.
+// an external time source. The default is [time.Now].
 func WithVerifierClock(now func() time.Time) VerifierOption {
 	return func(c *verifierConfig) {
 		if now != nil {
@@ -472,16 +534,18 @@ func WithVerifierClock(now func() time.Time) VerifierOption {
 	}
 }
 
-// verifier is the default implementation of the Verifier interface.
+// verifier is the default implementation of the [Verifier] interface.
 type verifier[T Claims] struct {
+	// set is the JWK set used for signature verification.
 	set jwk.Set
+	// cfg contains the validation rules.
 	cfg verifierConfig
 }
 
 // Ensure verifier implements the Verifier interface.
 var _ Verifier[Claims] = (*verifier[Claims])(nil)
 
-// NewVerifier creates a new Verifier bound to a specific JWK set.
+// NewVerifier creates a new [Verifier] bound to a specific JWK set.
 // The type parameter T is the user-defined struct for the token's claims.
 func NewVerifier[T Claims](set jwk.Set, opts ...VerifierOption) Verifier[T] {
 	cfg := verifierConfig{
@@ -497,7 +561,7 @@ func NewVerifier[T Claims](set jwk.Set, opts ...VerifierOption) Verifier[T] {
 	}
 }
 
-// Verify implements the Verifier interface.
+// Verify implements the [Verifier] interface.
 func (v *verifier[T]) Verify(in []byte) (T, error) {
 	c, err := Verify[T](v.set, in)
 	if err != nil {
@@ -543,7 +607,7 @@ func (v *verifier[T]) Verify(in []byte) (T, error) {
 	return c, nil
 }
 
-// Sign creates a new signed JWT using the provided KeyPair and claims.
+// Sign creates a new signed JWT using the provided [jwk.KeyPair] and claims.
 //
 // It marshals the claims using encoding/json/v2, creates a header based on
 // the key's properties, and signs the payload. The claims argument can be
@@ -606,15 +670,20 @@ type Signer interface {
 	Sign(claims MutableClaims) ([]byte, error)
 }
 
-// SignerOption defines a functional option for configuring a Signer.
+// SignerOption defines a functional option for configuring a [Signer].
 type SignerOption func(*signerConfig)
 
-// signerConfig holds the configuration options for a Signer.
+// signerConfig holds the configuration options for a [Signer].
 type signerConfig struct {
+	// iat determines if "iat" should be added automatically.
 	iat bool
+	// iss is the fixed issuer to set.
 	iss string
+	// aud is the fixed audience list to set.
 	aud []string
+	// ttl is the token lifetime for calculating "exp".
 	ttl time.Duration
+	// now is the time source for timestamping.
 	now func() time.Time
 }
 
@@ -658,7 +727,7 @@ func WithLifetime(d time.Duration) SignerOption {
 
 // WithSignerClock sets the function used to retrieve the current time when
 // timestamping tokens ("iat", "nbf", "exp"). This is useful for deterministic
-// testing. The default is time.Now.
+// testing. The default is [time.Now].
 func WithSignerClock(now func() time.Time) SignerOption {
 	return func(c *signerConfig) {
 		if now != nil {
@@ -667,16 +736,18 @@ func WithSignerClock(now func() time.Time) SignerOption {
 	}
 }
 
-// signer is the default implementation of the Signer interface.
+// signer is the default implementation of the [Signer] interface.
 type signer struct {
+	// rot handles key rotation.
 	rot rotor.Rotor[jwk.KeyPair]
+	// cfg contains the generation rules.
 	cfg signerConfig
 }
 
 // Ensure signer implements the Signer interface.
 var _ Signer = (*signer)(nil)
 
-// NewSigner creates a new Signer that uses the provided key pool for
+// NewSigner creates a new [Signer] that uses the provided key pool for
 // signing. At least one key pair must be provided in the slice; otherwise, it
 // panics. If multiple keys are given, they will be rotated through in a
 // round-robin fashion to ensure even usage across the key pool.
@@ -699,7 +770,7 @@ func NewSigner(keys []jwk.KeyPair, opts ...SignerOption) Signer {
 	}
 }
 
-// Sign implements the Signer interface.
+// Sign implements the [Signer] interface.
 func (s *signer) Sign(claims MutableClaims) ([]byte, error) {
 	now := s.cfg.now()
 	// Always stamp the current time as time of issuance if configured.
