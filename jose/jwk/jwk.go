@@ -23,9 +23,9 @@
 // # Signing
 //
 // While JWKS parsing focuses on public keys, this package also supports the
-// creation of signing keys via the KeyBuilder. These keys wrap a crypto.Signer
-// (e.g., hardware modules, KMS, or standard library keys) to support token
-// issuance operations.
+// creation of signing keys via the [KeyBuilder]. These keys wrap a
+// [crypto.Signer] (e.g., hardware modules, KMS, or standard library keys) to
+// support token issuance operations.
 //
 // # Encoding
 //
@@ -56,6 +56,18 @@
 //     Thumbprint) must be defined. The "x5t" (SHA-1 Thumbprint) parameter is
 //     explicitly ignored as it is considered outdated. No other lookup
 //     mechanism is supported.
+//
+// # Usage
+//
+// Parse a JWKS from a remote endpoint and look up a key for verification.
+//
+// Example:
+//
+//	set, err := jwk.ParseSet(jsonData)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	key := set.Find(header)
 package jwk
 
 import (
@@ -83,8 +95,8 @@ import (
 	"github.com/deep-rent/nexus/scheduler"
 )
 
-// Hint represents a reference to a Key, containing the minimum information
-// needed to look one up in a Set. It effectively abstracts the JWS header
+// Hint represents a reference to a [Key], containing the minimum information
+// needed to look one up in a [Set]. It effectively abstracts the JWS header
 // fields used to select a key for signature verification.
 type Hint interface {
 	// Algorithm returns the JWA algorithm name that the key is intended for.
@@ -117,9 +129,9 @@ type Key interface {
 	Material() any
 }
 
-// newKey creates a new Key programmatically from its constituent parts. The
+// newKey creates a new [Key] programmatically from its constituent parts. The
 // type parameter T must match the public key type expected by the provided
-// algorithm (e.g., *rsa.PublicKey for jwa.RS256).
+// algorithm (e.g., [*rsa.PublicKey] for [jwa.RS256]).
 func newKey[T crypto.PublicKey](
 	alg jwa.Algorithm[T],
 	kid string,
@@ -129,26 +141,38 @@ func newKey[T crypto.PublicKey](
 	return &key[T]{alg: alg, kid: kid, x5t: x5t, mat: mat}
 }
 
-// key is a concrete implementation of the Key interface, generic over the
+// key is a concrete implementation of the [Key] interface, generic over the
 // public key type.
 type key[T crypto.PublicKey] struct {
+	// alg is the JWA implementation for this key.
 	alg jwa.Algorithm[T]
+	// kid is the unique key identifier.
 	kid string
+	// x5t is the SHA-256 thumbprint of the certificate.
 	x5t string
-	mat T // The actual cryptographic public key material.
+	// mat is the actual cryptographic public key material.
+	mat T
 }
 
-func (k *key[T]) Algorithm() string  { return k.alg.String() }
-func (k *key[T]) KeyID() string      { return k.kid }
-func (k *key[T]) Thumbprint() string { return k.x5t }
-func (k *key[T]) Material() any      { return k.mat }
+// Algorithm implements [Hint].
+func (k *key[T]) Algorithm() string { return k.alg.String() }
 
+// KeyID implements [Hint].
+func (k *key[T]) KeyID() string { return k.kid }
+
+// Thumbprint implements [Hint].
+func (k *key[T]) Thumbprint() string { return k.x5t }
+
+// Material implements [Key].
+func (k *key[T]) Material() any { return k.mat }
+
+// Verify implements [Key].
 func (k *key[T]) Verify(msg, sig []byte) bool {
 	return k.alg.Verify(k.mat, msg, sig)
 }
 
 // KeyPair represents a JSON Web Key that is capable of both verification and
-// signing. It embeds the public Key interface and wraps a crypto.Signer for
+// signing. It embeds the public [Key] interface and wraps a [crypto.Signer] for
 // the private key operations.
 type KeyPair interface {
 	Key
@@ -157,30 +181,34 @@ type KeyPair interface {
 	Sign(msg []byte) ([]byte, error)
 }
 
-// keyPair is the concrete implementation of KeyPair.
+// keyPair is the concrete implementation of [KeyPair].
 type keyPair[T crypto.PublicKey] struct {
-	// We embed the struct value (not the pointer) so that the inner fields (alg,
-	// kid, etc.) are allocated together.
+	// key is the underlying public key.
 	key[T]
+	// signer is the private key handle.
 	signer crypto.Signer
 }
 
+// Sign implements [KeyPair].
 func (s *keyPair[T]) Sign(msg []byte) ([]byte, error) {
 	return s.alg.Sign(s.signer, msg)
 }
 
-// KeyBuilder assists in the programmatic construction of Key and KeyPair
+// KeyBuilder assists in the programmatic construction of [Key] and [KeyPair]
 // instances. It ensures that the resulting keys possess the required metadata
 // and that the cryptographic material matches the intended algorithm.
 type KeyBuilder[T crypto.PublicKey] struct {
+	// alg is the algorithm for the resulting key.
 	alg jwa.Algorithm[T]
+	// kid is the key identifier to assign.
 	kid string
+	// x5t is the thumbprint to assign.
 	x5t string
 }
 
 // NewKeyBuilder starts the construction of a key for the specified algorithm.
 // The generic type T determines the expected public key material (e.g.,
-// *rsa.PublicKey).
+// [*rsa.PublicKey]).
 func NewKeyBuilder[T crypto.PublicKey](alg jwa.Algorithm[T]) *KeyBuilder[T] {
 	return &KeyBuilder[T]{alg: alg}
 }
@@ -208,13 +236,13 @@ func (b *KeyBuilder[T]) WithThumbprint(x5t string) *KeyBuilder[T] {
 	return b
 }
 
-// Build creates a verification-only Key using the provided public key material.
+// Build creates a verification-only [Key] using the provided public key material.
 // It panics if neither a Key ID nor a Thumbprint has been configured.
 func (b *KeyBuilder[T]) Build(mat T) Key {
 	return b.build(mat)
 }
 
-// BuildPair creates a signing-capable KeyPair using the provided signer.
+// BuildPair creates a signing-capable [KeyPair] using the provided signer.
 //
 // It panics if:
 //  1. The signer's public key cannot be cast to type T.
@@ -230,6 +258,7 @@ func (b *KeyBuilder[T]) BuildPair(signer crypto.Signer) KeyPair {
 	}
 }
 
+// build is an internal helper to construct the public key part.
 func (b *KeyBuilder[T]) build(mat T) *key[T] {
 	if b.kid == "" && b.x5t == "" {
 		panic("either key id or thumbprint must be set")
@@ -247,12 +276,12 @@ func (b *KeyBuilder[T]) build(mat T) *key[T] {
 // parameters.
 var ErrIneligibleKey = errors.New("ineligible for signature verification")
 
-// Parse parses a single Key from the provided JSON input.
+// Parse parses a single [Key] from the provided JSON input.
 //
 // It first checks if the key is eligible for signature verification. If not,
-// it returns ErrIneligibleKey. Otherwise, it proceeds to validate the presence
-// of required parameters ("kty" and "alg"), whether the algorithm is supported,
-// and the integrity of the key material itself.
+// it returns [ErrIneligibleKey]. Otherwise, it proceeds to validate the
+// presence of required parameters ("kty" and "alg"), whether the algorithm is
+// supported, and the integrity of the key material itself.
 func Parse(in []byte) (Key, error) {
 	var raw raw
 	if err := json.Unmarshal(in, &raw); err != nil {
@@ -281,8 +310,8 @@ func Parse(in []byte) (Key, error) {
 	return key, nil
 }
 
-// Set stores an immutable collection of Keys, typically parsed from a JWKS.
-// It provides efficient lookups of keys for signature verification.
+// Set stores an immutable collection of [Key] instances, typically parsed from
+// a JWKS. It provides efficient lookups of keys for signature verification.
 type Set interface {
 	// Keys returns an iterator over all keys in this set.
 	Keys() iter.Seq[Key]
@@ -294,7 +323,7 @@ type Set interface {
 	Find(hint Hint) Key
 }
 
-// newSet creates a new, empty Set with the specified initial capacity.
+// newSet creates a new, empty [set] with the specified initial capacity.
 func newSet(n int) *set {
 	return &set{
 		keys: make([]Key, 0, n),
@@ -303,17 +332,24 @@ func newSet(n int) *set {
 	}
 }
 
-// set is the concrete implementation of the Set interface.
+// set is the concrete implementation of the [Set] interface.
 // It uses maps for efficient O(1) average time complexity lookups.
 type set struct {
+	// keys is the slice of keys in the set.
 	keys []Key
-	kid  map[string]int // Maps key id to index in keys array.
-	x5t  map[string]int // Maps thumbprint to index in keys array.
+	// kid maps key id to index in keys array.
+	kid map[string]int
+	// x5t maps thumbprint to index in keys array.
+	x5t map[string]int
 }
 
+// Keys implements [Set].
 func (s *set) Keys() iter.Seq[Key] { return slices.Values(s.keys) }
-func (s *set) Len() int            { return len(s.keys) }
 
+// Len implements [Set].
+func (s *set) Len() int { return len(s.keys) }
+
+// Find implements [Set].
 func (s *set) Find(hint Hint) Key {
 	if hint == nil {
 		return nil
@@ -332,25 +368,36 @@ func (s *set) Find(hint Hint) Key {
 	return k
 }
 
-// emptySet is pretty self-explanatory.
+// emptySet represents a [Set] containing no keys.
 type emptySet struct{}
 
+// Keys implements [Set] for [emptySet].
 func (e emptySet) Keys() iter.Seq[Key] { return func(func(Key) bool) {} }
-func (e emptySet) Len() int            { return 0 }
-func (e emptySet) Find(Hint) Key       { return nil }
 
-// empty is a singleton instance of an empty Set.
+// Len implements [Set] for [emptySet].
+func (e emptySet) Len() int { return 0 }
+
+// Find implements [Set] for [emptySet].
+func (e emptySet) Find(Hint) Key { return nil }
+
+// empty is a singleton instance of an empty [Set].
 var empty Set = emptySet{}
 
-// singletonSet is an adapter that wraps a single Key as a Set.
-type singletonSet struct{ key Key }
+// singletonSet is an adapter that wraps a single [Key] as a [Set].
+type singletonSet struct {
+	// key is the single key in the set.
+	key Key
+}
 
+// Keys implements [Set] for [singletonSet].
 func (s *singletonSet) Keys() iter.Seq[Key] {
 	return func(f func(Key) bool) { f(s.key) }
 }
 
+// Len implements [Set] for [singletonSet].
 func (s *singletonSet) Len() int { return 1 }
 
+// Find implements [Set] for [singletonSet].
 func (s *singletonSet) Find(hint Hint) Key {
 	if s.key.Algorithm() != hint.Algorithm() {
 		return nil
@@ -366,7 +413,7 @@ func (s *singletonSet) Find(hint Hint) Key {
 	return nil
 }
 
-// ParseSet parses a Set from a JWKS JSON input.
+// ParseSet parses a [Set] from a JWKS JSON input.
 //
 // If the top-level JSON structure is malformed, it returns an empty set and
 // a fatal error. Otherwise, it iterates through the "keys" array, parsing
@@ -425,8 +472,8 @@ func ParseSet(in []byte) (Set, error) {
 				continue
 			}
 		}
-		// Determines the index in the keys'slice where this new key will be stored.
-		// This is safe because we are appending linearly.
+		// Determines the index in the keys'slice where this new key will be
+		// stored. This is safe because we are appending linearly.
 		idx := len(s.keys)
 		// Append the key exactly once.
 		s.keys = append(s.keys, k)
@@ -441,7 +488,7 @@ func ParseSet(in []byte) (Set, error) {
 	return s, errors.Join(errs...)
 }
 
-// Write marshals a single Key into its JSON Web Key representation.
+// Write marshals a single [Key] into its JSON Web Key representation.
 //
 // It populates the standard JWK fields ("kty", "alg", "use", "kid", "x5t#S256")
 // and the algorithm-specific public key parameters (e.g., "n" and "e" for RSA).
@@ -455,7 +502,7 @@ func Write(k Key) ([]byte, error) {
 	return json.Marshal(r)
 }
 
-// WriteSet marshals a Set into a JSON Web Key Set (JWKS) document.
+// WriteSet marshals a [Set] into a JSON Web Key Set (JWKS) document.
 //
 // The resulting JSON corresponds to the standard JWKS structure:
 //
@@ -486,7 +533,7 @@ func WriteSet(s Set) ([]byte, error) {
 	})
 }
 
-// toRaw converts a Key object into the raw DTO.
+// toRaw converts a [Key] object into the [raw] DTO.
 func toRaw(k Key) (*raw, error) {
 	write, ok := writers[k.Algorithm()]
 	if !ok {
@@ -509,29 +556,30 @@ func toRaw(k Key) (*raw, error) {
 	return r, nil
 }
 
-// Singleton creates a Set that contains only the provided Key.
+// Singleton creates a [Set] that contains only the provided [Key].
 func Singleton(key Key) Set {
 	return &singletonSet{key: key}
 }
 
-// CacheSet extends the Set interface with scheduler.Tick, creating a component
-// that can be deployed to a scheduler for automatic refreshing of a remote
-// JWKS view in the background. The default implementation is backed by a
-// cache.Controller.
+// CacheSet extends the [Set] interface with [scheduler.Tick], creating a
+// component that can be deployed to a scheduler for automatic refreshing of a
+// remote JWKS view in the background. The default implementation is backed by
+// a [cache.Controller].
 type CacheSet interface {
 	Set
 	scheduler.Tick
 }
 
-// cacheSet is the concrete implementation of the CacheSet interface.
+// cacheSet is the concrete implementation of the [CacheSet] interface.
 type cacheSet struct {
+	// ctrl manages the lifecycle and fetching of the remote JWKS.
 	ctrl cache.Controller[Set]
 }
 
-// get safely retrieves the current Set from the cache controller. If the
+// get safely retrieves the current [Set] from the cache controller. If the
 // cache has not been populated yet (e.g., due to an initial network failure),
-// it returns a static empty set to ensure that delegated operations like Find
-// do not panic. This makes the Set resilient to transient startup issues.
+// it returns a static [empty] set to ensure that delegated operations like Find
+// do not panic. This makes the [Set] resilient to transient startup issues.
 func (s *cacheSet) get() Set {
 	if set, ok := s.ctrl.Get(); ok {
 		return set
@@ -539,10 +587,16 @@ func (s *cacheSet) get() Set {
 	return empty
 }
 
+// Keys implements [Set].
 func (s *cacheSet) Keys() iter.Seq[Key] { return s.get().Keys() }
-func (s *cacheSet) Len() int            { return s.get().Len() }
-func (s *cacheSet) Find(hint Hint) Key  { return s.get().Find(hint) }
 
+// Len implements [Set].
+func (s *cacheSet) Len() int { return s.get().Len() }
+
+// Find implements [Set].
+func (s *cacheSet) Find(hint Hint) Key { return s.get().Find(hint) }
+
+// Run implements [scheduler.Tick].
 func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
 }
@@ -550,7 +604,7 @@ func (s *cacheSet) Run(ctx context.Context) time.Duration {
 // Ensure cacheSet implements CacheSet.
 var _ CacheSet = (*cacheSet)(nil)
 
-// mapper adapts the ParseSet function to the cache.Mapper interface.
+// mapper adapts the [ParseSet] function to the [cache.Mapper] interface.
 var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 	set, err := ParseSet(r.Body)
 	if set.Len() == 0 {
@@ -563,11 +617,11 @@ var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 	return set, nil
 }
 
-// NewCacheSet creates a new CacheSet that stays in sync with a remote JWKS
-// endpoint. It must be deployed to a scheduler.Scheduler to begin the
+// NewCacheSet creates a new [CacheSet] that stays in sync with a remote JWKS
+// endpoint. It must be deployed to a [scheduler.Scheduler] to begin the
 // background fetching and refreshing process.
 //
-// The provided cache.Options can configure behaviors like refresh interval,
+// The provided [cache.Option] can configure behaviors like refresh interval,
 // request timeouts, and error handling. Parsing of retrieved key sets is
 // extremely lenient: it will only fail if no valid keys are found at all.
 func NewCacheSet(url string, opts ...cache.Option) CacheSet {
@@ -590,8 +644,8 @@ type raw struct {
 	Y   string   `json:"y,omitempty"`
 }
 
-// reader defines a function that decodes the key material from a raw JWK
-// and constructs a concrete Key.
+// reader defines a function that decodes the key material from a [raw] JWK
+// and constructs a concrete [Key].
 type reader func(r *raw) (Key, error)
 
 // readers maps a JWA algorithm name to the function responsible for parsing
@@ -645,7 +699,7 @@ func decodeRSA(raw *raw) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
-// decodeECDSA creates a decoder for the specified elliptic curve.
+// decodeECDSA creates a [decoder] for the specified elliptic curve.
 func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 	return func(raw *raw) (*ecdsa.PublicKey, error) {
 		if raw.Kty != "EC" {
@@ -736,11 +790,11 @@ func addWriter[T crypto.PublicKey](alg jwa.Algorithm[T], enc encoder[T]) {
 	}
 }
 
-// encoder defines a function that populates the raw JWK parameters from the
+// encoder defines a function that populates the [raw] JWK parameters from the
 // algorithm-specific key material.
 type encoder[T crypto.PublicKey] func(mat T, r *raw) error
 
-// encodeRSA populates the RSA-specific fields ("n", "e") in the raw JWK.
+// encodeRSA populates the RSA-specific fields ("n", "e") in the [raw] JWK.
 func encodeRSA(key *rsa.PublicKey, r *raw) error {
 	r.Kty = "RSA"
 	r.N = base64.RawURLEncoding.EncodeToString(key.N.Bytes())
