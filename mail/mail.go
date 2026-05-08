@@ -36,7 +36,8 @@ type Address struct {
 	Address string
 }
 
-// String returns the string representation of the address (e.g., "Name <email@example.com>").
+// String returns the string representation of the address (e.g.,
+// "Name <email@example.com>").
 func (a Address) String() string {
 	if a.Name == "" {
 		return a.Address

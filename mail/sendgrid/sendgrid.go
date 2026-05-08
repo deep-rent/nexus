@@ -32,7 +32,7 @@ import (
 	"github.com/deep-rent/nexus/retry"
 )
 
-const defaultBaseURL = "https://api.sendgrid.com/v3"
+const DefaultBaseURL = "https://api.sendgrid.com/v3"
 
 // ErrMissingAPIKey is returned when the SendGrid API key is not provided.
 var ErrMissingAPIKey = errors.New("sendgrid: missing API key")
@@ -47,65 +47,67 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("sendgrid: API error %d: %s", e.StatusCode, e.Body)
 }
 
-// Client is a SendGrid email sender that implements mail.Sender.
-type Client struct {
-	apiKey     string
-	baseURL    string
-	timeout    time.Duration
-	httpClient *http.Client
-	logger     *slog.Logger
-	retryOpts  []retry.Option
+// Sender is a SendGrid email sender that implements mail.Sender.
+type Sender struct {
+	apiKey    string
+	baseURL   string
+	timeout   time.Duration
+	client    *http.Client
+	logger    *slog.Logger
+	retryOpts []retry.Option
 }
 
 // Option defines the functional option pattern for configuring the Client.
-type Option func(*Client)
+type Option func(*Sender)
 
-// WithHTTPClient allows passing a custom HTTP client.
+// WithClient allows passing a custom HTTP client.
 // If provided, it overrides the WithTimeout setting.
-func WithHTTPClient(c *http.Client) Option {
-	return func(client *Client) {
-		if c != nil {
-			client.httpClient = c
+func WithClient(client *http.Client) Option {
+	return func(s *Sender) {
+		if client != nil {
+			s.client = client
 		}
 	}
 }
 
-// WithBaseURL allows overriding the SendGrid API base URL for testing or mocking.
+// WithBaseURL allows overriding the SendGrid API base URL for testing or
+// mocking.
 func WithBaseURL(url string) Option {
-	return func(client *Client) {
-		client.baseURL = url
+	return func(s *Sender) {
+		s.baseURL = url
 	}
 }
 
 // WithTimeout configures the timeout for the default HTTP client.
 func WithTimeout(d time.Duration) Option {
-	return func(client *Client) {
-		client.timeout = d
+	return func(s *Sender) {
+		s.timeout = d
 	}
 }
 
 // WithRetryOptions configures the retry mechanism for the default HTTP client.
-// If a custom HTTP client is provided via WithHTTPClient, these options are ignored.
+// If a custom HTTP client is provided via WithHTTPClient, these options are
+// ignored.
 func WithRetryOptions(opts ...retry.Option) Option {
-	return func(client *Client) {
-		client.retryOpts = append(client.retryOpts, opts...)
+	return func(s *Sender) {
+		s.retryOpts = append(s.retryOpts, opts...)
 	}
 }
 
 // WithLogger injects a structured logger into the client.
 func WithLogger(logger *slog.Logger) Option {
-	return func(client *Client) {
+	return func(s *Sender) {
 		if logger != nil {
-			client.logger = logger
+			s.logger = logger
 		}
 	}
 }
 
 // New creates a configured SendGrid client.
-func New(apiKey string, opts ...Option) *Client {
-	c := &Client{
+func New(apiKey string, opts ...Option) *Sender {
+	c := &Sender{
 		apiKey:  apiKey,
-		baseURL: defaultBaseURL,
+		baseURL: DefaultBaseURL,
 		timeout: 10 * time.Second, // Sensible default timeout
 		logger:  slog.Default(),   // Fallback to standard structured logger
 	}
@@ -115,7 +117,7 @@ func New(apiKey string, opts ...Option) *Client {
 	}
 
 	// Initialize the default HTTP client if a custom one wasn't provided
-	if c.httpClient == nil {
+	if c.client == nil {
 		d := &net.Dialer{
 			Timeout: c.timeout / 3,
 		}
@@ -127,7 +129,7 @@ func New(apiKey string, opts ...Option) *Client {
 			DisableKeepAlives:     true,
 		}
 		t = retry.NewTransport(t, c.retryOpts...)
-		c.httpClient = &http.Client{
+		c.client = &http.Client{
 			Timeout:   c.timeout,
 			Transport: t,
 		}
@@ -135,8 +137,6 @@ func New(apiKey string, opts ...Option) *Client {
 
 	return c
 }
-
-// -- Internal API payload structures using v2 tags --
 
 type address struct {
 	Email string `json:"email"`
@@ -158,7 +158,7 @@ type payload struct {
 }
 
 // Send executes the HTTP request to the SendGrid API.
-func (c *Client) Send(ctx context.Context, email *mail.Email) error {
+func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 	if c.apiKey == "" {
 		return ErrMissingAPIKey
 	}
@@ -192,15 +192,15 @@ func (c *Client) Send(ctx context.Context, email *mail.Email) error {
 		slog.String("endpoint", endpoint),
 	)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("sendgrid: request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		err := &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		err := &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 		c.logger.ErrorContext(ctx, "sendgrid API error",
 			slog.Int("status_code", err.StatusCode),
 			slog.String("response", err.Body),
@@ -216,7 +216,7 @@ func (c *Client) Send(ctx context.Context, email *mail.Email) error {
 }
 
 // buildPayload maps the domain email model to the SendGrid JSON structure.
-func (c *Client) buildPayload(email *mail.Email) payload {
+func (c *Sender) buildPayload(email *mail.Email) payload {
 	pers := personalization{
 		To:                  buildAddresses(email.To),
 		Cc:                  buildAddresses(email.Cc),
