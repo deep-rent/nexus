@@ -12,28 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package updater provides functionality to check for newer releases of an
-// application hosted on GitHub.
+// Package updater provides functionality to check for newer GitHub releases.
 //
-// It queries the GitHub Releases API to retrieve the latest release and
-// compares its tag against the current application version using semantic
-// versioning.
+// Package updater queries the GitHub Releases API to retrieve the latest
+// release and compares its tag against the current application version using
+// semantic versioning.
 //
 // # Usage
 //
+// Initialize a [Config] and use the [Check] function to look for new versions.
+//
+// Example:
+//
 //	cfg := &updater.Config{
-//		Owner:      "deep-rent",
-//		Repository: "vouch",
-//		Current:    "v1.0.0",
-//		UserAgent:  "Vouch/1.0.0",
+//	  Owner:      "deep-rent",
+//	  Repository: "vouch",
+//	  Current:    "v1.0.0",
+//	  UserAgent:  "Vouch/1.0.0",
 //	}
 //
 //	// Check for updates.
 //	rel, err := updater.Check(context.Background(), cfg)
 //	if err != nil {
-//		log.Printf("Failed to check for updates: %v", err)
+//	  log.Printf("Failed to check for updates: %v", err)
 //	} else if rel != nil {
-//		log.Printf("New version available: %s (see %s)", rel.Version, rel.URL)
+//	  log.Printf("New version available: %s (see %s)", rel.Version, rel.URL)
 //	}
 package updater
 
@@ -52,7 +55,7 @@ import (
 const (
 	// DefaultBaseURL is the default GitHub API base URL.
 	DefaultBaseURL = "https://api.github.com"
-	// DefaultTimeout is the default timeout for HTTP requests.
+	// DefaultTimeout is the default timeout for HTTP requests (5 seconds).
 	DefaultTimeout = 5 * time.Second
 )
 
@@ -60,7 +63,7 @@ const (
 type Release struct {
 	// Version is the tag name of the release (e.g., "v1.0.0").
 	Version string `json:"tag_name"`
-	// URL to view the release on GitHub.
+	// URL is the web address to view the release on GitHub.
 	URL string `json:"html_url"`
 	// Published is the timestamp the release was published on GitHub.
 	Published time.Time `json:"published_at"`
@@ -68,10 +71,10 @@ type Release struct {
 	Notes string `json:"body"`
 }
 
-// Config holds the configuration for the Updater.
+// Config holds the configuration for the [Updater].
 type Config struct {
-	// BaseURL is the base URL for the GitHub API. It defaults to DefaultBaseURL
-	// if not set. This is primarily used for testing purposes.
+	// BaseURL is the base URL for the GitHub API. It defaults to
+	// [DefaultBaseURL] if not set.
 	BaseURL string
 	// Owner is the GitHub repository owner (required).
 	Owner string
@@ -80,29 +83,33 @@ type Config struct {
 	// Current is the current version string of the application (required).
 	Current string
 	// UserAgent is the value for the User-Agent header sent with requests.
-	// If empty, no User-Agent header is sent.
 	UserAgent string
-	// Timeout is the time limit for requests made by the updater.
-	// It defaults to 5 seconds if not set.
+	// Timeout is the time limit for requests made by the updater. It defaults
+	// to [DefaultTimeout] if not set.
 	Timeout time.Duration
 }
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
-	baseURL    string
-	owner      string
+	// baseURL is the API endpoint for release lookups.
+	baseURL string
+	// owner is the GitHub user or organization.
+	owner string
+	// repository is the GitHub project name.
 	repository string
-	current    string
-	userAgent  string
-	client     *http.Client
+	// current is the normalized current version of the application.
+	current string
+	// userAgent is the identifying string sent in the HTTP header.
+	userAgent string
+	// client is the HTTP client for making API requests.
+	client *http.Client
 }
 
-// New creates a new Updater with the given configuration.
+// New creates a new [Updater] with the given configuration.
 //
 // It initializes the HTTP client with the specified timeout. It panics if the
-// configuration is invalid (missing required fields) or if the current version
-// string is not a valid semantic version (after normalizing it with a "v"
-// prefix if missing).
+// configuration is missing required fields or if the current version string is
+// not a valid semantic version.
 func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
 		panic("updater: owner is required")
@@ -141,15 +148,12 @@ func New(cfg *Config) *Updater {
 	}
 }
 
-// Check queries the GitHub Releases API to determine if a newer version is
-// available.
+// Check queries the GitHub Releases API to determine if a newer version exists.
 //
-// It compares the latest release tag against the current version using
-// semantic versioning. Both versions are normalized with a "v" prefix if
-// missing. It returns a Release if a newer version is found. It returns nil if
-// the current version is up-to-date or if the latest release is older or
-// equal. It returns an error if the GitHub API request fails or if the latest
-// release tag is not a valid semantic version.
+// It compares the latest release tag against the current version using semantic
+// versioning. It returns a [Release] if a newer version is found. It returns
+// nil if the current version is up-to-date or if the latest release is older or
+// equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	url := fmt.Sprintf(
 		"%s/repos/%s/%s/releases/latest",
@@ -196,14 +200,14 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 }
 
 // Check is a convenience function to check for updates in a single call.
-// It creates a temporary Updater with the provided config and calls its Check
-// method.
+//
+// It creates a temporary [Updater] with the provided config and calls its
+// [Updater.Check] method.
 func Check(ctx context.Context, cfg *Config) (*Release, error) {
 	return New(cfg).Check(ctx)
 }
 
-// normalize ensures the version string has a "v" prefix, which is required by
-// the semver package.
+// normalize ensures the version string has a "v" prefix for the semver package.
 func normalize(v string) string {
 	if strings.HasPrefix(v, "v") {
 		return v
