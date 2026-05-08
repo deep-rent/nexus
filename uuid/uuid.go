@@ -12,19 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package uuid provides an implementation of Version 7 UUIDs.
+//
 // Package uuid provides an implementation of Version 7 (Time-ordered)
 // Universally Unique Identifiers (UUID) as defined in RFC 4122 and RFC 9562.
 //
-// MIGRATION NOTE (v4 -> v7):
+// # Migration Note (v4 -> v7)
+//
 // We migrated from UUIDv4 (fully random) to UUIDv7 (time-ordered) to improve
 // database performance. UUIDv4 causes significant index fragmentation and
-// random I/O in B-Tree structures (standard database primary keys) due to
-// its lack of locality.
+// random I/O in B-Tree structures (standard database primary keys) due to its
+// lack of locality.
 //
-// UUIDv7 solves this by being strictly monotonic (like a sequence ID) while
-// retaining global uniqueness. This results in "append-only" index behavior,
-// significantly higher write throughput, and better cache locality.
-// It also aligns with native support arriving in PostgreSQL 18+.
+// UUIDv7 solves this by being strictly monotonic while retaining global
+// uniqueness. This results in "append-only" index behavior, higher write
+// throughput, and better cache locality. It also aligns with native support
+// arriving in PostgreSQL 18+.
+//
+// # Usage
+//
+// Generate a new time-ordered identifier or parse an existing string.
+//
+// Example:
+//
+//	id := uuid.New()
+//	fmt.Println(id.String())
 package uuid
 
 import (
@@ -39,14 +51,16 @@ import (
 // UUIDv7 is a 128-bit time-ordered identifier (16 bytes).
 //
 // Layout:
-// - 48 bits: Unix Timestamp (milliseconds)
-// -  4 bits: Version (0111)
-// - 12 bits: Random Data A
-// -  2 bits: Variant (10)
-// - 62 bits: Random Data B
+//   - 48 bits: Unix Timestamp (milliseconds)
+//   - 4 bits: Version (0111)
+//   - 12 bits: Random Data A
+//   - 2 bits: Variant (10)
+//   - 62 bits: Random Data B
 type UUIDv7 [16]byte
 
-// String returns the canonical string representation of the UUIDv7.
+// String returns the canonical hyphenated string representation of the
+// [UUIDv7].
+//
 // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 func (u UUIDv7) String() string {
 	buf := make([]byte, 36)
@@ -62,7 +76,7 @@ func (u UUIDv7) String() string {
 	return string(buf)
 }
 
-// New generates a strictly monotonic UUIDv7 with sub-millisecond precision.
+// New generates a strictly monotonic [UUIDv7] with sub-millisecond precision.
 //
 // It fills the timestamp and sequence fields using a global monotonic counter
 // derived from the system clock, ensuring that IDs generated within the same
@@ -95,8 +109,7 @@ func New() UUIDv7 {
 	return u
 }
 
-// Parse parses a standard 36-character hyphenated string representation of a
-// UUID into a UUIDv7 type.
+// Parse converts a 36-character hyphenated string into a [UUIDv7].
 //
 // It strictly validates that the UUID is Version 7 and Variant 1 (RFC 4122).
 func Parse(s string) (UUIDv7, error) {
@@ -120,13 +133,11 @@ func Parse(s string) (UUIDv7, error) {
 	return u, nil
 }
 
-// ParseBytes parses a 16-byte raw slice into a UUIDv7 type.
+// ParseBytes parses a 16-byte raw slice into a [UUIDv7].
 //
 // It strictly validates that the byte slice is exactly 16 bytes and conforms
-// to Version 7 and Variant 1.
-//
-// Note: This function does not modify the input slice; it creates a
-// complete copy of the data.
+// to Version 7 and Variant 1. This function creates a complete copy of the
+// data.
 func ParseBytes(b []byte) (UUIDv7, error) {
 	var u UUIDv7
 	if len(b) != 16 {
@@ -144,14 +155,17 @@ func ParseBytes(b []byte) (UUIDv7, error) {
 
 // Global state for the monotonic generator.
 var (
-	mu   sync.Mutex
+	// mu protects the last generated timestamp state.
+	mu sync.Mutex
+	// last is the combined scalar of the last generated timestamp and sequence.
 	last int64
 )
 
 // tick implements Method 3 from the UUIDv7 specification (RFC 9562, Section
-// 6.2). It returns a timestamp (ms) and a strictly increasing sequence (seq).
+// 6.2).
 //
-// The sequence holds fractional nanoseconds scaled to fit into 12 bits.
+// It returns a timestamp (ms) and a strictly increasing sequence (seq). The
+// sequence holds fractional nanoseconds scaled to fit into 12 bits.
 func tick() (ms, seq int64) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -167,8 +181,6 @@ func tick() (ms, seq int64) {
 	seq = (ns - ms*1_000_000) >> 8
 
 	// 3. Pack into a comparable scalar (48 bits MS + 12 bits SEQ).
-	// This allows us to handle time rollbacks or high-frequency generation
-	// using simple integer arithmetic.
 	ts := ms<<12 + seq
 
 	// 4. Enforce monotonicity.
