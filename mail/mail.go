@@ -49,6 +49,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/deep-rent/nexus/retry"
@@ -64,7 +65,8 @@ var (
 	ErrMissingTemplateID = errors.New("mail: template ID is required")
 	// ErrMissingFrom is returned when an email has no sender address.
 	ErrMissingFrom = errors.New("mail: from address is required")
-	// ErrDispatchFailed
+	// ErrDispatchFailed is returned when the underlying provider rejects the
+	// payload.
 	ErrDispatchFailed = errors.New("mail: dispatching failed")
 )
 
@@ -298,7 +300,7 @@ func WithLogger(logger *slog.Logger) Option {
 // automatic retry capabilities.
 func New(apiKey string, opts ...Option) Sender {
 	if apiKey == "" {
-		panic(errors.New("sendgrid: API key is required"))
+		panic(errors.New("mail: API key is required"))
 	}
 
 	cfg := config{
@@ -311,9 +313,14 @@ func New(apiKey string, opts ...Option) Sender {
 		opt(&cfg)
 	}
 
+	endpoint, err := url.JoinPath(cfg.baseURL, "mail/send")
+	if err != nil {
+		panic(fmt.Errorf("mail: invalid base URL: %w", err))
+	}
+
 	s := &sender{
 		apiKey: apiKey,
-		url:    cfg.baseURL + "/mail/send",
+		url:    endpoint,
 		logger: cfg.logger,
 		retry:  cfg.retry,
 	}
