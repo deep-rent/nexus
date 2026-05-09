@@ -16,6 +16,7 @@
 package valid
 
 import (
+	"net"
 	"net/netip"
 	"net/url"
 	"regexp"
@@ -200,6 +201,12 @@ func Base64(s string) bool {
 // Base64URL checks if the string is a valid Base64URL encoded string.
 func Base64URL(s string) bool {
 	return rxBase64URL.MatchString(s)
+}
+
+// MAC checks if the string is a valid IEEE 802 MAC address.
+func MAC(s string) bool {
+	_, err := net.ParseMAC(s)
+	return err == nil
 }
 
 // Lang checks if the string is a valid BCP 47 language tag.
