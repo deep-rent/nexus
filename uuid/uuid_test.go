@@ -16,6 +16,7 @@ package uuid_test
 
 import (
 	"bytes"
+	"encoding/json/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -341,5 +342,87 @@ func BenchmarkParseBytes(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_, _ = uuid.ParseBytes(input)
+	}
+}
+
+func TestJSON(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Marshal", func(t *testing.T) {
+		u, err := uuid.Parse("018f3a00-0000-7000-8000-000000000000")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := json.Marshal(u)
+		if err != nil {
+			t.Fatalf("json.Marshal() err = %v", err)
+		}
+
+		want := []byte(`"018f3a00-0000-7000-8000-000000000000"`)
+		if !bytes.Equal(got, want) {
+			t.Errorf("json.Marshal() = %s; want %s", got, want)
+		}
+	})
+
+	t.Run("UnmarshalValid", func(t *testing.T) {
+		input := []byte(`"018f3a55-1234-7000-8abc-def012345678"`)
+		var u uuid.UUIDv7
+
+		if err := json.Unmarshal(input, &u); err != nil {
+			t.Fatalf("json.Unmarshal() err = %v", err)
+		}
+
+		if got, want := u.String(),
+			"018f3a55-1234-7000-8abc-def012345678"; got != want {
+			t.Errorf("Unmarshaled UUID = %s; want %s", got, want)
+		}
+	})
+
+	t.Run("UnmarshalInvalid", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			input string
+		}{
+			{"not a string", `12345`},
+			{"invalid uuid format", `"not-a-uuid"`},
+			{"wrong version", `"018f3a55-1234-4000-8abc-def012345678"`},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var u uuid.UUIDv7
+				err := json.Unmarshal([]byte(tt.input), &u)
+				if err == nil {
+					t.Errorf("Unmarshal(%s) expected error, got nil", tt.input)
+				}
+			})
+		}
+	})
+}
+
+func TestJSONInStruct(t *testing.T) {
+	t.Parallel()
+
+	type User struct {
+		ID   uuid.UUIDv7 `json:"id"`
+		Name string      `json:"name"`
+	}
+
+	u := uuid.New()
+	user := User{ID: u, Name: "Alice"}
+
+	data, err := json.Marshal(user)
+	if err != nil {
+		t.Fatalf("Marshal struct err = %v", err)
+	}
+
+	var decoded User
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal struct err = %v", err)
+	}
+
+	if decoded.ID != u {
+		t.Errorf("Decoded ID = %v; want %v", decoded.ID, u)
 	}
 }

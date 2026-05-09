@@ -76,6 +76,27 @@ func (u UUIDv7) String() string {
 	return string(buf)
 }
 
+// MarshalJSON transforms the UUIDv7 into a JSON string.
+func (u UUIDv7) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + u.String() + `"`), nil
+}
+
+// UnmarshalJSON parses a JSON string into a UUIDv7.
+func (u *UUIDv7) UnmarshalJSON(b []byte) error {
+	// Remove quotes from the JSON string
+	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
+		return fmt.Errorf("uuid: invalid json string")
+	}
+
+	parsed, err := Parse(string(b[1 : len(b)-1]))
+	if err != nil {
+		return err
+	}
+
+	*u = parsed
+	return nil
+}
+
 // New generates a strictly monotonic [UUIDv7] with sub-millisecond precision.
 //
 // It fills the timestamp and sequence fields using a global monotonic counter
