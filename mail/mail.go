@@ -349,7 +349,7 @@ func New(apiKey string, opts ...Option) Sender {
 // It maps the domain [Message] payload into SendGrid's expected JSON
 // structure and dispatches the request. It respects the provided context
 // for timeouts and cancellation. If the API responds with an HTTP status
-// code >= 400, it returns an [*APIError] containing the raw response body.
+// code >= 400, it logs the response body and returns a generic error.
 func (s *sender) Send(ctx context.Context, msg *Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
@@ -395,18 +395,16 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		}
 	}()
 
-	if res.StatusCode >= 400 {
+	if code := res.StatusCode; code >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 		s.logger.ErrorContext(ctx, "SendGrid API returned an error",
-			slog.Int("status_code", res.StatusCode),
+			slog.Int("status", code),
 			slog.String("body", string(body)),
 		)
-		return fmt.Errorf("sendgrid: API error %d", res.StatusCode)
+		return fmt.Errorf("sendgrid: API returned status %d", code)
 	}
 
-	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid",
-		slog.Int("status_code", res.StatusCode),
-	)
+	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid")
 
 	return nil
 }
