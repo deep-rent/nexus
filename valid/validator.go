@@ -90,10 +90,10 @@ func (v *Validator) Test(ok bool, field, msg string) {
 	}
 }
 
-// Nested dives into a nested [Validatable] struct. It appends the field name
+// Walk dives into a nested [Validatable] struct. It appends the field name
 // to the current path, seamlessly propagating any validation errors using dot
 // notation (e.g., "user.address" or "items[0].name").
-func (v *Validator) Nested(field string, target Validatable) {
+func (v *Validator) Walk(field string, target Validatable) {
 	if target == nil {
 		return
 	}
@@ -102,6 +102,41 @@ func (v *Validator) Nested(field string, target Validatable) {
 		path: v.join(field),
 	}
 	_ = target.Validate(sub)
+}
+
+// Each iterates over a slice and validates each element that implements the
+// [Validatable] interface. It automatically manages array indexing in the
+// dot-notation path (e.g., "items[0]", "items[1]").
+func (v *Validator) Each(field string, slice any) {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return
+	}
+	p := v.join(field)
+	for i := 0; i < rv.Len(); i++ {
+		val := rv.Index(i)
+		var target Validatable
+
+		if t, ok := val.Interface().(Validatable); ok {
+			if (val.Kind() == reflect.Pointer ||
+				val.Kind() == reflect.Interface) && val.IsNil() {
+				continue
+			}
+			target = t
+		} else if val.CanAddr() {
+			if t, ok := val.Addr().Interface().(Validatable); ok {
+				target = t
+			}
+		}
+
+		if target != nil {
+			sub := &Validator{
+				errs: v.errs,
+				path: fmt.Sprintf("%s[%d]", p, i),
+			}
+			_ = target.Validate(sub)
+		}
+	}
 }
 
 // join constructs the dot-notation path, accounting for array indexing.
