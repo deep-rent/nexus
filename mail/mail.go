@@ -21,9 +21,13 @@
 //
 // # Usage
 //
-// Typically, you construct an Email using the fluent API and pass it
-// to a Sender:
+// Typically, you initialize a [Sender] at application startup, construct
+// a [Message] using the fluent API, and pass it to the sender:
 //
+//	// 1. Initialize the default SendGrid sender.
+//	client := mail.New("SG.your.api.key")
+//
+//	// 2. Construct the email message.
 //	msg := mail.NewMessage(
 //		mail.NewAddress("no-reply@example.com", "My App"),
 //		"template-id-123",
@@ -31,7 +35,8 @@
 //			AddData("name", "Alice"),
 //	)
 //
-//	err := sender.Send(ctx, msg)
+//	// 3. Dispatch the email.
+//	err := client.Send(context.Background(), msg)
 package mail
 
 import (
@@ -53,8 +58,6 @@ import (
 const DefaultBaseURL = "https://api.sendgrid.com/v3"
 
 var (
-	// ErrNilEmail is returned when a nil email is passed to Send.
-	ErrNilEmail = errors.New("mail: email cannot be nil")
 	// ErrMissingRecipients is returned when an email has no recipients.
 	ErrMissingRecipients = errors.New("mail: at least one recipient is required")
 	// ErrMissingTemplateID is returned when an email has no template ID.
@@ -62,24 +65,6 @@ var (
 	// ErrMissingFrom is returned when an email has no sender address.
 	ErrMissingFrom = errors.New("mail: from address is required")
 )
-
-// APIError represents an error response from the SendGrid API.
-//
-// It allows consumers to programmatically inspect the HTTP status code
-// (e.g., to detect 429 Too Many Requests or 400 Bad Request) and parse
-// the raw JSON body returned by SendGrid for specific validation errors.
-type APIError struct {
-	// StatusCode is the HTTP status code returned by the SendGrid API.
-	StatusCode int
-	// Body is the response body returned by the SendGrid API.
-	Body string
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("sendgrid: API error %d: %s", e.StatusCode, e.Body)
-}
-
-var _ error = (*APIError)(nil)
 
 // Email represents an email address and an optional display name.
 type Email struct {
@@ -200,10 +185,10 @@ func (m *Message) WithReplyTo(addr Email) *Message {
 	return m
 }
 
-// Validate checks if the email has the minimum required fields for sending.
+// Validate checks if the message has the minimum required fields for sending.
 func (m *Message) Validate() error {
 	if m == nil {
-		return ErrNilEmail
+		panic("mail: message cannot be nil")
 	}
 	if m.From.Addr == "" {
 		return ErrMissingFrom
@@ -241,7 +226,7 @@ type Sender interface {
 // concurrent use by multiple goroutines.
 type sender struct {
 	apiKey  string
-	baseURL string
+	url     string
 	timeout time.Duration
 	client  *http.Client
 	logger  *slog.Logger
@@ -327,7 +312,7 @@ func New(apiKey string, opts ...Option) Sender {
 
 	s := &sender{
 		apiKey:  apiKey,
-		baseURL: cfg.baseURL,
+		url:     cfg.baseURL + "/mail/send",
 		timeout: cfg.timeout,
 		logger:  cfg.logger,
 		retry:   cfg.retry,
@@ -375,11 +360,10 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		return fmt.Errorf("sendgrid: failed to marshal payload: %w", err)
 	}
 
-	url := s.baseURL + "/mail/send"
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		url,
+		s.url,
 		bytes.NewReader(body),
 	)
 	if err != nil {
@@ -392,7 +376,6 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	s.logger.DebugContext(ctx, "Sending email via SendGrid",
 		slog.String("template_id", msg.TemplateID),
 		slog.Int("recipients", len(msg.Recipients)),
-		slog.String("url", url),
 	)
 
 	res, err := s.client.Do(req)
@@ -414,8 +397,11 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	if res.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-		err := &APIError{StatusCode: res.StatusCode, Body: string(body)}
-		return err
+		s.logger.ErrorContext(ctx, "SendGrid API returned an error",
+			slog.Int("status_code", res.StatusCode),
+			slog.String("body", string(body)),
+		)
+		return fmt.Errorf("sendgrid: API error %d", res.StatusCode)
 	}
 
 	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid",
