@@ -47,6 +47,7 @@ func TestExchange_BindJSON(t *testing.T) {
 		ctype      string
 		body       string
 		useNilBody bool
+		target     any
 		wantErr    bool
 		wantReason string
 		wantStatus int
@@ -81,6 +82,15 @@ func TestExchange_BindJSON(t *testing.T) {
 			wantReason: router.ReasonParseJSON,
 			wantStatus: http.StatusBadRequest,
 		},
+		{
+			name:       "failure validation",
+			ctype:      "application/json",
+			body:       `{"name":""}`,
+			target:     &mockValidatable{},
+			wantErr:    true,
+			wantReason: router.ReasonValidationFailed,
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,9 +111,14 @@ func TestExchange_BindJSON(t *testing.T) {
 			}
 
 			e := &router.Exchange{R: r}
-			var v map[string]any
 
-			err := e.BindJSON(&v)
+			var v map[string]any
+			target := tt.target
+			if target == nil {
+				target = &v
+			}
+
+			err := e.BindJSON(target)
 
 			if tt.wantErr {
 				if err == nil {
@@ -114,6 +129,19 @@ func TestExchange_BindJSON(t *testing.T) {
 				}
 				if got, want := err.Status, tt.wantStatus; got != want {
 					t.Errorf("err.Status = %d; want %d", got, want)
+				}
+				if tt.wantReason == router.ReasonValidationFailed {
+					if err.Context == nil {
+						t.Fatal("Context is nil")
+					}
+					verrs, ok := err.Context.(valid.Error)
+					if !ok {
+						t.Fatalf("Context is %T; want valid.Error", err.Context)
+					}
+					msgs := verrs["name"]
+					if len(msgs) == 0 || msgs[0] != "must not be empty" {
+						t.Errorf("Context[\"name\"] = %v; want [\"must not be empty\"]", msgs)
+					}
 				}
 				return
 			}
@@ -239,60 +267,26 @@ var _ valid.Validatable = (*mockValidatable)(nil)
 func TestExchange_JSON(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success", func(t *testing.T) {
-		t.Parallel()
-		rec := httptest.NewRecorder()
-		e := &router.Exchange{W: router.NewResponseWriter(rec)}
-		payload := map[string]string{"foo": "bar"}
+	rec := httptest.NewRecorder()
+	e := &router.Exchange{W: router.NewResponseWriter(rec)}
+	payload := map[string]string{"foo": "bar"}
 
-		if err := e.JSON(http.StatusCreated, payload); err != nil {
-			t.Fatalf("JSON() err = %v; want nil", err)
-		}
+	if err := e.JSON(http.StatusCreated, payload); err != nil {
+		t.Fatalf("JSON() err = %v; want nil", err)
+	}
 
-		if got, want := rec.Code, http.StatusCreated; got != want {
-			t.Errorf("rec.Code = %d; want %d", got, want)
-		}
-		if got, want := rec.Header().Get("Content-Type"),
-			"application/json"; got != want {
-			t.Errorf("Content-Type = %q; want %q", got, want)
-		}
+	if got, want := rec.Code, http.StatusCreated; got != want {
+		t.Errorf("rec.Code = %d; want %d", got, want)
+	}
+	if got, want := rec.Header().Get("Content-Type"),
+		"application/json"; got != want {
+		t.Errorf("Content-Type = %q; want %q", got, want)
+	}
 
-		wantBody := `{"foo":"bar"}`
-		if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
-			t.Errorf("rec.Body = %q; want %q", got, wantBody)
-		}
-	})
-
-	t.Run("validation failure", func(t *testing.T) {
-		t.Parallel()
-		rec := httptest.NewRecorder()
-		e := &router.Exchange{W: router.NewResponseWriter(rec)}
-		payload := &mockValidatable{Name: ""}
-
-		err := e.JSON(http.StatusOK, payload)
-		if err == nil {
-			t.Fatal("JSON() err = nil; want error")
-		}
-
-		var rErr *router.Error
-		if !errors.As(err, &rErr) {
-			t.Fatalf("err is %T; want *router.Error", err)
-		}
-		if got, want := rErr.Reason, router.ReasonValidationFailed; got != want {
-			t.Errorf("Reason = %q; want %q", got, want)
-		}
-		if rErr.Context == nil {
-			t.Fatal("Context is nil")
-		}
-		verrs, ok := rErr.Context.(valid.Error)
-		if !ok {
-			t.Fatalf("Context is %T; want valid.Error", rErr.Context)
-		}
-		msgs := verrs["name"]
-		if len(msgs) == 0 || msgs[0] != "must not be empty" {
-			t.Errorf("Context[\"name\"] = %v; want [\"must not be empty\"]", msgs)
-		}
-	})
+	wantBody := `{"foo":"bar"}`
+	if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
+		t.Errorf("rec.Body = %q; want %q", got, wantBody)
+	}
 }
 
 func TestExchange_Form(t *testing.T) {

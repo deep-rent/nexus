@@ -54,6 +54,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -226,7 +227,8 @@ func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 // BindJSON decodes the request body into v.
 //
 // This method verifies that the media type is "application/json", checks that
-// the payload is not empty, and unmarshals the JSON.
+// the payload is not empty, unmarshals the JSON, and validates the input using
+// [valid.Test].
 func (e *Exchange) BindJSON(v any) *Error {
 	if t := header.MediaType(e.R.Header); t != MediaTypeJSON {
 		return &Error{
@@ -250,6 +252,24 @@ func (e *Exchange) BindJSON(v any) *Error {
 			Description: "could not parse JSON body",
 		}
 	}
+
+	if err := valid.Test(v); err != nil {
+		if ctx, ok := errors.AsType[valid.Error](err); ok {
+			return &Error{
+				Status:      http.StatusBadRequest,
+				Reason:      ReasonValidationFailed,
+				Description: fmt.Sprintf("input violates %d constraints", len(ctx)),
+				Context:     ctx,
+			}
+		}
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Reason:      ReasonServerError,
+			Description: "an unexpected error occurred during input validation",
+			Cause:       err,
+		}
+	}
+
 	return nil
 }
 
@@ -278,22 +298,8 @@ func (e *Exchange) ReadForm() (url.Values, *Error) {
 // JSON encodes v as JSON and writes it to the response.
 //
 // It automatically sets the Content-Type header to [MediaTypeJSON] if it has
-// not already been set. It also verifies the input using [valid.Test] before
-// encoding.
+// not already been set.
 func (e *Exchange) JSON(code int, v any) error {
-	if err := valid.Test(v); err != nil {
-		var ctx valid.Error
-		if errors.As(err, &ctx) {
-			return &Error{
-				Status:      http.StatusInternalServerError,
-				Reason:      ReasonValidationFailed,
-				Description: "validation failed",
-				Context:     ctx,
-			}
-		}
-		return err
-	}
-
 	buf, err := json.Marshal(v, e.jsonOpts...)
 	if err != nil {
 		return err
