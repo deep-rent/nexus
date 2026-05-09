@@ -16,14 +16,13 @@ package oauth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/opaque"
 	"github.com/deep-rent/nexus/internal/pkce"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
@@ -346,7 +345,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return sendError(errAccessDenied)
 	}
 
-	code, err := opaque()
+	code, err := opaque.Generate()
 	if err != nil {
 		p.logger.Error("Failed to generate opaque token", slog.Any("error", err))
 		return e.JSON(http.StatusInternalServerError, errServerError)
@@ -589,7 +588,7 @@ func (p *Provider) issueTokens(
 	}
 
 	if refresh {
-		rt, err := opaque()
+		rt, err := opaque.Generate()
 		if err != nil {
 			p.logger.Error("Failed to generate opaque refresh token", slog.Any("error", err))
 			return e.JSON(http.StatusInternalServerError, errServerError)
@@ -610,13 +609,4 @@ func (p *Provider) issueTokens(
 	}
 
 	return e.JSON(http.StatusOK, res)
-}
-
-// opaque creates a cryptographically secure random string.
-func opaque() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
 }
