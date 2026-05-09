@@ -48,6 +48,12 @@
 //		v.Email("email", u.Email)
 //		v.BetweenInt("age", u.Age, 18, 99)
 //	}
+//
+//	usr := &User{Email: "user@example.com", Age: 25}
+//	err := valid.Test(usr)
+//	if err != nil {
+//		// Handle validation errors
+//	}
 package valid
 
 import (
