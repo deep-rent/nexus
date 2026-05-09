@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -391,5 +392,35 @@ func TestSender_CustomLogger(t *testing.T) {
 	if s := buf.String(); !strings.Contains(s,
 		"Dispatching message to provider") {
 		t.Errorf("Expected debug log output in buffer, got: %q", s)
+	}
+}
+
+func TestSender_DefaultClientCreation(t *testing.T) {
+	t.Parallel()
+
+	h := func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/mail/send"; got != want {
+			t.Errorf("r.URL.Path = %q; want %q", got, want)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}
+
+	s := httptest.NewServer(http.HandlerFunc(h))
+	defer s.Close()
+
+	sender := mail.NewSender(
+		"test-key",
+		mail.WithBaseURL(s.URL),
+	)
+
+	msg := mail.NewMessage(
+		mail.New("from@example.com", ""),
+		"t-123",
+		mail.NewRecipient(mail.New("to@example.com", "")),
+	)
+
+	err := sender.Send(t.Context(), msg)
+	if err != nil {
+		t.Fatalf("Send() failed using the default HTTP client: %v", err)
 	}
 }
