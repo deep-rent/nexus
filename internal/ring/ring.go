@@ -68,6 +68,10 @@ type Buffer[T any] struct {
 	// Its length is always a power of two.
 	data []T
 
+	// seq holds the sequence numbers for each slot to prevent read-before-write
+	// race conditions in concurrent MPMC scenarios.
+	seq []uint64
+
 	// head is a monotonically increasing counter representing the read index.
 	// The actual array index is calculated as (head & mask).
 	head uint64
@@ -100,6 +104,7 @@ func New[T any](size int, policy Policy) *Buffer[T] {
 
 	return &Buffer[T]{
 		data:   make([]T, p),
+		seq:    make([]uint64, p),
 		mask:   uint64(p - 1),
 		policy: policy,
 	}
@@ -138,6 +143,8 @@ func (b *Buffer[T]) Push(item T) bool {
 		if atomic.CompareAndSwapUint64(&b.tail, tail, tail+1) {
 			// 3. Write data to the claimed slot.
 			b.data[tail&b.mask] = item
+			// 4. Publish the write by updating the sequence number.
+			atomic.StoreUint64(&b.seq[tail&b.mask], tail+1)
 			return true
 		}
 		// CAS failed: another producer claimed the slot first; loop and retry.
@@ -161,10 +168,19 @@ func (b *Buffer[T]) Pop() (T, bool) {
 			return zero, false
 		}
 
-		// 2. Read the data BEFORE advancing the head pointer.
+		// 2. Ensure the producer has finished writing to this slot.
+		// If the sequence doesn't match head+1, it means the producer
+		// claimed the tail but hasn't published the write yet, or we
+		// are reading a stale head.
+		if atomic.LoadUint64(&b.seq[head&b.mask]) != head+1 {
+			runtime.Gosched()
+			continue
+		}
+
+		// 3. Read the data BEFORE advancing the head pointer.
 		item := b.data[head&b.mask]
 
-		// 3. Try to commit the read.
+		// 4. Try to commit the read.
 		if atomic.CompareAndSwapUint64(&b.head, head, head+1) {
 			return item, true
 		}
