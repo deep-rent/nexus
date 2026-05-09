@@ -80,8 +80,6 @@ const (
 )
 
 const (
-	// RoleBasic represents a default user role with limited permissions.
-	RoleBasic = "basic"
 	// RoleAdmin represents an elevated user role with full administrative access.
 	RoleAdmin = "admin"
 )
