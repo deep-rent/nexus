@@ -362,19 +362,18 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		return err
 	}
 
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("sendgrid: failed to marshal payload: %w", err)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(msg); err != nil {
+		return fmt.Errorf("mail: failed to encode payload: %w", err)
 	}
-
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
 		s.url,
-		bytes.NewReader(body),
+		&buf,
 	)
 	if err != nil {
-		return fmt.Errorf("sendgrid: failed to create request: %w", err)
+		return fmt.Errorf("mail: failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
@@ -387,7 +386,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	res, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("sendgrid: request failed: %w", err)
+		return fmt.Errorf("mail: request failed: %w", err)
 	}
 	defer func() {
 		// Drain body to ensure connection reuse:
