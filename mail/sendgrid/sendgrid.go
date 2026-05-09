@@ -201,7 +201,7 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 		return err
 	}
 
-	p := c.payload(email)
+	p := toPayload(email)
 
 	body, err := json.Marshal(p)
 	if err != nil {
@@ -255,8 +255,8 @@ func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
 	return nil
 }
 
-// payload maps the domain email model to the SendGrid JSON structure.
-func (c *Sender) payload(email *mail.Email) payload {
+// toPayload maps the domain email model to the SendGrid JSON structure.
+func toPayload(email *mail.Email) payload {
 	pers := make([]personalization, 0, len(email.Recipients))
 	for _, r := range email.Recipients {
 		pers = append(pers, personalization{
