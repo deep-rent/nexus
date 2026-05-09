@@ -17,6 +17,7 @@ package valid
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -144,7 +145,7 @@ func (v *Validator) join(field string) string {
 	if v.path == "" {
 		return field
 	}
-	if strings.HasPrefix(field, "[") {
+	if len(field) > 0 && field[0] == '[' {
 		return v.path + field
 	}
 	return v.path + "." + field
@@ -164,35 +165,59 @@ func (v *Validator) Max(field string, val, max float64) {
 	v.Test(val <= max, field, fmt.Sprintf("must be at most %v", max))
 }
 
-// GTE is an alias for Min (Greater Than or Equal).
-func (v *Validator) GTE(field string, val, min float64) {
-	v.Min(field, val, min)
+// MinInt asserts that an integer value is at least the given minimum.
+func (v *Validator) MinInt(field string, val, min int) {
+	v.Test(val >= min, field, fmt.Sprintf("must be at least %d", min))
 }
 
-// LTE is an alias for Max (Less Than or Equal).
-func (v *Validator) LTE(field string, val, max float64) {
-	v.Max(field, val, max)
+// MaxInt asserts that an integer value is at most the given maximum.
+func (v *Validator) MaxInt(field string, val, max int) {
+	v.Test(val <= max, field, fmt.Sprintf("must be at most %d", max))
 }
 
-// MinLen asserts that the length of a string or slice is at least min.
-func (v *Validator) MinLen(field string, length, min int) {
-	v.Test(length >= min, field, fmt.Sprintf("length must be at least %d", min))
+// Between asserts that a numeric value is between min and max inclusive.
+func (v *Validator) Between(field string, val, min, max float64) {
+	v.Test(
+		val >= min && val <= max, field,
+		fmt.Sprintf("must be between %v and %v", min, max),
+	)
 }
 
-// MaxLen asserts that the length of a string or slice is at most max.
-func (v *Validator) MaxLen(field string, length, max int) {
-	v.Test(length <= max, field, fmt.Sprintf("length must be at most %d", max))
+// BetweenInt asserts that an integer value is between min and max inclusive.
+func (v *Validator) BetweenInt(field string, val, min, max int) {
+	v.Test(
+		val >= min && val <= max, field,
+		fmt.Sprintf("must be between %d and %d", min, max),
+	)
 }
 
-// Unique asserts that all elements in a slice are unique.
-func (v *Validator) Unique(field string, slice any) {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
+// MinLen asserts that the length of a string is at least min.
+func (v *Validator) MinLen(field, val string, min int) {
+	v.Test(len(val) >= min, field, fmt.Sprintf("length must be at least %d", min))
+}
+
+// MaxLen asserts that the length of a string is at most max.
+func (v *Validator) MaxLen(field, val string, max int) {
+	v.Test(len(val) <= max, field, fmt.Sprintf("length must be at most %d", max))
+}
+
+// MinSize asserts that the size of a slice or map is at least min.
+func (v *Validator) MinSize(field string, size, min int) {
+	v.Test(size >= min, field, fmt.Sprintf("size must be at least %d", min))
+}
+
+// MaxSize asserts that the size of a slice or map is at most max.
+func (v *Validator) MaxSize(field string, size, max int) {
+	v.Test(size <= max, field, fmt.Sprintf("size must be at most %d", max))
+}
+
+// Unique asserts that all elements in a string slice are unique.
+func (v *Validator) Unique(field string, slice []string) {
+	if len(slice) < 2 {
 		return
 	}
-	seen := make(map[any]bool, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		val := rv.Index(i).Interface()
+	seen := make(map[string]bool, len(slice))
+	for _, val := range slice {
 		if seen[val] {
 			v.Fail(field, "must contain unique items")
 			return
@@ -215,6 +240,16 @@ func (v *Validator) Blacklist(field string, val any, list ...any) {
 	if slices.Contains(list, val) {
 		v.Fail(field, "must not be one of the denied values")
 	}
+}
+
+// NotEmpty asserts that a string is not empty.
+func (v *Validator) NotEmpty(field, val string) {
+	v.Test(val != "", field, "must not be empty")
+}
+
+// Match asserts that a string matches a regular expression.
+func (v *Validator) Match(field, val string, rx *regexp.Regexp) {
+	v.Test(rx.MatchString(val), field, "must match the required pattern")
 }
 
 // ----------------------------------------------------------------------------
