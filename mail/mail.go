@@ -159,8 +159,8 @@ func (r *Recipient) SetData(data map[string]any) *Recipient {
 	return r
 }
 
-// validate checks if the recipient group has at least one primary destination.
-func (r *Recipient) validate() error {
+// Validate checks if the recipient group has at least one primary destination.
+func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
 		return ErrMissingRecipients
 	}
@@ -206,8 +206,8 @@ func (m *Message) WithReplyTo(addr Email) *Message {
 	return m
 }
 
-// validate checks if the message has the minimum required fields for sending.
-func (m *Message) validate() error {
+// Validate checks if the message has the minimum required fields for sending.
+func (m *Message) Validate() error {
 	if m == nil {
 		return ErrNilMessage
 	}
@@ -218,7 +218,7 @@ func (m *Message) validate() error {
 		return ErrMissingRecipients
 	}
 	for _, r := range m.Recipients {
-		if err := r.validate(); err != nil {
+		if err := r.Validate(); err != nil {
 			return err
 		}
 	}
@@ -380,7 +380,7 @@ func New(apiKey string, opts ...Option) (Sender, error) {
 // for timeouts and cancellation. If the API responds with an HTTP status
 // code >= 400, it logs the response body and returns a generic error.
 func (s *sender) Send(ctx context.Context, msg *Message) error {
-	if err := msg.validate(); err != nil {
+	if err := msg.Validate(); err != nil {
 		return err
 	}
 
