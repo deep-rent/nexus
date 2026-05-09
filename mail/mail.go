@@ -64,6 +64,8 @@ var (
 	ErrMissingTemplateID = errors.New("mail: template ID is required")
 	// ErrMissingFrom is returned when an email has no sender address.
 	ErrMissingFrom = errors.New("mail: from address is required")
+	// ErrDispatchFailed
+	ErrDispatchFailed = errors.New("mail: dispatching failed")
 )
 
 // Email represents an email address and an optional display name.
@@ -225,12 +227,11 @@ type Sender interface {
 // with the SendGrid API. Once initialized via [New], a sender is safe for
 // concurrent use by multiple goroutines.
 type sender struct {
-	apiKey  string
-	url     string
-	timeout time.Duration
-	client  *http.Client
-	logger  *slog.Logger
-	retry   []retry.Option
+	apiKey string
+	url    string
+	client *http.Client
+	logger *slog.Logger
+	retry  []retry.Option
 }
 
 // config holds the optional configuration for the SendGrid sender.
@@ -311,11 +312,10 @@ func New(apiKey string, opts ...Option) Sender {
 	}
 
 	s := &sender{
-		apiKey:  apiKey,
-		url:     cfg.baseURL + "/mail/send",
-		timeout: cfg.timeout,
-		logger:  cfg.logger,
-		retry:   cfg.retry,
+		apiKey: apiKey,
+		url:    cfg.baseURL + "/mail/send",
+		logger: cfg.logger,
+		retry:  cfg.retry,
 	}
 
 	// Initialize the default HTTP client if a custom one wasn't provided
@@ -401,7 +401,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			slog.Int("status", code),
 			slog.String("body", string(body)),
 		)
-		return fmt.Errorf("sendgrid: API returned status %d", code)
+		return ErrDispatchFailed
 	}
 
 	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid")
