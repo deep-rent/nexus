@@ -27,8 +27,8 @@
 //
 // Example:
 //
-//	// 1. Initialize the default SendGrid sender.
-//	sender := mail.NewSender("your-api-key")
+//	// 1. Initialize the default SendGrid sender with a custom User-Agent.
+//	sender := mail.NewSender("your-api-key", mail.WithUserAgent("MyApp/1.0"))
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(
@@ -87,7 +87,7 @@ type APIError struct {
 	Body string
 }
 
-// Error implements [error].
+// Error implements the [error] interface.
 func (e *APIError) Error() string {
 	return fmt.Sprintf("mail: api returned status %d: %s", e.Status, e.Body)
 }
@@ -127,9 +127,9 @@ func (m Mail) String() string {
 // Recipient represents a single intended recipient or group of receivers,
 // along with the specific template data to be used for them.
 type Recipient struct {
-	// To contains the primary recipients.
+	// To contains the primary [Mail] recipients.
 	To []Mail `json:"to"`
-	// CC contains the carbon copy recipients.
+	// CC contains the carbon copy [Mail] recipients.
 	CC []Mail `json:"cc,omitzero"`
 	// TemplateData holds the key-value pairs used to populate the template
 	// variables for this specific recipient group.
@@ -144,13 +144,13 @@ func NewRecipient(to ...Mail) *Recipient {
 	}
 }
 
-// AddTo appends one or more recipients to the To list.
+// AddTo appends one or more [Mail] recipients to the To list.
 func (r *Recipient) AddTo(mails ...Mail) *Recipient {
 	r.To = append(r.To, mails...)
 	return r
 }
 
-// AddCC appends one or more recipients to the CC list.
+// AddCC appends one or more [Mail] recipients to the CC list.
 func (r *Recipient) AddCC(mails ...Mail) *Recipient {
 	r.CC = append(r.CC, mails...)
 	return r
@@ -165,13 +165,13 @@ func (r *Recipient) AddTemplateData(key string, value any) *Recipient {
 	return r
 }
 
-// SetTemplateData replaces the entire TemplateData map for the recipient.
+// SetTemplateData replaces the entire TemplateData map for the [Recipient].
 func (r *Recipient) SetTemplateData(data map[string]any) *Recipient {
 	r.TemplateData = data
 	return r
 }
 
-// Validate checks if the recipient group has at least one primary destination.
+// Validate checks if the [Recipient] group has at least one primary destination.
 func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
 		return ErrMissingRecipients
@@ -182,11 +182,11 @@ func (r *Recipient) Validate() error {
 // Message represents a transactional email payload designed for dynamic
 // templates.
 type Message struct {
-	// From is the sender's address.
+	// From is the sender's [Mail] address.
 	From Mail `json:"from"`
 	// Recipients contains groups of receivers and their specific template data.
 	Recipients []*Recipient `json:"personalizations"`
-	// ReplyTo is an optional address where replies should be directed.
+	// ReplyTo is an optional [Mail] address where replies should be directed.
 	ReplyTo *Mail `json:"reply_to,omitzero"`
 	// TemplateID is the provider-specific identifier of the dynamic template to
 	// use.
@@ -206,19 +206,19 @@ func NewMessage(
 	}
 }
 
-// AddRecipient appends a recipient group to the message.
+// AddRecipient appends a [Recipient] group to the [Message].
 func (m *Message) AddRecipient(r *Recipient) *Message {
 	m.Recipients = append(m.Recipients, r)
 	return m
 }
 
-// WithReplyTo sets an optional ReplyTo address on the message.
+// WithReplyTo sets an optional ReplyTo [Mail] address on the [Message].
 func (m *Message) WithReplyTo(mail Mail) *Message {
 	m.ReplyTo = &mail
 	return m
 }
 
-// Validate checks if the message has the minimum required fields for sending.
+// Validate checks if the [Message] has the minimum required fields for sending.
 func (m *Message) Validate() error {
 	if m == nil {
 		return ErrNilMessage
@@ -258,11 +258,13 @@ type Sender interface {
 // with the SendGrid API. Once initialized via [NewSender], a [sender] is safe
 // for concurrent use by multiple goroutines.
 type sender struct {
-	// apiKey stores the authentication credential for the provider.
-	apiKey string
+	// auth stores the Authorization header value for the provider.
+	auth string
 	// url is the resolved API endpoint for dispatching requests.
 	url string
-	// client holds the configured HTTP client.
+	// userAgent is the value sent in the User-Agent header of requests.
+	userAgent string
+	// client holds the configured [http.Client].
 	client *http.Client
 	// logger is used for structured diagnostic output.
 	logger *slog.Logger
@@ -274,22 +276,24 @@ var _ Sender = (*sender)(nil)
 
 // config holds the optional configuration for the [sender].
 type config struct {
-	// client holds a custom HTTP client, if provided.
+	// client holds a custom [http.Client], if provided.
 	client *http.Client
 	// baseURL overrides the default SendGrid API endpoint.
 	baseURL string
-	// timeout sets the maximum duration for HTTP requests.
+	// userAgent defines the User-Agent header value for outgoing requests.
+	userAgent string
+	// timeout sets the maximum [time.Duration] for HTTP requests.
 	timeout time.Duration
 	// retry stores options for the HTTP transport retry mechanism.
 	retry []retry.Option
-	// logger specifies the custom structured logger.
+	// logger specifies the custom structured [slog.Logger].
 	logger *slog.Logger
 }
 
 // Option defines the functional option pattern for configuring the [sender].
 type Option func(*config)
 
-// WithClient allows passing a custom HTTP client to the [sender].
+// WithClient allows passing a custom [http.Client] to the [sender].
 // If provided, it overrides the [WithTimeout] setting.
 func WithClient(client *http.Client) Option {
 	return func(c *config) {
@@ -307,7 +311,15 @@ func WithBaseURL(url string) Option {
 	}
 }
 
-// WithTimeout configures the timeout for the default HTTP client.
+// WithUserAgent configures a custom User-Agent header for the outbound
+// API requests.
+func WithUserAgent(ua string) Option {
+	return func(c *config) {
+		c.userAgent = ua
+	}
+}
+
+// WithTimeout configures the timeout for the default [http.Client].
 func WithTimeout(d time.Duration) Option {
 	return func(c *config) {
 		c.timeout = d
@@ -323,7 +335,7 @@ func WithRetryOptions(opts ...retry.Option) Option {
 	}
 }
 
-// WithLogger injects a structured logger into the [sender].
+// WithLogger injects a structured [slog.Logger] into the [sender].
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
@@ -337,7 +349,7 @@ func WithLogger(logger *slog.Logger) Option {
 //
 // It initializes the client with a default base URL, a sensible timeout,
 // and a standard logger. These defaults can be overridden by passing one or
-// more [Option] functions. If no custom HTTP client is provided, it builds
+// more [Option] functions. If no custom [http.Client] is provided, it builds
 // an internal client optimized for API calls with connection pooling and
 // automatic retry capabilities. It panics if the API key is empty or the base
 // URL is invalid.
@@ -362,10 +374,11 @@ func NewSender(apiKey string, opts ...Option) Sender {
 	}
 
 	s := &sender{
-		apiKey: apiKey,
-		url:    endpoint,
-		logger: cfg.logger,
-		retry:  cfg.retry,
+		auth:      "Bearer " + apiKey,
+		url:       endpoint,
+		userAgent: cfg.userAgent,
+		logger:    cfg.logger,
+		retry:     cfg.retry,
 	}
 
 	// Initialize the default HTTP client if a custom one wasn't provided.
@@ -400,9 +413,10 @@ func NewSender(apiKey string, opts ...Option) Sender {
 // Send executes the HTTP request to the SendGrid v3 API.
 //
 // It maps the domain [Message] payload into SendGrid's expected JSON
-// structure and dispatches the request. It respects the provided context
-// for timeouts and cancellation. If the API responds with an HTTP status
-// code >= 400, it logs the response body and returns an [*APIError].
+// structure and dispatches the request. It respects the provided
+// [context.Context] for timeouts and cancellation. If the API responds with
+// an HTTP status code >= 400, it logs the response body and returns an
+// [*APIError].
 func (s *sender) Send(ctx context.Context, msg *Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
@@ -422,7 +436,11 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		return fmt.Errorf("mail: failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Authorization", s.auth)
+
+	if s.userAgent != "" {
+		req.Header.Set("User-Agent", s.userAgent)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	s.logger.DebugContext(ctx, "Dispatching message to provider",
