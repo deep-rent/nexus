@@ -30,22 +30,14 @@ import (
 )
 
 var (
-	// rxBase64 validates Base64 strings. Length must be a multiple of 4.
-	rxBase64 = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
-	// rxBase64URL validates Base64URL strings. Padding is optional.
+	rxBase64    = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
 	rxBase64URL = regexp.MustCompile(`^(?:[A-Za-z0-9-_]{4})*(?:[A-Za-z0-9-_]{2}==|[A-Za-z0-9-_]{3}=|[A-Za-z0-9-_]{2,3})?$`)
-	// rxURN validates Uniform Resource Names (URNs) according to RFC 2141.
-	rxURN = regexp.MustCompile(`^(?i)urn:[a-z0-9][a-z0-9-]{0,31}:[a-z0-9()+,\-.:=@;$_!*'%/?#]+$`)
-	// rxHostname validates hostnames according to RFC 952 and RFC 1123.
-	rxHostname = regexp.MustCompile(`^(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
-	// rxFQDN validates Fully Qualified Domain Names (FQDNs).
-	rxFQDN = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
-	// rxEmail validates email addresses according to the W3C HTML5 specification.
-	rxEmail = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
-	// rxBIC validates Business Identifier Codes (ISO 9362).
-	rxBIC = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9](?:[A-Z0-9]{3})?$`)
-	// rxBCP47 validates language tags strictly following RFC 5646.
-	rxBCP47 = regexp.MustCompile(`(?i)^(?:(?:[a-z]{2,3}(?:-[a-z]{3}){0,3})|[a-z]{4}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*(?:-[0-9a-wy-z](?:-[a-z0-9]{2,8})+)*(?:-x(?:-[a-z0-9]{1,8})+)?$`)
+	rxURN       = regexp.MustCompile(`^(?i)urn:[a-z0-9][a-z0-9-]{0,31}:[a-z0-9()+,\-.:=@;$_!*'%/?#]+$`)
+	rxHostname  = regexp.MustCompile(`^(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
+	rxFQDN      = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
+	rxEmail     = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+	rxBIC       = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9](?:[A-Z0-9]{3})?$`)
+	rxBCP47     = regexp.MustCompile(`(?i)^(?:(?:[a-z]{2,3}(?:-[a-z]{3}){0,3})|[a-z]{4}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*(?:-[0-9a-wy-z](?:-[a-z0-9]{2,8})+)*(?:-x(?:-[a-z0-9]{1,8})+)?$`)
 )
 
 // CIDR checks if the string is a valid Classless Inter-Domain Routing (CIDR)
@@ -410,7 +402,8 @@ func Country(s string) bool {
 		ascii.IsDigit(rune(s[1])) && ascii.IsDigit(rune(s[2]))
 }
 
-// Currency checks if the string is a valid ISO 4217 currency code (e.g., "USD").
+// Currency checks if the string is a valid ISO 4217 currency code (e.g.,
+// "EUR", "USD").
 func Currency(s string) bool {
 	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1])) &&
