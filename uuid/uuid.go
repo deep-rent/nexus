@@ -42,6 +42,7 @@ package uuid
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -85,7 +86,7 @@ func (u UUIDv7) MarshalJSON() ([]byte, error) {
 func (u *UUIDv7) UnmarshalJSON(b []byte) error {
 	// Remove quotes from the JSON string
 	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
-		return fmt.Errorf("uuid: invalid json string")
+		return errors.New("uuid: invalid json string")
 	}
 
 	parsed, err := Parse(string(b[1 : len(b)-1]))
@@ -179,17 +180,17 @@ func Parse(s string) (UUIDv7, error) {
 		return u, fmt.Errorf("uuid: invalid length (%d)", len(s))
 	}
 	if s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
-		return u, fmt.Errorf("uuid: invalid format")
+		return u, errors.New("uuid: invalid format")
 	}
 	h := s[0:8] + s[9:13] + s[14:18] + s[19:23] + s[24:]
 	if _, err := hex.Decode(u[:], []byte(h)); err != nil {
 		return u, fmt.Errorf("uuid: invalid characters: %w", err)
 	}
 	if (u[6] & 0xf0) != 0x70 {
-		return UUIDv7{}, fmt.Errorf("uuid: invalid version: expected v7")
+		return UUIDv7{}, errors.New("uuid: invalid version: expected v7")
 	}
 	if (u[8] & 0xc0) != 0x80 {
-		return UUIDv7{}, fmt.Errorf("uuid: invalid variant: expected RFC 4122")
+		return UUIDv7{}, errors.New("uuid: invalid variant: expected RFC 4122")
 	}
 	return u, nil
 }
@@ -206,10 +207,10 @@ func ParseBytes(b []byte) (UUIDv7, error) {
 	}
 	copy(u[:], b)
 	if (u[6] & 0xf0) != 0x70 {
-		return UUIDv7{}, fmt.Errorf("uuid: invalid version: expected v7")
+		return UUIDv7{}, errors.New("uuid: invalid version: expected v7")
 	}
 	if (u[8] & 0xc0) != 0x80 {
-		return UUIDv7{}, fmt.Errorf("uuid: invalid variant: expected RFC 4122")
+		return UUIDv7{}, errors.New("uuid: invalid variant: expected RFC 4122")
 	}
 	return u, nil
 }
