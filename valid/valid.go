@@ -19,7 +19,6 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
-	"strconv"
 
 	"golang.org/x/mod/semver"
 
@@ -62,10 +61,9 @@ func Hostname(s string) bool {
 	return len(s) != 0 && len(s) <= 253 && rxHostname.MatchString(s)
 }
 
-// Port checks if the string represents a valid network port number.
-func Port(s string) bool {
-	p, err := strconv.Atoi(s)
-	return err == nil && p > 0 && p <= 65535
+// Port checks if the number represents a valid network port number.
+func Port(n int) bool {
+	return n > 0 && n <= 65535
 }
 
 // IP checks if the string is a valid IP address.
