@@ -284,6 +284,14 @@ func (v *Validator) NotEmpty(field, val string) {
 	}
 }
 
+// NotBlank asserts that a string is not blank (contains at least one
+// non-whitespace character).
+func (v *Validator) NotBlank(field, val string) {
+	if strings.TrimSpace(val) == "" {
+		v.Fail(field, "must not be blank")
+	}
+}
+
 // Prefix asserts that a string starts with a specific prefix.
 func (v *Validator) Prefix(field, val, prefix string) {
 	if !strings.HasPrefix(val, prefix) {
