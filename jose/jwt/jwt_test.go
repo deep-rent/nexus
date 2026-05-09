@@ -15,6 +15,7 @@
 package jwt_test
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -433,7 +434,16 @@ func TestVerify_Errors(t *testing.T) {
 	t.Run("invalid signature", func(t *testing.T) {
 		t.Parallel()
 		tampered := append([]byte{}, raw...)
-		tampered[len(tampered)-2] = tampered[len(tampered)-2] + 1
+		dot := bytes.LastIndexByte(tampered, '.')
+		if dot == -1 || dot+1 >= len(tampered) {
+			t.Fatal("invalid token format")
+		}
+		idx := dot + 1
+		if tampered[idx] == 'A' {
+			tampered[idx] = 'B'
+		} else {
+			tampered[idx] = 'A'
+		}
 
 		set := jwk.Singleton(k1)
 		if _, err := jwt.Verify[*testClaims](set, tampered); !errors.Is(
