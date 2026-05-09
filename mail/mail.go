@@ -59,6 +59,7 @@ import (
 const DefaultBaseURL = "https://api.sendgrid.com/v3"
 
 var (
+	ErrNilMessage = errors.New("mail: message cannot be nil")
 	// ErrMissingRecipients is returned when an email has no recipients.
 	ErrMissingRecipients = errors.New("mail: at least one recipient is required")
 	// ErrMissingTemplateID is returned when an email has no template ID.
@@ -192,7 +193,7 @@ func (m *Message) WithReplyTo(addr Email) *Message {
 // validate checks if the message has the minimum required fields for sending.
 func (m *Message) validate() error {
 	if m == nil {
-		panic("mail: message cannot be nil")
+		return ErrNilMessage
 	}
 	if m.From.Addr == "" {
 		return ErrMissingFrom
