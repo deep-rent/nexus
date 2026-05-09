@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Errors represents a collection of validation errors mapped by their
@@ -217,6 +218,13 @@ func (v *Validator) MaxLen(field, val string, max int) {
 	}
 }
 
+// Len asserts that the length of a string is exactly the given length.
+func (v *Validator) Len(field, val string, n int) {
+	if len(val) != n {
+		v.Fail(field, fmt.Sprintf("length must be exactly %d", n))
+	}
+}
+
 // MinSize asserts that the size of a slice or map is at least min.
 func (v *Validator) MinSize(field string, size, min int) {
 	if size < min {
@@ -228,6 +236,13 @@ func (v *Validator) MinSize(field string, size, min int) {
 func (v *Validator) MaxSize(field string, size, max int) {
 	if size > max {
 		v.Fail(field, fmt.Sprintf("size must be at most %d", max))
+	}
+}
+
+// Size asserts that the size of a slice or map is exactly the given size.
+func (v *Validator) Size(field string, size, n int) {
+	if size != n {
+		v.Fail(field, fmt.Sprintf("size must be exactly %d", n))
 	}
 }
 
@@ -269,10 +284,45 @@ func (v *Validator) NotEmpty(field, val string) {
 	}
 }
 
+// Prefix asserts that a string starts with a specific prefix.
+func (v *Validator) Prefix(field, val, prefix string) {
+	if !strings.HasPrefix(val, prefix) {
+		v.Fail(field, fmt.Sprintf("must start with %q", prefix))
+	}
+}
+
+// Suffix asserts that a string ends with a specific suffix.
+func (v *Validator) Suffix(field, val, suffix string) {
+	if !strings.HasSuffix(val, suffix) {
+		v.Fail(field, fmt.Sprintf("must end with %q", suffix))
+	}
+}
+
+// Contains asserts that a string contains a specific substring.
+func (v *Validator) Contains(field, val, sub string) {
+	if !strings.Contains(val, sub) {
+		v.Fail(field, fmt.Sprintf("must contain %q", sub))
+	}
+}
+
 // Match asserts that a string matches a regular expression.
 func (v *Validator) Match(field, val string, rx *regexp.Regexp) {
 	if !rx.MatchString(val) {
 		v.Fail(field, fmt.Sprintf("must match the pattern %s", rx.String()))
+	}
+}
+
+// Before asserts that a time is before a specific threshold.
+func (v *Validator) Before(field string, val, max time.Time) {
+	if !val.Before(max) {
+		v.Fail(field, fmt.Sprintf("must be before %v", max.Format(time.RFC3339)))
+	}
+}
+
+// After asserts that a time is after a specific threshold.
+func (v *Validator) After(field string, val, min time.Time) {
+	if !val.After(min) {
+		v.Fail(field, fmt.Sprintf("must be after %v", min.Format(time.RFC3339)))
 	}
 }
 
