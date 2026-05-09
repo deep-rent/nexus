@@ -51,24 +51,24 @@ var (
 
 // Address represents an email address and an optional display name.
 type Address struct {
+	// Email is the actual email address (e.g., "alice@example.com").
+	Email string `json:"email"`
 	// Name is an optional display name (e.g., "Alice Smith").
-	Name string
-	// Address is the actual email address (e.g., "alice@example.com").
-	Address string
+	Name string `json:"name,omitzero"`
 }
 
 // NewAddress creates a new Address with an optional display name.
 func NewAddress(addr, name string) Address {
-	return Address{Address: addr, Name: name}
+	return Address{Email: addr, Name: name}
 }
 
 // String returns the string representation of the address (e.g.,
 // "Name <email@example.com>").
 func (a Address) String() string {
 	if a.Name == "" {
-		return a.Address
+		return a.Email
 	}
-	return fmt.Sprintf("%s <%s>", a.Name, a.Address)
+	return fmt.Sprintf("%s <%s>", a.Name, a.Email)
 }
 
 // Recipient represents a single intended recipient or group of receivers,
@@ -155,9 +155,9 @@ func NewEmail(
 	recipients ...*Recipient,
 ) *Email {
 	return &Email{
-		From:             from,
-		TemplateID:       templateID,
-		Recipients:       recipients,
+		From:       from,
+		TemplateID: templateID,
+		Recipients: recipients,
 	}
 }
 

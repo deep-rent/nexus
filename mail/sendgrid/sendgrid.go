@@ -176,22 +176,17 @@ func New(apiKey string, opts ...Option) *Sender {
 	return c
 }
 
-type address struct {
-	Email string `json:"email"`
-	Name  string `json:"name,omitzero"`
-}
-
 type personalization struct {
-	To           []address      `json:"to"`
-	CC           []address      `json:"cc,omitzero"`
-	BCC          []address      `json:"bcc,omitzero"`
+	To           []mail.Address `json:"to"`
+	CC           []mail.Address `json:"cc,omitzero"`
+	BCC          []mail.Address `json:"bcc,omitzero"`
 	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
 }
 
 type payload struct {
 	Personalizations []personalization `json:"personalizations"`
-	From             address           `json:"from"`
-	ReplyTo          *address          `json:"reply_to,omitzero"`
+	From             mail.Address      `json:"from"`
+	ReplyTo          *mail.Address     `json:"reply_to,omitzero"`
 	TemplateID       string            `json:"template_id"`
 }
 
@@ -268,44 +263,22 @@ func (c *Sender) payload(email *mail.Email) payload {
 	pers := make([]personalization, 0, len(email.Recipients))
 	for _, r := range email.Recipients {
 		pers = append(pers, personalization{
-			To:           addresses(r.To),
-			CC:           addresses(r.CC),
-			BCC:          addresses(r.BCC),
+			To:           r.To,
+			CC:           r.CC,
+			BCC:          r.BCC,
 			TemplateData: r.TemplateData,
 		})
 	}
 
 	p := payload{
 		Personalizations: pers,
-		From: address{
-			Email: email.From.Address,
-			Name:  email.From.Name,
-		},
-		TemplateID: email.TemplateID,
+		From:             email.From,
+		TemplateID:       email.TemplateID,
 	}
 
 	if email.ReplyTo != nil {
-		p.ReplyTo = &address{
-			Email: email.ReplyTo.Address,
-			Name:  email.ReplyTo.Name,
-		}
+		p.ReplyTo = email.ReplyTo
 	}
 
 	return p
-}
-
-// addresses converts domain mail addresses into SendGrid-specific address
-// structs.
-func addresses(addrs []mail.Address) []address {
-	if len(addrs) == 0 {
-		return nil
-	}
-	out := make([]address, len(addrs))
-	for i, addr := range addrs {
-		out[i] = address{
-			Email: addr.Address,
-			Name:  addr.Name,
-		}
-	}
-	return out
 }
