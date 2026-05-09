@@ -290,27 +290,27 @@ func ISSN(s string) bool {
 
 // ISBN10 checks if the string is a valid ISBN-10.
 func ISBN10(s string) bool {
-	var count int
+	var n int
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '-' {
 			continue
 		}
-		if count == 9 && c == 'X' {
-			count++
+		if n == 9 && c == 'X' {
+			n++
 			continue
 		}
 		if !ascii.IsDigit(rune(c)) {
 			return false
 		}
-		count++
+		n++
 	}
-	return count == 10
+	return n == 10
 }
 
 // ISBN13 checks if the string is a valid ISBN-13.
 func ISBN13(s string) bool {
-	var count int
+	var n int
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '-' {
@@ -319,9 +319,9 @@ func ISBN13(s string) bool {
 		if !ascii.IsDigit(rune(c)) {
 			return false
 		}
-		count++
+		n++
 	}
-	return count == 13
+	return n == 13
 }
 
 // ISBN checks if the string is a valid ISBN (10 or 13).
@@ -411,6 +411,45 @@ func BIC(s string) bool {
 	return rxBIC.MatchString(s)
 }
 
+// IBAN checks if the string is a valid International Bank Account Number.
+func IBAN(s string) bool {
+	var b [34]byte
+	var n int
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == ' ' {
+			continue
+		}
+		if n >= 34 || !ascii.IsAlphaNum(rune(c)) {
+			return false
+		}
+		b[n] = c
+		n++
+	}
+
+	if n < 15 {
+		return false
+	}
+
+	if !ascii.IsAlpha(rune(b[0])) ||
+		!ascii.IsAlpha(rune(b[1])) ||
+		!ascii.IsDigit(rune(b[2])) ||
+		!ascii.IsDigit(rune(b[3])) {
+		return false
+	}
+
+	var rem int
+	// Modulo 97 check: move first 4 characters to the end.
+	for i := 4; i < n; i++ {
+		rem = mod97(rem, b[i])
+	}
+	for i := range 4 {
+		rem = mod97(rem, b[i])
+	}
+
+	return rem == 1
+}
+
 func isHash(s string, size int) bool {
 	if len(s) != size {
 		return false
@@ -421,4 +460,12 @@ func isHash(s string, size int) bool {
 		}
 	}
 	return true
+}
+
+func mod97(rem int, c byte) int {
+	if ascii.IsDigit(rune(c)) {
+		return (rem*10 + int(c-'0')) % 97
+	}
+	k := int(ascii.ToUpper(rune(c)) - 'A' + 10)
+	return (100*rem + k) % 97
 }
