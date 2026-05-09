@@ -20,6 +20,8 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 var (
@@ -28,46 +30,10 @@ var (
 	rxHostname = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
 	rxFQDN     = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
 	rxEmail    = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	rxSemver   = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-zA-Z0-9-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][a-zA-Z0-9-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`)
+	rxSemVer   = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-zA-Z0-9-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][a-zA-Z0-9-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`)
 	rxBIC      = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9]([A-Z0-9]{3})?$`)
 	rxLang     = regexp.MustCompile(`^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*$`)
 )
-
-func isAlpha(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-func isDigit(c byte) bool {
-	return c >= '0' && c <= '9'
-}
-
-func isAlphaNum(c byte) bool {
-	return isAlpha(c) || isDigit(c)
-}
-
-func isUpper(c byte) bool {
-	return c >= 'A' && c <= 'Z'
-}
-
-func isLower(c byte) bool {
-	return c >= 'a' && c <= 'z'
-}
-
-func isHex(c byte) bool {
-	return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-}
-
-func isHexHash(s string, length int) bool {
-	if len(s) != length {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if !isHex(s[i]) {
-			return false
-		}
-	}
-	return true
-}
 
 // CIDR checks if the string is a valid Classless Inter-Domain Routing (CIDR)
 // block.
@@ -146,7 +112,7 @@ func Alpha(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if !isAlpha(s[i]) {
+		if !ascii.IsAlpha(rune(s[i])) {
 			return false
 		}
 	}
@@ -159,7 +125,7 @@ func AlphaNum(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if !isAlphaNum(s[i]) {
+		if !ascii.IsAlphaNum(rune(s[i])) {
 			return false
 		}
 	}
@@ -186,7 +152,7 @@ func Slug(s string) bool {
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if isLower(c) || isDigit(c) {
+		if ascii.IsLower(rune(c)) || ascii.IsDigit(rune(c)) {
 			continue
 		}
 		if c == '-' {
@@ -206,7 +172,7 @@ func Upper(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if !isUpper(s[i]) {
+		if !ascii.IsUpper(rune(s[i])) {
 			return false
 		}
 	}
@@ -219,7 +185,7 @@ func Lower(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if !isLower(s[i]) {
+		if !ascii.IsLower(rune(s[i])) {
 			return false
 		}
 	}
@@ -240,9 +206,9 @@ func Lang(s string) bool {
 // algorithm.
 func CreditCard(s string) bool {
 	var (
-		sum   int
-		count int
-		alt   bool
+		sum int
+		cnt int
+		alt bool
 	)
 	for i := len(s) - 1; i >= 0; i-- {
 		c := s[i]
@@ -260,10 +226,10 @@ func CreditCard(s string) bool {
 			}
 		}
 		sum += n
-		count++
+		cnt++
 		alt = !alt
 	}
-	return count >= 13 && count <= 19 && sum%10 == 0
+	return cnt >= 13 && cnt <= 19 && sum%10 == 0
 }
 
 // Email checks if the string is a valid email address.
@@ -280,7 +246,7 @@ func Hex(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if !isHex(s[i]) {
+		if !ascii.IsHex(rune(s[i])) {
 			return false
 		}
 	}
@@ -299,7 +265,7 @@ func HexColor(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if !isHex(s[i]) {
+		if !ascii.IsHex(rune(s[i])) {
 			return false
 		}
 	}
@@ -311,10 +277,15 @@ func ISSN(s string) bool {
 	if len(s) != 9 {
 		return false
 	}
-	return isDigit(s[0]) && isDigit(s[1]) && isDigit(s[2]) && isDigit(s[3]) &&
+	return ascii.IsDigit(rune(s[0])) &&
+		ascii.IsDigit(rune(s[1])) &&
+		ascii.IsDigit(rune(s[2])) &&
+		ascii.IsDigit(rune(s[3])) &&
 		s[4] == '-' &&
-		isDigit(s[5]) && isDigit(s[6]) && isDigit(s[7]) &&
-		(isDigit(s[8]) || s[8] == 'X')
+		ascii.IsDigit(rune(s[5])) &&
+		ascii.IsDigit(rune(s[6])) &&
+		ascii.IsDigit(rune(s[7])) &&
+		(ascii.IsDigit(rune(s[8])) || s[8] == 'X')
 }
 
 // ISBN10 checks if the string is a valid ISBN-10.
@@ -329,7 +300,7 @@ func ISBN10(s string) bool {
 			count++
 			continue
 		}
-		if !isDigit(c) {
+		if !ascii.IsDigit(rune(c)) {
 			return false
 		}
 		count++
@@ -345,7 +316,7 @@ func ISBN13(s string) bool {
 		if c == '-' {
 			continue
 		}
-		if !isDigit(c) {
+		if !ascii.IsDigit(rune(c)) {
 			return false
 		}
 		count++
@@ -361,24 +332,30 @@ func ISBN(s string) bool {
 // CountryAlpha2 checks if the string is a valid ISO 3166-1 alpha-2
 // country code.
 func CountryAlpha2(s string) bool {
-	return len(s) == 2 && isUpper(s[0]) && isUpper(s[1])
+	return len(s) == 2 && ascii.IsUpper(rune(s[0])) &&
+		ascii.IsUpper(rune(s[1]))
 }
 
 // CountryAlpha3 checks if the string is a valid ISO 3166-1 alpha-3
 // country code.
 func CountryAlpha3(s string) bool {
-	return len(s) == 3 && isUpper(s[0]) && isUpper(s[1]) && isUpper(s[2])
+	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
+		ascii.IsUpper(rune(s[1])) &&
+		ascii.IsUpper(rune(s[2]))
 }
 
 // Country checks if the string is a valid ISO 3166-1 numeric
 // country code.
 func Country(s string) bool {
-	return len(s) == 3 && isDigit(s[0]) && isDigit(s[1]) && isDigit(s[2])
+	return len(s) == 3 && ascii.IsDigit(rune(s[0])) &&
+		ascii.IsDigit(rune(s[1])) && ascii.IsDigit(rune(s[2]))
 }
 
 // Currency checks if the string is a valid ISO 4217 currency code.
 func Currency(s string) bool {
-	return len(s) == 3 && isUpper(s[0]) && isUpper(s[1]) && isUpper(s[2])
+	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
+		ascii.IsUpper(rune(s[1])) &&
+		ascii.IsUpper(rune(s[2]))
 }
 
 // Lat checks if the number is a valid latitude coordinate (-90 to 90).
@@ -393,27 +370,27 @@ func Lon(f float32) bool {
 
 // MD5 checks if the string is a valid MD5 hash.
 func MD5(s string) bool {
-	return isHexHash(s, 32)
+	return isHash(s, 32)
 }
 
 // SHA256 checks if the string is a valid SHA256 hash.
 func SHA256(s string) bool {
-	return isHexHash(s, 64)
+	return isHash(s, 64)
 }
 
 // SHA384 checks if the string is a valid SHA384 hash.
 func SHA384(s string) bool {
-	return isHexHash(s, 96)
+	return isHash(s, 96)
 }
 
 // SHA512 checks if the string is a valid SHA512 hash.
 func SHA512(s string) bool {
-	return isHexHash(s, 128)
+	return isHash(s, 128)
 }
 
 // SemVer checks if the string is a valid Semantic Versioning 2.0.0 string.
 func SemVer(s string) bool {
-	return rxSemver.MatchString(s)
+	return rxSemVer.MatchString(s)
 }
 
 // Phone checks if the string is a valid E.164 formatted phone number.
@@ -422,7 +399,7 @@ func Phone(s string) bool {
 		return false
 	}
 	for i := 2; i < len(s); i++ {
-		if !isDigit(s[i]) {
+		if !ascii.IsDigit(rune(s[i])) {
 			return false
 		}
 	}
@@ -432,4 +409,16 @@ func Phone(s string) bool {
 // BIC checks if the string is a valid Business Identifier Code (ISO 9362).
 func BIC(s string) bool {
 	return rxBIC.MatchString(s)
+}
+
+func isHash(s string, size int) bool {
+	if len(s) != size {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !ascii.IsHex(rune(s[i])) {
+			return false
+		}
+	}
+	return true
 }
