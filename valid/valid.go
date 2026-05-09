@@ -14,6 +14,41 @@
 
 // Package valid provides utility functions for validating common formats and
 // data types.
+//
+// The valid package offers a comprehensive suite of validation tools designed
+// to simplify data integrity checks in Go applications. It includes standalone
+// predicate functions for format verification and a stateful [Validator] for
+// aggregating errors across complex, nested structures.
+//
+// # Usage
+//
+// You can use standalone functions for simple checks or the [Validator] type
+// for struct validation.
+//
+// Standalone Validation:
+//
+// Direct check of a single value using predicate functions.
+//
+// Example:
+//
+//	isValid := valid.Email("user@example.com")
+//
+// Struct Validation:
+//
+// Implementing the [Validatable] interface to perform complex checks.
+//
+// Example:
+//
+//	type User struct {
+//		Email string
+//		Age   int
+//	}
+//
+//	func (u *User) Validate(v *valid.Validator) error {
+//		v.Email("email", u.Email)
+//		v.MinInt("age", u.Age, 18)
+//		return v.Error()
+//	}
 package valid
 
 import (
