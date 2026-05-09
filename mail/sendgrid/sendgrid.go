@@ -180,7 +180,6 @@ func New(apiKey string, opts ...Option) *Sender {
 type personalization struct {
 	To           []mail.Address `json:"to"`
 	CC           []mail.Address `json:"cc,omitzero"`
-	BCC          []mail.Address `json:"bcc,omitzero"`
 	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
 }
 
@@ -263,7 +262,6 @@ func (c *Sender) payload(email *mail.Email) payload {
 		pers = append(pers, personalization{
 			To:           r.To,
 			CC:           r.CC,
-			BCC:          r.BCC,
 			TemplateData: r.TemplateData,
 		})
 	}

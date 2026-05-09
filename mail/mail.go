@@ -28,7 +28,7 @@
 //		mail.NewAddress("no-reply@example.com", "My App"),
 //		"template-id-123",
 //		mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
-//			WithData("name", "Alice"),
+//			AddData("name", "Alice"),
 //	)
 //
 //	err := sender.Send(ctx, msg)
@@ -59,7 +59,10 @@ type Address struct {
 
 // NewAddress creates a new Address with an optional display name.
 func NewAddress(addr, name string) Address {
-	return Address{Email: addr, Name: name}
+	return Address{
+		Email: addr,
+		Name:  name,
+	}
 }
 
 // String returns the string representation of the address (e.g.,
@@ -78,8 +81,6 @@ type Recipient struct {
 	To []Address
 	// CC contains the carbon copy recipients.
 	CC []Address
-	// BCC contains the blind carbon copy recipients.
-	BCC []Address
 	// TemplateData holds the key-value pairs used to populate the template
 	// variables for this specific recipient group.
 	TemplateData map[string]any
@@ -105,14 +106,8 @@ func (r *Recipient) AddCC(addrs ...Address) *Recipient {
 	return r
 }
 
-// AddBCC appends one or more recipients to the "BCC" list.
-func (r *Recipient) AddBCC(addrs ...Address) *Recipient {
-	r.BCC = append(r.BCC, addrs...)
-	return r
-}
-
-// WithData adds or updates a key-value pair in the template data map.
-func (r *Recipient) WithData(key string, value any) *Recipient {
+// AddData adds or updates a key-value pair in the template data map.
+func (r *Recipient) AddData(key string, value any) *Recipient {
 	if r.TemplateData == nil {
 		r.TemplateData = make(map[string]any)
 	}
