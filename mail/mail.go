@@ -14,17 +14,17 @@
 
 // Package mail provides abstractions for sending transactional emails.
 //
-// It defines a generic payload model ([Email]) and a common [Sender]
-// interface that can be implemented by various email service providers
-// (e.g., SendGrid, Mailgun, SMTP). This decouples the application's
-// business logic from the specific delivery mechanism.
+// It defines a generic payload model ([Message]) and a common [Sender]
+// interface for email delivery. This decouples the application's
+// business logic from the underlying mechanism. By default, this package
+// provides a production-ready SendGrid implementation initialized via [New].
 //
 // # Usage
 //
 // Typically, you construct an Email using the fluent API and pass it
 // to a Sender:
 //
-//	msg := mail.NewEmail(
+//	msg := mail.NewMessage(
 //		mail.NewAddress("no-reply@example.com", "My App"),
 //		"template-id-123",
 //		mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
@@ -59,6 +59,8 @@ var (
 	ErrNoRecipients = errors.New("mail: at least one recipient is required")
 	// ErrNoTemplateID is returned when an email has no template ID.
 	ErrNoTemplateID = errors.New("mail: template ID is required")
+	// ErrNoFromAddress is returned when an email has no sender address.
+	ErrNoFromAddress = errors.New("mail: from address is required")
 )
 
 // APIError represents an error response from the SendGrid API.
@@ -79,38 +81,38 @@ func (e *APIError) Error() string {
 
 var _ error = (*APIError)(nil)
 
-// Address represents an email address and an optional display name.
-type Address struct {
-	// Email is the actual email address (e.g., "alice@example.com").
-	Email string `json:"email"`
+// Email represents an email address and an optional display name.
+type Email struct {
+	// Addr is the actual email address (e.g., "alice@example.com").
+	Addr string `json:"email"`
 	// Name is an optional display name (e.g., "Alice Smith").
 	Name string `json:"name,omitzero"`
 }
 
 // NewAddress creates a new Address with an optional display name.
-func NewAddress(addr, name string) Address {
-	return Address{
-		Email: addr,
-		Name:  name,
+func NewAddress(addr, name string) Email {
+	return Email{
+		Addr: addr,
+		Name: name,
 	}
 }
 
 // String returns the string representation of the address (e.g.,
 // "Name <email@example.com>").
-func (a Address) String() string {
-	if a.Name == "" {
-		return a.Email
+func (e Email) String() string {
+	if e.Name == "" {
+		return e.Addr
 	}
-	return fmt.Sprintf("%s <%s>", a.Name, a.Email)
+	return fmt.Sprintf("%s <%s>", e.Name, e.Addr)
 }
 
 // Recipient represents a single intended recipient or group of receivers,
 // along with the specific template data to be used for them.
 type Recipient struct {
 	// To contains the primary recipients.
-	To []Address `json:"to"`
+	To []Email `json:"to"`
 	// CC contains the carbon copy recipients.
-	CC []Address `json:"cc,omitzero"`
+	CC []Email `json:"cc,omitzero"`
 	// TemplateData holds the key-value pairs used to populate the template
 	// variables for this specific recipient group.
 	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
@@ -118,20 +120,20 @@ type Recipient struct {
 
 // NewRecipient creates a new Recipient group with the required primary
 // destinations.
-func NewRecipient(to ...Address) *Recipient {
+func NewRecipient(to ...Email) *Recipient {
 	return &Recipient{
 		To: to,
 	}
 }
 
 // AddTo appends one or more recipients to the "To" list.
-func (r *Recipient) AddTo(addrs ...Address) *Recipient {
+func (r *Recipient) AddTo(addrs ...Email) *Recipient {
 	r.To = append(r.To, addrs...)
 	return r
 }
 
 // AddCC appends one or more recipients to the "CC" list.
-func (r *Recipient) AddCC(addrs ...Address) *Recipient {
+func (r *Recipient) AddCC(addrs ...Email) *Recipient {
 	r.CC = append(r.CC, addrs...)
 	return r
 }
@@ -159,27 +161,27 @@ func (r *Recipient) Validate() error {
 	return nil
 }
 
-// Email represents a transactional email payload designed for dynamic
+// Message represents a transactional email payload designed for dynamic
 // templates.
-type Email struct {
+type Message struct {
 	// From is the sender's address.
-	From Address `json:"from"`
+	From Email `json:"from"`
 	// Recipients contains groups of receivers and their specific template data.
 	Recipients []*Recipient `json:"personalizations"`
 	// ReplyTo is an optional address where replies should be directed.
-	ReplyTo *Address `json:"reply_to,omitzero"`
+	ReplyTo *Email `json:"reply_to,omitzero"`
 	// TemplateID is the provider-specific identifier of the dynamic template to
 	// use.
 	TemplateID string `json:"template_id"`
 }
 
-// NewEmail creates a new Email with the required fields.
-func NewEmail(
-	from Address,
+// NewMessage creates a new [Message] with the required fields.
+func NewMessage(
+	from Email,
 	templateID string,
 	recipients ...*Recipient,
-) *Email {
-	return &Email{
+) *Message {
+	return &Message{
 		From:       from,
 		TemplateID: templateID,
 		Recipients: recipients,
@@ -187,31 +189,34 @@ func NewEmail(
 }
 
 // AddRecipient appends a Recipient group to the email.
-func (e *Email) AddRecipient(r *Recipient) *Email {
-	e.Recipients = append(e.Recipients, r)
-	return e
+func (m *Message) AddRecipient(r *Recipient) *Message {
+	m.Recipients = append(m.Recipients, r)
+	return m
 }
 
 // WithReplyTo sets an optional Reply-To address.
-func (e *Email) WithReplyTo(addr Address) *Email {
-	e.ReplyTo = &addr
-	return e
+func (m *Message) WithReplyTo(addr Email) *Message {
+	m.ReplyTo = &addr
+	return m
 }
 
 // Validate checks if the email has the minimum required fields for sending.
-func (e *Email) Validate() error {
-	if e == nil {
+func (m *Message) Validate() error {
+	if m == nil {
 		return ErrNilEmail
 	}
-	if len(e.Recipients) == 0 {
+	if m.From.Addr == "" {
+		return ErrNoFromAddress
+	}
+	if len(m.Recipients) == 0 {
 		return ErrNoRecipients
 	}
-	for _, r := range e.Recipients {
+	for _, r := range m.Recipients {
 		if err := r.Validate(); err != nil {
 			return err
 		}
 	}
-	if e.TemplateID == "" {
+	if m.TemplateID == "" {
 		return ErrNoTemplateID
 	}
 	return nil
@@ -226,7 +231,7 @@ type Sender interface {
 	// Send dispatches the provided email payload to the underlying provider.
 	// It returns an error if the email is invalid, if the network request
 	// fails, or if the provider rejects the payload.
-	Send(ctx context.Context, email *Email) error
+	Send(ctx context.Context, msg *Message) error
 }
 
 // sender is a SendGrid email sender that implements [Sender].
@@ -322,7 +327,8 @@ func New(apiKey string, opts ...Option) Sender {
 			DialContext:           d.DialContext,
 			TLSHandshakeTimeout:   c.timeout / 3,
 			ResponseHeaderTimeout: c.timeout * 9 / 10,
-			DisableKeepAlives:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
 		}
 		t = retry.NewTransport(t, c.retry...)
 		c.client = &http.Client{
@@ -336,16 +342,16 @@ func New(apiKey string, opts ...Option) Sender {
 
 // Send executes the HTTP request to the SendGrid API.
 //
-// It maps the domain [Email] payload into SendGrid's expected JSON
+// It maps the domain [Message] payload into SendGrid's expected JSON
 // structure and dispatches the request. It respects the provided context
 // for timeouts and cancellation. If the API responds with an HTTP status
 // code >= 400, it returns an [*APIError] containing the raw response body.
-func (s *sender) Send(ctx context.Context, email *Email) error {
-	if err := email.Validate(); err != nil {
+func (s *sender) Send(ctx context.Context, msg *Message) error {
+	if err := msg.Validate(); err != nil {
 		return err
 	}
 
-	body, err := json.Marshal(email)
+	body, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("sendgrid: failed to marshal payload: %w", err)
 	}
@@ -365,7 +371,8 @@ func (s *sender) Send(ctx context.Context, email *Email) error {
 	req.Header.Set("Content-Type", "application/json")
 
 	s.logger.DebugContext(ctx, "Sending email via SendGrid",
-		slog.String("template_id", email.TemplateID),
+		slog.String("template_id", msg.TemplateID),
+		slog.Int("recipients", len(msg.Recipients)),
 		slog.String("url", url),
 	)
 
@@ -374,6 +381,8 @@ func (s *sender) Send(ctx context.Context, email *Email) error {
 		return fmt.Errorf("sendgrid: request failed: %w", err)
 	}
 	defer func() {
+		// Drain body to ensure connection reuse:
+		_, _ = io.Copy(io.Discard, res.Body)
 		err := res.Body.Close()
 		if err != nil {
 			s.logger.WarnContext(
@@ -390,7 +399,7 @@ func (s *sender) Send(ctx context.Context, email *Email) error {
 		return err
 	}
 
-	s.logger.DebugContext(ctx, "Email successfully dispatched to SendGrid",
+	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid",
 		slog.Int("status_code", res.StatusCode),
 	)
 
