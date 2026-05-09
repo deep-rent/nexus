@@ -428,10 +428,6 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	if code := res.StatusCode; code >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-		s.logger.ErrorContext(ctx, "SendGrid API returned an error",
-			slog.Int("status", code),
-			slog.String("body", string(body)),
-		)
 		return &APIError{
 			Status: code,
 			Body:   string(body),
