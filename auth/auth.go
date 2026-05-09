@@ -117,14 +117,14 @@ type RoleClaims interface {
 // JWT reserved claims and adds a custom "rol" slice for roles.
 type Claims struct {
 	jwt.Reserved
-	// Roles is a slice of strings representing the assigned permissions or
+	// Rol is a slice of strings representing the assigned permissions or
 	// groups.
-	Roles []string `json:"rol,omitempty"`
+	Rol []string `json:"rol,omitempty"`
 }
 
 // HasRole returns true if the specified role is present in the Roles slice.
 func (c *Claims) HasRole(name string) bool {
-	return slices.Contains(c.Roles, name)
+	return slices.Contains(c.Rol, name)
 }
 
 // Ensure Claims implements RoleClaims.
