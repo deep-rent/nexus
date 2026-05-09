@@ -210,6 +210,7 @@ func MAC(s string) bool {
 }
 
 // Lang checks if the string is a valid BCP 47 language tag.
+// Does not strictly follow RFC 5646.
 func Lang(s string) bool {
 	return rxBCP47.MatchString(s)
 }
