@@ -23,6 +23,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"golang.org/x/mod/semver"
 
@@ -31,7 +32,7 @@ import (
 
 var (
 	rxBase64    = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
-	rxBase64URL = regexp.MustCompile(`^(?:[A-Za-z0-9-_]{4})*(?:[A-Za-z0-9-_]{2}==|[A-Za-z0-9-_]{3}=|[A-Za-z0-9-_]{2,3})?$`)
+	rxBase64URL = regexp.MustCompile(`^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}==|[A-Za-z0-9_-]{3}=|[A-Za-z0-9_-]{1,3})?$`)
 	rxURN       = regexp.MustCompile(`^(?i)urn:[a-z0-9][a-z0-9-]{0,31}:[a-z0-9()+,\-.:=@;$_!*'%/?#]+$`)
 	rxHostname  = regexp.MustCompile(`^(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
 	rxFQDN      = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
@@ -242,8 +243,8 @@ func JSON(s string) bool {
 // MIME checks if the string is a valid Media Type (MIME type) according to
 // RFC 2045 and RFC 2046.
 func MIME(s string) bool {
-	_, _, err := mime.ParseMediaType(s)
-	return err == nil
+	t, _, err := mime.ParseMediaType(s)
+	return err == nil && strings.Contains(t, "/")
 }
 
 // CreditCard checks if the string is a valid credit card number using the Luhn
