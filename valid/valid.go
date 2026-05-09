@@ -67,6 +67,8 @@ import (
 
 	"golang.org/x/mod/semver"
 
+	"github.com/google/uuid"
+
 	"github.com/deep-rent/nexus/internal/ascii"
 )
 
@@ -449,6 +451,13 @@ func Currency(s string) bool {
 	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1])) &&
 		ascii.IsUpper(rune(s[2]))
+}
+
+// UUIDv7 checks if the string is a valid Version 7 UUID as defined in RFC 4122
+// and RFC 9562.
+func UUIDv7(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
 }
 
 // Lat checks if the number is a valid latitude coordinate (-90 to 90).

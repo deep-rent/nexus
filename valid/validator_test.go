@@ -665,6 +665,12 @@ func TestValidator_Methods(t *testing.T) {
 			want:  "must be a valid ISO 4217 currency code",
 		},
 		{
+			name:  "UUIDv7",
+			apply: func(v *valid.Validator) { v.UUIDv7("f", "bad") },
+			field: "f",
+			want:  "must be a valid UUIDv7",
+		},
+		{
 			name:  "Lat",
 			apply: func(v *valid.Validator) { v.Lat("f", 100) },
 			field: "f",

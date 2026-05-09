@@ -617,6 +617,13 @@ func (v *Validator) Currency(field, val string) {
 	}
 }
 
+// Currency ensures that the given string satisfies [UUIDv7].
+func (v *Validator) UUIDv7(field, val string) {
+	if !Currency(val) {
+		v.Fail(field, "must be a valid UUIDv7")
+	}
+}
+
 // Lat ensures that the given value satisfies [Lat].
 func (v *Validator) Lat(field string, val float32) {
 	if !Lat(val) {

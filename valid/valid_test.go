@@ -17,6 +17,7 @@ package valid_test
 import (
 	"testing"
 
+	"github.com/deep-rent/nexus/uuid"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -439,6 +440,15 @@ func TestCurrency(t *testing.T) {
 		{"invalid length", "US", false},
 	}
 	run(t, "Currency", valid.Currency, tests)
+}
+
+func TestUUIDv7(t *testing.T) {
+	t.Parallel()
+	tests := []test{
+		{"valid", uuid.New().String(), true},
+		{"invalid", "018e6-123", false},
+	}
+	run(t, "UUIDv7", valid.UUIDv7, tests)
 }
 
 func TestLat(t *testing.T) {
