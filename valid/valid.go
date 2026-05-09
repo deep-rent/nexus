@@ -235,7 +235,7 @@ func Lang(s string) bool {
 }
 
 // JSON checks if the string is a valid JSON document.
-// It leverages encoding/json/v2 to perform the check efficiently.
+// It performs the check efficiently.
 func JSON(s string) bool {
 	return jsontext.Value(s).IsValid()
 }
@@ -499,7 +499,7 @@ func IBAN(s string) bool {
 	for i := 4; i < n; i++ {
 		rem = mod97(rem, b[i])
 	}
-	for i := range 4 {
+	for i := 0; i < 4; i++ {
 		rem = mod97(rem, b[i])
 	}
 
