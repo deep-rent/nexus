@@ -23,14 +23,14 @@ import (
 	"time"
 )
 
-// Errors represents a collection of validation errors mapped by their
+// Error represents a collection of validation errors mapped by their
 // corresponding field paths in dot notation. It naturally serializes to JSON,
 // making it ideal for API error responses.
-type Errors map[string][]string
+type Error map[string][]string
 
 // Error implements the error interface, providing a consolidated string
 // representation of all validation failures.
-func (e Errors) Error() string {
+func (e Error) Error() string {
 	var sb strings.Builder
 	sb.WriteString("validation failed: ")
 	first := true
@@ -76,14 +76,14 @@ func Each(target any) error {
 // Validator orchestrates the validation of fields, builds dot-notation paths
 // for nested structures, and aggregates error messages.
 type Validator struct {
-	errs Errors
+	errs Error
 	path string
 }
 
 // New creates and returns a new empty [Validator].
 func New() *Validator {
 	return &Validator{
-		errs: make(Errors),
+		errs: make(Error),
 	}
 }
 
@@ -99,7 +99,7 @@ func (v *Validator) Error() error {
 // Fail records an explicit error message against the given field.
 func (v *Validator) Fail(field, msg string) {
 	if v.errs == nil {
-		v.errs = make(Errors)
+		v.errs = make(Error)
 	}
 	p := v.join(field)
 	v.errs[p] = append(v.errs[p], msg)

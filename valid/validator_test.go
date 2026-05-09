@@ -73,17 +73,17 @@ func TestErrors_Error(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give valid.Errors
+		give valid.Error
 		want string
 	}{
 		{
 			name: "single field single error",
-			give: valid.Errors{"name": {"must not be empty"}},
+			give: valid.Error{"name": {"must not be empty"}},
 			want: "validation failed: name: must not be empty",
 		},
 		{
 			name: "single field multiple errors",
-			give: valid.Errors{
+			give: valid.Error{
 				"age": {"must be at least 18", "must be an integer"},
 			},
 			want: "validation failed: age: must be at least 18, " +
@@ -102,7 +102,7 @@ func TestErrors_Error(t *testing.T) {
 
 	t.Run("multiple fields", func(t *testing.T) {
 		t.Parallel()
-		errs := valid.Errors{"a": {"1"}, "b": {"2"}}
+		errs := valid.Error{"a": {"1"}, "b": {"2"}}
 		got := errs.Error()
 		if !strings.HasPrefix(got, "validation failed: ") ||
 			!strings.Contains(got, "a: 1") ||
@@ -132,7 +132,7 @@ func TestTest(t *testing.T) {
 	tests := []struct {
 		name string
 		give valid.Validatable
-		want valid.Errors
+		want valid.Error
 	}{
 		{
 			name: "valid target",
@@ -142,7 +142,7 @@ func TestTest(t *testing.T) {
 		{
 			name: "invalid target",
 			give: &mockItem{val: ""},
-			want: valid.Errors{"val": {"must not be empty"}},
+			want: valid.Error{"val": {"must not be empty"}},
 		},
 		{
 			name: "nested valid target",
@@ -152,7 +152,7 @@ func TestTest(t *testing.T) {
 		{
 			name: "nested invalid target",
 			give: &mockParent{child: &mockItem{val: ""}},
-			want: valid.Errors{"child.val": {"must not be empty"}},
+			want: valid.Error{"child.val": {"must not be empty"}},
 		},
 		{
 			name: "nested nil target",
@@ -171,7 +171,7 @@ func TestTest(t *testing.T) {
 				}
 				return
 			}
-			got, ok := err.(valid.Errors)
+			got, ok := err.(valid.Error)
 			if !ok {
 				t.Fatalf("Test() returned %T; want valid.Errors", err)
 			}
@@ -191,7 +191,7 @@ func TestEach(t *testing.T) {
 	tests := []struct {
 		name string
 		give any
-		want valid.Errors
+		want valid.Error
 	}{
 		{
 			name: "valid slice of structs",
@@ -201,17 +201,17 @@ func TestEach(t *testing.T) {
 		{
 			name: "invalid slice of structs",
 			give: []mockItem{{val: "a"}, {val: ""}},
-			want: valid.Errors{"[1].val": {"must not be empty"}},
+			want: valid.Error{"[1].val": {"must not be empty"}},
 		},
 		{
 			name: "invalid slice of pointers",
 			give: []*mockItem{{val: ""}},
-			want: valid.Errors{"[0].val": {"must not be empty"}},
+			want: valid.Error{"[0].val": {"must not be empty"}},
 		},
 		{
 			name: "slice of any with nested types",
 			give: []any{nil, deepPtr, deepInterface},
-			want: valid.Errors{"[2].val": {"must not be empty"}},
+			want: valid.Error{"[2].val": {"must not be empty"}},
 		},
 		{
 			name: "non-slice input ignored",
@@ -230,7 +230,7 @@ func TestEach(t *testing.T) {
 				}
 				return
 			}
-			got, ok := err.(valid.Errors)
+			got, ok := err.(valid.Error)
 			if !ok {
 				t.Fatalf("Each() returned %T; want valid.Errors", err)
 			}
@@ -250,12 +250,12 @@ func TestValidator_NestedPaths(t *testing.T) {
 	}
 
 	err := valid.Test(p)
-	got, ok := err.(valid.Errors)
+	got, ok := err.(valid.Error)
 	if !ok {
 		t.Fatalf("Test() returned %T; want valid.Errors", err)
 	}
 
-	want := valid.Errors{
+	want := valid.Error{
 		"child.val":    {"must not be empty"},
 		"items[1].val": {"must not be empty"},
 	}
@@ -318,7 +318,7 @@ func TestValidator_Methods(t *testing.T) {
 				t.Fatal("expected validation error, got nil")
 			}
 
-			gotErrs, ok := err.(valid.Errors)
+			gotErrs, ok := err.(valid.Error)
 			if !ok {
 				t.Fatalf("expected valid.Errors, got %T", err)
 			}
@@ -355,12 +355,12 @@ func TestEach_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name string
 		give any
-		want valid.Errors
+		want valid.Error
 	}{
 		{
 			name: "deeply nested pointer",
 			give: []***mockDeepItem{deepPtr},
-			want: valid.Errors{"[0].val": {"must not be empty"}},
+			want: valid.Error{"[0].val": {"must not be empty"}},
 		},
 		{
 			name: "non-slice input",
@@ -385,7 +385,7 @@ func TestEach_EdgeCases(t *testing.T) {
 				return
 			}
 
-			got, ok := err.(valid.Errors)
+			got, ok := err.(valid.Error)
 			if !ok {
 				t.Fatalf("Each() returned %T; want valid.Errors", err)
 			}
@@ -428,7 +428,7 @@ func TestValidator_PathEscaping(t *testing.T) {
 			v := valid.New()
 			v.Fail(tt.field, "error")
 
-			gotErrs, ok := v.Error().(valid.Errors)
+			gotErrs, ok := v.Error().(valid.Error)
 			if !ok {
 				t.Fatalf("Error() returned %T; want valid.Errors", v.Error())
 			}
