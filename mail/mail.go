@@ -58,8 +58,12 @@ import (
 	"github.com/deep-rent/nexus/retry"
 )
 
-// DefaultBaseURL is the standard API endpoint for SendGrid v3.
-const DefaultBaseURL = "https://api.sendgrid.com/v3"
+const (
+	// DefaultBaseURL is the standard API endpoint for SendGrid v3.
+	DefaultBaseURL = "https://api.sendgrid.com/v3"
+	// DefaultTimeout is the default timeout for API requests.
+	DefaultTimeout = 10 * time.Second
+)
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
@@ -344,7 +348,7 @@ func NewSender(apiKey string, opts ...Option) Sender {
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		timeout: 10 * time.Second,
+		timeout: DefaultTimeout,
 		logger:  slog.Default(),
 	}
 
