@@ -78,7 +78,8 @@ func TestMonitor_Ready(t *testing.T) {
 			name: "error becomes sick",
 			checks: map[string]health.CheckFunc{
 				"api": func(ctx context.Context) (health.Status, error) {
-					return "", errors.New("fail")
+					// Use 0 or health.StatusSick since Status is now an int
+					return 0, errors.New("fail")
 				},
 			},
 			wantStatus: health.StatusSick,
@@ -174,7 +175,7 @@ func TestMonitor_Live(t *testing.T) {
 	}
 
 	if got, want := rep.Status, health.StatusHealthy; got != want {
-		t.Errorf("Report.Status = %q; want %q", got, want)
+		t.Errorf("Report.Status = %v; want %v", got, want)
 	}
 }
 
@@ -309,5 +310,59 @@ func TestMonitor_ContextPropagation(t *testing.T) {
 	case <-received:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("CheckFunc did not receive context cancellation")
+	}
+}
+
+func TestStatus_Serialization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		status   health.Status
+		expected string
+	}{
+		{"healthy", health.StatusHealthy, `"healthy"`},
+		{"degraded", health.StatusDegraded, `"degraded"`},
+		{"sick", health.StatusSick, `"sick"`},
+	}
+
+	for _, tt := range tests {
+		t.Run("Marshal_"+tt.name, func(t *testing.T) {
+			got, err := json.Marshal(tt.status)
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+			if string(got) != tt.expected {
+				t.Errorf("Marshal() = %s; want %s", string(got), tt.expected)
+			}
+		})
+
+		t.Run("Unmarshal_"+tt.name, func(t *testing.T) {
+			var got health.Status
+			if err := json.Unmarshal([]byte(tt.expected), &got); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if got != tt.status {
+				t.Errorf("Unmarshal() = %v; want %v", got, tt.status)
+			}
+		})
+	}
+
+	t.Run("Unmarshal_Invalid", func(t *testing.T) {
+		var got health.Status
+		err := json.Unmarshal([]byte(`"unknown_status"`), &got)
+		if err == nil {
+			t.Error("Unmarshal() expected error for invalid status; got nil")
+		}
+	})
+}
+
+func TestStatus_String(t *testing.T) {
+	t.Parallel()
+	if got, want := health.StatusHealthy.String(), "healthy"; got != want {
+		t.Errorf("StatusHealthy.String() = %q; want %q", got, want)
+	}
+	if got, want := health.Status(-1).String(), "unknown"; got != want {
+		t.Errorf("Undefined status String() = %q; want %q", got, want)
 	}
 }

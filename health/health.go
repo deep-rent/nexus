@@ -40,6 +40,7 @@ package health
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"sync"
@@ -49,17 +50,62 @@ import (
 )
 
 // Status enumerates the operational states of a dependency.
-type Status string
+//
+// Note that statuses are ranked by severity: StatusHealthy > StatusDegraded >
+// StatusSick. This allows for direct comparison using standard operators.
+type Status int
 
 const (
-	// StatusHealthy indicates the dependency is functioning normally.
-	StatusHealthy Status = "healthy"
+	// StatusSick indicates the dependency is non-functional.
+	StatusSick Status = iota
 	// StatusDegraded indicates the dependency is functioning but with
 	// issues (e.g., high latency).
-	StatusDegraded Status = "degraded"
-	// StatusSick indicates the dependency is non-functional.
-	StatusSick Status = "sick"
+	StatusDegraded
+	// StatusHealthy indicates the dependency is functioning normally.
+	StatusHealthy
 )
+
+// String returns the human-readable representation of the [Status].
+func (s Status) String() string {
+	switch s {
+	case StatusHealthy:
+		return "healthy"
+	case StatusDegraded:
+		return "degraded"
+	case StatusSick:
+		return "sick"
+	default:
+		return "unknown"
+	}
+}
+
+// MarshalJSON implements the [json.Marshaler] interface, ensuring that the
+// status is represented by its string name in JSON output rather than its
+// underlying integer value.
+func (s Status) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+// UnmarshalJSON implements the [json.Unmarshaler] interface. It converts a
+// JSON string back into the corresponding [Status] integer constant. It returns
+// an error if the string is not a recognized status.
+func (s *Status) UnmarshalJSON(data []byte) error {
+	var v string
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	switch v {
+	case "healthy":
+		*s = StatusHealthy
+	case "degraded":
+		*s = StatusDegraded
+	case "sick":
+		*s = StatusSick
+	default:
+		return fmt.Errorf("invalid status: %s", v)
+	}
+	return nil
+}
 
 // Result holds the outcome of a health check execution.
 type Result struct {
@@ -211,10 +257,8 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 
 			mu.Lock()
 			results[current.name] = res
-			if res.Status == StatusSick {
-				overall = StatusSick
-			} else if res.Status == StatusDegraded && overall == StatusHealthy {
-				overall = StatusDegraded
+			if res.Status < overall {
+				overall = res.Status
 			}
 			mu.Unlock()
 		}(c)
