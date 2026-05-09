@@ -192,7 +192,7 @@ func Expand(s string, opts ...Option) (string, error) {
 	}
 
 	var b strings.Builder
-	b.Grow(len(s))
+	b.Grow(len(s) * 2)
 
 	i := 0
 	for i < len(s) {
