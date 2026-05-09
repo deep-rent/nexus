@@ -334,19 +334,6 @@ func New(apiKey string, opts ...Option) Sender {
 	return c
 }
 
-type personalization struct {
-	To           []Address      `json:"to"`
-	CC           []Address      `json:"cc,omitzero"`
-	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
-}
-
-type payload struct {
-	Personalizations []personalization `json:"personalizations"`
-	From             Address           `json:"from"`
-	ReplyTo          *Address          `json:"reply_to,omitzero"`
-	TemplateID       string            `json:"template_id"`
-}
-
 // Send executes the HTTP request to the SendGrid API.
 //
 // It maps the domain [Email] payload into SendGrid's expected JSON
