@@ -190,7 +190,7 @@ func Log(logger *slog.Logger) Pipe {
 				slog.String("method", r.Method),
 				slog.String("url", r.URL.String()),
 				slog.String("remote", r.RemoteAddr),
-				slog.String("agent", r.UserAgent()),
+				slog.String("user_agent", r.UserAgent()),
 				slog.Int("status", incpt.statusCode),
 				slog.Duration("duration", time.Since(start)),
 			)
