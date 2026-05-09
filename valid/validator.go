@@ -54,13 +54,22 @@ type Validatable interface {
 	Validate(v *Validator)
 }
 
-// Test validates a single [Validatable] instance.
+// Test validates a single [Validatable] instance or a slice of them.
 // It returns a composite error if any validation checks fail, or nil if
 // all checks pass.
-func Test(target Validatable) error {
-	v := New()
-	target.Validate(v)
-	return v.Error()
+func Test(target any) error {
+	if t, ok := target.(Validatable); ok {
+		v := New()
+		t.Validate(v)
+		return v.Error()
+	}
+	rt := reflect.TypeOf(target)
+	if rt != nil && rt.Kind() == reflect.Slice {
+		v := New()
+		v.Each("", target)
+		return v.Error()
+	}
+	return nil
 }
 
 // Each validates every element in a slice that implements the [Validatable]

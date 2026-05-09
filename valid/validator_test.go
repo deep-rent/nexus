@@ -132,7 +132,7 @@ func TestTest(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give valid.Validatable
+		give any
 		want valid.Error
 	}{
 		{
@@ -158,6 +158,26 @@ func TestTest(t *testing.T) {
 		{
 			name: "nested nil target",
 			give: &mockParent{child: nil},
+			want: nil,
+		},
+		{
+			name: "slice valid target",
+			give: []mockItem{{val: "ok"}},
+			want: nil,
+		},
+		{
+			name: "slice invalid target",
+			give: []mockItem{{val: ""}},
+			want: valid.Error{"[0].val": {"must not be empty"}},
+		},
+		{
+			name: "unsupported type",
+			give: "just a string",
+			want: nil,
+		},
+		{
+			name: "nil target",
+			give: nil,
 			want: nil,
 		},
 	}
