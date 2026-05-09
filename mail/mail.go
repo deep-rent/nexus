@@ -298,10 +298,11 @@ func WithLogger(logger *slog.Logger) Option {
 // and a standard logger. These defaults can be overridden by passing one or
 // more [Option] functions. If no custom HTTP client is provided, it builds
 // an internal client optimized for API calls with connection pooling and
-// automatic retry capabilities.
-func New(apiKey string, opts ...Option) Sender {
+// automatic retry capabilities. It returns an error if the API key is empty
+// or the base URL is invalid.
+func New(apiKey string, opts ...Option) (Sender, error) {
 	if apiKey == "" {
-		panic(errors.New("mail: API key is required"))
+		return nil, errors.New("mail: API key is required")
 	}
 
 	cfg := config{
@@ -316,7 +317,11 @@ func New(apiKey string, opts ...Option) Sender {
 
 	endpoint, err := url.JoinPath(cfg.baseURL, "mail/send")
 	if err != nil {
-		panic(fmt.Errorf("mail: invalid base URL: %w", err))
+		return nil, fmt.Errorf("mail: invalid base URL: %w", err)
+	}
+
+	if cfg.client != nil && len(cfg.retry) > 0 {
+		cfg.logger.Warn("Custom client provided; retry options will be ignored")
 	}
 
 	s := &sender{
@@ -326,7 +331,7 @@ func New(apiKey string, opts ...Option) Sender {
 		retry:  cfg.retry,
 	}
 
-	// Initialize the default HTTP client if a custom one wasn't provided
+	// Initialize the default HTTP client if a custom one wasn't provided.
 	if cfg.client == nil {
 		d := &net.Dialer{
 			Timeout: cfg.timeout / 3,
@@ -349,7 +354,7 @@ func New(apiKey string, opts ...Option) Sender {
 		s.client = cfg.client
 	}
 
-	return s
+	return s, nil
 }
 
 // Send executes the HTTP request to the SendGrid API.
