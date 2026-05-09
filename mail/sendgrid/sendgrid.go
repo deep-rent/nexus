@@ -54,9 +54,6 @@ import (
 // DefaultBaseURL is the standard API endpoint for SendGrid v3.
 const DefaultBaseURL = "https://api.sendgrid.com/v3"
 
-// ErrMissingAPIKey is returned when the SendGrid API key is not provided.
-var ErrMissingAPIKey = errors.New("sendgrid: missing API key")
-
 // APIError represents an error response from the SendGrid API.
 //
 // It allows consumers to programmatically inspect the HTTP status code
@@ -143,6 +140,10 @@ func WithLogger(logger *slog.Logger) Option {
 // an internal client optimized for API calls with connection pooling and
 // automatic retry capabilities.
 func New(apiKey string, opts ...Option) *Sender {
+	if apiKey == "" {
+		panic(errors.New("sendgrid: API key is required"))
+	}
+
 	c := &Sender{
 		apiKey:  apiKey,
 		baseURL: DefaultBaseURL,
@@ -197,9 +198,6 @@ type payload struct {
 // for timeouts and cancellation. If the API responds with an HTTP status
 // code >= 400, it returns an [*APIError] containing the raw response body.
 func (c *Sender) Send(ctx context.Context, email *mail.Email) error {
-	if c.apiKey == "" {
-		return ErrMissingAPIKey
-	}
 	if err := email.Validate(); err != nil {
 		return err
 	}
