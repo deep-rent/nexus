@@ -62,19 +62,18 @@ func ToLower(s string) string { return transform(s, ascii.ToLower) }
 func transform(s string, toCase func(rune) rune) string {
 	var b strings.Builder
 	b.Grow(len(s) + 5)
-	runes := []rune(s)
-	for i, r := range runes {
+	for i, r := range s {
 		// Insert an underscore before a capital letter or digit.
 		if i != 0 {
-			q := runes[i-1]
+			q := rune(s[i-1])
 			if (ascii.IsLower(q) &&
 				// Case 1: Lowercase to uppercase/digit transition ("myVar", "myVar1").
 				(ascii.IsUpper(r) || ascii.IsDigit(r))) ||
 				(ascii.IsUpper(q) &&
 					// Case 2: Acronym to new word transition ("MYVar").
 					ascii.IsUpper(r) &&
-					i+1 < len(runes) &&
-					ascii.IsLower(runes[i+1])) {
+					i+1 < len(s) &&
+					ascii.IsLower(rune(s[i+1]))) {
 				b.WriteRune('_')
 			}
 		}
