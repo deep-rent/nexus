@@ -404,7 +404,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	s.logger.DebugContext(ctx, "Sending email via SendGrid",
+	s.logger.DebugContext(ctx, "Dispatching message to provider",
 		slog.String("template_id", msg.TemplateID),
 		slog.Int("recipients", len(msg.Recipients)),
 	)
@@ -439,7 +439,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	s.logger.DebugContext(
 		ctx,
-		"Message successfully dispatched to SendGrid",
+		"Message successfully dispatched",
 		slog.Duration("duration", delta),
 	)
 
