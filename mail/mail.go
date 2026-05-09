@@ -22,7 +22,9 @@
 // # Usage
 //
 // Typically, you initialize a [Sender] at application startup, construct
-// a [Message] using the fluent API, and pass it to the sender:
+// a [Message] using the fluent API, and pass it to the sender.
+//
+// Example:
 //
 //	// 1. Initialize the default SendGrid sender.
 //	client, err := mail.New("your-api-key")
@@ -77,16 +79,18 @@ var (
 
 // APIError represents an error returned by the underlying email provider.
 type APIError struct {
+	// Status is the HTTP status code returned by the provider.
 	Status int
-	Body   string
+	// Body is the raw response body returned by the provider.
+	Body string
 }
 
-// Error implements the error interface.
+// Error implements [error].
 func (e *APIError) Error() string {
 	return fmt.Sprintf("mail: api returned status %d: %s", e.Status, e.Body)
 }
 
-// Unwrap allows errors.Is to match against ErrDispatchFailed.
+// Unwrap allows [errors.Is] to match against [ErrDispatchFailed].
 func (e *APIError) Unwrap() error {
 	return ErrDispatchFailed
 }
@@ -99,7 +103,7 @@ type Email struct {
 	Name string `json:"name,omitzero"`
 }
 
-// NewAddress creates a new Address with an optional display name.
+// NewAddress creates a new [Email] with an optional display name.
 func NewAddress(addr, name string) Email {
 	return Email{
 		Addr: addr,
@@ -107,8 +111,8 @@ func NewAddress(addr, name string) Email {
 	}
 }
 
-// String returns the string representation of the address (e.g.,
-// "Name <email@example.com>").
+// String implements [fmt.Stringer] to return the string representation of the
+// [Email] (e.g., "Name <email@example.com>").
 func (e Email) String() string {
 	if e.Name == "" {
 		return e.Addr
@@ -119,16 +123,16 @@ func (e Email) String() string {
 // Recipient represents a single intended recipient or group of receivers,
 // along with the specific template data to be used for them.
 type Recipient struct {
-	// To contains the primary recipients.
+	// To contains the primary [Email] recipients.
 	To []Email `json:"to"`
-	// CC contains the carbon copy recipients.
+	// CC contains the carbon copy [Email] recipients.
 	CC []Email `json:"cc,omitzero"`
 	// TemplateData holds the key-value pairs used to populate the template
 	// variables for this specific recipient group.
 	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
 }
 
-// NewRecipient creates a new Recipient group with the required primary
+// NewRecipient creates a new [Recipient] group with the required primary
 // destinations.
 func NewRecipient(to ...Email) *Recipient {
 	return &Recipient{
@@ -136,19 +140,19 @@ func NewRecipient(to ...Email) *Recipient {
 	}
 }
 
-// AddTo appends one or more recipients to the "To" list.
+// AddTo appends one or more [Email] recipients to the To list.
 func (r *Recipient) AddTo(addrs ...Email) *Recipient {
 	r.To = append(r.To, addrs...)
 	return r
 }
 
-// AddCC appends one or more recipients to the "CC" list.
+// AddCC appends one or more [Email] recipients to the CC list.
 func (r *Recipient) AddCC(addrs ...Email) *Recipient {
 	r.CC = append(r.CC, addrs...)
 	return r
 }
 
-// AddTemplateData adds or updates a key-value pair in the template data map.
+// AddTemplateData adds or updates a key-value pair in the TemplateData map.
 func (r *Recipient) AddTemplateData(key string, value any) *Recipient {
 	if r.TemplateData == nil {
 		r.TemplateData = make(map[string]any)
@@ -157,13 +161,13 @@ func (r *Recipient) AddTemplateData(key string, value any) *Recipient {
 	return r
 }
 
-// SetTemplateData replaces the entire template data map.
+// SetTemplateData replaces the entire TemplateData map for the [Recipient].
 func (r *Recipient) SetTemplateData(data map[string]any) *Recipient {
 	r.TemplateData = data
 	return r
 }
 
-// Validate checks if the recipient group has at least one primary destination.
+// Validate checks if the [Recipient] group has at least one primary destination.
 func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
 		return ErrMissingRecipients
@@ -174,11 +178,11 @@ func (r *Recipient) Validate() error {
 // Message represents a transactional email payload designed for dynamic
 // templates.
 type Message struct {
-	// From is the sender's address.
+	// From is the sender's [Email] address.
 	From Email `json:"from"`
 	// Recipients contains groups of receivers and their specific template data.
 	Recipients []*Recipient `json:"personalizations"`
-	// ReplyTo is an optional address where replies should be directed.
+	// ReplyTo is an optional [Email] address where replies should be directed.
 	ReplyTo *Email `json:"reply_to,omitzero"`
 	// TemplateID is the provider-specific identifier of the dynamic template to
 	// use.
@@ -198,19 +202,19 @@ func NewMessage(
 	}
 }
 
-// AddRecipient appends a Recipient group to the email.
+// AddRecipient appends a [Recipient] group to the [Message].
 func (m *Message) AddRecipient(r *Recipient) *Message {
 	m.Recipients = append(m.Recipients, r)
 	return m
 }
 
-// WithReplyTo sets an optional Reply-To address.
+// WithReplyTo sets an optional ReplyTo [Email] address on the [Message].
 func (m *Message) WithReplyTo(addr Email) *Message {
 	m.ReplyTo = &addr
 	return m
 }
 
-// Validate checks if the message has the minimum required fields for sending.
+// Validate checks if the [Message] has the minimum required fields for sending.
 func (m *Message) Validate() error {
 	if m == nil {
 		return ErrNilMessage
@@ -238,39 +242,49 @@ func (m *Message) Validate() error {
 // use by multiple goroutines. They should respect the provided context for
 // timeouts and cancellation.
 type Sender interface {
-	// Send dispatches the provided email payload to the underlying provider.
+	// Send dispatches the provided [Message] payload to the underlying provider.
 	// It returns an error if the email is invalid, if the network request
 	// fails, or if the provider rejects the payload.
 	Send(ctx context.Context, msg *Message) error
 }
 
-// sender is a SendGrid email sender that implements [Sender].
+// sender is a SendGrid email client that implements the [Sender] interface.
 //
 // It manages the HTTP client and authentication state required to interact
-// with the SendGrid API. Once initialized via [New], a sender is safe for
+// with the SendGrid API. Once initialized via [New], a [sender] is safe for
 // concurrent use by multiple goroutines.
 type sender struct {
+	// apiKey stores the authentication credential for the provider.
 	apiKey string
-	url    string
+	// url is the resolved API endpoint for dispatching requests.
+	url string
+	// client holds the configured HTTP client.
 	client *http.Client
+	// logger is used for structured diagnostic output.
 	logger *slog.Logger
-	retry  []retry.Option
+	// retry contains the retry configuration options.
+	retry []retry.Option
 }
 
-// config holds the optional configuration for the SendGrid sender.
+// config holds the optional configuration for the [sender].
 type config struct {
-	client  *http.Client
+	// client holds a custom HTTP client, if provided.
+	client *http.Client
+	// baseURL overrides the default SendGrid API endpoint.
 	baseURL string
+	// timeout sets the maximum duration for HTTP requests.
 	timeout time.Duration
-	retry   []retry.Option
-	logger  *slog.Logger
+	// retry stores options for the HTTP transport retry mechanism.
+	retry []retry.Option
+	// logger specifies the custom structured logger.
+	logger *slog.Logger
 }
 
-// Option defines the functional option pattern for configuring the Client.
+// Option defines the functional option pattern for configuring the [sender].
 type Option func(*config)
 
-// WithClient allows passing a custom HTTP client.
-// If provided, it overrides the WithTimeout setting.
+// WithClient allows passing a custom HTTP client to the [sender].
+// If provided, it overrides the [WithTimeout] setting.
 func WithClient(client *http.Client) Option {
 	return func(c *config) {
 		if client != nil {
@@ -295,7 +309,7 @@ func WithTimeout(d time.Duration) Option {
 }
 
 // WithRetryOptions configures the retry mechanism for the default HTTP client.
-// If a custom HTTP client is provided via WithClient, these options are
+// If a custom HTTP client is provided via [WithClient], these options are
 // ignored.
 func WithRetryOptions(opts ...retry.Option) Option {
 	return func(c *config) {
@@ -303,7 +317,7 @@ func WithRetryOptions(opts ...retry.Option) Option {
 	}
 }
 
-// WithLogger injects a structured logger into the client.
+// WithLogger injects a structured logger into the [sender].
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
@@ -312,7 +326,7 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// New creates a configured SendGrid client.
+// New creates a configured SendGrid client implementing the [Sender] interface.
 //
 // It initializes the client with a default base URL, a sensible timeout,
 // and a standard logger. These defaults can be overridden by passing one or
