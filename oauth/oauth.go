@@ -17,8 +17,6 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"log/slog"
@@ -26,6 +24,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/pkce"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
 )
@@ -333,7 +332,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 	if challenge == "" {
 		return sendError(errMissingPKCE)
 	}
-	if method != "S256" && method != "plain" {
+	if !pkce.Supports(method) {
 		return sendError(errUnsupportedPKCEMethod)
 	}
 	if p.userExtractor == nil {
@@ -499,7 +498,7 @@ func (p *Provider) handleAuthorizationCodeGrant(e *router.Exchange, form url.Val
 		return e.JSON(http.StatusBadRequest, errRedirectURIMismatch)
 	}
 
-	if !verifyPKCE(verifier, data.CodeChallenge, data.CodeChallengeMethod) {
+	if !pkce.Verify(verifier, data.CodeChallenge, data.CodeChallengeMethod) {
 		p.logger.Debug("PKCE verification failed")
 		return e.JSON(http.StatusBadRequest, errPKCEVerificationFailed)
 	}
@@ -620,31 +619,4 @@ func opaque() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-// verifyPKCE validates an incoming code verifier against the originally stored
-// challenge.
-func verifyPKCE(verifier, challenge, method string) bool {
-	if len(challenge) == 0 {
-		return false
-	}
-
-	var expected []byte
-	switch method {
-	case "S256":
-		h := sha256.Sum256([]byte(verifier))
-		encoded := base64.RawURLEncoding.EncodeToString(h[:])
-		expected = []byte(encoded)
-	case "plain":
-		expected = []byte(verifier)
-	default:
-		return false
-	}
-
-	// Ensure constant-time comparison doesn't panic due to unequal lengths.
-	if len(expected) != len(challenge) {
-		return false
-	}
-
-	return subtle.ConstantTimeCompare(expected, []byte(challenge)) == 1
 }
