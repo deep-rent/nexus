@@ -294,7 +294,8 @@ type config struct {
 type Option func(*config)
 
 // WithClient allows passing a custom [http.Client] to the [sender].
-// If provided, it overrides the [WithTimeout] setting.
+// If provided, it overrides the [WithTimeout] setting. Nil values will be
+// ignored.
 func WithClient(client *http.Client) Option {
 	return func(c *config) {
 		if client != nil {
@@ -313,9 +314,9 @@ func WithBaseURL(url string) Option {
 
 // WithUserAgent configures a custom User-Agent header for the outbound
 // API requests.
-func WithUserAgent(ua string) Option {
+func WithUserAgent(v string) Option {
 	return func(c *config) {
-		c.userAgent = ua
+		c.userAgent = v
 	}
 }
 
@@ -335,7 +336,8 @@ func WithRetryOptions(opts ...retry.Option) Option {
 	}
 }
 
-// WithLogger injects a structured [slog.Logger] into the [sender].
+// WithLogger injects a structured [slog.Logger] into the sender.
+// Nil values will be ignored.
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
