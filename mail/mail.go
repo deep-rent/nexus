@@ -17,7 +17,7 @@
 // It defines a generic payload model ([Message]) and a common [Sender]
 // interface for email delivery. This decouples the application's
 // business logic from the underlying mechanism. By default, this package
-// provides a production-ready SendGrid implementation initialized via
+// provides a production-ready Twilio SendGrid implementation initialized via
 // [NewSender].
 //
 // # Usage
@@ -32,9 +32,9 @@
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(
-//	  mail.NewAddress("no-reply@example.com", "My App"),
+//	  mail.New("no-reply@example.com", "My App"),
 //	  "template-id-123",
-//	  mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
+//	  mail.NewRecipient(mail.New("user@example.com", "Alice")).
 //	    AddTemplateData("name", "Alice"),
 //	)
 //
@@ -93,38 +93,40 @@ func (e *APIError) Unwrap() error {
 	return ErrDispatchFailed
 }
 
-// Email represents an email address and an optional display name.
-type Email struct {
+var _ error = (*APIError)(nil)
+
+// Mail represents an email address and an optional display name.
+type Mail struct {
 	// Addr is the actual email address (e.g., "alice@example.com").
 	Addr string `json:"email"`
 	// Name is an optional display name (e.g., "Alice Smith").
 	Name string `json:"name,omitzero"`
 }
 
-// NewAddress creates a new [Email] with an optional display name.
-func NewAddress(addr, name string) Email {
-	return Email{
+// New creates a new [Mail] with an optional display name.
+func New(addr, name string) Mail {
+	return Mail{
 		Addr: addr,
 		Name: name,
 	}
 }
 
 // String implements [fmt.Stringer] to return the string representation of the
-// [Email] (e.g., "Name <email@example.com>").
-func (e Email) String() string {
-	if e.Name == "" {
-		return e.Addr
+// email instance (e.g., "Name <email@example.com>").
+func (m Mail) String() string {
+	if m.Name == "" {
+		return m.Addr
 	}
-	return fmt.Sprintf("%s <%s>", e.Name, e.Addr)
+	return fmt.Sprintf("%s <%s>", m.Name, m.Addr)
 }
 
 // Recipient represents a single intended recipient or group of receivers,
 // along with the specific template data to be used for them.
 type Recipient struct {
-	// To contains the primary [Email] recipients.
-	To []Email `json:"to"`
-	// CC contains the carbon copy [Email] recipients.
-	CC []Email `json:"cc,omitzero"`
+	// To contains the primary recipients.
+	To []Mail `json:"to"`
+	// CC contains the carbon copy recipients.
+	CC []Mail `json:"cc,omitzero"`
 	// TemplateData holds the key-value pairs used to populate the template
 	// variables for this specific recipient group.
 	TemplateData map[string]any `json:"dynamic_template_data,omitzero"`
@@ -132,21 +134,21 @@ type Recipient struct {
 
 // NewRecipient creates a new [Recipient] group with the required primary
 // destinations.
-func NewRecipient(to ...Email) *Recipient {
+func NewRecipient(to ...Mail) *Recipient {
 	return &Recipient{
 		To: to,
 	}
 }
 
-// AddTo appends one or more [Email] recipients to the To list.
-func (r *Recipient) AddTo(addrs ...Email) *Recipient {
-	r.To = append(r.To, addrs...)
+// AddTo appends one or more recipients to the To list.
+func (r *Recipient) AddTo(mails ...Mail) *Recipient {
+	r.To = append(r.To, mails...)
 	return r
 }
 
-// AddCC appends one or more [Email] recipients to the CC list.
-func (r *Recipient) AddCC(addrs ...Email) *Recipient {
-	r.CC = append(r.CC, addrs...)
+// AddCC appends one or more recipients to the CC list.
+func (r *Recipient) AddCC(mails ...Mail) *Recipient {
+	r.CC = append(r.CC, mails...)
 	return r
 }
 
@@ -159,14 +161,13 @@ func (r *Recipient) AddTemplateData(key string, value any) *Recipient {
 	return r
 }
 
-// SetTemplateData replaces the entire TemplateData map for the [Recipient].
+// SetTemplateData replaces the entire TemplateData map for the recipient.
 func (r *Recipient) SetTemplateData(data map[string]any) *Recipient {
 	r.TemplateData = data
 	return r
 }
 
-// Validate checks if the [Recipient] group has at least one primary
-// destination.
+// Validate checks if the recipient group has at least one primary destination.
 func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
 		return ErrMissingRecipients
@@ -177,12 +178,12 @@ func (r *Recipient) Validate() error {
 // Message represents a transactional email payload designed for dynamic
 // templates.
 type Message struct {
-	// From is the sender's [Email] address.
-	From Email `json:"from"`
+	// From is the sender's address.
+	From Mail `json:"from"`
 	// Recipients contains groups of receivers and their specific template data.
 	Recipients []*Recipient `json:"personalizations"`
-	// ReplyTo is an optional [Email] address where replies should be directed.
-	ReplyTo *Email `json:"reply_to,omitzero"`
+	// ReplyTo is an optional address where replies should be directed.
+	ReplyTo *Mail `json:"reply_to,omitzero"`
 	// TemplateID is the provider-specific identifier of the dynamic template to
 	// use.
 	TemplateID string `json:"template_id"`
@@ -190,7 +191,7 @@ type Message struct {
 
 // NewMessage creates a new [Message] with the required fields.
 func NewMessage(
-	from Email,
+	from Mail,
 	templateID string,
 	recipients ...*Recipient,
 ) *Message {
@@ -201,19 +202,19 @@ func NewMessage(
 	}
 }
 
-// AddRecipient appends a [Recipient] group to the [Message].
+// AddRecipient appends a recipient group to the message.
 func (m *Message) AddRecipient(r *Recipient) *Message {
 	m.Recipients = append(m.Recipients, r)
 	return m
 }
 
-// WithReplyTo sets an optional ReplyTo [Email] address on the [Message].
-func (m *Message) WithReplyTo(addr Email) *Message {
-	m.ReplyTo = &addr
+// WithReplyTo sets an optional ReplyTo address on the message.
+func (m *Message) WithReplyTo(mail Mail) *Message {
+	m.ReplyTo = &mail
 	return m
 }
 
-// Validate checks if the [Message] has the minimum required fields for sending.
+// Validate checks if the message has the minimum required fields for sending.
 func (m *Message) Validate() error {
 	if m == nil {
 		return ErrNilMessage
@@ -392,7 +393,7 @@ func NewSender(apiKey string, opts ...Option) Sender {
 	return s
 }
 
-// Send executes the HTTP request to the SendGrid API.
+// Send executes the HTTP request to the SendGrid v3 API.
 //
 // It maps the domain [Message] payload into SendGrid's expected JSON
 // structure and dispatches the request. It respects the provided context
