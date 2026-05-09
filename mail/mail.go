@@ -55,12 +55,12 @@ const DefaultBaseURL = "https://api.sendgrid.com/v3"
 var (
 	// ErrNilEmail is returned when a nil email is passed to Send.
 	ErrNilEmail = errors.New("mail: email cannot be nil")
-	// ErrNoRecipients is returned when an email has no recipients.
-	ErrNoRecipients = errors.New("mail: at least one recipient is required")
-	// ErrNoTemplateID is returned when an email has no template ID.
-	ErrNoTemplateID = errors.New("mail: template ID is required")
-	// ErrNoFromAddress is returned when an email has no sender address.
-	ErrNoFromAddress = errors.New("mail: from address is required")
+	// ErrMissingRecipients is returned when an email has no recipients.
+	ErrMissingRecipients = errors.New("mail: at least one recipient is required")
+	// ErrMissingTemplateID is returned when an email has no template ID.
+	ErrMissingTemplateID = errors.New("mail: template ID is required")
+	// ErrMissingFrom is returned when an email has no sender address.
+	ErrMissingFrom = errors.New("mail: from address is required")
 )
 
 // APIError represents an error response from the SendGrid API.
@@ -156,7 +156,7 @@ func (r *Recipient) SetData(data map[string]any) *Recipient {
 // Validate checks if the recipient group has at least one primary destination.
 func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
-		return ErrNoRecipients
+		return ErrMissingRecipients
 	}
 	return nil
 }
@@ -206,10 +206,10 @@ func (m *Message) Validate() error {
 		return ErrNilEmail
 	}
 	if m.From.Addr == "" {
-		return ErrNoFromAddress
+		return ErrMissingFrom
 	}
 	if len(m.Recipients) == 0 {
-		return ErrNoRecipients
+		return ErrMissingRecipients
 	}
 	for _, r := range m.Recipients {
 		if err := r.Validate(); err != nil {
@@ -217,7 +217,7 @@ func (m *Message) Validate() error {
 		}
 	}
 	if m.TemplateID == "" {
-		return ErrNoTemplateID
+		return ErrMissingTemplateID
 	}
 	return nil
 }
