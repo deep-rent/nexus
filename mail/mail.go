@@ -455,7 +455,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	s.logger.DebugContext(
 		ctx,
-		"Message successfully dispatched",
+		"Message dispatched",
 		slog.Duration("duration", delta),
 	)
 
