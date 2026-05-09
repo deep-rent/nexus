@@ -51,6 +51,11 @@ func IsAlpha(c rune) bool { return IsUpper(c) || IsLower(c) }
 // IsAlphaNum reports whether the rune is an ASCII letter or decimal digit.
 func IsAlphaNum(c rune) bool { return IsAlpha(c) || IsDigit(c) }
 
+// IsHex reports whether the given rune is a hexadecimal character.
+func IsHex(c rune) bool {
+	return IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
 // IsWord reports whether the rune is an ASCII letter, digit, or underscore
 // ('_').
 //
