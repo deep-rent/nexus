@@ -61,8 +61,8 @@ import (
 const (
 	// DefaultBaseURL is the standard API endpoint for SendGrid v3.
 	DefaultBaseURL = "https://api.sendgrid.com/v3"
-	// DefaultTimeout is the default timeout for API requests.
-	DefaultTimeout = 10 * time.Second
+	// DefaultTimeout is the default timeout for API requests (5 seconds).
+	DefaultTimeout = 5 * time.Second
 )
 
 var (
