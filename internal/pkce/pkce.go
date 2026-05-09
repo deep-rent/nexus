@@ -52,16 +52,16 @@ const (
 	// recommended method by RFC 7636 as it prevents the verifier from being
 	// intercepted in the authorization request.
 	MethodS256 = "S256"
-
 	// MethodPlain represents the plain challenge method. This should only be
 	// used if the client is highly constrained and cannot support [MethodS256],
 	// as it provides less security against interception.
 	MethodPlain = "plain"
+)
 
+const (
 	// MinVerifierLength is the minimum allowed length for a code verifier per
 	// RFC 7636 (43 characters).
 	MinVerifierLength = 43
-
 	// MaxVerifierLength is the maximum allowed length for a code verifier per
 	// RFC 7636 (128 characters).
 	MaxVerifierLength = 128
