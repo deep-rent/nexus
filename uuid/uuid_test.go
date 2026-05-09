@@ -311,40 +311,6 @@ func TestNew_Concurrency_Unique(t *testing.T) {
 	}
 }
 
-func BenchmarkNew(b *testing.B) {
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			_ = uuid.New()
-		}
-	})
-}
-
-func BenchmarkString(b *testing.B) {
-	u := uuid.New()
-
-	for b.Loop() {
-		_ = u.String()
-	}
-}
-
-func BenchmarkParse(b *testing.B) {
-	s := uuid.New().String()
-
-	for b.Loop() {
-		_, _ = uuid.Parse(s)
-	}
-}
-
-func BenchmarkParseBytes(b *testing.B) {
-	u := uuid.New()
-	input := u[:]
-
-	b.ResetTimer()
-	for b.Loop() {
-		_, _ = uuid.ParseBytes(input)
-	}
-}
-
 func TestJSON(t *testing.T) {
 	t.Parallel()
 
@@ -424,5 +390,126 @@ func TestJSONInStruct(t *testing.T) {
 
 	if decoded.ID != u {
 		t.Errorf("Decoded ID = %v; want %v", decoded.ID, u)
+	}
+}
+
+func TestEqualString(t *testing.T) {
+	t.Parallel()
+
+	u := uuid.New()
+	s := u.String()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{
+			name:  "exact match (lowercase)",
+			input: s,
+			want:  true,
+		},
+		{
+			name:  "exact match (uppercase)",
+			input: strings.ToUpper(s),
+			want:  true,
+		},
+		{
+			name:  "invalid length (too short)",
+			input: s[:35],
+			want:  false,
+		},
+		{
+			name:  "invalid length (too long)",
+			input: s + "f",
+			want:  false,
+		},
+		{
+			name:  "missing hyphen at index 8",
+			input: s[:8] + "0" + s[9:],
+			want:  false,
+		},
+		{
+			name:  "missing hyphen at index 23",
+			input: s[:23] + "0" + s[24:],
+			want:  false,
+		},
+		{
+			name:  "invalid hex character",
+			input: s[:7] + "g" + s[8:],
+			want:  false,
+		},
+		{
+			name: "mismatch in first byte",
+			input: func() string {
+				orig := s[0]
+				var replacement byte = 'a'
+				if orig == 'a' {
+					replacement = 'b'
+				}
+				return string(replacement) + s[1:]
+			}(),
+			want: false,
+		},
+		{
+			name: "mismatch in last byte",
+			input: func() string {
+				orig := s[35]
+				var replacement byte = '1'
+				if orig == '1' {
+					replacement = '2'
+				}
+				return s[:35] + string(replacement)
+			}(),
+			want: false,
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := u.EqualString(tt.input); got != tt.want {
+				t.Errorf("EqualString(%q) = %v; want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func BenchmarkNew(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = uuid.New()
+		}
+	})
+}
+
+func BenchmarkString(b *testing.B) {
+	u := uuid.New()
+
+	for b.Loop() {
+		_ = u.String()
+	}
+}
+
+func BenchmarkParse(b *testing.B) {
+	s := uuid.New().String()
+
+	for b.Loop() {
+		_, _ = uuid.Parse(s)
+	}
+}
+
+func BenchmarkParseBytes(b *testing.B) {
+	u := uuid.New()
+	input := u[:]
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = uuid.ParseBytes(input)
 	}
 }

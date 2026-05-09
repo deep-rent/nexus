@@ -97,6 +97,46 @@ func (u *UUIDv7) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// EqualString checks if the [UUIDv7] matches the provided hyphenated string.
+// It is highly optimized to avoid allocations and exits early on a mismatch.
+func (u UUIDv7) EqualString(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+
+	// Quick check for proper hyphenation:
+	if s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
+		return false
+	}
+
+	// We compare the hex pairs in the string to the bytes in u.
+	// Groups: 8-4-4-4-12 chars -> 4-2-2-2-6 bytes
+	// Total 16 bytes.
+
+	// Group 1 (8 chars -> bytes 0-3)
+	if !compareHex(s[0:8], u[0:4]) {
+		return false
+	}
+	// Group 2 (4 chars -> bytes 4-5)
+	if !compareHex(s[9:13], u[4:6]) {
+		return false
+	}
+	// Group 3 (4 chars -> bytes 6-7)
+	if !compareHex(s[14:18], u[6:8]) {
+		return false
+	}
+	// Group 4 (4 chars -> bytes 8-9)
+	if !compareHex(s[19:23], u[8:10]) {
+		return false
+	}
+	// Group 5 (12 chars -> bytes 10-15)
+	if !compareHex(s[24:36], u[10:16]) {
+		return false
+	}
+
+	return true
+}
+
 // New generates a strictly monotonic [UUIDv7] with sub-millisecond precision.
 //
 // It fills the timestamp and sequence fields using a global monotonic counter
@@ -215,4 +255,32 @@ func tick() (ms, seq int64) {
 
 	last = ts
 	return ms, seq
+}
+
+// compareHex compares a hex-encoded string segment to a byte slice.
+func compareHex(s string, b []byte) bool {
+	for i := range b {
+		// Convert two hex chars to one byte
+		hi := decodeHex(s[i*2])
+		lo := decodeHex(s[i*2+1])
+
+		if hi == 0xff || lo == 0xff || (hi<<4|lo) != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// decodeHex converts a single hex character to its byte value.
+// Returns 0xff if the character is invalid.
+func decodeHex(c byte) byte {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0'
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10
+	}
+	return 0xff
 }
