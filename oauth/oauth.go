@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -55,12 +56,6 @@ type Client interface {
 	CanUseScope(scope string) bool
 }
 
-// User represents an authenticated resource owner.
-type User interface {
-	// ID returns the unique identifier for the user.
-	ID() string
-}
-
 // ClientStore provides data access for registered OAuth 2.0 clients.
 type ClientStore interface {
 	// GetClient retrieves a client by its unique ID.
@@ -69,10 +64,10 @@ type ClientStore interface {
 
 // UserStore provides data access and authentication for resource owners.
 type UserStore interface {
-	// Authenticate validates user credentials and returns the corresponding User.
-	Authenticate(ctx context.Context, username, password string) (User, error)
-	// GetUser retrieves a user by their unique ID.
-	GetUser(ctx context.Context, id string) (User, error)
+	// Authenticate validates user credentials and returns the corresponding user ID.
+	Authenticate(ctx context.Context, username, password string) (string, error)
+	// GetUser retrieves a username by their unique ID.
+	GetUser(ctx context.Context, id string) (string, error)
 }
 
 // AuthCode holds the state bound to an authorization code.
@@ -107,23 +102,11 @@ type SessionStore interface {
 	DelRefreshToken(ctx context.Context, token string) error
 }
 
-// Provider defines the handlers for the core OAuth 2.0 HTTP endpoints.
-type Provider interface {
-	// Authorize processes authorization requests (e.g., Authorization Code Flow).
-	Authorize(e *router.Exchange) error
-	// Token processes token requests (e.g., Code exchange, Refresh, Client Credentials).
-	Token(e *router.Exchange) error
-	// Introspect implements RFC 7662 token introspection.
-	Introspect(e *router.Exchange) error
-}
-
 // Config contains all necessary dependencies and settings for the OAuth 2.0
 // Provider.
 type Config struct {
 	// Signer is used to mint new access tokens (JWTs).
 	Signer jwt.Signer
-	// Verifier is used to validate access tokens during introspection.
-	Verifier jwt.Verifier[*jwt.DynamicClaims]
 
 	ClientStore  ClientStore
 	UserStore    UserStore
@@ -136,26 +119,29 @@ type Config struct {
 	// RefreshTokenTTL defines the lifespan of refresh tokens (default: 30 days).
 	RefreshTokenTTL time.Duration
 
-	// UserExtractor retrieves the authenticated user from an incoming router exchange.
+	// UserExtractor retrieves the authenticated user ID from an incoming router exchange.
 	// This is required for the authorization endpoint.
-	UserExtractor func(e *router.Exchange) (User, error)
+	UserExtractor func(e *router.Exchange) (string, error)
+
+	// Logger is used for structured logging. Defaults to slog.Default().
+	Logger *slog.Logger
 }
 
-// provider is the default implementation of the Provider interface.
-type provider struct {
+// Provider is the default implementation of the OAuth 2.0 HTTP endpoints.
+type Provider struct {
 	signer          jwt.Signer
-	verifier        jwt.Verifier[*jwt.DynamicClaims]
 	clientStore     ClientStore
 	userStore       UserStore
 	sessionStore    SessionStore
 	authCodeTTL     time.Duration
 	accessTokenTTL  time.Duration
 	refreshTokenTTL time.Duration
-	userExtractor   func(e *router.Exchange) (User, error)
+	userExtractor   func(e *router.Exchange) (string, error)
+	logger          *slog.Logger
 }
 
 // NewProvider creates a new OAuth 2.0 provider with the specified configuration.
-func NewProvider(cfg Config) Provider {
+func NewProvider(cfg Config) *Provider {
 	if cfg.AuthCodeTTL == 0 {
 		cfg.AuthCodeTTL = DefaultAuthCodeTTL
 	}
@@ -165,9 +151,11 @@ func NewProvider(cfg Config) Provider {
 	if cfg.RefreshTokenTTL == 0 {
 		cfg.RefreshTokenTTL = DefaultRefreshTokenTTL
 	}
-	return &provider{
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	return &Provider{
 		signer:          cfg.Signer,
-		verifier:        cfg.Verifier,
 		clientStore:     cfg.ClientStore,
 		userStore:       cfg.UserStore,
 		sessionStore:    cfg.SessionStore,
@@ -175,15 +163,47 @@ func NewProvider(cfg Config) Provider {
 		accessTokenTTL:  cfg.AccessTokenTTL,
 		refreshTokenTTL: cfg.RefreshTokenTTL,
 		userExtractor:   cfg.UserExtractor,
+		logger:          cfg.Logger,
 	}
 }
 
-// Mount registers the default OAuth 2.0 endpoints onto the provided router.
-func Mount(r *router.Router, p Provider) {
+// Mount registers the OAuth 2.0 endpoints onto the provided router.
+func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("GET /authorize", p.Authorize)
 	r.HandleFunc("POST /authorize", p.Authorize)
 	r.HandleFunc("POST /token", p.Token)
-	r.HandleFunc("POST /introspect", p.Introspect)
+}
+
+// IntrospectorConfig contains all necessary dependencies for token introspection.
+type IntrospectorConfig struct {
+	// Verifier is used to validate access tokens during introspection.
+	Verifier    jwt.Verifier[*jwt.DynamicClaims]
+	ClientStore ClientStore
+	Logger      *slog.Logger
+}
+
+// Introspector implements RFC 7662 token introspection.
+type Introspector struct {
+	verifier    jwt.Verifier[*jwt.DynamicClaims]
+	clientStore ClientStore
+	logger      *slog.Logger
+}
+
+// NewIntrospector creates a new Introspector.
+func NewIntrospector(cfg IntrospectorConfig) *Introspector {
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	return &Introspector{
+		verifier:    cfg.Verifier,
+		clientStore: cfg.ClientStore,
+		logger:      cfg.Logger,
+	}
+}
+
+// Mount registers the introspection endpoint onto the provided router.
+func (i *Introspector) Mount(r *router.Router) {
+	r.HandleFunc("POST /introspect", i.Introspect)
 }
 
 // Error returns an OAuth 2.0 compliant error response as JSON.
@@ -273,7 +293,7 @@ type AccessTokenClaims struct {
 
 // Authorize validates the parameters and redirects the user with an auth
 // code.
-func (p *provider) Authorize(e *router.Exchange) error {
+func (p *Provider) Authorize(e *router.Exchange) error {
 	q := e.Query()
 	clientID := q.Get("client_id")
 	redirectURI := q.Get("redirect_uri")
@@ -289,6 +309,7 @@ func (p *provider) Authorize(e *router.Exchange) error {
 
 	client, err := p.clientStore.GetClient(e.Context(), clientID)
 	if err != nil || client == nil {
+		p.logger.Debug("Client not found", slog.String("client_id", clientID))
 		return e.JSON(http.StatusUnauthorized, errClientNotFound)
 	}
 
@@ -316,16 +337,19 @@ func (p *provider) Authorize(e *router.Exchange) error {
 		return sendError(errUnsupportedPKCEMethod)
 	}
 	if p.userExtractor == nil {
+		p.logger.Error("User extractor not configured")
 		return sendError(errUserExtractorNotConf)
 	}
 
-	user, err := p.userExtractor(e)
-	if err != nil || user == nil {
+	userID, err := p.userExtractor(e)
+	if err != nil || userID == "" {
+		p.logger.Debug("User extraction failed", slog.Any("error", err))
 		return sendError(errAccessDenied)
 	}
 
 	code, err := opaque()
 	if err != nil {
+		p.logger.Error("Failed to generate opaque token", slog.Any("error", err))
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
@@ -334,7 +358,7 @@ func (p *provider) Authorize(e *router.Exchange) error {
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
 		Scope:               scope,
-		UserID:              user.ID(),
+		UserID:              userID,
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: method,
 		TTL:                 p.authCodeTTL,
@@ -344,6 +368,7 @@ func (p *provider) Authorize(e *router.Exchange) error {
 		e.Context(),
 		data,
 	); err != nil {
+		p.logger.Error("Failed to store authorization code", slog.Any("error", err))
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
@@ -357,20 +382,23 @@ func (p *provider) Authorize(e *router.Exchange) error {
 }
 
 // Token processes access token requests.
-func (p *provider) Token(e *router.Exchange) error {
+func (p *Provider) Token(e *router.Exchange) error {
 	form, rErr := e.ReadForm()
 	if rErr != nil {
+		p.logger.Debug("Invalid form body", slog.Any("error", rErr))
 		return e.JSON(http.StatusBadRequest, errInvalidFormBody)
 	}
 
-	client, err := p.authenticateClient(e, form)
+	client, err := authenticateClient(e, p.clientStore, form)
 	if err != nil {
+		p.logger.Debug("Client authentication failed", slog.Any("error", err))
 		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
 		return e.JSON(http.StatusUnauthorized, errClientAuthFailed)
 	}
 
 	grantType := form.Get("grant_type")
 	if !client.CanUseGrant(grantType) {
+		p.logger.Debug("Grant type not allowed for client", slog.String("grant_type", grantType))
 		return e.JSON(http.StatusBadRequest, errGrantNotAllowed)
 	}
 
@@ -388,13 +416,15 @@ func (p *provider) Token(e *router.Exchange) error {
 
 // Introspect implements RFC 7662 to determine the active state of an
 // OAuth 2.0 token.
-func (p *provider) Introspect(e *router.Exchange) error {
+func (i *Introspector) Introspect(e *router.Exchange) error {
 	form, err := e.ReadForm()
 	if err != nil {
+		i.logger.Debug("Invalid form body in introspection", slog.Any("error", err))
 		return e.JSON(http.StatusBadRequest, errInvalidFormBody)
 	}
 
-	if _, err := p.authenticateClient(e, form); err != nil {
+	if _, err := authenticateClient(e, i.clientStore, form); err != nil {
+		i.logger.Debug("Client authentication failed", slog.Any("error", err))
 		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
 		return e.JSON(http.StatusUnauthorized, errClientAuthFailed)
 	}
@@ -405,16 +435,17 @@ func (p *provider) Introspect(e *router.Exchange) error {
 	}
 
 	active := true
-	if _, err := p.verifier.Verify([]byte(tok)); err != nil {
+	if _, err := i.verifier.Verify([]byte(tok)); err != nil {
 		// RFC 7662: If the token is invalid, expired, or revoked, the authorization
 		// server MUST return an active boolean set to false.
+		i.logger.Debug("Token introspection verification failed", slog.Any("error", err))
 		active = false
 	}
 	return e.JSON(http.StatusOK, IntrospectionResponse{Active: active})
 }
 
 // authenticateClient resolves and authenticates the client via HTTP Basic Auth or POST form.
-func (p *provider) authenticateClient(e *router.Exchange, form url.Values) (Client, error) {
+func authenticateClient(e *router.Exchange, store ClientStore, form url.Values) (Client, error) {
 	clientID, clientSecret, ok := e.R.BasicAuth()
 	if !ok {
 		clientID = form.Get("client_id")
@@ -425,7 +456,7 @@ func (p *provider) authenticateClient(e *router.Exchange, form url.Values) (Clie
 		return nil, errors.New("missing client_id")
 	}
 
-	client, err := p.clientStore.GetClient(e.Context(), clientID)
+	client, err := store.GetClient(e.Context(), clientID)
 	if err != nil || client == nil {
 		return nil, errors.New("invalid client")
 	}
@@ -441,7 +472,7 @@ func (p *provider) authenticateClient(e *router.Exchange, form url.Values) (Clie
 	return client, nil
 }
 
-func (p *provider) handleAuthorizationCodeGrant(e *router.Exchange, form url.Values, client Client) error {
+func (p *Provider) handleAuthorizationCodeGrant(e *router.Exchange, form url.Values, client Client) error {
 	code := form.Get("code")
 	redirectURI := form.Get("redirect_uri")
 	verifier := form.Get("code_verifier")
@@ -452,6 +483,7 @@ func (p *provider) handleAuthorizationCodeGrant(e *router.Exchange, form url.Val
 
 	data, err := p.sessionStore.GetAuthCode(e.Context(), code)
 	if err != nil {
+		p.logger.Debug("Failed to retrieve auth code", slog.Any("error", err))
 		return e.JSON(http.StatusBadRequest, errInvalidAuthCode)
 	}
 
@@ -459,26 +491,30 @@ func (p *provider) handleAuthorizationCodeGrant(e *router.Exchange, form url.Val
 	_ = p.sessionStore.DelAuthCode(e.Context(), code)
 
 	if data.ClientID != client.ID() {
+		p.logger.Debug("Client ID mismatch during code exchange")
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
 	if redirectURI != "" && data.RedirectURI != redirectURI {
+		p.logger.Debug("Redirect URI mismatch during code exchange")
 		return e.JSON(http.StatusBadRequest, errRedirectURIMismatch)
 	}
 
 	if !verifyPKCE(verifier, data.CodeChallenge, data.CodeChallengeMethod) {
+		p.logger.Debug("PKCE verification failed")
 		return e.JSON(http.StatusBadRequest, errPKCEVerificationFailed)
 	}
 
 	return p.issueTokens(e, client.ID(), data.UserID, data.Scope, true)
 }
 
-func (p *provider) handleClientCredentialsGrant(
+func (p *Provider) handleClientCredentialsGrant(
 	e *router.Exchange,
 	form url.Values,
 	client Client,
 ) error {
 	scope := form.Get("scope")
 	if scope != "" && !client.CanUseScope(scope) {
+		p.logger.Debug("Scope not allowed for client credentials", slog.String("scope", scope))
 		return e.JSON(http.StatusBadRequest, errScopeNotAllowed)
 	}
 
@@ -487,7 +523,7 @@ func (p *provider) handleClientCredentialsGrant(
 	return p.issueTokens(e, client.ID(), "", scope, false)
 }
 
-func (p *provider) handleRefreshTokenGrant(
+func (p *Provider) handleRefreshTokenGrant(
 	e *router.Exchange,
 	form url.Values,
 	client Client,
@@ -499,10 +535,12 @@ func (p *provider) handleRefreshTokenGrant(
 
 	data, err := p.sessionStore.GetRefreshToken(e.Context(), token)
 	if err != nil {
+		p.logger.Debug("Failed to retrieve refresh token", slog.Any("error", err))
 		return e.JSON(http.StatusBadRequest, errInvalidRefreshToken)
 	}
 
 	if data.ClientID != client.ID() {
+		p.logger.Debug("Client ID mismatch during refresh token exchange")
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
 
@@ -514,7 +552,7 @@ func (p *provider) handleRefreshTokenGrant(
 
 // issueTokens orchestrates the creation of signed Access Tokens (JWT) and
 // opaque refresh tokens.
-func (p *provider) issueTokens(
+func (p *Provider) issueTokens(
 	e *router.Exchange,
 	clientID, userID, scope string,
 	refresh bool,
@@ -530,15 +568,17 @@ func (p *provider) issueTokens(
 	if userID == "" {
 		claims.Sub = clientID
 	} else if p.userStore != nil {
-		// Optionally enhance the claims with a username if available
-		if u, err := p.userStore.GetUser(e.Context(), userID); err == nil && u != nil {
-			// Abstract implementation logic would handle custom claims injection
-			_ = u // Not strictly required for the foundational flow, but ready.
+		// Optionally enhance the claims with a username if available.
+		if u, err := p.userStore.GetUser(e.Context(), userID); err == nil && u != "" {
+			claims.Username = u
+		} else if err != nil {
+			p.logger.Debug("Failed to retrieve user for claims", slog.Any("error", err))
 		}
 	}
 
 	tokenBytes, err := p.signer.Sign(claims)
 	if err != nil {
+		p.logger.Error("Failed to sign access token", slog.Any("error", err))
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
@@ -552,6 +592,7 @@ func (p *provider) issueTokens(
 	if refresh {
 		rt, err := opaque()
 		if err != nil {
+			p.logger.Error("Failed to generate opaque refresh token", slog.Any("error", err))
 			return e.JSON(http.StatusInternalServerError, errServerError)
 		}
 
@@ -563,6 +604,7 @@ func (p *provider) issueTokens(
 			TTL:      p.refreshTokenTTL,
 		})
 		if err != nil {
+			p.logger.Error("Failed to store refresh token", slog.Any("error", err))
 			return e.JSON(http.StatusInternalServerError, errServerError)
 		}
 		res.RefreshToken = rt
