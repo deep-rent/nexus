@@ -18,6 +18,7 @@ package valid
 
 import (
 	"encoding/json/jsontext"
+	"mime"
 	"net"
 	"net/netip"
 	"net/url"
@@ -244,6 +245,13 @@ func Lang(s string) bool {
 // It leverages encoding/json/v2 to perform the check efficiently.
 func JSON(s string) bool {
 	return jsontext.Value(s).IsValid()
+}
+
+// MIME checks if the string is a valid Media Type (MIME type) according to
+// RFC 2045 and RFC 2046.
+func MIME(s string) bool {
+	_, _, err := mime.ParseMediaType(s)
+	return err == nil
 }
 
 // CreditCard checks if the string is a valid credit card number using the Luhn
