@@ -90,7 +90,8 @@ type Buffer[T any] struct {
 	policy Policy
 }
 
-// New creates a [Buffer] configured with the requested size and overflow [Policy].
+// New creates a [Buffer] configured with the requested size and overflow
+// [Policy].
 //
 // If the provided size is less than 2, it defaults to 2. The final capacity is
 // always automatically rounded up to the nearest power of two to optimize
