@@ -29,7 +29,9 @@
 //
 // Example:
 //
-//	script := []byte("CREATE TABLE users (id int); -- comment\nINSERT INTO users VALUES (1);")
+//	script := []byte(
+//	  "CREATE TABLE users (id int); -- comment\nINSERT INTO users VALUES (1);",
+//	)
 //	statements := schema.Postgres(script)
 //	// returns ["CREATE TABLE users (id int)", "INSERT INTO users VALUES (1)"]
 package schema
