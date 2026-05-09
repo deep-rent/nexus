@@ -319,14 +319,14 @@ func TestValidator_Methods(t *testing.T) {
 				t.Fatal("expected validation error, got nil")
 			}
 
-			gotErrs, ok := err.(valid.Error)
+			gotErr, ok := errors.AsType[valid.Error](err)
 			if !ok {
 				t.Fatalf("expected valid.Errors, got %T", err)
 			}
 
-			msgs, ok := gotErrs[tt.field]
+			msgs, ok := gotErr[tt.field]
 			if !ok {
-				t.Fatalf("missing expected field %q in %v", tt.field, gotErrs)
+				t.Fatalf("missing expected field %q in %v", tt.field, gotErr)
 			}
 
 			if len(msgs) != 1 || msgs[0] != tt.want {
@@ -386,7 +386,7 @@ func TestEach_EdgeCases(t *testing.T) {
 				return
 			}
 
-			got, ok := err.(valid.Error)
+			got, ok := errors.AsType[valid.Error](err)
 			if !ok {
 				t.Fatalf("Each() returned %T; want valid.Errors", err)
 			}
@@ -429,13 +429,14 @@ func TestValidator_PathEscaping(t *testing.T) {
 			v := valid.New()
 			v.Fail(tt.field, "error")
 
-			gotErrs, ok := v.Error().(valid.Error)
+			err := v.Error()
+			gotErr, ok := errors.AsType[valid.Error](err)
 			if !ok {
-				t.Fatalf("Error() returned %T; want valid.Errors", v.Error())
+				t.Fatalf("Error() returned %T; want valid.Errors", err)
 			}
 
-			if _, exists := gotErrs[tt.want]; !exists {
-				t.Errorf("expected path %q to exist in %v", tt.want, gotErrs)
+			if _, exists := gotErr[tt.want]; !exists {
+				t.Errorf("expected path %q to exist in %v", tt.want, gotErr)
 			}
 		})
 	}
