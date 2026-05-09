@@ -62,6 +62,7 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
+	"github.com/deep-rent/nexus/valid"
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -74,6 +75,8 @@ const (
 	ReasonParseJSON = "parse_json"
 	// ReasonParseForm indicates that there was an error parsing form data.
 	ReasonParseForm = "parse_form"
+	// ReasonValidationFailed indicates that input validation failed.
+	ReasonValidationFailed = "validation_failed"
 	// ReasonServerError indicates that an unexpected internal error occurred.
 	ReasonServerError = "server_error"
 )
@@ -165,7 +168,7 @@ type Error struct {
 	// ID is a unique identifier of the specific occurrence for tracing.
 	ID string `json:"id,omitempty"`
 	// Context contains arbitrary additional data about the error.
-	Context map[string]any `json:"context,omitempty"`
+	Context any `json:"context,omitempty"`
 	// Cause is the underlying error that triggered this error.
 	Cause error `json:"-"`
 }
@@ -275,8 +278,22 @@ func (e *Exchange) ReadForm() (url.Values, *Error) {
 // JSON encodes v as JSON and writes it to the response.
 //
 // It automatically sets the Content-Type header to [MediaTypeJSON] if it has
-// not already been set.
+// not already been set. It also verifies the input using [valid.Test] before
+// encoding.
 func (e *Exchange) JSON(code int, v any) error {
+	if err := valid.Test(v); err != nil {
+		var ctx valid.Error
+		if errors.As(err, &ctx) {
+			return &Error{
+				Status:      http.StatusInternalServerError,
+				Reason:      ReasonValidationFailed,
+				Description: "validation failed",
+				Context:     ctx,
+			}
+		}
+		return err
+	}
+
 	buf, err := json.Marshal(v, e.jsonOpts...)
 	if err != nil {
 		return err
