@@ -28,10 +28,7 @@
 // Example:
 //
 //	// 1. Initialize the default SendGrid sender.
-//	sender, err := mail.NewSender("your-api-key")
-//	if err != nil {
-//	    // handle error
-//	}
+//	sender := mail.NewSender("your-api-key")
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(
@@ -335,11 +332,11 @@ func WithLogger(logger *slog.Logger) Option {
 // and a standard logger. These defaults can be overridden by passing one or
 // more [Option] functions. If no custom HTTP client is provided, it builds
 // an internal client optimized for API calls with connection pooling and
-// automatic retry capabilities. It returns an error if the API key is empty
-// or the base URL is invalid.
+// automatic retry capabilities. It panics if the API key is empty or the base
+// URL is invalid.
 func NewSender(apiKey string, opts ...Option) (Sender, error) {
 	if apiKey == "" {
-		return nil, errors.New("mail: API key is required")
+		panic("mail: API key is required")
 	}
 
 	cfg := config{
@@ -354,7 +351,7 @@ func NewSender(apiKey string, opts ...Option) (Sender, error) {
 
 	endpoint, err := url.JoinPath(cfg.baseURL, "mail/send")
 	if err != nil {
-		return nil, fmt.Errorf("mail: invalid base URL: %w", err)
+		panic(fmt.Errorf("mail: invalid base URL: %w", err))
 	}
 
 	s := &sender{
