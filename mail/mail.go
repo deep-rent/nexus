@@ -35,7 +35,7 @@
 //	  mail.NewAddress("no-reply@example.com", "My App"),
 //	  "template-id-123",
 //	  mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
-//	    AddData("name", "Alice"),
+//	    AddTemplateData("name", "Alice"),
 //	)
 //
 //	// 3. Dispatch the email.
@@ -148,8 +148,8 @@ func (r *Recipient) AddCC(addrs ...Email) *Recipient {
 	return r
 }
 
-// AddData adds or updates a key-value pair in the template data map.
-func (r *Recipient) AddData(key string, value any) *Recipient {
+// AddTemplateData adds or updates a key-value pair in the template data map.
+func (r *Recipient) AddTemplateData(key string, value any) *Recipient {
 	if r.TemplateData == nil {
 		r.TemplateData = make(map[string]any)
 	}
@@ -157,8 +157,8 @@ func (r *Recipient) AddData(key string, value any) *Recipient {
 	return r
 }
 
-// SetData replaces the entire template data map.
-func (r *Recipient) SetData(data map[string]any) *Recipient {
+// SetTemplateData replaces the entire template data map.
+func (r *Recipient) SetTemplateData(data map[string]any) *Recipient {
 	r.TemplateData = data
 	return r
 }
@@ -340,10 +340,6 @@ func New(apiKey string, opts ...Option) (Sender, error) {
 		return nil, fmt.Errorf("mail: invalid base URL: %w", err)
 	}
 
-	if cfg.client != nil && len(cfg.retry) > 0 {
-		cfg.logger.Warn("Custom client provided; retry options will be ignored")
-	}
-
 	s := &sender{
 		apiKey: apiKey,
 		url:    endpoint,
@@ -371,6 +367,9 @@ func New(apiKey string, opts ...Option) (Sender, error) {
 			Transport: t,
 		}
 	} else {
+		if len(cfg.retry) > 0 {
+			cfg.logger.Warn("Custom client provided; retry options will be ignored")
+		}
 		s.client = cfg.client
 	}
 
