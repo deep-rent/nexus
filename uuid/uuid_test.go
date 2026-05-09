@@ -41,6 +41,8 @@ func TestStructure(t *testing.T) {
 func TestTimeAccuracy(t *testing.T) {
 	t.Parallel()
 
+	const tolerance = 100 * time.Millisecond
+
 	u := uuid.New()
 	now := time.Now()
 
@@ -53,7 +55,7 @@ func TestTimeAccuracy(t *testing.T) {
 	ts |= int64(u[5])
 
 	got := time.UnixMilli(ts)
-	if diff := now.Sub(got); diff < 0 || diff > 100*time.Millisecond {
+	if diff := now.Sub(got); diff < -tolerance || diff > tolerance {
 		t.Errorf("UUID timestamp = %v; current time = %v; diff = %v",
 			got, now, diff)
 	}
