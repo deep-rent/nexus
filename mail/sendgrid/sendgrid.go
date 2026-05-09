@@ -78,12 +78,12 @@ var _ error = (*APIError)(nil)
 // with the SendGrid API. Once initialized via [New], a Sender is safe for
 // concurrent use by multiple goroutines.
 type Sender struct {
-	apiKey    string
-	baseURL   string
-	timeout   time.Duration
-	client    *http.Client
-	logger    *slog.Logger
-	retryOpts []retry.Option
+	apiKey  string
+	baseURL string
+	timeout time.Duration
+	client  *http.Client
+	logger  *slog.Logger
+	retry   []retry.Option
 }
 
 // Option defines the functional option pattern for configuring the Client.
@@ -119,7 +119,7 @@ func WithTimeout(d time.Duration) Option {
 // ignored.
 func WithRetryOptions(opts ...retry.Option) Option {
 	return func(s *Sender) {
-		s.retryOpts = append(s.retryOpts, opts...)
+		s.retry = append(s.retry, opts...)
 	}
 }
 
@@ -167,7 +167,7 @@ func New(apiKey string, opts ...Option) *Sender {
 			ResponseHeaderTimeout: c.timeout * 9 / 10,
 			DisableKeepAlives:     true,
 		}
-		t = retry.NewTransport(t, c.retryOpts...)
+		t = retry.NewTransport(t, c.retry...)
 		c.client = &http.Client{
 			Timeout:   c.timeout,
 			Transport: t,
