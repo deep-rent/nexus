@@ -44,10 +44,9 @@
 //		Age   int
 //	}
 //
-//	func (u *User) Validate(v *valid.Validator) error {
+//	func (u *User) Validate(v *valid.Validator) {
 //		v.Email("email", u.Email)
-//		v.MinInt("age", u.Age, 18)
-//		return v.Error()
+//		v.BetweenInt("age", u.Age, 18, 99)
 //	}
 package valid
 

@@ -50,9 +50,8 @@ func (e Errors) Error() string {
 // It is typically implemented by API DTOs and request payloads.
 type Validatable interface {
 	// Validate executes validation logic on the object using the provided
-	// [Validator]. It records any detected failures in the validator and
-	// returns the consolidated [Errors] if any exist, or nil otherwise.
-	Validate(v *Validator) error
+	// [Validator]. It records any detected failures in the validator.
+	Validate(v *Validator)
 }
 
 // Test validates a single [Validatable] instance.
@@ -60,7 +59,7 @@ type Validatable interface {
 // all checks pass.
 func Test(target Validatable) error {
 	v := New()
-	_ = target.Validate(v)
+	target.Validate(v)
 	return v.Error()
 }
 
@@ -117,7 +116,7 @@ func (v *Validator) Test(field string, target Validatable) {
 		errs: v.errs,
 		path: v.join(field),
 	}
-	_ = target.Validate(sub)
+	target.Validate(sub)
 }
 
 // Each iterates over a slice and validates each element that implements the
@@ -159,7 +158,7 @@ func (v *Validator) Each(field string, slice any) {
 				errs: v.errs,
 				path: fmt.Sprintf("%s[%d]", p, i),
 			}
-			_ = target.Validate(sub)
+			target.Validate(sub)
 		}
 	}
 }

@@ -29,13 +29,14 @@ type mockItem struct {
 	val string
 }
 
-func (i *mockItem) Validate(v *valid.Validator) error {
+func (i *mockItem) Validate(v *valid.Validator) {
 	if i == nil {
-		return nil
+		return
 	}
 	v.NotEmpty("val", i.val)
-	return v.Error()
 }
+
+var _ valid.Validatable = (*mockItem)(nil)
 
 // mockDeepItem simulates a struct that might be nested behind multiple
 // interface or pointer boundaries in a slice.
@@ -43,27 +44,29 @@ type mockDeepItem struct {
 	val string
 }
 
-func (m *mockDeepItem) Validate(v *valid.Validator) error {
+func (m *mockDeepItem) Validate(v *valid.Validator) {
 	if m == nil {
-		return nil
+		return
 	}
 	v.NotEmpty("val", m.val)
-	return v.Error()
 }
+
+var _ valid.Validatable = (*mockDeepItem)(nil)
 
 type mockParent struct {
 	child *mockItem
 	items []mockItem
 }
 
-func (p *mockParent) Validate(v *valid.Validator) error {
+func (p *mockParent) Validate(v *valid.Validator) {
 	if p == nil {
-		return nil
+		return
 	}
 	v.Test("child", p.child)
 	v.Each("items", p.items)
-	return v.Error()
 }
+
+var _ valid.Validatable = (*mockParent)(nil)
 
 func TestErrors_Error(t *testing.T) {
 	t.Parallel()
