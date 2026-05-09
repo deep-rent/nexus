@@ -45,6 +45,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -155,12 +156,18 @@ func New(cfg *Config) *Updater {
 // nil if the current version is up-to-date or if the latest release is older or
 // equal.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf(
-		"%s/repos/%s/%s/releases/latest",
-		u.baseURL, u.owner, u.repository,
+	endpoint, err := url.JoinPath(
+		u.baseURL,
+		"repos",
+		u.owner,
+		u.repository,
+		"releases",
+		"latest",
 	)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
