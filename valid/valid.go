@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package valid provides utility functions for validating common formats and data types.
+// Package valid provides utility functions for validating common formats and
+// data types.
 package valid
 
 import (
@@ -483,9 +484,13 @@ func isHash(s string, size int) bool {
 }
 
 func mod97(rem int, c byte) int {
+	var n, k int
 	if ascii.IsDigit(rune(c)) {
-		return (rem*10 + int(c-'0')) % 97
+		n = rem * 10
+		k = int(c - '0')
+	} else {
+		n = rem * 100
+		k = int(ascii.ToUpper(rune(c)) - 'A' + 10)
 	}
-	k := int(ascii.ToUpper(rune(c)) - 'A' + 10)
-	return (100*rem + k) % 97
+	return (n + k) % 97
 }
