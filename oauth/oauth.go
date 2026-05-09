@@ -345,7 +345,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return sendError(errAccessDenied)
 	}
 
-	code, err := opaque.Generate()
+	code, err := opaque.Token()
 	if err != nil {
 		p.logger.Error("Failed to generate opaque token", slog.Any("error", err))
 		return e.JSON(http.StatusInternalServerError, errServerError)
@@ -588,7 +588,7 @@ func (p *Provider) issueTokens(
 	}
 
 	if refresh {
-		rt, err := opaque.Generate()
+		rt, err := opaque.Token()
 		if err != nil {
 			p.logger.Error("Failed to generate opaque refresh token", slog.Any("error", err))
 			return e.JSON(http.StatusInternalServerError, errServerError)

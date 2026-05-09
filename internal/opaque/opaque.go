@@ -26,11 +26,11 @@
 // Example:
 //
 //	// Create a secure 32-byte (encoded) random string.
-//	token, err := opaque.Generate()
+//	tok, err := opaque.Token()
 //	if err != nil {
 //		// Handle cryptographic source error.
 //	}
-//	fmt.Println("Generated token:", token)
+//	fmt.Println("Generated token:", tok)
 package opaque
 
 import (
@@ -38,11 +38,11 @@ import (
 	"encoding/base64"
 )
 
-// Generate creates a cryptographically secure random string by reading 32
+// Token creates a cryptographically secure random string by reading 32
 // bytes from [rand.Reader] and encoding them using [base64.RawURLEncoding].
 // This produces a high-entropy string that is safe for use in URLs and
 // persistent storage.
-func Generate() (string, error) {
+func Token() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
