@@ -330,276 +330,322 @@ func (v *Validator) After(field string, val, min time.Time) {
 // Standard Format Checks
 // ----------------------------------------------------------------------------
 
+// CIDR ensures that the given string satisfies [CIDR].
 func (v *Validator) CIDR(field, val string) {
 	if !CIDR(val) {
 		v.Fail(field, "must be a valid CIDR")
 	}
 }
 
+// CIDRv4 ensures that the given string satisfies [CIDRv4].
 func (v *Validator) CIDRv4(field, val string) {
 	if !CIDRv4(val) {
 		v.Fail(field, "must be a valid IPv4 CIDR")
 	}
 }
 
+// CIDRv6 ensures that the given string satisfies [CIDRv6].
 func (v *Validator) CIDRv6(field, val string) {
 	if !CIDRv6(val) {
 		v.Fail(field, "must be a valid IPv6 CIDR")
 	}
 }
 
+// Hostname ensures that the given string satisfies [Hostname].
 func (v *Validator) Hostname(field, val string) {
 	if !Hostname(val) {
 		v.Fail(field, "must be a valid hostname")
 	}
 }
 
+// Port ensures that the given value satisfies [Port].
 func (v *Validator) Port(field string, val int) {
 	if !Port(val) {
 		v.Fail(field, "must be a valid port number")
 	}
 }
 
+// IP ensures that the given string satisfies [IP].
 func (v *Validator) IP(field, val string) {
 	if !IP(val) {
 		v.Fail(field, "must be a valid IP address")
 	}
 }
 
+// IPv4 ensures that the given string satisfies [IPv4].
 func (v *Validator) IPv4(field, val string) {
 	if !IPv4(val) {
 		v.Fail(field, "must be a valid IPv4 address")
 	}
 }
 
+// IPv6 ensures that the given string satisfies [IPv6].
 func (v *Validator) IPv6(field, val string) {
 	if !IPv6(val) {
 		v.Fail(field, "must be a valid IPv6 address")
 	}
 }
 
+// FQDN ensures that the given string satisfies [FQDN].
 func (v *Validator) FQDN(field, val string) {
 	if !FQDN(val) {
 		v.Fail(field, "must be a valid FQDN")
 	}
 }
 
+// URI ensures that the given string satisfies [URI].
 func (v *Validator) URI(field, val string) {
 	if !URI(val) {
 		v.Fail(field, "must be a valid URI")
 	}
 }
 
+// URL ensures that the given string satisfies [URL].
 func (v *Validator) URL(field, val string) {
 	if !URL(val) {
 		v.Fail(field, "must be a valid URL")
 	}
 }
 
+// URN ensures that the given string satisfies [URN].
 func (v *Validator) URN(field, val string) {
 	if !URN(val) {
 		v.Fail(field, "must be a valid URN")
 	}
 }
 
+// Alpha ensures that the given string satisfies [Alpha].
 func (v *Validator) Alpha(field, val string) {
 	if !Alpha(val) {
 		v.Fail(field, "must contain only alphabetical characters")
 	}
 }
 
+// AlphaNum ensures that the given string satisfies [AlphaNum].
 func (v *Validator) AlphaNum(field, val string) {
 	if !AlphaNum(val) {
 		v.Fail(field, "must contain only alphanumeric characters")
 	}
 }
 
+// ASCII ensures that the given string satisfies [ASCII].
 func (v *Validator) ASCII(field, val string) {
 	if !ASCII(val) {
 		v.Fail(field, "must contain only ASCII characters")
 	}
 }
 
+// Slug ensures that the given string satisfies [Slug].
 func (v *Validator) Slug(field, val string) {
 	if !Slug(val) {
 		v.Fail(field, "must be a valid slug")
 	}
 }
 
+// Upper ensures that the given string satisfies [Upper].
 func (v *Validator) Upper(field, val string) {
 	if !Upper(val) {
 		v.Fail(field, "must contain only uppercase characters")
 	}
 }
 
+// Lower ensures that the given string satisfies [Lower].
 func (v *Validator) Lower(field, val string) {
 	if !Lower(val) {
 		v.Fail(field, "must contain only lowercase characters")
 	}
 }
 
+// Base64 ensures that the given string satisfies [Base64].
 func (v *Validator) Base64(field, val string) {
 	if !Base64(val) {
 		v.Fail(field, "must be a valid Base64 string")
 	}
 }
 
+// Base64URL ensures that the given string satisfies [Base64URL].
 func (v *Validator) Base64URL(field, val string) {
 	if !Base64URL(val) {
 		v.Fail(field, "must be a valid Base64URL string")
 	}
 }
 
+// MAC ensures that the given string satisfies [MAC].
 func (v *Validator) MAC(field, val string) {
 	if !MAC(val) {
 		v.Fail(field, "must be a valid MAC address")
 	}
 }
 
+// Lang ensures that the given string satisfies [Lang].
 func (v *Validator) Lang(field, val string) {
 	if !Lang(val) {
 		v.Fail(field, "must be a valid BCP 47 language tag")
 	}
 }
 
+// JSON ensures that the given string satisfies [JSON].
 func (v *Validator) JSON(field, val string) {
 	if !JSON(val) {
 		v.Fail(field, "must be a valid JSON document")
 	}
 }
 
+// MIME ensures that the given string satisfies [MIME].
 func (v *Validator) MIME(field, val string) {
 	if !MIME(val) {
 		v.Fail(field, "must be a valid MIME type")
 	}
 }
 
+// CreditCard ensures that the given string satisfies [CreditCard].
 func (v *Validator) CreditCard(field, val string) {
 	if !CreditCard(val) {
 		v.Fail(field, "must be a valid credit card number")
 	}
 }
 
+// Email ensures that the given string satisfies [Email].
 func (v *Validator) Email(field, val string) {
 	if !Email(val) {
 		v.Fail(field, "must be a valid email address")
 	}
 }
 
+// Hex ensures that the given string satisfies [Hex].
 func (v *Validator) Hex(field, val string) {
 	if !Hex(val) {
 		v.Fail(field, "must be a valid hexadecimal number")
 	}
 }
 
+// HexColor ensures that the given string satisfies [HexColor].
 func (v *Validator) HexColor(field, val string) {
 	if !HexColor(val) {
 		v.Fail(field, "must be a valid hex color code")
 	}
 }
 
+// ISSN ensures that the given string satisfies [ISSN].
 func (v *Validator) ISSN(field, val string) {
 	if !ISSN(val) {
 		v.Fail(field, "must be a valid ISSN")
 	}
 }
 
+// ISBN10 ensures that the given string satisfies [ISBN10].
 func (v *Validator) ISBN10(field, val string) {
 	if !ISBN10(val) {
 		v.Fail(field, "must be a valid ISBN-10")
 	}
 }
 
+// ISBN13 ensures that the given string satisfies [ISBN13].
 func (v *Validator) ISBN13(field, val string) {
 	if !ISBN13(val) {
 		v.Fail(field, "must be a valid ISBN-13")
 	}
 }
 
+// ISBN ensures that the given string satisfies [ISBN].
 func (v *Validator) ISBN(field, val string) {
 	if !ISBN(val) {
 		v.Fail(field, "must be a valid ISBN")
 	}
 }
 
+// Country2 ensures that the given string satisfies [Country2].
 func (v *Validator) Country2(field, val string) {
 	if !Country2(val) {
 		v.Fail(field, "must be a valid ISO 3166-1 alpha-2 code")
 	}
 }
 
+// Country3 ensures that the given string satisfies [Country3].
 func (v *Validator) Country3(field, val string) {
 	if !Country3(val) {
 		v.Fail(field, "must be a valid ISO 3166-1 alpha-3 code")
 	}
 }
 
+// CountryN ensures that the given string satisfies [CountryN].
 func (v *Validator) CountryN(field, val string) {
 	if !CountryN(val) {
 		v.Fail(field, "must be a valid ISO 3166-1 numeric code")
 	}
 }
 
+// Currency ensures that the given string satisfies [Currency].
 func (v *Validator) Currency(field, val string) {
 	if !Currency(val) {
 		v.Fail(field, "must be a valid ISO 4217 currency code")
 	}
 }
 
+// Lat ensures that the given value satisfies [Lat].
 func (v *Validator) Lat(field string, val float32) {
 	if !Lat(val) {
 		v.Fail(field, "must be a valid latitude")
 	}
 }
 
+// Lon ensures that the given value satisfies [Lon].
 func (v *Validator) Lon(field string, val float32) {
 	if !Lon(val) {
 		v.Fail(field, "must be a valid longitude")
 	}
 }
 
+// MD5 ensures that the given string satisfies [MD5].
 func (v *Validator) MD5(field, val string) {
 	if !MD5(val) {
 		v.Fail(field, "must be a valid MD5 hash")
 	}
 }
 
+// SHA256 ensures that the given string satisfies [SHA256].
 func (v *Validator) SHA256(field, val string) {
 	if !SHA256(val) {
 		v.Fail(field, "must be a valid SHA256 hash")
 	}
 }
 
+// SHA384 ensures that the given string satisfies [SHA384].
 func (v *Validator) SHA384(field, val string) {
 	if !SHA384(val) {
 		v.Fail(field, "must be a valid SHA384 hash")
 	}
 }
 
+// SHA512 ensures that the given string satisfies [SHA512].
 func (v *Validator) SHA512(field, val string) {
 	if !SHA512(val) {
 		v.Fail(field, "must be a valid SHA512 hash")
 	}
 }
 
+// SemVer ensures that the given string satisfies [SemVer].
 func (v *Validator) SemVer(field, val string) {
 	if !SemVer(val) {
 		v.Fail(field, "must be a valid semantic version")
 	}
 }
 
+// Phone ensures that the given string satisfies [Phone].
 func (v *Validator) Phone(field, val string) {
 	if !Phone(val) {
 		v.Fail(field, "must be a valid E.164 phone number")
 	}
 }
 
+// BIC ensures that the given string satisfies [BIC].
 func (v *Validator) BIC(field, val string) {
 	if !BIC(val) {
 		v.Fail(field, "must be a valid BIC")
 	}
 }
 
+// IBAN ensures that the given string satisfies [IBAN].
 func (v *Validator) IBAN(field, val string) {
 	if !IBAN(val) {
 		v.Fail(field, "must be a valid IBAN")
