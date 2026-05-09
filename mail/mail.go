@@ -381,7 +381,7 @@ func New(apiKey string, opts ...Option) (Sender, error) {
 // It maps the domain [Message] payload into SendGrid's expected JSON
 // structure and dispatches the request. It respects the provided context
 // for timeouts and cancellation. If the API responds with an HTTP status
-// code >= 400, it logs the response body and returns a generic error.
+// code >= 400, it logs the response body and returns an [*APIError].
 func (s *sender) Send(ctx context.Context, msg *Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
