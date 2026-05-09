@@ -409,10 +409,13 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		slog.Int("recipients", len(msg.Recipients)),
 	)
 
+	start := time.Now()
 	res, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("mail: request failed: %w", err)
 	}
+	delta := time.Since(start)
+
 	defer func() {
 		// Drain body to ensure connection reuse:
 		_, _ = io.Copy(io.Discard, res.Body)
@@ -434,7 +437,11 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		}
 	}
 
-	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid")
+	s.logger.DebugContext(
+		ctx,
+		"Message successfully dispatched to SendGrid",
+		slog.Duration("duration", delta),
+	)
 
 	return nil
 }
