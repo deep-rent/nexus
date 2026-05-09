@@ -49,15 +49,25 @@ func (e Errors) Error() string {
 // Validatable describes a structure that can self-validate using a [Validator].
 // It is typically implemented by API DTOs and request payloads.
 type Validatable interface {
+	// Validate executes validation logic on the object using the provided
+	// [Validator]. It records any detected failures in the validator and
+	// returns the consolidated [Errors] if any exist, or nil otherwise.
 	Validate(v *Validator) error
 }
 
+// Test validates a single [Validatable] instance.
+// It returns a composite error if any validation checks fail, or nil if
+// all checks pass.
 func Test(target Validatable) error {
 	v := New()
 	_ = target.Validate(v)
 	return v.Error()
 }
 
+// Each validates every element in a slice that implements the [Validatable]
+// interface.
+// It returns a composite error if any element fails validation, or nil if
+// all elements are valid.
 func Each(target any) error {
 	v := New()
 	v.Each("", target)
