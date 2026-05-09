@@ -37,6 +37,20 @@ func (i *mockItem) Validate(v *valid.Validator) error {
 	return v.Error()
 }
 
+// mockDeepItem simulates a struct that might be nested behind multiple
+// interface or pointer boundaries in a slice.
+type mockDeepItem struct {
+	val string
+}
+
+func (m *mockDeepItem) Validate(v *valid.Validator) error {
+	if m == nil {
+		return nil
+	}
+	v.NotEmpty("val", m.val)
+	return v.Error()
+}
+
 type mockParent struct {
 	child *mockItem
 	items []mockItem
@@ -325,5 +339,130 @@ func TestValidator_Unique_Short(t *testing.T) {
 	v.Unique("f", []string{"a"}) // Under minimum length for a collision
 	if err := v.Error(); err != nil {
 		t.Errorf("Unique() returned %v; want nil", err)
+	}
+}
+
+func TestEach_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	item := &mockDeepItem{val: ""}
+	ptrToItem := &item
+	deepPtr := &ptrToItem
+
+	tests := []struct {
+		name string
+		give any
+		want valid.Errors
+	}{
+		{
+			name: "deeply nested pointer",
+			give: []***mockDeepItem{deepPtr},
+			want: valid.Errors{"[0].val": {"must not be empty"}},
+		},
+		{
+			name: "non-slice input",
+			give: "not a slice at all",
+			want: nil,
+		},
+		{
+			name: "nil interface in slice",
+			give: []any{nil, nil},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := valid.Each(tt.give)
+			if tt.want == nil {
+				if err != nil {
+					t.Errorf("Each() = %v; want nil", err)
+				}
+				return
+			}
+
+			got, ok := err.(valid.Errors)
+			if !ok {
+				t.Fatalf("Each() returned %T; want valid.Errors", err)
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Each() = %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidator_PathEscaping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		field string
+		want  string
+	}{
+		{
+			name:  "standard field",
+			field: "name",
+			want:  "name",
+		},
+		{
+			name:  "field with literal dots",
+			field: "user.first.name",
+			want:  `user\.first\.name`,
+		},
+		{
+			name:  "empty field at root",
+			field: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v := valid.New()
+			v.Fail(tt.field, "error")
+
+			gotErrs, ok := v.Error().(valid.Errors)
+			if !ok {
+				t.Fatalf("Error() returned %T; want valid.Errors", v.Error())
+			}
+
+			if _, exists := gotErrs[tt.want]; !exists {
+				t.Errorf("expected path %q to exist in %v", tt.want, gotErrs)
+			}
+		})
+	}
+}
+
+func TestValidator_ShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		apply func(v *valid.Validator)
+	}{
+		{
+			name:  "Unique skip under 2 items",
+			apply: func(v *valid.Validator) { v.Unique("f", []string{"a"}) },
+		},
+		{
+			name:  "Test skip nil target",
+			apply: func(v *valid.Validator) { v.Test("f", nil) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v := valid.New()
+			tt.apply(v)
+
+			if err := v.Error(); err != nil {
+				t.Errorf("expected nil error, got %v", err)
+			}
+		})
 	}
 }
