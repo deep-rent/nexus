@@ -21,6 +21,8 @@ import (
 	"regexp"
 	"strconv"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/deep-rent/nexus/internal/ascii"
 )
 
@@ -30,9 +32,8 @@ var (
 	rxHostname = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
 	rxFQDN     = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
 	rxEmail    = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	rxSemVer   = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-zA-Z0-9-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][a-zA-Z0-9-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`)
 	rxBIC      = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9]([A-Z0-9]{3})?$`)
-	rxLang     = regexp.MustCompile(`^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*$`)
+	rxBCP47    = regexp.MustCompile(`^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*$`)
 )
 
 // CIDR checks if the string is a valid Classless Inter-Domain Routing (CIDR)
@@ -199,7 +200,7 @@ func Base64(s string) bool {
 
 // Lang checks if the string is a valid BCP 47 language tag.
 func Lang(s string) bool {
-	return rxLang.MatchString(s)
+	return rxBCP47.MatchString(s)
 }
 
 // CreditCard checks if the string is a valid credit card number using the Luhn
@@ -390,7 +391,7 @@ func SHA512(s string) bool {
 
 // SemVer checks if the string is a valid Semantic Versioning 2.0.0 string.
 func SemVer(s string) bool {
-	return rxSemVer.MatchString(s)
+	return semver.IsValid(s)
 }
 
 // Phone checks if the string is a valid E.164 formatted phone number.
