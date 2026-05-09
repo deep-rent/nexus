@@ -83,14 +83,6 @@ func (v *Validator) Fail(field, msg string) {
 	v.errs[p] = append(v.errs[p], msg)
 }
 
-// Test evaluates a boolean condition and adds an error message to the field
-// if it evaluates to false. It serves as the foundation for all typed checks.
-func (v *Validator) Test(ok bool, field, msg string) {
-	if !ok {
-		v.Fail(field, msg)
-	}
-}
-
 // Walk dives into a nested [Validatable] struct. It appends the field name
 // to the current path, seamlessly propagating any validation errors using dot
 // notation (e.g., "user.address" or "items[0].name").
@@ -157,58 +149,72 @@ func (v *Validator) join(field string) string {
 
 // Min asserts that a numeric value is at least the given minimum.
 func (v *Validator) Min(field string, val, min float64) {
-	v.Test(val >= min, field, fmt.Sprintf("must be at least %v", min))
+	if val < min {
+		v.Fail(field, fmt.Sprintf("must be at least %v", min))
+	}
 }
 
 // Max asserts that a numeric value is at most the given maximum.
 func (v *Validator) Max(field string, val, max float64) {
-	v.Test(val <= max, field, fmt.Sprintf("must be at most %v", max))
+	if val > max {
+		v.Fail(field, fmt.Sprintf("must be at most %v", max))
+	}
 }
 
 // MinInt asserts that an integer value is at least the given minimum.
 func (v *Validator) MinInt(field string, val, min int) {
-	v.Test(val >= min, field, fmt.Sprintf("must be at least %d", min))
+	if val < min {
+		v.Fail(field, fmt.Sprintf("must be at least %d", min))
+	}
 }
 
 // MaxInt asserts that an integer value is at most the given maximum.
 func (v *Validator) MaxInt(field string, val, max int) {
-	v.Test(val <= max, field, fmt.Sprintf("must be at most %d", max))
+	if val > max {
+		v.Fail(field, fmt.Sprintf("must be at most %d", max))
+	}
 }
 
 // Between asserts that a numeric value is between min and max inclusive.
 func (v *Validator) Between(field string, val, min, max float64) {
-	v.Test(
-		val >= min && val <= max, field,
-		fmt.Sprintf("must be between %v and %v", min, max),
-	)
+	if val < min || val > max {
+		v.Fail(field, fmt.Sprintf("must be between %v and %v", min, max))
+	}
 }
 
 // BetweenInt asserts that an integer value is between min and max inclusive.
 func (v *Validator) BetweenInt(field string, val, min, max int) {
-	v.Test(
-		val >= min && val <= max, field,
-		fmt.Sprintf("must be between %d and %d", min, max),
-	)
+	if val < min || val > max {
+		v.Fail(field, fmt.Sprintf("must be between %d and %d", min, max))
+	}
 }
 
 // MinLen asserts that the length of a string is at least min.
 func (v *Validator) MinLen(field, val string, min int) {
-	v.Test(len(val) >= min, field, fmt.Sprintf("length must be at least %d", min))
+	if len(val) < min {
+		v.Fail(field, fmt.Sprintf("length must be at least %d", min))
+	}
 }
 
 // MaxLen asserts that the length of a string is at most max.
 func (v *Validator) MaxLen(field, val string, max int) {
-	v.Test(len(val) <= max, field, fmt.Sprintf("length must be at most %d", max))
+	if len(val) > max {
+		v.Fail(field, fmt.Sprintf("length must be at most %d", max))
+	}
 }
 
 // MinSize asserts that the size of a slice or map is at least min.
 func (v *Validator) MinSize(field string, size, min int) {
-	v.Test(size >= min, field, fmt.Sprintf("size must be at least %d", min))
+	if size < min {
+		v.Fail(field, fmt.Sprintf("size must be at least %d", min))
+	}
 }
 
 // MaxSize asserts that the size of a slice or map is at most max.
 func (v *Validator) MaxSize(field string, size, max int) {
-	v.Test(size <= max, field, fmt.Sprintf("size must be at most %d", max))
+	if size > max {
+		v.Fail(field, fmt.Sprintf("size must be at most %d", max))
+	}
 }
 
 // Unique asserts that all elements in a string slice are unique.
@@ -244,12 +250,16 @@ func (v *Validator) Blacklist(field string, val any, list ...any) {
 
 // NotEmpty asserts that a string is not empty.
 func (v *Validator) NotEmpty(field, val string) {
-	v.Test(val != "", field, "must not be empty")
+	if val == "" {
+		v.Fail(field, "must not be empty")
+	}
 }
 
 // Match asserts that a string matches a regular expression.
 func (v *Validator) Match(field, val string, rx *regexp.Regexp) {
-	v.Test(rx.MatchString(val), field, "must match the required pattern")
+	if !rx.MatchString(val) {
+		v.Fail(field, fmt.Sprintf("must match the pattern %s", rx.String()))
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -257,185 +267,277 @@ func (v *Validator) Match(field, val string, rx *regexp.Regexp) {
 // ----------------------------------------------------------------------------
 
 func (v *Validator) CIDR(field, val string) {
-	v.Test(CIDR(val), field, "must be a valid CIDR")
+	if !CIDR(val) {
+		v.Fail(field, "must be a valid CIDR")
+	}
 }
 
 func (v *Validator) CIDRv4(field, val string) {
-	v.Test(CIDRv4(val), field, "must be a valid IPv4 CIDR")
+	if !CIDRv4(val) {
+		v.Fail(field, "must be a valid IPv4 CIDR")
+	}
 }
 
 func (v *Validator) CIDRv6(field, val string) {
-	v.Test(CIDRv6(val), field, "must be a valid IPv6 CIDR")
+	if !CIDRv6(val) {
+		v.Fail(field, "must be a valid IPv6 CIDR")
+	}
 }
 
 func (v *Validator) Hostname(field, val string) {
-	v.Test(Hostname(val), field, "must be a valid hostname")
+	if !Hostname(val) {
+		v.Fail(field, "must be a valid hostname")
+	}
 }
 
 func (v *Validator) Port(field string, val int) {
-	v.Test(Port(val), field, "must be a valid port number")
+	if !Port(val) {
+		v.Fail(field, "must be a valid port number")
+	}
 }
 
 func (v *Validator) IP(field, val string) {
-	v.Test(IP(val), field, "must be a valid IP address")
+	if !IP(val) {
+		v.Fail(field, "must be a valid IP address")
+	}
 }
 
 func (v *Validator) IPv4(field, val string) {
-	v.Test(IPv4(val), field, "must be a valid IPv4 address")
+	if !IPv4(val) {
+		v.Fail(field, "must be a valid IPv4 address")
+	}
 }
 
 func (v *Validator) IPv6(field, val string) {
-	v.Test(IPv6(val), field, "must be a valid IPv6 address")
+	if !IPv6(val) {
+		v.Fail(field, "must be a valid IPv6 address")
+	}
 }
 
 func (v *Validator) FQDN(field, val string) {
-	v.Test(FQDN(val), field, "must be a valid FQDN")
+	if !FQDN(val) {
+		v.Fail(field, "must be a valid FQDN")
+	}
 }
 
 func (v *Validator) URI(field, val string) {
-	v.Test(URI(val), field, "must be a valid URI")
+	if !URI(val) {
+		v.Fail(field, "must be a valid URI")
+	}
 }
 
 func (v *Validator) URL(field, val string) {
-	v.Test(URL(val), field, "must be a valid URL")
+	if !URL(val) {
+		v.Fail(field, "must be a valid URL")
+	}
 }
 
 func (v *Validator) URN(field, val string) {
-	v.Test(URN(val), field, "must be a valid URN")
+	if !URN(val) {
+		v.Fail(field, "must be a valid URN")
+	}
 }
 
 func (v *Validator) Alpha(field, val string) {
-	v.Test(Alpha(val), field, "must contain only alphabetical characters")
+	if !Alpha(val) {
+		v.Fail(field, "must contain only alphabetical characters")
+	}
 }
 
 func (v *Validator) AlphaNum(field, val string) {
-	v.Test(AlphaNum(val), field, "must contain only alphanumeric characters")
+	if !AlphaNum(val) {
+		v.Fail(field, "must contain only alphanumeric characters")
+	}
 }
 
 func (v *Validator) ASCII(field, val string) {
-	v.Test(ASCII(val), field, "must contain only ASCII characters")
+	if !ASCII(val) {
+		v.Fail(field, "must contain only ASCII characters")
+	}
 }
 
 func (v *Validator) Slug(field, val string) {
-	v.Test(Slug(val), field, "must be a valid slug")
+	if !Slug(val) {
+		v.Fail(field, "must be a valid slug")
+	}
 }
 
 func (v *Validator) Upper(field, val string) {
-	v.Test(Upper(val), field, "must contain only uppercase characters")
+	if !Upper(val) {
+		v.Fail(field, "must contain only uppercase characters")
+	}
 }
 
 func (v *Validator) Lower(field, val string) {
-	v.Test(Lower(val), field, "must contain only lowercase characters")
+	if !Lower(val) {
+		v.Fail(field, "must contain only lowercase characters")
+	}
 }
 
 func (v *Validator) Base64(field, val string) {
-	v.Test(Base64(val), field, "must be a valid Base64 string")
+	if !Base64(val) {
+		v.Fail(field, "must be a valid Base64 string")
+	}
 }
 
 func (v *Validator) Base64URL(field, val string) {
-	v.Test(Base64URL(val), field, "must be a valid Base64URL string")
+	if !Base64URL(val) {
+		v.Fail(field, "must be a valid Base64URL string")
+	}
 }
 
 func (v *Validator) MAC(field, val string) {
-	v.Test(MAC(val), field, "must be a valid MAC address")
+	if !MAC(val) {
+		v.Fail(field, "must be a valid MAC address")
+	}
 }
 
 func (v *Validator) Lang(field, val string) {
-	v.Test(Lang(val), field, "must be a valid BCP 47 language tag")
+	if !Lang(val) {
+		v.Fail(field, "must be a valid BCP 47 language tag")
+	}
 }
 
 func (v *Validator) JSON(field, val string) {
-	v.Test(JSON(val), field, "must be a valid JSON document")
+	if !JSON(val) {
+		v.Fail(field, "must be a valid JSON document")
+	}
 }
 
 func (v *Validator) MIME(field, val string) {
-	v.Test(MIME(val), field, "must be a valid MIME type")
+	if !MIME(val) {
+		v.Fail(field, "must be a valid MIME type")
+	}
 }
 
 func (v *Validator) CreditCard(field, val string) {
-	v.Test(CreditCard(val), field, "must be a valid credit card number")
+	if !CreditCard(val) {
+		v.Fail(field, "must be a valid credit card number")
+	}
 }
 
 func (v *Validator) Email(field, val string) {
-	v.Test(Email(val), field, "must be a valid email address")
+	if !Email(val) {
+		v.Fail(field, "must be a valid email address")
+	}
 }
 
 func (v *Validator) Hex(field, val string) {
-	v.Test(Hex(val), field, "must be a valid hexadecimal number")
+	if !Hex(val) {
+		v.Fail(field, "must be a valid hexadecimal number")
+	}
 }
 
 func (v *Validator) HexColor(field, val string) {
-	v.Test(HexColor(val), field, "must be a valid hex color code")
+	if !HexColor(val) {
+		v.Fail(field, "must be a valid hex color code")
+	}
 }
 
 func (v *Validator) ISSN(field, val string) {
-	v.Test(ISSN(val), field, "must be a valid ISSN")
+	if !ISSN(val) {
+		v.Fail(field, "must be a valid ISSN")
+	}
 }
 
 func (v *Validator) ISBN10(field, val string) {
-	v.Test(ISBN10(val), field, "must be a valid ISBN-10")
+	if !ISBN10(val) {
+		v.Fail(field, "must be a valid ISBN-10")
+	}
 }
 
 func (v *Validator) ISBN13(field, val string) {
-	v.Test(ISBN13(val), field, "must be a valid ISBN-13")
+	if !ISBN13(val) {
+		v.Fail(field, "must be a valid ISBN-13")
+	}
 }
 
 func (v *Validator) ISBN(field, val string) {
-	v.Test(ISBN(val), field, "must be a valid ISBN")
+	if !ISBN(val) {
+		v.Fail(field, "must be a valid ISBN")
+	}
 }
 
 func (v *Validator) Country2(field, val string) {
-	v.Test(Country2(val), field, "must be a valid ISO 3166-1 alpha-2 code")
+	if !Country2(val) {
+		v.Fail(field, "must be a valid ISO 3166-1 alpha-2 code")
+	}
 }
 
 func (v *Validator) Country3(field, val string) {
-	v.Test(Country3(val), field, "must be a valid ISO 3166-1 alpha-3 code")
+	if !Country3(val) {
+		v.Fail(field, "must be a valid ISO 3166-1 alpha-3 code")
+	}
 }
 
 func (v *Validator) CountryN(field, val string) {
-	v.Test(CountryN(val), field, "must be a valid ISO 3166-1 numeric code")
+	if !CountryN(val) {
+		v.Fail(field, "must be a valid ISO 3166-1 numeric code")
+	}
 }
 
 func (v *Validator) Currency(field, val string) {
-	v.Test(Currency(val), field, "must be a valid ISO 4217 currency code")
+	if !Currency(val) {
+		v.Fail(field, "must be a valid ISO 4217 currency code")
+	}
 }
 
 func (v *Validator) Lat(field string, val float32) {
-	v.Test(Lat(val), field, "must be a valid latitude")
+	if !Lat(val) {
+		v.Fail(field, "must be a valid latitude")
+	}
 }
 
 func (v *Validator) Lon(field string, val float32) {
-	v.Test(Lon(val), field, "must be a valid longitude")
+	if !Lon(val) {
+		v.Fail(field, "must be a valid longitude")
+	}
 }
 
 func (v *Validator) MD5(field, val string) {
-	v.Test(MD5(val), field, "must be a valid MD5 hash")
+	if !MD5(val) {
+		v.Fail(field, "must be a valid MD5 hash")
+	}
 }
 
 func (v *Validator) SHA256(field, val string) {
-	v.Test(SHA256(val), field, "must be a valid SHA256 hash")
+	if !SHA256(val) {
+		v.Fail(field, "must be a valid SHA256 hash")
+	}
 }
 
 func (v *Validator) SHA384(field, val string) {
-	v.Test(SHA384(val), field, "must be a valid SHA384 hash")
+	if !SHA384(val) {
+		v.Fail(field, "must be a valid SHA384 hash")
+	}
 }
 
 func (v *Validator) SHA512(field, val string) {
-	v.Test(SHA512(val), field, "must be a valid SHA512 hash")
+	if !SHA512(val) {
+		v.Fail(field, "must be a valid SHA512 hash")
+	}
 }
 
 func (v *Validator) SemVer(field, val string) {
-	v.Test(SemVer(val), field, "must be a valid Semantic Version")
+	if !SemVer(val) {
+		v.Fail(field, "must be a valid Semantic Version")
+	}
 }
 
 func (v *Validator) Phone(field, val string) {
-	v.Test(Phone(val), field, "must be a valid E.164 phone number")
+	if !Phone(val) {
+		v.Fail(field, "must be a valid E.164 phone number")
+	}
 }
 
 func (v *Validator) BIC(field, val string) {
-	v.Test(BIC(val), field, "must be a valid BIC")
+	if !BIC(val) {
+		v.Fail(field, "must be a valid BIC")
+	}
 }
 
 func (v *Validator) IBAN(field, val string) {
-	v.Test(IBAN(val), field, "must be a valid IBAN")
+	if !IBAN(val) {
+		v.Fail(field, "must be a valid IBAN")
+	}
 }
