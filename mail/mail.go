@@ -62,6 +62,7 @@ import (
 const DefaultBaseURL = "https://api.sendgrid.com/v3"
 
 var (
+	// ErrNilMessage is returned when a nil [Message] is validated.
 	ErrNilMessage = errors.New("mail: message cannot be nil")
 	// ErrMissingRecipients is returned when an email has no recipients.
 	ErrMissingRecipients = errors.New("mail: at least one recipient is required")
