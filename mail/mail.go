@@ -248,15 +248,24 @@ type sender struct {
 	retry   []retry.Option
 }
 
+// config holds the optional configuration for the SendGrid sender.
+type config struct {
+	client  *http.Client
+	baseURL string
+	timeout time.Duration
+	retry   []retry.Option
+	logger  *slog.Logger
+}
+
 // Option defines the functional option pattern for configuring the Client.
-type Option func(*sender)
+type Option func(*config)
 
 // WithClient allows passing a custom HTTP client.
 // If provided, it overrides the WithTimeout setting.
 func WithClient(client *http.Client) Option {
-	return func(s *sender) {
+	return func(c *config) {
 		if client != nil {
-			s.client = client
+			c.client = client
 		}
 	}
 }
@@ -264,32 +273,32 @@ func WithClient(client *http.Client) Option {
 // WithBaseURL allows overriding the SendGrid API base URL for testing or
 // mocking.
 func WithBaseURL(url string) Option {
-	return func(s *sender) {
-		s.baseURL = url
+	return func(c *config) {
+		c.baseURL = url
 	}
 }
 
 // WithTimeout configures the timeout for the default HTTP client.
 func WithTimeout(d time.Duration) Option {
-	return func(s *sender) {
-		s.timeout = d
+	return func(c *config) {
+		c.timeout = d
 	}
 }
 
 // WithRetryOptions configures the retry mechanism for the default HTTP client.
-// If a custom HTTP client is provided via WithHTTPClient, these options are
+// If a custom HTTP client is provided via WithClient, these options are
 // ignored.
 func WithRetryOptions(opts ...retry.Option) Option {
-	return func(s *sender) {
-		s.retry = append(s.retry, opts...)
+	return func(c *config) {
+		c.retry = append(c.retry, opts...)
 	}
 }
 
 // WithLogger injects a structured logger into the client.
 func WithLogger(logger *slog.Logger) Option {
-	return func(s *sender) {
+	return func(c *config) {
 		if logger != nil {
-			s.logger = logger
+			c.logger = logger
 		}
 	}
 }
@@ -306,38 +315,48 @@ func New(apiKey string, opts ...Option) Sender {
 		panic(errors.New("sendgrid: API key is required"))
 	}
 
-	c := &sender{
-		apiKey:  apiKey,
+	cfg := config{
 		baseURL: DefaultBaseURL,
-		timeout: 10 * time.Second, // Sensible default timeout
-		logger:  slog.Default(),   // Fallback to standard structured logger
+		timeout: 10 * time.Second,
+		logger:  slog.Default(),
 	}
 
 	for _, opt := range opts {
-		opt(c)
+		opt(&cfg)
+	}
+
+	s := &sender{
+		apiKey:  apiKey,
+		baseURL: cfg.baseURL,
+		timeout: cfg.timeout,
+		logger:  cfg.logger,
+		retry:   cfg.retry,
 	}
 
 	// Initialize the default HTTP client if a custom one wasn't provided
-	if c.client == nil {
+	if cfg.client == nil {
 		d := &net.Dialer{
-			Timeout: c.timeout / 3,
+			Timeout: cfg.timeout / 3,
 		}
 		var t http.RoundTripper = &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           d.DialContext,
-			TLSHandshakeTimeout:   c.timeout / 3,
-			ResponseHeaderTimeout: c.timeout * 9 / 10,
+			TLSHandshakeTimeout:   cfg.timeout / 3,
+			ResponseHeaderTimeout: cfg.timeout * 9 / 10,
 			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   100,
 			IdleConnTimeout:       90 * time.Second,
 		}
-		t = retry.NewTransport(t, c.retry...)
-		c.client = &http.Client{
-			Timeout:   c.timeout,
+		t = retry.NewTransport(t, cfg.retry...)
+		s.client = &http.Client{
+			Timeout:   cfg.timeout,
 			Transport: t,
 		}
+	} else {
+		s.client = cfg.client
 	}
 
-	return c
+	return s
 }
 
 // Send executes the HTTP request to the SendGrid API.
