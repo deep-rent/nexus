@@ -15,8 +15,10 @@
 package mail_test
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
@@ -350,5 +352,44 @@ func TestSender_Send(t *testing.T) {
 				t.Errorf("Send() = %v; want err containing %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestSender_CustomLogger(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(
+		&buf,
+		&slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		},
+	))
+
+	client := mockHTTPClient(t, &http.Response{
+		StatusCode: http.StatusAccepted,
+		Body:       io.NopCloser(strings.NewReader(`{"status":"ok"}`)),
+	}, nil)
+
+	sender := mail.NewSender(
+		"test-key",
+		mail.WithClient(client),
+		mail.WithLogger(logger),
+	)
+
+	msg := mail.NewMessage(
+		mail.New("from@example.com", ""),
+		"t-123",
+		mail.NewRecipient(mail.New("to@example.com", "")),
+	)
+
+	err := sender.Send(t.Context(), msg)
+	if err != nil {
+		t.Fatalf("Send() unexpected error: %v", err)
+	}
+
+	if s := buf.String(); !strings.Contains(s,
+		"Dispatching message to provider") {
+		t.Errorf("Expected debug log output in buffer, got: %q", s)
 	}
 }
