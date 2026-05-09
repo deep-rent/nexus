@@ -15,6 +15,7 @@
 package valid_test
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -171,7 +172,7 @@ func TestTest(t *testing.T) {
 				}
 				return
 			}
-			got, ok := err.(valid.Error)
+			got, ok := errors.AsType[valid.Error](err)
 			if !ok {
 				t.Fatalf("Test() returned %T; want valid.Errors", err)
 			}
@@ -230,7 +231,7 @@ func TestEach(t *testing.T) {
 				}
 				return
 			}
-			got, ok := err.(valid.Error)
+			got, ok := errors.AsType[valid.Error](err)
 			if !ok {
 				t.Fatalf("Each() returned %T; want valid.Errors", err)
 			}
@@ -250,7 +251,7 @@ func TestValidator_NestedPaths(t *testing.T) {
 	}
 
 	err := valid.Test(p)
-	got, ok := err.(valid.Error)
+	got, ok := errors.AsType[valid.Error](err)
 	if !ok {
 		t.Fatalf("Test() returned %T; want valid.Errors", err)
 	}
