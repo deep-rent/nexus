@@ -51,6 +51,18 @@ type Validatable interface {
 	Validate(v *Validator) error
 }
 
+func Test(target Validatable) error {
+	v := New()
+	_ = target.Validate(v)
+	return v.Error()
+}
+
+func Each(target any) error {
+	v := New()
+	v.Each("", target)
+	return v.Error()
+}
+
 // Validator orchestrates the validation of fields, builds dot-notation paths
 // for nested structures, and aggregates error messages.
 type Validator struct {
@@ -58,8 +70,8 @@ type Validator struct {
 	path string
 }
 
-// NewValidator creates and returns a new empty [Validator].
-func NewValidator() *Validator {
+// New creates and returns a new empty [Validator].
+func New() *Validator {
 	return &Validator{
 		errs: make(Errors),
 	}
@@ -83,10 +95,10 @@ func (v *Validator) Fail(field, msg string) {
 	v.errs[p] = append(v.errs[p], msg)
 }
 
-// Walk dives into a nested [Validatable] struct. It appends the field name
+// Test dives into a nested [Validatable] struct. It appends the field name
 // to the current path, seamlessly propagating any validation errors using dot
 // notation (e.g., "user.address" or "items[0].name").
-func (v *Validator) Walk(field string, target Validatable) {
+func (v *Validator) Test(field string, target Validatable) {
 	if target == nil {
 		return
 	}
@@ -132,13 +144,15 @@ func (v *Validator) Each(field string, slice any) {
 	}
 }
 
-// join constructs the dot-notation path, accounting for array indexing.
+// join constructs the dot-notation path, escaping any literal dots in the
+// field name. If the field is empty, it returns the current path unchanged.
 func (v *Validator) join(field string) string {
+	if field == "" {
+		return v.path
+	}
+	field = strings.ReplaceAll(field, ".", "\\.")
 	if v.path == "" {
 		return field
-	}
-	if len(field) > 0 && field[0] == '[' {
-		return v.path + field
 	}
 	return v.path + "." + field
 }
@@ -520,7 +534,7 @@ func (v *Validator) SHA512(field, val string) {
 
 func (v *Validator) SemVer(field, val string) {
 	if !SemVer(val) {
-		v.Fail(field, "must be a valid Semantic Version")
+		v.Fail(field, "must be a valid semantic version")
 	}
 }
 
