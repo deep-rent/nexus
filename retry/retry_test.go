@@ -15,10 +15,12 @@
 package retry_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -497,6 +499,37 @@ func TestTransport_RoundTrip(t *testing.T) {
 		}
 		if seenBackoff {
 			t.Error("backoff should not have advanced for a successful call")
+		}
+	})
+
+	t.Run("custom logger injection", func(t *testing.T) {
+		t.Parallel()
+		m := &mockRoundTripper{
+			trips: []mockTrip{
+				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
+				{res: mockResponse(http.StatusOK, "ok")},
+			},
+		}
+
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(
+			&buf,
+			&slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			},
+		))
+
+		transport := retry.NewTransport(m, retry.WithLogger(logger))
+		req, _ := http.NewRequest("GET", "/", nil)
+
+		_, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip() err = %v", err)
+		}
+
+		if s := buf.String(); !strings.Contains(s,
+			"Request attempt failed, retrying") {
+			t.Errorf("expected debug log output from custom logger, got: %q", s)
 		}
 	})
 }
