@@ -513,3 +513,13 @@ func BenchmarkParseBytes(b *testing.B) {
 		_, _ = uuid.ParseBytes(input)
 	}
 }
+
+func BenchmarkEqualString(b *testing.B) {
+	u := uuid.New()
+	s := u.String()
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = u.EqualString(s)
+	}
+}
