@@ -83,7 +83,7 @@ type APIError struct {
 
 // Error implements the error interface.
 func (e *APIError) Error() string {
-	return fmt.Sprintf("mail: api error %d: %s", e.Status, e.Body)
+	return fmt.Sprintf("mail: api returned status %d: %s", e.Status, e.Body)
 }
 
 // Unwrap allows errors.Is to match against ErrDispatchFailed.
