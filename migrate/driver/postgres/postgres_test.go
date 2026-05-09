@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
 	testpg "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -65,7 +65,7 @@ func setupDB(t *testing.T) *sql.DB {
 		t.Fatalf("failed to get connection string: %v", err)
 	}
 
-	db, err := sql.Open("postgres", ds)
+	db, err := sql.Open("pgx", ds)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
