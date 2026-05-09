@@ -17,7 +17,8 @@
 // It defines a generic payload model ([Message]) and a common [Sender]
 // interface for email delivery. This decouples the application's
 // business logic from the underlying mechanism. By default, this package
-// provides a production-ready SendGrid implementation initialized via [New].
+// provides a production-ready SendGrid implementation initialized via
+// [NewSender].
 //
 // # Usage
 //
@@ -27,7 +28,7 @@
 // Example:
 //
 //	// 1. Initialize the default SendGrid sender.
-//	client, err := mail.New("your-api-key")
+//	sender, err := mail.NewSender("your-api-key")
 //	if err != nil {
 //	    // handle error
 //	}
@@ -41,7 +42,7 @@
 //	)
 //
 //	// 3. Dispatch the email.
-//	err = client.Send(context.Background(), msg)
+//	err = sender.Send(context.Background(), msg)
 package mail
 
 import (
@@ -167,7 +168,8 @@ func (r *Recipient) SetTemplateData(data map[string]any) *Recipient {
 	return r
 }
 
-// Validate checks if the [Recipient] group has at least one primary destination.
+// Validate checks if the [Recipient] group has at least one primary
+// destination.
 func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
 		return ErrMissingRecipients
@@ -251,8 +253,8 @@ type Sender interface {
 // sender is a SendGrid email client that implements the [Sender] interface.
 //
 // It manages the HTTP client and authentication state required to interact
-// with the SendGrid API. Once initialized via [New], a [sender] is safe for
-// concurrent use by multiple goroutines.
+// with the SendGrid API. Once initialized via [NewSender], a [sender] is safe
+// for concurrent use by multiple goroutines.
 type sender struct {
 	// apiKey stores the authentication credential for the provider.
 	apiKey string
@@ -326,7 +328,8 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// New creates a configured SendGrid client implementing the [Sender] interface.
+// NewSender creates a configured SendGrid client implementing the [Sender]
+// interface.
 //
 // It initializes the client with a default base URL, a sensible timeout,
 // and a standard logger. These defaults can be overridden by passing one or
@@ -334,7 +337,7 @@ func WithLogger(logger *slog.Logger) Option {
 // an internal client optimized for API calls with connection pooling and
 // automatic retry capabilities. It returns an error if the API key is empty
 // or the base URL is invalid.
-func New(apiKey string, opts ...Option) (Sender, error) {
+func NewSender(apiKey string, opts ...Option) (Sender, error) {
 	if apiKey == "" {
 		return nil, errors.New("mail: API key is required")
 	}
