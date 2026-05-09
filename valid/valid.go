@@ -380,24 +380,24 @@ func ISBN(s string) bool {
 	return ISBN10(s) || ISBN13(s)
 }
 
-// CountryAlpha2 checks if the string is a valid ISO 3166-1 alpha-2
+// Country2 checks if the string is a valid ISO 3166-1 alpha-2
 // country code (e.g., "US").
-func CountryAlpha2(s string) bool {
+func Country2(s string) bool {
 	return len(s) == 2 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1]))
 }
 
-// CountryAlpha3 checks if the string is a valid ISO 3166-1 alpha-3
+// Country3 checks if the string is a valid ISO 3166-1 alpha-3
 // country code (e.g., "USA").
-func CountryAlpha3(s string) bool {
+func Country3(s string) bool {
 	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1])) &&
 		ascii.IsUpper(rune(s[2]))
 }
 
-// Country checks if the string is a valid ISO 3166-1 numeric
+// CountryN checks if the string is a valid ISO 3166-1 numeric
 // country code (e.g., "840").
-func Country(s string) bool {
+func CountryN(s string) bool {
 	return len(s) == 3 && ascii.IsDigit(rune(s[0])) &&
 		ascii.IsDigit(rune(s[1])) && ascii.IsDigit(rune(s[2]))
 }

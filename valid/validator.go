@@ -349,16 +349,16 @@ func (v *Validator) ISBN(field, val string) {
 	v.Test(ISBN(val), field, "must be a valid ISBN")
 }
 
-func (v *Validator) CountryAlpha2(field, val string) {
-	v.Test(CountryAlpha2(val), field, "must be a valid ISO 3166-1 alpha-2 code")
+func (v *Validator) Country2(field, val string) {
+	v.Test(Country2(val), field, "must be a valid ISO 3166-1 alpha-2 code")
 }
 
-func (v *Validator) CountryAlpha3(field, val string) {
-	v.Test(CountryAlpha3(val), field, "must be a valid ISO 3166-1 alpha-3 code")
+func (v *Validator) Country3(field, val string) {
+	v.Test(Country3(val), field, "must be a valid ISO 3166-1 alpha-3 code")
 }
 
-func (v *Validator) Country(field, val string) {
-	v.Test(Country(val), field, "must be a valid ISO 3166-1 numeric code")
+func (v *Validator) CountryN(field, val string) {
+	v.Test(CountryN(val), field, "must be a valid ISO 3166-1 numeric code")
 }
 
 func (v *Validator) Currency(field, val string) {
