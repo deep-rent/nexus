@@ -393,6 +393,7 @@ func NewSender(apiKey string, opts ...Option) Sender {
 			DialContext:           d.DialContext,
 			TLSHandshakeTimeout:   cfg.timeout / 3,
 			ResponseHeaderTimeout: cfg.timeout * 9 / 10,
+			ExpectContinueTimeout: 1 * time.Second,
 			MaxIdleConns:          100,
 			MaxIdleConnsPerHost:   100,
 			IdleConnTimeout:       90 * time.Second,
