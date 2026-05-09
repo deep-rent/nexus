@@ -16,6 +16,7 @@
 package valid
 
 import (
+	"encoding/json/jsontext"
 	"net"
 	"net/netip"
 	"net/url"
@@ -34,7 +35,7 @@ var (
 	rxFQDN      = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
 	rxEmail     = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	rxBIC       = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9]([A-Z0-9]{3})?$`)
-	rxBCP47     = regexp.MustCompile(`^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*$`)
+	rxBCP47     = regexp.MustCompile(`(?i)^((?:[a-z]{2,3}(?:-[a-z]{3}){0,3})|[a-z]{4}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*(?:-[0-9a-wy-z](?:-[a-z0-9]{2,8})+)*(?:-x(?:-[a-z0-9]{1,8})+)?$`)
 )
 
 // CIDR checks if the string is a valid Classless Inter-Domain Routing (CIDR)
@@ -210,9 +211,14 @@ func MAC(s string) bool {
 }
 
 // Lang checks if the string is a valid BCP 47 language tag.
-// Does not strictly follow RFC 5646.
+// It strictly follows RFC 5646.
 func Lang(s string) bool {
 	return rxBCP47.MatchString(s)
+}
+
+// JSON checks if the string is a valid JSON document.
+func JSON(s string) bool {
+	return jsontext.Value(s).IsValid()
 }
 
 // CreditCard checks if the string is a valid credit card number using the Luhn
@@ -402,6 +408,7 @@ func SHA512(s string) bool {
 }
 
 // SemVer checks if the string is a valid Semantic Versioning 2.0.0 string.
+// Note that the "v" prefix is mandatory.
 func SemVer(s string) bool {
 	return semver.IsValid(s)
 }
