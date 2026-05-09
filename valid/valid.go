@@ -67,7 +67,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/google/uuid"
+	"github.com/deep-rent/nexus/uuid"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )
