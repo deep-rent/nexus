@@ -132,19 +132,28 @@ func (v *Validator) Each(field string, slice any) {
 	for i := 0; i < rv.Len(); i++ {
 		val := rv.Index(i)
 		var target Validatable
-
-		if t, ok := val.Interface().(Validatable); ok {
-			if (val.Kind() == reflect.Pointer ||
-				val.Kind() == reflect.Interface) && val.IsNil() {
+		// Safely unwind interfaces and nested pointers (read-only).
+		for {
+			k := val.Kind()
+			if (k == reflect.Pointer || k == reflect.Interface) && val.IsNil() {
+				break
+			}
+			if t, ok := val.Interface().(Validatable); ok {
+				target = t
+				break
+			}
+			if k == reflect.Pointer || k == reflect.Interface {
+				val = val.Elem()
 				continue
 			}
-			target = t
-		} else if val.CanAddr() {
-			if t, ok := val.Addr().Interface().(Validatable); ok {
-				target = t
+			if val.CanAddr() {
+				if t, ok := val.Addr().Interface().(Validatable); ok {
+					target = t
+					break
+				}
 			}
+			break
 		}
-
 		if target != nil {
 			sub := &Validator{
 				errs: v.errs,
