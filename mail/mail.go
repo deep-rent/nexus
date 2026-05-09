@@ -265,6 +265,8 @@ type sender struct {
 	retry []retry.Option
 }
 
+var _ Sender = (*sender)(nil)
+
 // config holds the optional configuration for the [sender].
 type config struct {
 	// client holds a custom HTTP client, if provided.
