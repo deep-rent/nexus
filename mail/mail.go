@@ -25,7 +25,7 @@
 // a [Message] using the fluent API, and pass it to the sender:
 //
 //	// 1. Initialize the default SendGrid sender.
-//	client := mail.New("SG.your.api.key")
+//	client := mail.New("your-api-key")
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(
@@ -70,6 +70,22 @@ var (
 	// payload.
 	ErrDispatchFailed = errors.New("mail: dispatching failed")
 )
+
+// APIError represents an error returned by the underlying email provider.
+type APIError struct {
+	Status int
+	Body   string
+}
+
+// Error implements the error interface.
+func (e *APIError) Error() string {
+	return fmt.Sprintf("mail: api error %d: %s", e.Status, e.Body)
+}
+
+// Unwrap allows errors.Is to match against ErrDispatchFailed.
+func (e *APIError) Unwrap() error {
+	return ErrDispatchFailed
+}
 
 // Email represents an email address and an optional display name.
 type Email struct {
@@ -413,7 +429,10 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			slog.Int("status", code),
 			slog.String("body", string(body)),
 		)
-		return ErrDispatchFailed
+		return &APIError{
+			Status: code,
+			Body:   string(body),
+		}
 	}
 
 	s.logger.DebugContext(ctx, "Message successfully dispatched to SendGrid")
