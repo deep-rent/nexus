@@ -20,14 +20,12 @@ import (
 	"github.com/deep-rent/nexus/valid"
 )
 
-// test is a reusable test case structure for string-based validations.
 type test struct {
 	name string
 	give string
 	want bool
 }
 
-// run executes a table of string validation tests.
 func run(t *testing.T, name string, fn func(string) bool, tests []test) {
 	t.Helper()
 	for _, tt := range tests {
