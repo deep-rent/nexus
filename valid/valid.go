@@ -29,18 +29,27 @@ import (
 )
 
 var (
-	rxBase64    = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
+	// rxBase64 validates Base64 strings. Length must be a multiple of 4.
+	rxBase64 = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
+	// rxBase64URL validates Base64URL strings. Padding is optional.
 	rxBase64URL = regexp.MustCompile(`^(?:[A-Za-z0-9-_]{4})*(?:[A-Za-z0-9-_]{2}==|[A-Za-z0-9-_]{3}=|[A-Za-z0-9-_]{2,3})?$`)
-	rxURN       = regexp.MustCompile(`^(?i)urn:[a-z0-9][a-z0-9-]{0,31}:[a-z0-9()+,\-.:=@;$_!*'%/?#]+$`)
-	rxHostname  = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
-	rxFQDN      = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
-	rxEmail     = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	rxBIC       = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9]([A-Z0-9]{3})?$`)
-	rxBCP47     = regexp.MustCompile(`(?i)^((?:[a-z]{2,3}(?:-[a-z]{3}){0,3})|[a-z]{4}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*(?:-[0-9a-wy-z](?:-[a-z0-9]{2,8})+)*(?:-x(?:-[a-z0-9]{1,8})+)?$`)
+	// rxURN validates Uniform Resource Names (URNs) according to RFC 2141.
+	rxURN = regexp.MustCompile(`^(?i)urn:[a-z0-9][a-z0-9-]{0,31}:[a-z0-9()+,\-.:=@;$_!*'%/?#]+$`)
+	// rxHostname validates hostnames according to RFC 952 and RFC 1123.
+	rxHostname = regexp.MustCompile(`^(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`)
+	// rxFQDN validates Fully Qualified Domain Names (FQDNs).
+	rxFQDN = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\.?$`)
+	// rxEmail validates email addresses according to the W3C HTML5 specification.
+	rxEmail = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+	// rxBIC validates Business Identifier Codes (ISO 9362).
+	rxBIC = regexp.MustCompile(`^[A-Z]{6}[A-Z2-9][A-NP-Z0-9](?:[A-Z0-9]{3})?$`)
+	// rxBCP47 validates language tags strictly following RFC 5646.
+	rxBCP47 = regexp.MustCompile(`(?i)^(?:(?:[a-z]{2,3}(?:-[a-z]{3}){0,3})|[a-z]{4}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*(?:-[0-9a-wy-z](?:-[a-z0-9]{2,8})+)*(?:-x(?:-[a-z0-9]{1,8})+)?$`)
 )
 
 // CIDR checks if the string is a valid Classless Inter-Domain Routing (CIDR)
-// block.
+// block. A valid CIDR block is an IP address followed by a slash and a
+// prefix length.
 func CIDR(s string) bool {
 	_, err := netip.ParsePrefix(s)
 	return err == nil
@@ -59,17 +68,18 @@ func CIDRv6(s string) bool {
 }
 
 // Hostname checks if the string is a valid hostname according to RFC 952 and
-// RFC 1123.
+// RFC 1123. The hostname must be at most 253 characters long.
 func Hostname(s string) bool {
 	return len(s) != 0 && len(s) <= 253 && rxHostname.MatchString(s)
 }
 
 // Port checks if the number represents a valid network port number.
+// Port numbers must be between 1 and 65535 inclusive.
 func Port(n int) bool {
 	return n > 0 && n <= 65535
 }
 
-// IP checks if the string is a valid IP address.
+// IP checks if the string is a valid IP address (either IPv4 or IPv6).
 func IP(s string) bool {
 	_, err := netip.ParseAddr(s)
 	return err == nil
@@ -87,12 +97,15 @@ func IPv6(s string) bool {
 	return err == nil && addr.Is6()
 }
 
-// FQDN checks if the string is a Fully Qualified Domain Name.
+// FQDN checks if the string is a Fully Qualified Domain Name (FQDN).
+// An FQDN must have at least one valid top-level domain. It allows for an
+// optional trailing dot.
 func FQDN(s string) bool {
 	return len(s) != 0 && len(s) <= 253 && rxFQDN.MatchString(s)
 }
 
-// URI checks if the string is a valid URI.
+// URI checks if the string is a valid URI (Uniform Resource Identifier)
+// according to RFC 3986.
 func URI(s string) bool {
 	_, err := url.ParseRequestURI(s)
 	return err == nil
@@ -104,12 +117,14 @@ func URL(s string) bool {
 	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
-// URN checks if the string is a valid URN according to RFC 2141.
+// URN checks if the string is a valid URN (Uniform Resource Name) according to
+// RFC 2141.
 func URN(s string) bool {
 	return rxURN.MatchString(s)
 }
 
-// Alpha checks if the string contains only alphabetical characters.
+// Alpha checks if the string contains only alphabetical characters (a-z, A-Z).
+// An empty string returns false.
 func Alpha(s string) bool {
 	if s == "" {
 		return false
@@ -122,7 +137,8 @@ func Alpha(s string) bool {
 	return true
 }
 
-// AlphaNum checks if the string contains only alphanumeric characters.
+// AlphaNum checks if the string contains only alphanumeric characters (a-z,
+// A-Z, 0-9). An empty string returns false.
 func AlphaNum(s string) bool {
 	if s == "" {
 		return false
@@ -136,6 +152,7 @@ func AlphaNum(s string) bool {
 }
 
 // ASCII checks if the string contains only ASCII characters.
+// An empty string returns false.
 func ASCII(s string) bool {
 	if s == "" {
 		return false
@@ -149,6 +166,8 @@ func ASCII(s string) bool {
 }
 
 // Slug checks if the string is a valid URL slug.
+// A slug consists of lowercase letters, numbers, and hyphens, and cannot
+// start or end with a hyphen or contain consecutive hyphens.
 func Slug(s string) bool {
 	if s == "" || s[0] == '-' || s[len(s)-1] == '-' {
 		return false
@@ -169,7 +188,8 @@ func Slug(s string) bool {
 	return true
 }
 
-// Upper checks if the string contains only uppercase characters.
+// Upper checks if the string contains only uppercase characters (A-Z).
+// An empty string returns false.
 func Upper(s string) bool {
 	if s == "" {
 		return false
@@ -182,7 +202,8 @@ func Upper(s string) bool {
 	return true
 }
 
-// Lower checks if the string contains only lowercase characters.
+// Lower checks if the string contains only lowercase characters (a-z).
+// An empty string returns false.
 func Lower(s string) bool {
 	if s == "" {
 		return false
@@ -196,11 +217,13 @@ func Lower(s string) bool {
 }
 
 // Base64 checks if the string is a valid Base64 encoded string.
+// It allows standard padding characters.
 func Base64(s string) bool {
 	return rxBase64.MatchString(s)
 }
 
 // Base64URL checks if the string is a valid Base64URL encoded string.
+// Padding characters are supported but optional.
 func Base64URL(s string) bool {
 	return rxBase64URL.MatchString(s)
 }
@@ -218,12 +241,13 @@ func Lang(s string) bool {
 }
 
 // JSON checks if the string is a valid JSON document.
+// It leverages encoding/json/v2 to perform the check efficiently.
 func JSON(s string) bool {
 	return jsontext.Value(s).IsValid()
 }
 
 // CreditCard checks if the string is a valid credit card number using the Luhn
-// algorithm.
+// algorithm. It ignores whitespace and hyphens before calculating the checksum.
 func CreditCard(s string) bool {
 	var (
 		sum int
@@ -252,12 +276,14 @@ func CreditCard(s string) bool {
 	return cnt >= 13 && cnt <= 19 && sum%10 == 0
 }
 
-// Email checks if the string is a valid email address.
+// Email checks if the string is a valid email address according to the W3C
+// HTML5 specification.
 func Email(s string) bool {
 	return rxEmail.MatchString(s)
 }
 
 // Hex checks if the string is a valid hexadecimal number.
+// The string may optionally be prefixed with "0x" or "0X".
 func Hex(s string) bool {
 	if len(s) > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {
 		s = s[2:]
@@ -274,6 +300,8 @@ func Hex(s string) bool {
 }
 
 // HexColor checks if the string is a valid hex color code.
+// The string may optionally be prefixed with "#". It must be exactly 3 or 6
+// hexadecimal characters long.
 func HexColor(s string) bool {
 	if s == "" {
 		return false
@@ -292,7 +320,8 @@ func HexColor(s string) bool {
 	return true
 }
 
-// ISSN checks if the string is a valid International Standard Serial Number.
+// ISSN checks if the string is a valid International Standard Serial Number
+// (ISSN).
 func ISSN(s string) bool {
 	if len(s) != 9 {
 		return false
@@ -309,6 +338,7 @@ func ISSN(s string) bool {
 }
 
 // ISBN10 checks if the string is a valid ISBN-10.
+// It strips hyphens before validation.
 func ISBN10(s string) bool {
 	var n int
 	for i := 0; i < len(s); i++ {
@@ -329,6 +359,7 @@ func ISBN10(s string) bool {
 }
 
 // ISBN13 checks if the string is a valid ISBN-13.
+// It strips hyphens before validation.
 func ISBN13(s string) bool {
 	var n int
 	for i := 0; i < len(s); i++ {
@@ -350,14 +381,14 @@ func ISBN(s string) bool {
 }
 
 // CountryAlpha2 checks if the string is a valid ISO 3166-1 alpha-2
-// country code.
+// country code (e.g., "US").
 func CountryAlpha2(s string) bool {
 	return len(s) == 2 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1]))
 }
 
 // CountryAlpha3 checks if the string is a valid ISO 3166-1 alpha-3
-// country code.
+// country code (e.g., "USA").
 func CountryAlpha3(s string) bool {
 	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1])) &&
@@ -365,13 +396,13 @@ func CountryAlpha3(s string) bool {
 }
 
 // Country checks if the string is a valid ISO 3166-1 numeric
-// country code.
+// country code (e.g., "840").
 func Country(s string) bool {
 	return len(s) == 3 && ascii.IsDigit(rune(s[0])) &&
 		ascii.IsDigit(rune(s[1])) && ascii.IsDigit(rune(s[2]))
 }
 
-// Currency checks if the string is a valid ISO 4217 currency code.
+// Currency checks if the string is a valid ISO 4217 currency code (e.g., "USD").
 func Currency(s string) bool {
 	return len(s) == 3 && ascii.IsUpper(rune(s[0])) &&
 		ascii.IsUpper(rune(s[1])) &&
@@ -388,22 +419,22 @@ func Lon(f float32) bool {
 	return f >= -180 && f <= 180
 }
 
-// MD5 checks if the string is a valid MD5 hash.
+// MD5 checks if the string is a valid MD5 hash (32 hex characters).
 func MD5(s string) bool {
 	return isHash(s, 32)
 }
 
-// SHA256 checks if the string is a valid SHA256 hash.
+// SHA256 checks if the string is a valid SHA256 hash (64 hex characters).
 func SHA256(s string) bool {
 	return isHash(s, 64)
 }
 
-// SHA384 checks if the string is a valid SHA384 hash.
+// SHA384 checks if the string is a valid SHA384 hash (96 hex characters).
 func SHA384(s string) bool {
 	return isHash(s, 96)
 }
 
-// SHA512 checks if the string is a valid SHA512 hash.
+// SHA512 checks if the string is a valid SHA512 hash (128 hex characters).
 func SHA512(s string) bool {
 	return isHash(s, 128)
 }
@@ -415,6 +446,7 @@ func SemVer(s string) bool {
 }
 
 // Phone checks if the string is a valid E.164 formatted phone number.
+// The string must start with a '+' and be followed by 2 to 15 digits.
 func Phone(s string) bool {
 	if len(s) < 3 || len(s) > 16 || s[0] != '+' || s[1] < '1' || s[1] > '9' {
 		return false
@@ -433,6 +465,7 @@ func BIC(s string) bool {
 }
 
 // IBAN checks if the string is a valid International Bank Account Number.
+// It ignores spaces and performs the modulo 97 check.
 func IBAN(s string) bool {
 	var b [34]byte
 	var n int
@@ -471,6 +504,8 @@ func IBAN(s string) bool {
 	return rem == 1
 }
 
+// isHash reports whether the string s has the specified length and consists
+// entirely of hexadecimal characters.
 func isHash(s string, size int) bool {
 	if len(s) != size {
 		return false
@@ -483,6 +518,9 @@ func isHash(s string, size int) bool {
 	return true
 }
 
+// mod97 updates the running remainder for a large numeric string using the
+// modulo 97 operation. If c is a letter, it is treated as a two-digit number
+// (A=10, ..., Z=35) per the ISO 13616 standard for IBANs.
 func mod97(rem int, c byte) int {
 	var n, k int
 	if ascii.IsDigit(rune(c)) {
