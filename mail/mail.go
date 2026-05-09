@@ -25,18 +25,21 @@
 // a [Message] using the fluent API, and pass it to the sender:
 //
 //	// 1. Initialize the default SendGrid sender.
-//	client := mail.New("your-api-key")
+//	client, err := mail.New("your-api-key")
+//	if err != nil {
+//	    // handle error
+//	}
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(
-//		mail.NewAddress("no-reply@example.com", "My App"),
-//		"template-id-123",
-//		mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
-//			AddData("name", "Alice"),
+//	  mail.NewAddress("no-reply@example.com", "My App"),
+//	  "template-id-123",
+//	  mail.NewRecipient(mail.NewAddress("user@example.com", "Alice")).
+//	    AddData("name", "Alice"),
 //	)
 //
 //	// 3. Dispatch the email.
-//	err := client.Send(context.Background(), msg)
+//	err = client.Send(context.Background(), msg)
 package mail
 
 import (
