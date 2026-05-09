@@ -334,7 +334,7 @@ func WithLogger(logger *slog.Logger) Option {
 // an internal client optimized for API calls with connection pooling and
 // automatic retry capabilities. It panics if the API key is empty or the base
 // URL is invalid.
-func NewSender(apiKey string, opts ...Option) (Sender, error) {
+func NewSender(apiKey string, opts ...Option) Sender {
 	if apiKey == "" {
 		panic("mail: API key is required")
 	}
@@ -387,7 +387,7 @@ func NewSender(apiKey string, opts ...Option) (Sender, error) {
 		s.client = cfg.client
 	}
 
-	return s, nil
+	return s
 }
 
 // Send executes the HTTP request to the SendGrid API.
