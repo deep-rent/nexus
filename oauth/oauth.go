@@ -60,6 +60,10 @@ const (
 )
 
 // Client represents an OAuth 2.0 registered client application.
+//
+// Implementations are responsible for determining which grant types and scopes
+// a specific client is authorized to use, as well as managing redirect URI
+// whitelists and secrets.
 type Client interface {
 	// ID returns the unique identifier for the client.
 	ID() string
@@ -70,42 +74,70 @@ type Client interface {
 	// secret.
 	VerifySecret(secret string) bool
 	// VerifyRedirectURI checks if the given URI is an allowed redirect
-	// destination.
+	// destination. Implementation must perform exact string matching or use a
+	// whitelist.
 	VerifyRedirectURI(uri string) bool
-	// CanUseGrant checks if the client is authorized to use the specified
-	// grant type.
+	// CanUseGrant checks if the client is authorized to use the specified grant
+	// type (e.g., "authorization_code", "client_credentials").
 	CanUseGrant(grant string) bool
 	// CanUseScope checks if the client is allowed to request the specified scope.
 	CanUseScope(scope string) bool
 }
 
 // ClientStore provides data access for registered OAuth 2.0 clients.
+//
+// Implementations must bridge the library to the underlying persistence layer.
 type ClientStore interface {
 	// GetClient retrieves a client by its unique ID.
+	//
+	// If the client is found, it must return the client and nil.
+	// If the client is not found, it must return nil and nil.
+	// It should return an error only if the underlying storage lookup fails.
 	GetClient(ctx context.Context, id string) (Client, error)
 }
 
 // User represents an authenticated resource owner.
+//
+// Implementations wrap user data such as primary keys and permission sets.
 type User interface {
 	// ID returns the unique identifier for the user.
 	ID() string
-	// Roles returns the assigned roles for the user.
+	// Roles returns the list of roles assigned to the user, used to populate
+	// the "rol" claim in access tokens.
 	Roles() []string
 }
 
 // UserStore provides data access and authentication for resource owners.
+//
+// It is used by the Provider to authenticate users during the login flow and
+// to resolve user identities during authorization and token issuance.
 type UserStore interface {
-	// Authenticate validates user credentials and returns the corresponding User.
+	// Authenticate validates user credentials.
+	//
+	// If credentials are valid, it must return the User and nil.
+	// If authentication fails (e.g., wrong password), it must return nil and nil.
+	// It should return an error only if the underlying storage lookup fails.
 	Authenticate(ctx context.Context, username, password string) (User, error)
 	// GetUser retrieves a user by their unique ID.
+	//
+	// If the user is found, it must return the User and nil.
+	// If the user is not found, it must return nil and nil.
+	// It should return an error only if the storage lookup fails.
 	GetUser(ctx context.Context, id string) (User, error)
 	// GetUserBySession retrieves the authenticated user via their session key.
-	// This is required for the authorization endpoint.
+	//
+	// If the session is valid, it must return the User and nil.
+	// If the session is missing, invalid, or expired, it must return nil and nil.
+	// It should return an error only if the storage lookup fails.
 	GetUserBySession(ctx context.Context, key string) (User, error)
-	// AddSession stores the session mapping for the authenticated user.
-	AddSession(ctx context.Context, key, userID string) error
-	// DelSession removes the session mapping associated with the key.
-	DelSession(ctx context.Context, key string) error
+	// CreateSession stores the session mapping for the authenticated user.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateSession(ctx context.Context, key, userID string) error
+	// DeleteSession removes the session mapping associated with the key.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteSession(ctx context.Context, key string) error
 }
 
 // AuthCode holds the state bound to an authorization code.
@@ -131,13 +163,37 @@ type RefreshToken struct {
 
 // SessionStore abstracts the persistence layer for ephemeral OAuth 2.0
 // artifacts.
+//
+// Implementations must handle the lifecycle of authorization codes and
+// refresh tokens. These artifacts usually have a limited TTL.
 type SessionStore interface {
-	AddAuthCode(ctx context.Context, data AuthCode) error
+	// GetAuthCode retrieves an authorization code by its value.
+	//
+	// If found, it must return the data and nil.
+	// If not found or expired, it must return an empty AuthCode and nil.
+	// It should return an error only if the storage lookup fails.
 	GetAuthCode(ctx context.Context, code string) (AuthCode, error)
-	DelAuthCode(ctx context.Context, code string) error
-	AddRefreshToken(ctx context.Context, data RefreshToken) error
+	// CreateAuthCode stores a new authorization code.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateAuthCode(ctx context.Context, data AuthCode) error
+	// DeleteAuthCode removes an authorization code.
+	// It is used to ensure single-use of authorization codes.
+	DeleteAuthCode(ctx context.Context, code string) error
+	// GetRefreshToken retrieves a refresh token by its value.
+	//
+	// If found, it must return the data and nil.
+	// If not found or expired, it must return an empty RefreshToken and nil.
+	// It should return an error only if the storage lookup fails.
 	GetRefreshToken(ctx context.Context, token string) (RefreshToken, error)
-	DelRefreshToken(ctx context.Context, token string) error
+	// CreateRefreshToken stores a new refresh token.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateRefreshToken(ctx context.Context, data RefreshToken) error
+	// DeleteRefreshToken removes a refresh token.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteRefreshToken(ctx context.Context, token string) error
 }
 
 // Config contains all necessary dependencies and settings for the OAuth 2.0
@@ -433,7 +489,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		Lifetime:            p.authCodeLifetime,
 	}
 
-	if err := p.sessionStore.AddAuthCode(
+	if err := p.sessionStore.CreateAuthCode(
 		e.Context(),
 		data,
 	); err != nil {
@@ -474,10 +530,17 @@ func (p *Provider) Login(e *router.Exchange) error {
 		c.Password,
 	)
 	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"User authentication lookup failed",
+			slog.Any("error", err),
+		)
+		return e.JSON(http.StatusInternalServerError, errServerError)
+	}
+	if user == nil {
 		p.logger.DebugContext(
 			e.Context(),
-			"User authentication failed",
-			slog.Any("error", err),
+			"User authentication failed: invalid credentials",
 		)
 		return e.JSON(http.StatusUnauthorized, errAccessDenied)
 	}
@@ -487,7 +550,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
-	if err := p.userStore.AddSession(e.Context(), key, user.ID()); err != nil {
+	if err := p.userStore.CreateSession(e.Context(), key, user.ID()); err != nil {
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to create user session",
@@ -514,7 +577,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 func (p *Provider) Logout(e *router.Exchange) error {
 	cookie, err := e.Cookie(p.sessionCookieName)
 	if err == nil && cookie.Value != "" {
-		if err := p.userStore.DelSession(e.Context(), cookie.Value); err != nil {
+		if err := p.userStore.DeleteSession(e.Context(), cookie.Value); err != nil {
 			p.logger.DebugContext(
 				e.Context(),
 				"Failed to delete user session",
@@ -633,7 +696,7 @@ func (p *Provider) Revoke(e *router.Exchange) error {
 	// Access tokens are stateless JWTs in this implementation, so we primarily
 	// care about revoking refresh tokens. RFC 7009 dictates that an invalid
 	// or already revoked token should still result in a 200 OK response.
-	if err := p.sessionStore.DelRefreshToken(e.Context(), tok); err != nil {
+	if err := p.sessionStore.DeleteRefreshToken(e.Context(), tok); err != nil {
 		p.logger.DebugContext(
 			e.Context(),
 			"Failed to delete refresh token during revocation",
@@ -729,18 +792,19 @@ func (p *Provider) handleAuthorizationCodeGrant(
 	// 2. Retrieve the authorization code from the session store.
 	data, err := p.sessionStore.GetAuthCode(e.Context(), code)
 	if err != nil {
-		p.logger.DebugContext(
-			e.Context(),
-			"Failed to retrieve auth code",
-			slog.Any("error", err),
-		)
+		p.logger.ErrorContext(e.Context(), "Failed to retrieve auth code", slog.Any("error", err))
+		return e.JSON(http.StatusInternalServerError, errServerError)
+	}
+
+	// 3. Ensure the code exists.
+	if data.Code == "" {
 		return e.JSON(http.StatusBadRequest, errInvalidAuthCode)
 	}
 
-	// 3. Guarantee single-use by eagerly deleting the code.
-	_ = p.sessionStore.DelAuthCode(e.Context(), code)
+	// 4. Guarantee single-use by eagerly deleting the code.
+	_ = p.sessionStore.DeleteAuthCode(e.Context(), code)
 
-	// 4. Validate the client ID and redirect URI binding.
+	// 5. Validate the client ID and redirect URI binding.
 	if data.ClientID != client.ID() {
 		p.logger.DebugContext(
 			e.Context(),
@@ -758,7 +822,7 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		return e.JSON(http.StatusBadRequest, errRedirectURIMismatch)
 	}
 
-	// 5. Verify the PKCE code challenge.
+	// 6. Verify the PKCE code challenge.
 	if !pkce.Verify(
 		verifier,
 		data.CodeChallenge,
@@ -771,7 +835,7 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		return e.JSON(http.StatusBadRequest, errPKCEVerificationFailed)
 	}
 
-	// 6. Issue the access and refresh tokens.
+	// 7. Issue the access and refresh tokens.
 	return p.issue(e, client.ID(), data.UserID, data.Scope, true)
 }
 
@@ -813,11 +877,11 @@ func (p *Provider) handleRefreshTokenGrant(
 	// 2. Retrieve the refresh token from the session store.
 	data, err := p.sessionStore.GetRefreshToken(e.Context(), token)
 	if err != nil {
-		p.logger.DebugContext(
-			e.Context(),
-			"Failed to retrieve refresh token",
-			slog.Any("error", err),
-		)
+		p.logger.ErrorContext(e.Context(), "Failed to retrieve refresh token", slog.Any("error", err))
+		return e.JSON(http.StatusInternalServerError, errServerError)
+	}
+
+	if data.Token == "" {
 		return e.JSON(http.StatusBadRequest, errInvalidRefreshToken)
 	}
 
@@ -830,7 +894,7 @@ func (p *Provider) handleRefreshTokenGrant(
 	}
 
 	// 3. Revoke the old refresh token to issue a new one (Token Rotation).
-	_ = p.sessionStore.DelRefreshToken(e.Context(), token)
+	_ = p.sessionStore.DeleteRefreshToken(e.Context(), token)
 
 	// 4. Issue the access and refresh tokens.
 	return p.issue(e, client.ID(), data.UserID, data.Scope, true)
@@ -903,7 +967,7 @@ func (p *Provider) issue(
 			return e.JSON(http.StatusInternalServerError, errServerError)
 		}
 
-		err = p.sessionStore.AddRefreshToken(e.Context(), RefreshToken{
+		err = p.sessionStore.CreateRefreshToken(e.Context(), RefreshToken{
 			Token:    token,
 			ClientID: clientID,
 			UserID:   userID,
