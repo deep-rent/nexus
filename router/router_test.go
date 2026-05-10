@@ -462,7 +462,7 @@ func TestExchange_Cookies(t *testing.T) {
 
 	t.Run("get cookie", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.AddCookie(&http.Cookie{Name: "test", Value: "val"})
+		req.AddCookie(&http.Cookie{Name: "test", Value: "val"}) //nolint:gosec
 		e := &router.Exchange{R: req}
 
 		c, err := e.Cookie("test")
@@ -478,7 +478,7 @@ func TestExchange_Cookies(t *testing.T) {
 		rec := httptest.NewRecorder()
 		e := &router.Exchange{W: router.NewResponseWriter(rec)}
 
-		e.SetCookie(&http.Cookie{Name: "out", Value: "gold"})
+		e.SetCookie(&http.Cookie{Name: "out", Value: "gold"}) //nolint:gosec
 
 		got := rec.Header().Get("Set-Cookie")
 		if !strings.Contains(got, "out=gold") {
