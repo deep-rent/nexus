@@ -305,16 +305,16 @@ type TokenResponse struct {
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload.
 type IntrospectionResponse struct {
-	Active    bool     `json:"active"`
-	Scope     string   `json:"scope,omitempty"`
-	ClientID  string   `json:"client_id,omitempty"`
-	Subject   string   `json:"sub,omitempty"`
-	Audience  []string `json:"aud,omitempty"`
-	Issuer    string   `json:"iss,omitempty"`
-	ExpiresAt int64    `json:"exp,omitempty"`
-	IssuedAt  int64    `json:"iat,omitempty"`
-	NotBefore int64    `json:"nbf,omitempty"`
-	JWTID     string   `json:"jti,omitempty"`
+	Active   bool     `json:"active"`
+	Scope    string   `json:"scope,omitempty"`
+	ClientID string   `json:"client_id,omitempty"`
+	Sub      string   `json:"sub,omitempty"`
+	Aud      []string `json:"aud,omitempty"`
+	Iss      string   `json:"iss,omitempty"`
+	Exp      int64    `json:"exp,omitempty"`
+	Iat      int64    `json:"iat,omitempty"`
+	Nbf      int64    `json:"nbf,omitempty"`
+	Jti      string   `json:"jti,omitempty"`
 }
 
 // Authorize validates the parameters and redirects the user with an auth
@@ -482,21 +482,21 @@ func (p *Provider) Introspect(e *router.Exchange) error {
 	}
 
 	res := IntrospectionResponse{
-		Active:   true,
-		Scope:    claims.Scp,
-		Subject:  claims.Subject(),
-		Issuer:   claims.Issuer(),
-		Audience: claims.Audience(),
-		JWTID:    claims.ID(),
+		Active: true,
+		Jti:    claims.ID(),
+		Sub:    claims.Subject(),
+		Iss:    claims.Issuer(),
+		Aud:    claims.Audience(),
+		Scope:  claims.Scope,
 	}
 	if t := claims.ExpiresAt(); !t.IsZero() {
-		res.ExpiresAt = t.Unix()
+		res.Exp = t.Unix()
 	}
 	if t := claims.IssuedAt(); !t.IsZero() {
-		res.IssuedAt = t.Unix()
+		res.Iat = t.Unix()
 	}
 	if t := claims.NotBefore(); !t.IsZero() {
-		res.NotBefore = t.Unix()
+		res.Nbf = t.Unix()
 	}
 
 	return e.JSON(http.StatusOK, res)
@@ -711,7 +711,7 @@ func (p *Provider) issue(
 ) error {
 	claims := &auth.Claims{
 		Reserved: jwt.Reserved{Sub: userID},
-		Scp:      scope,
+		Scope:    scope,
 	}
 
 	if userID == "" {
@@ -724,7 +724,7 @@ func (p *Provider) issue(
 			slog.String("user_id", userID),
 		)
 	} else if u != nil {
-		claims.Rol = u.Roles()
+		claims.Roles = u.Roles()
 	} else {
 		p.logger.DebugContext(
 			e.Context(),
