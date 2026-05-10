@@ -63,6 +63,26 @@ type Provider struct {
 }
 
 func NewProvider(cfg Config) *Provider {
+	if cfg.Signer == nil {
+		panic("oauth: signer is required")
+	}
+
+	if cfg.Verifier == nil {
+		panic("oauth: verifier is required")
+	}
+
+	if cfg.Clients == nil {
+		panic("oauth: client store is required")
+	}
+
+	if cfg.Sessions == nil {
+		panic("oauth: session store is required")
+	}
+
+	if cfg.Subjects == nil {
+		panic("oauth: subject store is required")
+	}
+
 	sessionCookieName := cfg.SessionCookieName
 	if sessionCookieName == "" {
 		sessionCookieName = DefaultSessionCookieName
