@@ -457,6 +457,36 @@ func TestExchange_MetadataHelpers(t *testing.T) {
 	}
 }
 
+func TestExchange_Cookies(t *testing.T) {
+	t.Parallel()
+
+	t.Run("get cookie", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(&http.Cookie{Name: "test", Value: "val"})
+		e := &router.Exchange{R: req}
+
+		c, err := e.Cookie("test")
+		if err != nil {
+			t.Fatalf("Cookie() err = %v; want nil", err)
+		}
+		if c.Value != "val" {
+			t.Errorf("c.Value = %q; want %q", c.Value, "val")
+		}
+	})
+
+	t.Run("set cookie", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		e := &router.Exchange{W: router.NewResponseWriter(rec)}
+
+		e.SetCookie(&http.Cookie{Name: "out", Value: "gold"})
+
+		got := rec.Header().Get("Set-Cookie")
+		if !strings.Contains(got, "out=gold") {
+			t.Errorf("Set-Cookie = %q; want to contain %q", got, "out=gold")
+		}
+	})
+}
+
 func TestRouter_RouteMatching(t *testing.T) {
 	t.Parallel()
 
