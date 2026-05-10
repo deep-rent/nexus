@@ -224,11 +224,11 @@ func NewProvider(cfg Config) *Provider {
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
 func (p *Provider) Mount(r *router.Router) {
-	r.HandleFunc("GET /authorize", p.Authorize)
-	r.HandleFunc("POST /authorize", p.Authorize)
-	r.HandleFunc("POST /token", p.Token)
-	r.HandleFunc("POST /introspect", p.Introspect)
-	r.HandleFunc("POST /revoke", p.Revoke)
+	r.HandleFunc("GET /oauth/authorize", p.Authorize)
+	r.HandleFunc("POST /oauth/authorize", p.Authorize)
+	r.HandleFunc("POST /oauth/token", p.Token)
+	r.HandleFunc("POST /oauth/introspect", p.Introspect)
+	r.HandleFunc("POST /oauth/revoke", p.Revoke)
 }
 
 // Error returns an OAuth 2.0 compliant error response as JSON.
