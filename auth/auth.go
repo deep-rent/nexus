@@ -53,6 +53,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -115,39 +116,55 @@ func From[T jwt.Claims](e *router.Exchange) (T, bool) {
 // access control capabilities.
 type RoleClaims interface {
 	jwt.Claims
+	// Roles returns the list of assigned roles.
+	Roles() []string
 	// HasRole checks if the provided role exists within the claims.
 	HasRole(name string) bool
-	// Scopes returns the granted scopes.
+	// Scopes returns the list of granted scopes.
 	Scopes() []string
 	// HasScope checks if the provided scope exists within the claims.
 	HasScope(name string) bool
+}
+
+// Scope represents the "scope" claim of a JWT as defined in RFC 6749.
+// It is stored as a space-delimited string in JSON but handled as a slice
+// internally to optimize lookup performance.
+type Scope []string
+
+// UnmarshalJSON handles the parsing of the space-delimited scope string.
+func (s *Scope) UnmarshalJSON(b []byte) error {
+	var raw string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*s = strings.Fields(raw)
+	return nil
+}
+
+// MarshalJSON joins the scopes back into a space-delimited string.
+func (s Scope) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+// String returns the space-delimited string representation.
+func (s Scope) String() string {
+	return strings.Join(s, " ")
 }
 
 // Claims is a standard implementation of [RoleClaims]. It embeds the standard
 // JWT reserved claims and adds additional claims for roles and scopes.
 type Claims struct {
 	jwt.Reserved
-	// Roles is a slice of strings representing the assigned permissions or
-	// groups.
-	Roles []string `json:"roles,omitempty"`
-	// Scope is a string representing the granted scopes.
-	Scope string `json:"scope,omitempty"`
+	// Rol contains the assigned roles.
+	Rol []string `json:"rol,omitempty"`
+	// Scp contains the granted scopes.
+	Scp Scope `json:"scp,omitempty"`
 }
 
-// HasRole returns true if the specified role is present in the Roles slice.
-func (c *Claims) HasRole(name string) bool {
-	return slices.Contains(c.Roles, name)
-}
-
-// Scopes returns the granted scopes by splitting the space-delimited string.
-func (c *Claims) Scopes() []string {
-	return strings.Fields(c.Scope)
-}
-
-// HasScope returns true if the specified scope is present in the Scopes slice.
-func (c *Claims) HasScope(name string) bool {
-	return slices.Contains(c.Scopes(), name)
-}
+func (c *Claims) Roles() []string           { return c.Rol }
+func (c *Claims) HasRole(name string) bool  { return slices.Contains(c.Rol, name) }
+func (c *Claims) Scopes() []string          { return c.Scp }
+func (c *Claims) HasScope(name string) bool { return slices.Contains(c.Scp, name) }
 
 // Ensure Claims implements RoleClaims.
 var _ RoleClaims = (*Claims)(nil)
