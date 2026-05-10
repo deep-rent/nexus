@@ -57,6 +57,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/jose/jwt"
@@ -116,20 +117,36 @@ type RoleClaims interface {
 	jwt.Claims
 	// HasRole checks if the provided role exists within the claims.
 	HasRole(name string) bool
+	// Scopes returns the granted scopes.
+	Scopes() []string
+	// HasScope checks if the provided scope exists within the claims.
+	HasScope(name string) bool
 }
 
 // Claims is a standard implementation of [RoleClaims]. It embeds the standard
-// JWT reserved claims and adds a custom "rol" slice for roles.
+// JWT reserved claims and adds additional claims for roles and scopes.
 type Claims struct {
 	jwt.Reserved
 	// Rol is a slice of strings representing the assigned permissions or
 	// groups.
 	Rol []string `json:"rol,omitempty"`
+	// Scp is a string representing the granted scopes.
+	Scp string `json:"scp,omitempty"`
 }
 
 // HasRole returns true if the specified role is present in the Roles slice.
 func (c *Claims) HasRole(name string) bool {
 	return slices.Contains(c.Rol, name)
+}
+
+// Scopes returns the granted scopes by splitting the space-delimited string.
+func (c *Claims) Scopes() []string {
+	return strings.Fields(c.Scp)
+}
+
+// HasScope returns true if the specified scope is present in the Scopes slice.
+func (c *Claims) HasScope(name string) bool {
+	return slices.Contains(c.Scopes(), name)
 }
 
 // Ensure Claims implements RoleClaims.

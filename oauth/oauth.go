@@ -16,22 +16,46 @@ package oauth
 
 import (
 	"context"
-	"errors"
+	"crypto/rand"
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/opaque"
+	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/internal/pkce"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
 )
 
 const (
-	DefaultAuthCodeTTL     = 5 * time.Minute
-	DefaultAccessTokenTTL  = 1 * time.Hour
-	DefaultRefreshTokenTTL = 30 * 24 * time.Hour
+	DefaultAuthCodeLifetime     = 5 * time.Minute
+	DefaultAccessTokenLifetime  = 1 * time.Hour
+	DefaultRefreshTokenLifetime = 30 * 24 * time.Hour
+	DefaultSessionCookieName    = "session"
+)
+
+const (
+	GrantTypeAuthorizationCode = "authorization_code"
+	GrantTypeClientCredentials = "client_credentials"
+	GrantTypeRefreshToken      = "refresh_token"
+)
+
+const (
+	ParamClientID            = "client_id"
+	ParamClientSecret        = "client_secret"
+	ParamCode                = "code"
+	ParamCodeChallenge       = "code_challenge"
+	ParamCodeChallengeMethod = "code_challenge_method"
+	ParamCodeVerifier        = "code_verifier"
+	ParamGrantType           = "grant_type"
+	ParamRedirectURI         = "redirect_uri"
+	ParamRefreshToken        = "refresh_token"
+	ParamResponseType        = "response_type"
+	ParamScope               = "scope"
+	ParamState               = "state"
+	ParamToken               = "token"
 )
 
 // Client represents an OAuth 2.0 registered client application.
@@ -60,12 +84,21 @@ type ClientStore interface {
 	GetClient(ctx context.Context, id string) (Client, error)
 }
 
+// User represents an authenticated resource owner.
+type User interface {
+	// ID returns the unique identifier for the user.
+	ID() string
+	// Roles returns the assigned roles for the user.
+	Roles() []string
+}
+
 // UserStore provides data access and authentication for resource owners.
 type UserStore interface {
-	// Authenticate validates user credentials and returns the corresponding user ID.
-	Authenticate(ctx context.Context, username, password string) (string, error)
-	// GetUser retrieves a username by their unique ID.
-	GetUser(ctx context.Context, id string) (string, error)
+	// GetUser retrieves a user by their unique ID.
+	GetUser(ctx context.Context, id string) (User, error)
+	// GetUserBySession retrieves the authenticated user via their session key.
+	// This is required for the authorization endpoint.
+	GetUserBySession(ctx context.Context, key string) (User, error)
 }
 
 // AuthCode holds the state bound to an authorization code.
@@ -77,7 +110,7 @@ type AuthCode struct {
 	UserID              string
 	CodeChallenge       string
 	CodeChallengeMethod string
-	TTL                 time.Duration
+	Lifetime            time.Duration
 }
 
 // RefreshToken holds the state bound to a refresh token.
@@ -86,7 +119,7 @@ type RefreshToken struct {
 	ClientID string
 	UserID   string
 	Scope    string
-	TTL      time.Duration
+	Lifetime time.Duration
 }
 
 // SessionStore abstracts the persistence layer for ephemeral OAuth 2.0
@@ -105,21 +138,25 @@ type SessionStore interface {
 type Config struct {
 	// Signer is used to mint new access tokens (JWTs).
 	Signer jwt.Signer
+	// Verifier is used to validate access tokens during introspection.
+	Verifier jwt.Verifier[*auth.Claims]
 
 	ClientStore  ClientStore
 	UserStore    UserStore
 	SessionStore SessionStore
 
-	// AuthCodeTTL defines how long an authorization code is valid (default: 5 minutes).
-	AuthCodeTTL time.Duration
-	// AccessTokenTTL defines the lifespan of issued access tokens (default: 1 hour).
-	AccessTokenTTL time.Duration
-	// RefreshTokenTTL defines the lifespan of refresh tokens (default: 30 days).
-	RefreshTokenTTL time.Duration
-
-	// UserExtractor retrieves the authenticated user ID from an incoming router exchange.
-	// This is required for the authorization endpoint.
-	UserExtractor func(e *router.Exchange) (string, error)
+	// AuthCodeLifetime defines how long an authorization code is valid.
+	// Defaults to [DefaultAuthCodeLifetime].
+	AuthCodeLifetime time.Duration
+	// AccessTokenLifetime defines the lifespan of issued access tokens.
+	// Defaults to [DefaultAccessTokenLifetime].
+	AccessTokenLifetime time.Duration
+	// RefreshTokenLifetime defines the lifespan of refresh tokens.
+	// Defaults to [DefaultRefreshTokenLifetime].
+	RefreshTokenLifetime time.Duration
+	// SessionCookieName defines the name of the cookie holding the user's
+	// session key. Defaults to [DefaultSessionCookieName].
+	SessionCookieName string
 
 	// Logger is used for structured logging. Defaults to slog.Default().
 	Logger *slog.Logger
@@ -127,41 +164,61 @@ type Config struct {
 
 // Provider is the default implementation of the OAuth 2.0 HTTP endpoints.
 type Provider struct {
-	signer          jwt.Signer
-	clientStore     ClientStore
-	userStore       UserStore
-	sessionStore    SessionStore
-	authCodeTTL     time.Duration
-	accessTokenTTL  time.Duration
-	refreshTokenTTL time.Duration
-	userExtractor   func(e *router.Exchange) (string, error)
-	logger          *slog.Logger
+	signer               jwt.Signer
+	verifier             jwt.Verifier[*auth.Claims]
+	clientStore          ClientStore
+	userStore            UserStore
+	sessionStore         SessionStore
+	authCodeLifetime     time.Duration
+	accessTokenLifetime  time.Duration
+	refreshTokenLifetime time.Duration
+	sessionCookieName    string
+	logger               *slog.Logger
 }
 
 // NewProvider creates a new OAuth 2.0 provider with the specified configuration.
 func NewProvider(cfg Config) *Provider {
-	if cfg.AuthCodeTTL == 0 {
-		cfg.AuthCodeTTL = DefaultAuthCodeTTL
+	if cfg.Signer == nil {
+		panic("oauth: signer is required")
 	}
-	if cfg.AccessTokenTTL == 0 {
-		cfg.AccessTokenTTL = DefaultAccessTokenTTL
+	if cfg.Verifier == nil {
+		panic("oauth: verifier is required")
 	}
-	if cfg.RefreshTokenTTL == 0 {
-		cfg.RefreshTokenTTL = DefaultRefreshTokenTTL
+	if cfg.ClientStore == nil {
+		panic("oauth: client store is required")
+	}
+	if cfg.UserStore == nil {
+		panic("oauth: user store is required")
+	}
+	if cfg.SessionStore == nil {
+		panic("oauth: session store is required")
+	}
+	if cfg.AuthCodeLifetime == 0 {
+		cfg.AuthCodeLifetime = DefaultAuthCodeLifetime
+	}
+	if cfg.AccessTokenLifetime == 0 {
+		cfg.AccessTokenLifetime = DefaultAccessTokenLifetime
+	}
+	if cfg.RefreshTokenLifetime == 0 {
+		cfg.RefreshTokenLifetime = DefaultRefreshTokenLifetime
+	}
+	if cfg.SessionCookieName == "" {
+		cfg.SessionCookieName = DefaultSessionCookieName
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
 	return &Provider{
-		signer:          cfg.Signer,
-		clientStore:     cfg.ClientStore,
-		userStore:       cfg.UserStore,
-		sessionStore:    cfg.SessionStore,
-		authCodeTTL:     cfg.AuthCodeTTL,
-		accessTokenTTL:  cfg.AccessTokenTTL,
-		refreshTokenTTL: cfg.RefreshTokenTTL,
-		userExtractor:   cfg.UserExtractor,
-		logger:          cfg.Logger,
+		signer:               cfg.Signer,
+		verifier:             cfg.Verifier,
+		clientStore:          cfg.ClientStore,
+		userStore:            cfg.UserStore,
+		sessionStore:         cfg.SessionStore,
+		authCodeLifetime:     cfg.AuthCodeLifetime,
+		accessTokenLifetime:  cfg.AccessTokenLifetime,
+		refreshTokenLifetime: cfg.RefreshTokenLifetime,
+		sessionCookieName:    cfg.SessionCookieName,
+		logger:               cfg.Logger,
 	}
 }
 
@@ -170,38 +227,8 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("GET /authorize", p.Authorize)
 	r.HandleFunc("POST /authorize", p.Authorize)
 	r.HandleFunc("POST /token", p.Token)
-}
-
-// IntrospectorConfig contains all necessary dependencies for token introspection.
-type IntrospectorConfig struct {
-	// Verifier is used to validate access tokens during introspection.
-	Verifier    jwt.Verifier[*jwt.DynamicClaims]
-	ClientStore ClientStore
-	Logger      *slog.Logger
-}
-
-// Introspector implements RFC 7662 token introspection.
-type Introspector struct {
-	verifier    jwt.Verifier[*jwt.DynamicClaims]
-	clientStore ClientStore
-	logger      *slog.Logger
-}
-
-// NewIntrospector creates a new Introspector.
-func NewIntrospector(cfg IntrospectorConfig) *Introspector {
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
-	return &Introspector{
-		verifier:    cfg.Verifier,
-		clientStore: cfg.ClientStore,
-		logger:      cfg.Logger,
-	}
-}
-
-// Mount registers the introspection endpoint onto the provided router.
-func (i *Introspector) Mount(r *router.Router) {
-	r.HandleFunc("POST /introspect", i.Introspect)
+	r.HandleFunc("POST /introspect", p.Introspect)
+	r.HandleFunc("POST /revoke", p.Revoke)
 }
 
 // Error returns an OAuth 2.0 compliant error response as JSON.
@@ -240,30 +267,30 @@ const (
 )
 
 var (
-	errAccessDenied           = Error{Reason: ReasonAccessDenied, Description: "user authentication required"}
-	errClientAuthFailed       = Error{Reason: ReasonInvalidClient, Description: "client authentication failed"}
-	errClientMismatch         = Error{Reason: ReasonInvalidGrant, Description: "client mismatch"}
-	errClientNotFound         = Error{Reason: ReasonInvalidClient, Description: "client not found"}
-	errGrantNotAllowed        = Error{Reason: ReasonUnauthorizedClient, Description: "grant type not allowed for client"}
-	errInvalidAuthCode        = Error{Reason: ReasonInvalidGrant, Description: "invalid or expired authorization code"}
-	errInvalidFormBody        = Error{Reason: ReasonCodeInvalidRequest, Description: "invalid form body"}
-	errInvalidRedirectURI     = Error{Reason: ReasonCodeInvalidRequest, Description: "invalid redirect_uri"}
-	errInvalidRefreshToken    = Error{Reason: ReasonInvalidGrant, Description: "invalid or expired refresh token"}
-	errMissingClientID        = Error{Reason: ReasonCodeInvalidRequest, Description: "missing client_id"}
-	errMissingCodeOrVerifier  = Error{Reason: ReasonCodeInvalidRequest, Description: "missing code or code_verifier"}
-	errMissingPKCE            = Error{Reason: ReasonCodeInvalidRequest, Description: "code_challenge is required (PKCE)"}
-	errMissingRedirectURI     = Error{Reason: ReasonCodeInvalidRequest, Description: "missing redirect_uri"}
-	errMissingRefreshToken    = Error{Reason: ReasonCodeInvalidRequest, Description: "missing refresh_token"}
-	errMissingToken           = Error{Reason: ReasonCodeInvalidRequest, Description: "missing token"}
-	errPKCEVerificationFailed = Error{Reason: ReasonInvalidGrant, Description: "PKCE verification failed"}
-	errRedirectURIMismatch    = Error{Reason: ReasonInvalidGrant, Description: "redirect_uri mismatch"}
-	errScopeNotAllowed        = Error{Reason: ReasonInvalidScope, Description: "requested scope is not allowed"}
-	errServerError            = Error{Reason: ReasonServerError, Description: "unexpected internal error"}
-	errUnauthorizedCodeFlow   = Error{Reason: ReasonUnauthorizedClient, Description: "client cannot use authorization code flow"}
-	errUnsupportedGrantType   = Error{Reason: ReasonUnsupportedGrantType, Description: "grant type not supported"}
-	errUnsupportedPKCEMethod  = Error{Reason: ReasonCodeInvalidRequest, Description: "unsupported code_challenge_method"}
-	errUnsupportedResType     = Error{Reason: ReasonUnsupportedResponseType, Description: "only code response type is supported"}
-	errUserExtractorNotConf   = Error{Reason: ReasonServerError, Description: "user extractor not configured"}
+	errAccessDenied                   = Error{Reason: ReasonAccessDenied, Description: "user authentication required"}
+	errClientAuthFailed               = Error{Reason: ReasonInvalidClient, Description: "client authentication failed"}
+	errClientMismatch                 = Error{Reason: ReasonInvalidGrant, Description: "client mismatch"}
+	errClientNotFound                 = Error{Reason: ReasonInvalidClient, Description: "client not found"}
+	errGrantNotAllowed                = Error{Reason: ReasonUnauthorizedClient, Description: "grant type not allowed for client"}
+	errInvalidAuthCode                = Error{Reason: ReasonInvalidGrant, Description: "invalid or expired authorization code"}
+	errInvalidFormBody                = Error{Reason: ReasonCodeInvalidRequest, Description: "invalid form body"}
+	errInvalidRedirectURI             = Error{Reason: ReasonCodeInvalidRequest, Description: "invalid redirect_uri"}
+	errInvalidRefreshToken            = Error{Reason: ReasonInvalidGrant, Description: "invalid or expired refresh token"}
+	errMissingClientID                = Error{Reason: ReasonCodeInvalidRequest, Description: "missing client_id"}
+	errMissingCode                    = Error{Reason: ReasonCodeInvalidRequest, Description: "missing code"}
+	errMissingCodeChallenge           = Error{Reason: ReasonCodeInvalidRequest, Description: "code_challenge is required (PKCE)"}
+	errMissingCodeVerifier            = Error{Reason: ReasonCodeInvalidRequest, Description: "missing code_verifier"}
+	errMissingRedirectURI             = Error{Reason: ReasonCodeInvalidRequest, Description: "missing redirect_uri"}
+	errMissingRefreshToken            = Error{Reason: ReasonCodeInvalidRequest, Description: "missing refresh_token"}
+	errMissingToken                   = Error{Reason: ReasonCodeInvalidRequest, Description: "missing token"}
+	errPKCEVerificationFailed         = Error{Reason: ReasonInvalidGrant, Description: "PKCE verification failed"}
+	errRedirectURIMismatch            = Error{Reason: ReasonInvalidGrant, Description: "redirect_uri mismatch"}
+	errScopeNotAllowed                = Error{Reason: ReasonInvalidScope, Description: "requested scope is not allowed"}
+	errServerError                    = Error{Reason: ReasonServerError, Description: "unexpected internal error"}
+	errUnauthorizedGrantType          = Error{Reason: ReasonUnauthorizedClient, Description: "client cannot use requested grant type"}
+	errUnsupportedCodeChallengeMethod = Error{Reason: ReasonCodeInvalidRequest, Description: "unsupported code_challenge_method"}
+	errUnsupportedGrantType           = Error{Reason: ReasonUnsupportedGrantType, Description: "grant type not supported"}
+	errUnsupportedResponseType        = Error{Reason: ReasonUnsupportedResponseType, Description: "only code response type is supported"}
 )
 
 // TokenResponse outlines the standard payload returned after a successful token
@@ -278,28 +305,29 @@ type TokenResponse struct {
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload.
 type IntrospectionResponse struct {
-	Active bool `json:"active"`
-}
-
-// AccessTokenClaims extends the standard JWT claims with OAuth 2.0 metadata.
-type AccessTokenClaims struct {
-	jwt.Reserved
-	Scope    string `json:"scope,omitempty"`
-	ClientID string `json:"client_id,omitempty"`
-	Username string `json:"username,omitempty"`
+	Active    bool     `json:"active"`
+	Scope     string   `json:"scope,omitempty"`
+	ClientID  string   `json:"client_id,omitempty"`
+	Subject   string   `json:"sub,omitempty"`
+	Audience  []string `json:"aud,omitempty"`
+	Issuer    string   `json:"iss,omitempty"`
+	ExpiresAt int64    `json:"exp,omitempty"`
+	IssuedAt  int64    `json:"iat,omitempty"`
+	NotBefore int64    `json:"nbf,omitempty"`
+	JWTID     string   `json:"jti,omitempty"`
 }
 
 // Authorize validates the parameters and redirects the user with an auth
 // code.
 func (p *Provider) Authorize(e *router.Exchange) error {
-	q := e.Query()
-	clientID := q.Get("client_id")
-	redirectURI := q.Get("redirect_uri")
-	resType := q.Get("response_type")
-	scope := q.Get("scope")
-	state := q.Get("state")
-	challenge := q.Get("code_challenge")
-	method := q.Get("code_challenge_method")
+	form := e.Query()
+	clientID := form.Get(ParamClientID)
+	redirectURI := form.Get(ParamRedirectURI)
+	responseType := form.Get(ParamResponseType)
+	scope := form.Get(ParamScope)
+	state := form.Get(ParamState)
+	codeChallenge := form.Get(ParamCodeChallenge)
+	codeChallengeMethod := form.Get(ParamCodeChallengeMethod)
 
 	if clientID == "" {
 		return e.JSON(http.StatusBadRequest, errMissingClientID)
@@ -307,47 +335,63 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 
 	client, err := p.clientStore.GetClient(e.Context(), clientID)
 	if err != nil || client == nil {
-		p.logger.Debug("Client not found", slog.String("client_id", clientID))
+		p.logger.DebugContext(
+			e.Context(),
+			"Client not found",
+			slog.String("client_id", clientID),
+		)
 		return e.JSON(http.StatusUnauthorized, errClientNotFound)
 	}
 
-	if redirectURI != "" && !client.VerifyRedirectURI(redirectURI) {
-		return e.JSON(http.StatusBadRequest, errInvalidRedirectURI)
-	}
 	if redirectURI == "" {
 		return e.JSON(http.StatusBadRequest, errMissingRedirectURI)
 	}
-
-	sendError := func(in Error) error {
-		return e.RedirectTo(redirectURI, in.Params(), http.StatusFound)
+	if !client.VerifyRedirectURI(redirectURI) {
+		return e.JSON(http.StatusBadRequest, errInvalidRedirectURI)
 	}
 
-	if resType != "code" {
-		return sendError(errUnsupportedResType)
-	}
-	if !client.CanUseGrant("authorization_code") {
-		return sendError(errUnauthorizedCodeFlow)
-	}
-	if challenge == "" {
-		return sendError(errMissingPKCE)
-	}
-	if !pkce.Supports(method) {
-		return sendError(errUnsupportedPKCEMethod)
-	}
-	if p.userExtractor == nil {
-		p.logger.Error("User extractor not configured")
-		return sendError(errUserExtractorNotConf)
+	sendError := func(red Error) error {
+		return e.RedirectTo(redirectURI, red.Params(), http.StatusFound)
 	}
 
-	userID, err := p.userExtractor(e)
-	if err != nil || userID == "" {
-		p.logger.Debug("User extraction failed", slog.Any("error", err))
+	switch {
+	case responseType != "code":
+		return sendError(errUnsupportedResponseType)
+	case !client.CanUseGrant(GrantTypeAuthorizationCode):
+		return sendError(errUnauthorizedGrantType)
+	case codeChallenge == "":
+		return sendError(errMissingCodeChallenge)
+	case !pkce.Supports(codeChallengeMethod):
+		return sendError(errUnsupportedCodeChallengeMethod)
+	}
+
+	cookie, err := e.R.Cookie(p.sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		p.logger.DebugContext(
+			e.Context(),
+			"Session cookie not found or empty",
+			slog.Any("error", err),
+		)
 		return sendError(errAccessDenied)
 	}
 
-	code, err := opaque.Token()
+	user, err := p.userStore.GetUserBySession(e.Context(), cookie.Value)
+	if err != nil || user == nil {
+		p.logger.DebugContext(
+			e.Context(),
+			"User lookup by session failed",
+			slog.Any("error", err),
+		)
+		return sendError(errAccessDenied)
+	}
+
+	code, err := opaque()
 	if err != nil {
-		p.logger.Error("Failed to generate opaque token", slog.Any("error", err))
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to generate opaque token",
+			slog.Any("error", err),
+		)
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
@@ -356,24 +400,28 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
 		Scope:               scope,
-		UserID:              userID,
-		CodeChallenge:       challenge,
-		CodeChallengeMethod: method,
-		TTL:                 p.authCodeTTL,
+		UserID:              user.ID(),
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
+		Lifetime:            p.authCodeLifetime,
 	}
 
 	if err := p.sessionStore.AddAuthCode(
 		e.Context(),
 		data,
 	); err != nil {
-		p.logger.Error("Failed to store authorization code", slog.Any("error", err))
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to store authorization code",
+			slog.Any("error", err),
+		)
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
 	params := url.Values{}
-	params.Set("code", code)
+	params.Set(ParamCode, code)
 	if state != "" {
-		params.Set("state", state)
+		params.Set(ParamState, state)
 	}
 
 	return e.RedirectTo(redirectURI, params, http.StatusFound)
@@ -381,31 +429,27 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 
 // Token processes access token requests.
 func (p *Provider) Token(e *router.Exchange) error {
-	form, rErr := e.ReadForm()
-	if rErr != nil {
-		p.logger.Debug("Invalid form body", slog.Any("error", rErr))
-		return e.JSON(http.StatusBadRequest, errInvalidFormBody)
-	}
-
-	client, err := authenticateClient(e, p.clientStore, form)
+	form, client, err := p.authenticateClient(e)
 	if err != nil {
-		p.logger.Debug("Client authentication failed", slog.Any("error", err))
-		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
-		return e.JSON(http.StatusUnauthorized, errClientAuthFailed)
+		return err
 	}
 
-	grantType := form.Get("grant_type")
-	if !client.CanUseGrant(grantType) {
-		p.logger.Debug("Grant type not allowed for client", slog.String("grant_type", grantType))
+	grant := form.Get(ParamGrantType)
+	if !client.CanUseGrant(grant) {
+		p.logger.DebugContext(
+			e.Context(),
+			"Grant type not allowed for client",
+			slog.String("grant_type", grant),
+		)
 		return e.JSON(http.StatusBadRequest, errGrantNotAllowed)
 	}
 
-	switch grantType {
-	case "authorization_code":
+	switch grant {
+	case GrantTypeAuthorizationCode:
 		return p.handleAuthorizationCodeGrant(e, form, client)
-	case "client_credentials":
+	case GrantTypeClientCredentials:
 		return p.handleClientCredentialsGrant(e, form, client)
-	case "refresh_token":
+	case GrantTypeRefreshToken:
 		return p.handleRefreshTokenGrant(e, form, client)
 	default:
 		return e.JSON(http.StatusBadRequest, errUnsupportedGrantType)
@@ -414,95 +458,194 @@ func (p *Provider) Token(e *router.Exchange) error {
 
 // Introspect implements RFC 7662 to determine the active state of an
 // OAuth 2.0 token.
-func (i *Introspector) Introspect(e *router.Exchange) error {
-	form, err := e.ReadForm()
+func (p *Provider) Introspect(e *router.Exchange) error {
+	form, _, err := p.authenticateClient(e)
 	if err != nil {
-		i.logger.Debug("Invalid form body in introspection", slog.Any("error", err))
-		return e.JSON(http.StatusBadRequest, errInvalidFormBody)
+		return err
 	}
 
-	if _, err := authenticateClient(e, i.clientStore, form); err != nil {
-		i.logger.Debug("Client authentication failed", slog.Any("error", err))
-		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
-		return e.JSON(http.StatusUnauthorized, errClientAuthFailed)
-	}
-
-	tok := form.Get("token")
+	tok := form.Get(ParamToken)
 	if tok == "" {
 		return e.JSON(http.StatusBadRequest, errMissingToken)
 	}
 
-	active := true
-	if _, err := i.verifier.Verify([]byte(tok)); err != nil {
-		// RFC 7662: If the token is invalid, expired, or revoked, the authorization
-		// server MUST return an active boolean set to false.
-		i.logger.Debug("Token introspection verification failed", slog.Any("error", err))
-		active = false
+	// RFC 7662: If the token is invalid, expired, or revoked, the authorization
+	// server MUST return an active boolean set to false.
+	claims, err := p.verifier.Verify([]byte(tok))
+	if err != nil {
+		p.logger.DebugContext(
+			e.Context(),
+			"Token introspection verification failed",
+			slog.Any("error", err),
+		)
+		return e.JSON(http.StatusOK, IntrospectionResponse{Active: false})
 	}
-	return e.JSON(http.StatusOK, IntrospectionResponse{Active: active})
+
+	res := IntrospectionResponse{
+		Active:   true,
+		Scope:    claims.Scp,
+		Subject:  claims.Subject(),
+		Issuer:   claims.Issuer(),
+		Audience: claims.Audience(),
+		JWTID:    claims.ID(),
+	}
+	if t := claims.ExpiresAt(); !t.IsZero() {
+		res.ExpiresAt = t.Unix()
+	}
+	if t := claims.IssuedAt(); !t.IsZero() {
+		res.IssuedAt = t.Unix()
+	}
+	if t := claims.NotBefore(); !t.IsZero() {
+		res.NotBefore = t.Unix()
+	}
+
+	return e.JSON(http.StatusOK, res)
 }
 
-// authenticateClient resolves and authenticates the client via HTTP Basic Auth or POST form.
-func authenticateClient(e *router.Exchange, store ClientStore, form url.Values) (Client, error) {
-	clientID, clientSecret, ok := e.R.BasicAuth()
+// Revoke implements RFC 7009 to allow clients to invalidate their tokens.
+func (p *Provider) Revoke(e *router.Exchange) error {
+	form, _, err := p.authenticateClient(e)
+	if err != nil {
+		return err
+	}
+
+	tok := form.Get(ParamToken)
+	if tok == "" {
+		return e.JSON(http.StatusBadRequest, errMissingToken)
+	}
+
+	// Access tokens are stateless JWTs in this implementation, so we primarily
+	// care about revoking refresh tokens. RFC 7009 dictates that an invalid
+	// or already revoked token should still result in a 200 OK response.
+	if err := p.sessionStore.DelRefreshToken(e.Context(), tok); err != nil {
+		p.logger.DebugContext(
+			e.Context(),
+			"Failed to delete refresh token during revocation",
+			slog.Any("error", err),
+		)
+	}
+
+	e.Status(http.StatusOK)
+	return nil
+}
+
+// authenticateClient reads the form body, logs errors if invalid, and
+// authenticates the client.
+func (p *Provider) authenticateClient(
+	e *router.Exchange,
+) (url.Values, Client, error) {
+	form, err := e.ReadForm()
+	if err != nil {
+		p.logger.DebugContext(
+			e.Context(),
+			"Invalid form body",
+			slog.Any("error", err),
+		)
+		return nil, nil, e.JSON(http.StatusBadRequest, errInvalidFormBody)
+	}
+
+	id, secret, ok := e.R.BasicAuth()
 	if !ok {
-		clientID = form.Get("client_id")
-		clientSecret = form.Get("client_secret")
+		id = form.Get(ParamClientID)
+		secret = form.Get(ParamClientSecret)
 	}
 
-	if clientID == "" {
-		return nil, errors.New("missing client_id")
+	fail := func(msg string) (url.Values, Client, error) {
+		p.logger.DebugContext(
+			e.Context(),
+			msg,
+			slog.String("client_id", id),
+		)
+		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
+		return nil, nil, e.JSON(http.StatusUnauthorized, errClientAuthFailed)
 	}
 
-	client, err := store.GetClient(e.Context(), clientID)
-	if err != nil || client == nil {
-		return nil, errors.New("invalid client")
+	if id == "" {
+		return fail("Missing client_id")
 	}
 
-	if clientSecret == "" && !client.IsPublic() {
-		return nil, errors.New("client requires a secret")
+	client, err := p.clientStore.GetClient(e.Context(), id)
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Client lookup failed",
+			slog.Any("error", err),
+			slog.String("client_id", id),
+		)
+		return nil, nil, e.JSON(http.StatusInternalServerError, errServerError)
+	}
+	if client == nil {
+		return fail("Invalid client")
 	}
 
-	if clientSecret != "" && !client.VerifySecret(clientSecret) {
-		return nil, errors.New("invalid client secret")
+	if secret == "" && !client.IsPublic() {
+		return fail("Client requires a secret")
 	}
 
-	return client, nil
+	if secret != "" && !client.VerifySecret(secret) {
+		return fail("Client provided an invalid secret")
+	}
+
+	return form, client, nil
 }
 
-func (p *Provider) handleAuthorizationCodeGrant(e *router.Exchange, form url.Values, client Client) error {
-	code := form.Get("code")
-	redirectURI := form.Get("redirect_uri")
-	verifier := form.Get("code_verifier")
+func (p *Provider) handleAuthorizationCodeGrant(
+	e *router.Exchange,
+	form url.Values,
+	client Client,
+) error {
+	code := form.Get(ParamCode)
+	redirectURI := form.Get(ParamRedirectURI)
+	verifier := form.Get(ParamCodeVerifier)
 
-	if code == "" || verifier == "" {
-		return e.JSON(http.StatusBadRequest, errMissingCodeOrVerifier)
+	if code == "" {
+		return e.JSON(http.StatusBadRequest, errMissingCode)
+	}
+	if verifier == "" {
+		return e.JSON(http.StatusBadRequest, errMissingCodeVerifier)
 	}
 
 	data, err := p.sessionStore.GetAuthCode(e.Context(), code)
 	if err != nil {
-		p.logger.Debug("Failed to retrieve auth code", slog.Any("error", err))
+		p.logger.DebugContext(
+			e.Context(),
+			"Failed to retrieve auth code",
+			slog.Any("error", err),
+		)
 		return e.JSON(http.StatusBadRequest, errInvalidAuthCode)
 	}
 
-	// Single-use guarantee
+	// Guarantee single use:
 	_ = p.sessionStore.DelAuthCode(e.Context(), code)
 
 	if data.ClientID != client.ID() {
-		p.logger.Debug("Client ID mismatch during code exchange")
+		p.logger.DebugContext(
+			e.Context(),
+			"Client ID mismatch during code exchange",
+		)
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
 	if redirectURI != "" && data.RedirectURI != redirectURI {
-		p.logger.Debug("Redirect URI mismatch during code exchange")
+		p.logger.DebugContext(
+			e.Context(),
+			"Redirect URI mismatch during code exchange",
+		)
 		return e.JSON(http.StatusBadRequest, errRedirectURIMismatch)
 	}
 
-	if !pkce.Verify(verifier, data.CodeChallenge, data.CodeChallengeMethod) {
-		p.logger.Debug("PKCE verification failed")
+	if !pkce.Verify(
+		verifier,
+		data.CodeChallenge,
+		data.CodeChallengeMethod,
+	) {
+		p.logger.DebugContext(
+			e.Context(),
+			"PKCE verification failed",
+		)
 		return e.JSON(http.StatusBadRequest, errPKCEVerificationFailed)
 	}
 
-	return p.issueTokens(e, client.ID(), data.UserID, data.Scope, true)
+	return p.issue(e, client.ID(), data.UserID, data.Scope, true)
 }
 
 func (p *Provider) handleClientCredentialsGrant(
@@ -510,15 +653,19 @@ func (p *Provider) handleClientCredentialsGrant(
 	form url.Values,
 	client Client,
 ) error {
-	scope := form.Get("scope")
+	scope := form.Get(ParamScope)
 	if scope != "" && !client.CanUseScope(scope) {
-		p.logger.Debug("Scope not allowed for client credentials", slog.String("scope", scope))
+		p.logger.DebugContext(
+			e.Context(),
+			"Scope not allowed for client credentials",
+			slog.String("scope", scope),
+		)
 		return e.JSON(http.StatusBadRequest, errScopeNotAllowed)
 	}
 
 	// Client Credentials flow doesn't have a user context; the subject is the
 	// client. Typically, refresh tokens are NOT issued for client credentials.
-	return p.issueTokens(e, client.ID(), "", scope, false)
+	return p.issue(e, client.ID(), "", scope, false)
 }
 
 func (p *Provider) handleRefreshTokenGrant(
@@ -526,87 +673,127 @@ func (p *Provider) handleRefreshTokenGrant(
 	form url.Values,
 	client Client,
 ) error {
-	token := form.Get("refresh_token")
+	token := form.Get(ParamRefreshToken)
 	if token == "" {
 		return e.JSON(http.StatusBadRequest, errMissingRefreshToken)
 	}
 
 	data, err := p.sessionStore.GetRefreshToken(e.Context(), token)
 	if err != nil {
-		p.logger.Debug("Failed to retrieve refresh token", slog.Any("error", err))
+		p.logger.DebugContext(
+			e.Context(),
+			"Failed to retrieve refresh token",
+			slog.Any("error", err),
+		)
 		return e.JSON(http.StatusBadRequest, errInvalidRefreshToken)
 	}
 
 	if data.ClientID != client.ID() {
-		p.logger.Debug("Client ID mismatch during refresh token exchange")
+		p.logger.DebugContext(
+			e.Context(),
+			"Client ID mismatch during refresh token exchange",
+		)
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
 
 	// Revoke the old refresh token to issue a new one.
 	_ = p.sessionStore.DelRefreshToken(e.Context(), token)
 
-	return p.issueTokens(e, client.ID(), data.UserID, data.Scope, true)
+	return p.issue(e, client.ID(), data.UserID, data.Scope, true)
 }
 
-// issueTokens orchestrates the creation of signed Access Tokens (JWT) and
+// issue orchestrates the creation of signed Access Tokens (JWT) and
 // opaque refresh tokens.
-func (p *Provider) issueTokens(
+func (p *Provider) issue(
 	e *router.Exchange,
 	clientID, userID, scope string,
 	refresh bool,
 ) error {
-	claims := &AccessTokenClaims{
-		Reserved: jwt.Reserved{
-			Sub: userID,
-		},
-		Scope:    scope,
-		ClientID: clientID,
+	claims := &auth.Claims{
+		Reserved: jwt.Reserved{Sub: userID},
+		Scp:      scope,
 	}
 
 	if userID == "" {
 		claims.Sub = clientID
-	} else if p.userStore != nil {
-		// Optionally enhance the claims with a username if available.
-		if u, err := p.userStore.GetUser(e.Context(), userID); err == nil && u != "" {
-			claims.Username = u
-		} else if err != nil {
-			p.logger.Debug("Failed to retrieve user for claims", slog.Any("error", err))
-		}
+	} else if u, err := p.userStore.GetUser(e.Context(), userID); err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to retrieve user for claims",
+			slog.Any("error", err),
+			slog.String("user_id", userID),
+		)
+	} else if u != nil {
+		claims.Rol = u.Roles()
+	} else {
+		p.logger.DebugContext(
+			e.Context(),
+			"Failed to retrieve user for claims",
+			slog.String("user_id", userID),
+		)
 	}
 
-	tokenBytes, err := p.signer.Sign(claims)
+	token, err := p.signer.Sign(claims)
 	if err != nil {
-		p.logger.Error("Failed to sign access token", slog.Any("error", err))
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to sign access token",
+			slog.Any("error", err),
+			slog.String("client_id", clientID),
+			slog.String("user_id", userID),
+		)
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
 	res := TokenResponse{
-		AccessToken: string(tokenBytes),
-		TokenType:   "Bearer",
-		ExpiresIn:   int(p.accessTokenTTL.Seconds()),
+		AccessToken: string(token),
+		TokenType:   auth.Scheme,
+		ExpiresIn:   int(p.accessTokenLifetime.Seconds()),
 		Scope:       scope,
 	}
 
 	if refresh {
-		rt, err := opaque.Token()
+		token, err := opaque()
 		if err != nil {
-			p.logger.Error("Failed to generate opaque refresh token", slog.Any("error", err))
+			p.logger.ErrorContext(
+				e.Context(),
+				"Failed to generate opaque refresh token",
+				slog.Any("error", err),
+				slog.String("client_id", clientID),
+				slog.String("user_id", userID),
+			)
 			return e.JSON(http.StatusInternalServerError, errServerError)
 		}
 
 		err = p.sessionStore.AddRefreshToken(e.Context(), RefreshToken{
-			Token:    rt,
+			Token:    token,
 			ClientID: clientID,
 			UserID:   userID,
 			Scope:    scope,
-			TTL:      p.refreshTokenTTL,
+			Lifetime: p.refreshTokenLifetime,
 		})
 		if err != nil {
-			p.logger.Error("Failed to store refresh token", slog.Any("error", err))
+			p.logger.ErrorContext(
+				e.Context(),
+				"Failed to store refresh token",
+				slog.Any("error", err),
+				slog.String("client_id", clientID),
+				slog.String("user_id", userID),
+			)
 			return e.JSON(http.StatusInternalServerError, errServerError)
 		}
-		res.RefreshToken = rt
+		res.RefreshToken = token
 	}
 
 	return e.JSON(http.StatusOK, res)
+}
+
+// Token creates a cryptographically secure random string intended for use as
+// an opaque token.
+func opaque() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
