@@ -94,11 +94,15 @@ type User interface {
 
 // UserStore provides data access and authentication for resource owners.
 type UserStore interface {
+	// Authenticate validates user credentials and returns the corresponding User.
+	Authenticate(ctx context.Context, username, password string) (User, error)
 	// GetUser retrieves a user by their unique ID.
 	GetUser(ctx context.Context, id string) (User, error)
 	// GetUserBySession retrieves the authenticated user via their session key.
 	// This is required for the authorization endpoint.
 	GetUserBySession(ctx context.Context, key string) (User, error)
+	// CreateSession stores the session mapping for the authenticated user.
+	CreateSession(ctx context.Context, key, userID string) error
 }
 
 // AuthCode holds the state bound to an authorization code.
@@ -224,11 +228,12 @@ func NewProvider(cfg Config) *Provider {
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
 func (p *Provider) Mount(r *router.Router) {
-	r.HandleFunc("GET /oauth/authorize", p.Authorize)
-	r.HandleFunc("POST /oauth/authorize", p.Authorize)
-	r.HandleFunc("POST /oauth/token", p.Token)
-	r.HandleFunc("POST /oauth/introspect", p.Introspect)
-	r.HandleFunc("POST /oauth/revoke", p.Revoke)
+	r.HandleFunc("GET /auth/authorize", p.Authorize)
+	r.HandleFunc("POST /auth/authorize", p.Authorize)
+	r.HandleFunc("POST /auth/token", p.Token)
+	r.HandleFunc("POST /auth/introspect", p.Introspect)
+	r.HandleFunc("POST /auth/revoke", p.Revoke)
+	r.HandleFunc("POST /auth/login", p.Login)
 }
 
 // Error returns an OAuth 2.0 compliant error response as JSON.
@@ -245,7 +250,7 @@ func (e Error) Error() string {
 	return e.Reason
 }
 
-func (e Error) Params() url.Values {
+func (e Error) Query() url.Values {
 	params := url.Values{}
 	params.Set("error", e.Reason)
 	if e.Description != "" {
@@ -351,7 +356,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 	}
 
 	sendError := func(red Error) error {
-		return e.RedirectTo(redirectURI, red.Params(), http.StatusFound)
+		return e.RedirectTo(redirectURI, red.Query(), http.StatusFound)
 	}
 
 	switch {
@@ -425,6 +430,56 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 	}
 
 	return e.RedirectTo(redirectURI, params, http.StatusFound)
+}
+
+type Credentials struct {
+	Username string `json:"username" valid:",required"`
+	Password string `json:"password" valid:",required"`
+}
+
+// Login authenticates a user and establishes a session cookie.
+// It expects a JSON body with "username" and "password" fields.
+func (p *Provider) Login(e *router.Exchange) error {
+	var req Credentials
+	if err := e.BindJSON(&req); err != nil {
+		return err
+	}
+
+	user, err := p.userStore.Authenticate(e.Context(), req.Username, req.Password)
+	if err != nil {
+		p.logger.DebugContext(
+			e.Context(),
+			"User authentication failed",
+			slog.Any("error", err),
+		)
+		return e.JSON(http.StatusUnauthorized, errAccessDenied)
+	}
+
+	key, err := opaque()
+	if err != nil {
+		return e.JSON(http.StatusInternalServerError, errServerError)
+	}
+
+	if err := p.userStore.CreateSession(e.Context(), key, user.ID()); err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to create user session",
+			slog.Any("error", err),
+		)
+		return e.JSON(http.StatusInternalServerError, errServerError)
+	}
+
+	http.SetCookie(e.W, &http.Cookie{
+		Name:     p.sessionCookieName,
+		Value:    key,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	e.NoContent()
+	return nil
 }
 
 // Token processes access token requests.
