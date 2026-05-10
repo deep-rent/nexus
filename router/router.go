@@ -277,7 +277,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 //
 // Unlike standard [http.Request.FormValue], this strictly accesses PostForm
 // (the request body), ignoring URL query parameters.
-func (e *Exchange) ReadForm() (url.Values, *Error) {
+func (e *Exchange) ReadForm() (url.Values, error) {
 	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
 		return nil, &Error{
 			Status:      http.StatusUnsupportedMediaType,

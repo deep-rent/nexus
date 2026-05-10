@@ -224,10 +224,14 @@ func TestExchange_ReadForm(t *testing.T) {
 				if err == nil {
 					t.Fatal("ReadForm() err = nil; want non-nil")
 				}
-				if got, want := err.Reason, tt.wantReason; got != want {
+				re, ok := errors.AsType[*router.Error](err)
+				if !ok {
+					t.Fatalf("err is %T; want *router.Error", err)
+				}
+				if got, want := re.Reason, tt.wantReason; got != want {
 					t.Errorf("err.Reason = %q; want %q", got, want)
 				}
-				if got, want := err.Status, tt.wantStatus; got != want {
+				if got, want := re.Status, tt.wantStatus; got != want {
 					t.Errorf("err.Status = %d; want %d", got, want)
 				}
 				if vals != nil {
