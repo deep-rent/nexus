@@ -101,8 +101,10 @@ type UserStore interface {
 	// GetUserBySession retrieves the authenticated user via their session key.
 	// This is required for the authorization endpoint.
 	GetUserBySession(ctx context.Context, key string) (User, error)
-	// CreateSession stores the session mapping for the authenticated user.
-	CreateSession(ctx context.Context, key, userID string) error
+	// AddSession stores the session mapping for the authenticated user.
+	AddSession(ctx context.Context, key, userID string) error
+	// DelSession removes the session mapping associated with the key.
+	DelSession(ctx context.Context, key string) error
 }
 
 // AuthCode holds the state bound to an authorization code.
@@ -234,6 +236,7 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST /auth/introspect", p.Introspect)
 	r.HandleFunc("POST /auth/revoke", p.Revoke)
 	r.HandleFunc("POST /auth/login", p.Login)
+	r.HandleFunc("POST /auth/logout", p.Logout)
 }
 
 // Error returns an OAuth 2.0 compliant error response as JSON.
@@ -460,7 +463,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
-	if err := p.userStore.CreateSession(e.Context(), key, user.ID()); err != nil {
+	if err := p.userStore.AddSession(e.Context(), key, user.ID()); err != nil {
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to create user session",
@@ -476,6 +479,35 @@ func (p *Provider) Login(e *router.Exchange) error {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
+	})
+
+	e.NoContent()
+	return nil
+}
+
+// Logout invalidates the user's session by removing it from the store and
+// clearing the session cookie.
+func (p *Provider) Logout(e *router.Exchange) error {
+	cookie, err := e.R.Cookie(p.sessionCookieName)
+	if err == nil && cookie.Value != "" {
+		if err := p.userStore.DelSession(e.Context(), cookie.Value); err != nil {
+			p.logger.DebugContext(
+				e.Context(),
+				"Failed to delete user session",
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	// Clear the cookie by setting it with a past expiration date and MaxAge -1.
+	http.SetCookie(e.W, &http.Cookie{
+		Name:     p.sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 
 	e.NoContent()
