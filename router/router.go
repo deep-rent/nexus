@@ -347,6 +347,10 @@ func (e *Exchange) Redirect(url string, code int) error {
 	return nil
 }
 
+func (e *Exchange) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(e.W, cookie)
+}
+
 // RedirectTo constructs a URL with query parameters and redirects the client.
 func (e *Exchange) RedirectTo(base string, params url.Values, code int) error {
 	u, err := url.Parse(base)
