@@ -347,6 +347,12 @@ func (e *Exchange) Redirect(url string, code int) error {
 	return nil
 }
 
+// Cookie retrieves a named cookie from the request.
+func (e *Exchange) Cookie(name string) (*http.Cookie, error) {
+	return e.R.Cookie(name)
+}
+
+// SetCookie adds a Set-Cookie header to the response.
 func (e *Exchange) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(e.W, cookie)
 }
