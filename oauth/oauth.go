@@ -313,16 +313,16 @@ type TokenResponse struct {
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload.
 type IntrospectionResponse struct {
-	Active   bool     `json:"active"`
-	Scope    string   `json:"scope,omitempty"`
-	ClientID string   `json:"client_id,omitempty"`
-	Sub      string   `json:"sub,omitempty"`
-	Aud      []string `json:"aud,omitempty"`
-	Iss      string   `json:"iss,omitempty"`
-	Exp      int64    `json:"exp,omitempty"`
-	Iat      int64    `json:"iat,omitempty"`
-	Nbf      int64    `json:"nbf,omitempty"`
-	Jti      string   `json:"jti,omitempty"`
+	Active   bool      `json:"active"`
+	Scope    string    `json:"scope,omitempty"`
+	ClientID string    `json:"client_id,omitempty"`
+	Sub      string    `json:"sub,omitempty"`
+	Aud      []string  `json:"aud,omitempty"`
+	Iss      string    `json:"iss,omitempty"`
+	Exp      time.Time `json:"exp,omitzero,format:unix"`
+	Iat      time.Time `json:"iat,omitzero,format:unix"`
+	Nbf      time.Time `json:"nbf,omitzero,format:unix"`
+	Jti      string    `json:"jti,omitempty"`
 }
 
 // Authorize validates the parameters and redirects the user with an auth
@@ -472,7 +472,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
-	http.SetCookie(e.W, &http.Cookie{
+	e.SetCookie(&http.Cookie{
 		Name:     p.sessionCookieName,
 		Value:    key,
 		Path:     "/",
@@ -500,7 +500,7 @@ func (p *Provider) Logout(e *router.Exchange) error {
 	}
 
 	// Clear the cookie by setting it with a past expiration date and MaxAge -1.
-	http.SetCookie(e.W, &http.Cookie{
+	e.SetCookie(&http.Cookie{
 		Name:     p.sessionCookieName,
 		Value:    "",
 		Path:     "/",
@@ -570,20 +570,14 @@ func (p *Provider) Introspect(e *router.Exchange) error {
 
 	res := IntrospectionResponse{
 		Active: true,
-		Jti:    claims.ID(),
-		Sub:    claims.Subject(),
-		Iss:    claims.Issuer(),
-		Aud:    claims.Audience(),
+		Jti:    claims.Jti,
+		Sub:    claims.Sub,
+		Iss:    claims.Iss,
+		Aud:    claims.Aud,
+		Exp:    claims.Exp,
+		Iat:    claims.Iat,
+		Nbf:    claims.Nbf,
 		Scope:  claims.Scope,
-	}
-	if t := claims.ExpiresAt(); !t.IsZero() {
-		res.Exp = t.Unix()
-	}
-	if t := claims.IssuedAt(); !t.IsZero() {
-		res.Iat = t.Unix()
-	}
-	if t := claims.NotBefore(); !t.IsZero() {
-		res.Nbf = t.Unix()
 	}
 
 	return e.JSON(http.StatusOK, res)
