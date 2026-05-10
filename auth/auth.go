@@ -127,21 +127,21 @@ type RoleClaims interface {
 // JWT reserved claims and adds additional claims for roles and scopes.
 type Claims struct {
 	jwt.Reserved
-	// Rol is a slice of strings representing the assigned permissions or
+	// Roles is a slice of strings representing the assigned permissions or
 	// groups.
-	Rol []string `json:"rol,omitempty"`
-	// Scp is a string representing the granted scopes.
-	Scp string `json:"scp,omitempty"`
+	Roles []string `json:"roles,omitempty"`
+	// Scope is a string representing the granted scopes.
+	Scope string `json:"scope,omitempty"`
 }
 
 // HasRole returns true if the specified role is present in the Roles slice.
 func (c *Claims) HasRole(name string) bool {
-	return slices.Contains(c.Rol, name)
+	return slices.Contains(c.Roles, name)
 }
 
 // Scopes returns the granted scopes by splitting the space-delimited string.
 func (c *Claims) Scopes() []string {
-	return strings.Fields(c.Scp)
+	return strings.Fields(c.Scope)
 }
 
 // HasScope returns true if the specified scope is present in the Scopes slice.
