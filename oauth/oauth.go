@@ -266,7 +266,7 @@ func (e Error) Query() url.Values {
 
 const (
 	CodeAccessDenied            = "access_denied"
-	CodeCodeInvalidRequest      = "invalid_request"
+	CodeInvalidRequest          = "invalid_request"
 	CodeInvalidClient           = "invalid_client"
 	CodeInvalidGrant            = "invalid_grant"
 	CodeInvalidScope            = "invalid_scope"
@@ -283,22 +283,22 @@ var (
 	errClientNotFound                 = Error{Code: CodeInvalidClient, Description: "client not found"}
 	errGrantNotAllowed                = Error{Code: CodeUnauthorizedClient, Description: "grant type not allowed for client"}
 	errInvalidAuthCode                = Error{Code: CodeInvalidGrant, Description: "invalid or expired authorization code"}
-	errInvalidFormBody                = Error{Code: CodeCodeInvalidRequest, Description: "invalid form body"}
-	errInvalidRedirectURI             = Error{Code: CodeCodeInvalidRequest, Description: "invalid redirect URI"}
+	errInvalidFormBody                = Error{Code: CodeInvalidRequest, Description: "invalid form body"}
+	errInvalidRedirectURI             = Error{Code: CodeInvalidRequest, Description: "invalid redirect URI"}
 	errInvalidRefreshToken            = Error{Code: CodeInvalidGrant, Description: "invalid or expired refresh token"}
-	errMissingClientID                = Error{Code: CodeCodeInvalidRequest, Description: "missing client ID"}
-	errMissingCode                    = Error{Code: CodeCodeInvalidRequest, Description: "missing code"}
-	errMissingCodeChallenge           = Error{Code: CodeCodeInvalidRequest, Description: "code challenge is required"}
-	errMissingCodeVerifier            = Error{Code: CodeCodeInvalidRequest, Description: "missing code verifier"}
-	errMissingRedirectURI             = Error{Code: CodeCodeInvalidRequest, Description: "missing redirect URI"}
-	errMissingRefreshToken            = Error{Code: CodeCodeInvalidRequest, Description: "missing refresh token"}
-	errMissingToken                   = Error{Code: CodeCodeInvalidRequest, Description: "missing token"}
+	errMissingClientID                = Error{Code: CodeInvalidRequest, Description: "missing client ID"}
+	errMissingCode                    = Error{Code: CodeInvalidRequest, Description: "missing code"}
+	errMissingCodeChallenge           = Error{Code: CodeInvalidRequest, Description: "code challenge is required"}
+	errMissingCodeVerifier            = Error{Code: CodeInvalidRequest, Description: "missing code verifier"}
+	errMissingRedirectURI             = Error{Code: CodeInvalidRequest, Description: "missing redirect URI"}
+	errMissingRefreshToken            = Error{Code: CodeInvalidRequest, Description: "missing refresh token"}
+	errMissingToken                   = Error{Code: CodeInvalidRequest, Description: "missing token"}
 	errPKCEVerificationFailed         = Error{Code: CodeInvalidGrant, Description: "PKCE verification failed"}
 	errRedirectURIMismatch            = Error{Code: CodeInvalidGrant, Description: "redirect URI mismatch"}
 	errScopeNotAllowed                = Error{Code: CodeInvalidScope, Description: "requested scope is not allowed"}
 	errServerError                    = Error{Code: CodeServerError, Description: "unexpected internal error"}
 	errUnauthorizedGrantType          = Error{Code: CodeUnauthorizedClient, Description: "client cannot use requested grant type"}
-	errUnsupportedCodeChallengeMethod = Error{Code: CodeCodeInvalidRequest, Description: "unsupported code challenge method"}
+	errUnsupportedCodeChallengeMethod = Error{Code: CodeInvalidRequest, Description: "unsupported code challenge method"}
 	errUnsupportedGrantType           = Error{Code: CodeUnsupportedGrantType, Description: "grant type not supported"}
 	errUnsupportedResponseType        = Error{Code: CodeUnsupportedResponseType, Description: "only code response type is supported"}
 )
@@ -329,17 +329,12 @@ type IntrospectionResponse struct {
 }
 
 // Authorize validates the parameters and redirects the user with an auth
-// code.
+// code. It implements RFC 6749 Section 4.1.1.
 func (p *Provider) Authorize(e *router.Exchange) error {
 	form := e.Query()
-	clientID := form.Get(ParamClientID)
-	redirectURI := form.Get(ParamRedirectURI)
-	responseType := form.Get(ParamResponseType)
-	scope := form.Get(ParamScope)
-	state := form.Get(ParamState)
-	codeChallenge := form.Get(ParamCodeChallenge)
-	codeChallengeMethod := form.Get(ParamCodeChallengeMethod)
 
+	// 1. Extract and validate the client identifier.
+	clientID := form.Get(ParamClientID)
 	if clientID == "" {
 		return e.JSON(http.StatusBadRequest, errMissingClientID)
 	}
@@ -354,6 +349,10 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return e.JSON(http.StatusUnauthorized, errClientNotFound)
 	}
 
+	// 2. Validate the redirect URI.
+	// If the redirect URI is missing or invalid, we MUST NOT redirect the
+	// user-agent back to the client. We inform the resource owner directly.
+	redirectURI := form.Get(ParamRedirectURI)
 	if redirectURI == "" {
 		return e.JSON(http.StatusBadRequest, errMissingRedirectURI)
 	}
@@ -361,10 +360,24 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return e.JSON(http.StatusBadRequest, errInvalidRedirectURI)
 	}
 
+	responseType := form.Get(ParamResponseType)
+	scope := form.Get(ParamScope)
+	state := form.Get(ParamState)
+	codeChallenge := form.Get(ParamCodeChallenge)
+	codeChallengeMethod := form.Get(ParamCodeChallengeMethod)
+
+	// 3. Define the error redirect helper.
 	sendError := func(red Error) error {
-		return e.RedirectTo(redirectURI, red.Query(), http.StatusFound)
+		q := red.Query()
+		// RFC 6749 Section 4.1.2.1: The state parameter is REQUIRED if it
+		// was present in the client authorization request.
+		if state != "" {
+			q.Set(ParamState, state)
+		}
+		return e.RedirectTo(redirectURI, q, http.StatusFound)
 	}
 
+	// 4. Validate the authorization request parameters.
 	switch {
 	case responseType != "code":
 		return sendError(errUnsupportedResponseType)
@@ -376,7 +389,9 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return sendError(errUnsupportedCodeChallengeMethod)
 	}
 
-	cookie, err := e.R.Cookie(p.sessionCookieName)
+	// 5. Authenticate the resource owner (User).
+	// Uses the session cookie established by the /auth/login endpoint.
+	cookie, err := e.Cookie(p.sessionCookieName)
 	if err != nil || cookie.Value == "" {
 		p.logger.DebugContext(
 			e.Context(),
@@ -396,6 +411,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return sendError(errAccessDenied)
 	}
 
+	// 6. Generate and store the authorization code.
 	code, err := opaque()
 	if err != nil {
 		p.logger.ErrorContext(
@@ -429,6 +445,7 @@ func (p *Provider) Authorize(e *router.Exchange) error {
 		return e.JSON(http.StatusInternalServerError, errServerError)
 	}
 
+	// 7. Redirect the user-agent back to the client.
 	params := url.Values{}
 	params.Set(ParamCode, code)
 	if state != "" {
@@ -446,12 +463,16 @@ type Credentials struct {
 // Login authenticates a user and establishes a session cookie.
 // It expects a JSON body with "username" and "password" fields.
 func (p *Provider) Login(e *router.Exchange) error {
-	var req Credentials
-	if err := e.BindJSON(&req); err != nil {
+	var c Credentials
+	if err := e.BindJSON(&c); err != nil {
 		return err
 	}
 
-	user, err := p.userStore.Authenticate(e.Context(), req.Username, req.Password)
+	user, err := p.userStore.Authenticate(
+		e.Context(),
+		c.Username,
+		c.Password,
+	)
 	if err != nil {
 		p.logger.DebugContext(
 			e.Context(),
@@ -491,7 +512,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 // Logout invalidates the user's session by removing it from the store and
 // clearing the session cookie.
 func (p *Provider) Logout(e *router.Exchange) error {
-	cookie, err := e.R.Cookie(p.sessionCookieName)
+	cookie, err := e.Cookie(p.sessionCookieName)
 	if err == nil && cookie.Value != "" {
 		if err := p.userStore.DelSession(e.Context(), cookie.Value); err != nil {
 			p.logger.DebugContext(
@@ -517,8 +538,10 @@ func (p *Provider) Logout(e *router.Exchange) error {
 	return nil
 }
 
-// Token processes access token requests.
+// Token processes access token requests and issues credentials.
+// It implements RFC 6749 Section 3.2.
 func (p *Provider) Token(e *router.Exchange) error {
+	// 1. Authenticate the client.
 	form, client, err := p.authenticateClient(e)
 	if err != nil {
 		return err
@@ -534,6 +557,7 @@ func (p *Provider) Token(e *router.Exchange) error {
 		return e.JSON(http.StatusBadRequest, errGrantNotAllowed)
 	}
 
+	// 2. Dispatch to the appropriate grant handler.
 	switch grant {
 	case GrantTypeAuthorizationCode:
 		return p.handleAuthorizationCodeGrant(e, form, client)
@@ -549,16 +573,19 @@ func (p *Provider) Token(e *router.Exchange) error {
 // Introspect implements RFC 7662 to determine the active state of an
 // OAuth 2.0 token.
 func (p *Provider) Introspect(e *router.Exchange) error {
+	// 1. Authenticate the client making the introspection request.
 	form, client, err := p.authenticateClient(e)
 	if err != nil {
 		return err
 	}
 
+	// 2. Extract the token to introspect.
 	tok := form.Get(ParamToken)
 	if tok == "" {
 		return e.JSON(http.StatusBadRequest, errMissingToken)
 	}
 
+	// 3. Verify the token signature and temporal claims.
 	// RFC 7662: If the token is invalid, expired, or revoked, the authorization
 	// server MUST return an active boolean set to false.
 	claims, err := p.verifier.Verify([]byte(tok))
@@ -571,6 +598,7 @@ func (p *Provider) Introspect(e *router.Exchange) error {
 		return e.JSON(http.StatusOK, IntrospectionResponse{Active: false})
 	}
 
+	// 4. Return the token metadata if active.
 	res := IntrospectionResponse{
 		Active:   true,
 		ClientID: client.ID(),
@@ -589,16 +617,19 @@ func (p *Provider) Introspect(e *router.Exchange) error {
 
 // Revoke implements RFC 7009 to allow clients to invalidate their tokens.
 func (p *Provider) Revoke(e *router.Exchange) error {
+	// 1. Authenticate the client requesting revocation.
 	form, _, err := p.authenticateClient(e)
 	if err != nil {
 		return err
 	}
 
+	// 2. Extract the token to revoke.
 	tok := form.Get(ParamToken)
 	if tok == "" {
 		return e.JSON(http.StatusBadRequest, errMissingToken)
 	}
 
+	// 3. Delete the token from the session store.
 	// Access tokens are stateless JWTs in this implementation, so we primarily
 	// care about revoking refresh tokens. RFC 7009 dictates that an invalid
 	// or already revoked token should still result in a 200 OK response.
@@ -619,6 +650,7 @@ func (p *Provider) Revoke(e *router.Exchange) error {
 func (p *Provider) authenticateClient(
 	e *router.Exchange,
 ) (url.Values, Client, error) {
+	// 1. Parse the request body.
 	form, err := e.ReadForm()
 	if err != nil {
 		p.logger.DebugContext(
@@ -629,6 +661,7 @@ func (p *Provider) authenticateClient(
 		return nil, nil, e.JSON(http.StatusBadRequest, errInvalidFormBody)
 	}
 
+	// 2. Extract client credentials from headers or form body.
 	id, secret, ok := e.R.BasicAuth()
 	if !ok {
 		id = form.Get(ParamClientID)
@@ -649,6 +682,7 @@ func (p *Provider) authenticateClient(
 		return fail("Missing client_id")
 	}
 
+	// 3. Retrieve the client from the store.
 	client, err := p.clientStore.GetClient(e.Context(), id)
 	if err != nil {
 		p.logger.ErrorContext(
@@ -659,10 +693,12 @@ func (p *Provider) authenticateClient(
 		)
 		return nil, nil, e.JSON(http.StatusInternalServerError, errServerError)
 	}
+
 	if client == nil {
 		return fail("Invalid client")
 	}
 
+	// 4. Verify the client's credentials.
 	if secret == "" && !client.IsPublic() {
 		return fail("Client requires a secret")
 	}
@@ -679,17 +715,18 @@ func (p *Provider) handleAuthorizationCodeGrant(
 	form url.Values,
 	client Client,
 ) error {
+	// 1. Extract the required parameters.
 	code := form.Get(ParamCode)
-	redirectURI := form.Get(ParamRedirectURI)
-	verifier := form.Get(ParamCodeVerifier)
-
 	if code == "" {
 		return e.JSON(http.StatusBadRequest, errMissingCode)
 	}
+
+	verifier := form.Get(ParamCodeVerifier)
 	if verifier == "" {
 		return e.JSON(http.StatusBadRequest, errMissingCodeVerifier)
 	}
 
+	// 2. Retrieve the authorization code from the session store.
 	data, err := p.sessionStore.GetAuthCode(e.Context(), code)
 	if err != nil {
 		p.logger.DebugContext(
@@ -700,9 +737,10 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		return e.JSON(http.StatusBadRequest, errInvalidAuthCode)
 	}
 
-	// Guarantee single use:
+	// 3. Guarantee single-use by eagerly deleting the code.
 	_ = p.sessionStore.DelAuthCode(e.Context(), code)
 
+	// 4. Validate the client ID and redirect URI binding.
 	if data.ClientID != client.ID() {
 		p.logger.DebugContext(
 			e.Context(),
@@ -711,7 +749,8 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
 
-  if redirectURI != "" && data.RedirectURI != redirectURI {
+	redirectURI := form.Get(ParamRedirectURI)
+	if redirectURI != "" && data.RedirectURI != redirectURI {
 		p.logger.DebugContext(
 			e.Context(),
 			"Redirect URI mismatch during code exchange",
@@ -719,6 +758,7 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		return e.JSON(http.StatusBadRequest, errRedirectURIMismatch)
 	}
 
+	// 5. Verify the PKCE code challenge.
 	if !pkce.Verify(
 		verifier,
 		data.CodeChallenge,
@@ -731,9 +771,12 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		return e.JSON(http.StatusBadRequest, errPKCEVerificationFailed)
 	}
 
+	// 6. Issue the access and refresh tokens.
 	return p.issue(e, client.ID(), data.UserID, data.Scope, true)
 }
 
+// handleClientCredentialsGrant issues a token for machine-to-machine
+// communication. It implements RFC 6749 Section 4.4.2.
 func (p *Provider) handleClientCredentialsGrant(
 	e *router.Exchange,
 	form url.Values,
@@ -754,16 +797,20 @@ func (p *Provider) handleClientCredentialsGrant(
 	return p.issue(e, client.ID(), "", scope, false)
 }
 
+// handleRefreshTokenGrant issues a new access token using a refresh token.
+// It implements RFC 6749 Section 6.
 func (p *Provider) handleRefreshTokenGrant(
 	e *router.Exchange,
 	form url.Values,
 	client Client,
 ) error {
+	// 1. Extract the required parameters.
 	token := form.Get(ParamRefreshToken)
 	if token == "" {
 		return e.JSON(http.StatusBadRequest, errMissingRefreshToken)
 	}
 
+	// 2. Retrieve the refresh token from the session store.
 	data, err := p.sessionStore.GetRefreshToken(e.Context(), token)
 	if err != nil {
 		p.logger.DebugContext(
@@ -782,9 +829,10 @@ func (p *Provider) handleRefreshTokenGrant(
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
 
-	// Revoke the old refresh token to issue a new one.
+	// 3. Revoke the old refresh token to issue a new one (Token Rotation).
 	_ = p.sessionStore.DelRefreshToken(e.Context(), token)
 
+	// 4. Issue the access and refresh tokens.
 	return p.issue(e, client.ID(), data.UserID, data.Scope, true)
 }
 
@@ -800,7 +848,9 @@ func (p *Provider) issue(
 		Scp:      strings.Fields(scope),
 	}
 
+	// Populate claims based on the context of the grant.
 	if userID == "" {
+		// Client Credentials grant: the subject is the client itself.
 		claims.Sub = clientID
 	} else if u, err := p.userStore.GetUser(e.Context(), userID); err != nil {
 		p.logger.ErrorContext(
@@ -819,6 +869,7 @@ func (p *Provider) issue(
 		)
 	}
 
+	// Sign the JWT access token.
 	token, err := p.signer.Sign(claims)
 	if err != nil {
 		p.logger.ErrorContext(
@@ -838,6 +889,7 @@ func (p *Provider) issue(
 		Scope:       scope,
 	}
 
+	// Optionally generate and store an opaque refresh token.
 	if refresh {
 		token, err := opaque()
 		if err != nil {
