@@ -348,11 +348,15 @@ func (e *Exchange) Redirect(url string, code int) error {
 }
 
 // Cookie retrieves a named cookie from the request.
+// It returns [http.ErrNoCookie] if no such cookie was found.
+// If multiple cookies match the given name, only one cookie will be returned.
 func (e *Exchange) Cookie(name string) (*http.Cookie, error) {
 	return e.R.Cookie(name)
 }
 
 // SetCookie adds a Set-Cookie header to the response.
+// The provided cookie must have a valid name. Invalid cookies may be silently
+// dropped.
 func (e *Exchange) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(e.W, cookie)
 }
