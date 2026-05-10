@@ -116,12 +116,8 @@ func From[T jwt.Claims](e *router.Exchange) (T, bool) {
 // access control capabilities.
 type RoleClaims interface {
 	jwt.Claims
-	// Roles returns the list of assigned roles.
-	Roles() []string
 	// HasRole checks if the provided role exists within the claims.
 	HasRole(name string) bool
-	// Scopes returns the list of granted scopes.
-	Scopes() []string
 	// HasScope checks if the provided scope exists within the claims.
 	HasScope(name string) bool
 }
@@ -155,16 +151,25 @@ func (s Scope) String() string {
 // JWT reserved claims and adds additional claims for roles and scopes.
 type Claims struct {
 	jwt.Reserved
-	// Rol contains the assigned roles.
-	Rol []string `json:"rol,omitempty"`
-	// Scp contains the granted scopes.
-	Scp Scope `json:"scp,omitempty"`
+	// Azp contains the authorized party.
+	Azp string `json:"azp,omitempty"`
+	// Roles contains the assigned roles.
+	Roles []string `json:"roles,omitempty"`
+	// Scope contains the granted scopes.
+	Scope Scope `json:"scope,omitempty"`
 }
 
-func (c *Claims) Roles() []string           { return c.Rol }
-func (c *Claims) HasRole(name string) bool  { return slices.Contains(c.Rol, name) }
-func (c *Claims) Scopes() []string          { return c.Scp }
-func (c *Claims) HasScope(name string) bool { return slices.Contains(c.Scp, name) }
+func (c *Claims) HasRole(name string) bool {
+	return slices.Contains(c.Roles, name)
+}
+
+func (c *Claims) HasScope(name string) bool {
+	return slices.Contains(c.Scope, name)
+}
+
+func (c *Claims) Delegated() bool {
+	return c.Azp != "" && c.Azp != c.Sub
+}
 
 // Ensure Claims implements RoleClaims.
 var _ RoleClaims = (*Claims)(nil)

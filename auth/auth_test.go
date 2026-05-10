@@ -40,7 +40,7 @@ var _ jwt.Verifier[*auth.Claims] = (*mockVerifier[*auth.Claims])(nil)
 
 func TestClaims_HasRole(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Rol: []string{"a", "b"}}
+	c := &auth.Claims{Roles: []string{"a", "b"}}
 
 	wantRoleA := "a"
 	if !c.HasRole(wantRoleA) {
@@ -87,7 +87,7 @@ func TestScope(t *testing.T) {
 
 func TestClaims_HasScope(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Scp: auth.Scope{"read", "write"}}
+	c := &auth.Claims{Scope: auth.Scope{"read", "write"}}
 
 	if !c.HasScope("read") {
 		t.Errorf("Claims.HasScope(%q) = false; want true", "read")
@@ -99,7 +99,7 @@ func TestClaims_HasScope(t *testing.T) {
 
 func TestRules(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Rol: []string{"a", "b"}}
+	c := &auth.Claims{Roles: []string{"a", "b"}}
 
 	tests := []struct {
 		name    string
@@ -195,7 +195,7 @@ func TestGuard_Secure(t *testing.T) {
 					if tt.mockErr != nil {
 						return nil, tt.mockErr
 					}
-					return &auth.Claims{Rol: []string{"b"}}, nil
+					return &auth.Claims{Roles: []string{"b"}}, nil
 				},
 			}
 
@@ -252,7 +252,7 @@ func TestGuard_Secure(t *testing.T) {
 
 func TestContextExtraction(t *testing.T) {
 	t.Parallel()
-	want := &auth.Claims{Rol: []string{"tester"}}
+	want := &auth.Claims{Roles: []string{"tester"}}
 
 	v := &mockVerifier[*auth.Claims]{
 		verify: func(in []byte) (*auth.Claims, error) {
