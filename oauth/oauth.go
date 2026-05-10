@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/deep-rent/nexus/auth"
@@ -164,7 +165,7 @@ type Config struct {
 	// session key. Defaults to [DefaultSessionCookieName].
 	SessionCookieName string
 
-	// Logger is used for structured logging. Defaults to slog.Default().
+	// Logger is used for structured logging. Defaults to [slog.Default].
 	Logger *slog.Logger
 }
 
@@ -182,7 +183,8 @@ type Provider struct {
 	logger               *slog.Logger
 }
 
-// NewProvider creates a new OAuth 2.0 provider with the specified configuration.
+// NewProvider creates a new OAuth 2.0 provider with the specified
+// configuration.
 func NewProvider(cfg Config) *Provider {
 	if cfg.Signer == nil {
 		panic("oauth: signer is required")
@@ -241,21 +243,21 @@ func (p *Provider) Mount(r *router.Router) {
 
 // Error returns an OAuth 2.0 compliant error response as JSON.
 type Error struct {
-	Reason      string `json:"error"`
+	Code        string `json:"error"`
 	Description string `json:"error_description,omitempty"`
 }
 
 // Error implements the standard error interface.
 func (e Error) Error() string {
 	if e.Description != "" {
-		return e.Reason + ": " + e.Description
+		return e.Code + ": " + e.Description
 	}
-	return e.Reason
+	return e.Code
 }
 
 func (e Error) Query() url.Values {
 	params := url.Values{}
-	params.Set("error", e.Reason)
+	params.Set("error", e.Code)
 	if e.Description != "" {
 		params.Set("error_description", e.Description)
 	}
@@ -263,42 +265,42 @@ func (e Error) Query() url.Values {
 }
 
 const (
-	ReasonAccessDenied            = "access_denied"
-	ReasonCodeInvalidRequest      = "invalid_request"
-	ReasonInvalidClient           = "invalid_client"
-	ReasonInvalidGrant            = "invalid_grant"
-	ReasonInvalidScope            = "invalid_scope"
-	ReasonServerError             = "server_error"
-	ReasonUnauthorizedClient      = "unauthorized_client"
-	ReasonUnsupportedGrantType    = "unsupported_grant_type"
-	ReasonUnsupportedResponseType = "unsupported_response_type"
+	CodeAccessDenied            = "access_denied"
+	CodeCodeInvalidRequest      = "invalid_request"
+	CodeInvalidClient           = "invalid_client"
+	CodeInvalidGrant            = "invalid_grant"
+	CodeInvalidScope            = "invalid_scope"
+	CodeServerError             = "server_error"
+	CodeUnauthorizedClient      = "unauthorized_client"
+	CodeUnsupportedGrantType    = "unsupported_grant_type"
+	CodeUnsupportedResponseType = "unsupported_response_type"
 )
 
 var (
-	errAccessDenied                   = Error{Reason: ReasonAccessDenied, Description: "user authentication required"}
-	errClientAuthFailed               = Error{Reason: ReasonInvalidClient, Description: "client authentication failed"}
-	errClientMismatch                 = Error{Reason: ReasonInvalidGrant, Description: "client mismatch"}
-	errClientNotFound                 = Error{Reason: ReasonInvalidClient, Description: "client not found"}
-	errGrantNotAllowed                = Error{Reason: ReasonUnauthorizedClient, Description: "grant type not allowed for client"}
-	errInvalidAuthCode                = Error{Reason: ReasonInvalidGrant, Description: "invalid or expired authorization code"}
-	errInvalidFormBody                = Error{Reason: ReasonCodeInvalidRequest, Description: "invalid form body"}
-	errInvalidRedirectURI             = Error{Reason: ReasonCodeInvalidRequest, Description: "invalid redirect_uri"}
-	errInvalidRefreshToken            = Error{Reason: ReasonInvalidGrant, Description: "invalid or expired refresh token"}
-	errMissingClientID                = Error{Reason: ReasonCodeInvalidRequest, Description: "missing client_id"}
-	errMissingCode                    = Error{Reason: ReasonCodeInvalidRequest, Description: "missing code"}
-	errMissingCodeChallenge           = Error{Reason: ReasonCodeInvalidRequest, Description: "code_challenge is required (PKCE)"}
-	errMissingCodeVerifier            = Error{Reason: ReasonCodeInvalidRequest, Description: "missing code_verifier"}
-	errMissingRedirectURI             = Error{Reason: ReasonCodeInvalidRequest, Description: "missing redirect_uri"}
-	errMissingRefreshToken            = Error{Reason: ReasonCodeInvalidRequest, Description: "missing refresh_token"}
-	errMissingToken                   = Error{Reason: ReasonCodeInvalidRequest, Description: "missing token"}
-	errPKCEVerificationFailed         = Error{Reason: ReasonInvalidGrant, Description: "PKCE verification failed"}
-	errRedirectURIMismatch            = Error{Reason: ReasonInvalidGrant, Description: "redirect_uri mismatch"}
-	errScopeNotAllowed                = Error{Reason: ReasonInvalidScope, Description: "requested scope is not allowed"}
-	errServerError                    = Error{Reason: ReasonServerError, Description: "unexpected internal error"}
-	errUnauthorizedGrantType          = Error{Reason: ReasonUnauthorizedClient, Description: "client cannot use requested grant type"}
-	errUnsupportedCodeChallengeMethod = Error{Reason: ReasonCodeInvalidRequest, Description: "unsupported code_challenge_method"}
-	errUnsupportedGrantType           = Error{Reason: ReasonUnsupportedGrantType, Description: "grant type not supported"}
-	errUnsupportedResponseType        = Error{Reason: ReasonUnsupportedResponseType, Description: "only code response type is supported"}
+	errAccessDenied                   = Error{Code: CodeAccessDenied, Description: "user authentication required"}
+	errClientAuthFailed               = Error{Code: CodeInvalidClient, Description: "client authentication failed"}
+	errClientMismatch                 = Error{Code: CodeInvalidGrant, Description: "client mismatch"}
+	errClientNotFound                 = Error{Code: CodeInvalidClient, Description: "client not found"}
+	errGrantNotAllowed                = Error{Code: CodeUnauthorizedClient, Description: "grant type not allowed for client"}
+	errInvalidAuthCode                = Error{Code: CodeInvalidGrant, Description: "invalid or expired authorization code"}
+	errInvalidFormBody                = Error{Code: CodeCodeInvalidRequest, Description: "invalid form body"}
+	errInvalidRedirectURI             = Error{Code: CodeCodeInvalidRequest, Description: "invalid redirect URI"}
+	errInvalidRefreshToken            = Error{Code: CodeInvalidGrant, Description: "invalid or expired refresh token"}
+	errMissingClientID                = Error{Code: CodeCodeInvalidRequest, Description: "missing client ID"}
+	errMissingCode                    = Error{Code: CodeCodeInvalidRequest, Description: "missing code"}
+	errMissingCodeChallenge           = Error{Code: CodeCodeInvalidRequest, Description: "code challenge is required"}
+	errMissingCodeVerifier            = Error{Code: CodeCodeInvalidRequest, Description: "missing code verifier"}
+	errMissingRedirectURI             = Error{Code: CodeCodeInvalidRequest, Description: "missing redirect URI"}
+	errMissingRefreshToken            = Error{Code: CodeCodeInvalidRequest, Description: "missing refresh token"}
+	errMissingToken                   = Error{Code: CodeCodeInvalidRequest, Description: "missing token"}
+	errPKCEVerificationFailed         = Error{Code: CodeInvalidGrant, Description: "PKCE verification failed"}
+	errRedirectURIMismatch            = Error{Code: CodeInvalidGrant, Description: "redirect URI mismatch"}
+	errScopeNotAllowed                = Error{Code: CodeInvalidScope, Description: "requested scope is not allowed"}
+	errServerError                    = Error{Code: CodeServerError, Description: "unexpected internal error"}
+	errUnauthorizedGrantType          = Error{Code: CodeUnauthorizedClient, Description: "client cannot use requested grant type"}
+	errUnsupportedCodeChallengeMethod = Error{Code: CodeCodeInvalidRequest, Description: "unsupported code challenge method"}
+	errUnsupportedGrantType           = Error{Code: CodeUnsupportedGrantType, Description: "grant type not supported"}
+	errUnsupportedResponseType        = Error{Code: CodeUnsupportedResponseType, Description: "only code response type is supported"}
 )
 
 // TokenResponse outlines the standard payload returned after a successful token
@@ -313,16 +315,17 @@ type TokenResponse struct {
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload.
 type IntrospectionResponse struct {
-	Active   bool      `json:"active"`
-	Scope    string    `json:"scope,omitempty"`
-	ClientID string    `json:"client_id,omitempty"`
-	Sub      string    `json:"sub,omitempty"`
-	Aud      []string  `json:"aud,omitempty"`
-	Iss      string    `json:"iss,omitempty"`
-	Exp      time.Time `json:"exp,omitzero,format:unix"`
-	Iat      time.Time `json:"iat,omitzero,format:unix"`
-	Nbf      time.Time `json:"nbf,omitzero,format:unix"`
-	Jti      string    `json:"jti,omitempty"`
+	Active   bool   `json:"active"`
+	ClientID string `json:"client_id,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+
+	Jti string    `json:"jti,omitempty"`
+	Iss string    `json:"iss,omitempty"`
+	Aud []string  `json:"aud,omitempty"`
+	Sub string    `json:"sub,omitempty"`
+	Iat time.Time `json:"iat,omitzero,format:unix"`
+	Exp time.Time `json:"exp,omitzero,format:unix"`
+	Nbf time.Time `json:"nbf,omitzero,format:unix"`
 }
 
 // Authorize validates the parameters and redirects the user with an auth
@@ -546,7 +549,7 @@ func (p *Provider) Token(e *router.Exchange) error {
 // Introspect implements RFC 7662 to determine the active state of an
 // OAuth 2.0 token.
 func (p *Provider) Introspect(e *router.Exchange) error {
-	form, _, err := p.authenticateClient(e)
+	form, client, err := p.authenticateClient(e)
 	if err != nil {
 		return err
 	}
@@ -569,15 +572,16 @@ func (p *Provider) Introspect(e *router.Exchange) error {
 	}
 
 	res := IntrospectionResponse{
-		Active: true,
-		Jti:    claims.Jti,
-		Sub:    claims.Sub,
-		Iss:    claims.Iss,
-		Aud:    claims.Aud,
-		Exp:    claims.Exp,
-		Iat:    claims.Iat,
-		Nbf:    claims.Nbf,
-		Scope:  claims.Scope,
+		Active:   true,
+		ClientID: client.ID(),
+		Scope:    claims.Scp.String(),
+		Jti:      claims.Jti,
+		Iss:      claims.Iss,
+		Aud:      claims.Aud,
+		Sub:      claims.Sub,
+		Iat:      claims.Iat,
+		Exp:      claims.Exp,
+		Nbf:      claims.Nbf,
 	}
 
 	return e.JSON(http.StatusOK, res)
@@ -706,7 +710,8 @@ func (p *Provider) handleAuthorizationCodeGrant(
 		)
 		return e.JSON(http.StatusBadRequest, errClientMismatch)
 	}
-	if redirectURI != "" && data.RedirectURI != redirectURI {
+
+  if redirectURI != "" && data.RedirectURI != redirectURI {
 		p.logger.DebugContext(
 			e.Context(),
 			"Redirect URI mismatch during code exchange",
@@ -792,7 +797,7 @@ func (p *Provider) issue(
 ) error {
 	claims := &auth.Claims{
 		Reserved: jwt.Reserved{Sub: userID},
-		Scope:    scope,
+		Scp:      strings.Fields(scope),
 	}
 
 	if userID == "" {
@@ -805,7 +810,7 @@ func (p *Provider) issue(
 			slog.String("user_id", userID),
 		)
 	} else if u != nil {
-		claims.Roles = u.Roles()
+		claims.Rol = u.Roles()
 	} else {
 		p.logger.DebugContext(
 			e.Context(),
