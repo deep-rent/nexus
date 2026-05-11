@@ -28,7 +28,8 @@ type deviceCodeGrant struct{}
 // DeviceCodeGrant returns a new grant implementation for the Device
 // Authorization flow.
 //
-// Pass the result to [Provider.Register] to enable this grant.
+// Pass the result to [Provider.Register] to enable this grant. Bear in mind
+// that it requires the [Config.VerificationURI] option to be specified.
 func DeviceCodeGrant() Grant {
 	return &deviceCodeGrant{}
 }

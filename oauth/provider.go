@@ -88,8 +88,9 @@ type Config struct {
 	// Realm is the authentication realm name for challenges.
 	// Optional; defaults to [DefaultRealm].
 	Realm string
-	// VerificationURI is the endpoint where users authorize device codes.
-	// Required if using the Device Authorization Grant.
+	// VerificationURI is the user-facing URL where resource owners enter the
+	// user code to authorize a device. This field is mandatory if the
+	// [GrantTypeDeviceCode] is registered via [Provider.Register].
 	VerificationURI string
 	// GenerateOpaqueToken overrides the default string generator used for
 	// authorization codes, refresh tokens, device codes, and session keys.
@@ -114,8 +115,8 @@ type Provider struct {
 	accessTokenLifetime  time.Duration
 	refreshTokenLifetime time.Duration
 	authCodeLifetime     time.Duration
-	realm                string
 	deviceCodeLifetime   time.Duration
+	realm                string
 	verificationURI      string
 	issuer               string
 	generateOpaqueToken  func() (string, error)
@@ -150,28 +151,28 @@ func NewProvider(cfg Config) *Provider {
 	}
 
 	accessTokenLifetime := cfg.AccessTokenLifetime
-	if accessTokenLifetime == 0 {
+	if accessTokenLifetime <= 0 {
 		accessTokenLifetime = DefaultAccessTokenLifetime
 	}
 
 	refreshTokenLifetime := cfg.RefreshTokenLifetime
-	if refreshTokenLifetime == 0 {
+	if refreshTokenLifetime <= 0 {
 		refreshTokenLifetime = DefaultRefreshTokenLifetime
 	}
 
 	authCodeLifetime := cfg.AuthCodeLifetime
-	if authCodeLifetime == 0 {
+	if authCodeLifetime <= 0 {
 		authCodeLifetime = DefaultAuthCodeLifetime
+	}
+
+	deviceCodeLifetime := cfg.DeviceCodeLifetime
+	if deviceCodeLifetime <= 0 {
+		deviceCodeLifetime = DefaultDeviceCodeLifetime
 	}
 
 	realm := cfg.Realm
 	if realm == "" {
 		realm = DefaultRealm
-	}
-
-	deviceCodeLifetime := cfg.DeviceCodeLifetime
-	if deviceCodeLifetime == 0 {
-		deviceCodeLifetime = DefaultDeviceCodeLifetime
 	}
 
 	issuer := ""
@@ -205,8 +206,8 @@ func NewProvider(cfg Config) *Provider {
 		accessTokenLifetime:  accessTokenLifetime,
 		refreshTokenLifetime: refreshTokenLifetime,
 		authCodeLifetime:     authCodeLifetime,
-		realm:                realm,
 		deviceCodeLifetime:   deviceCodeLifetime,
+		realm:                realm,
 		verificationURI:      cfg.VerificationURI,
 		issuer:               issuer,
 		generateOpaqueToken:  generateOpaqueToken,
@@ -273,6 +274,10 @@ func (p *Provider) Mount(r *router.Router) {
 //
 // Note: This endpoint is only enabled if a valid URL issuer was specified by
 // the configured JWT signer.
+//
+// The returned metadata dynamically includes endpoints for token revocation,
+// introspection, and device authorization only if the provider is correctly
+// configured or the respective grants are registered.
 func (p *Provider) WellKnown(e *router.Exchange) error {
 	if p.issuer == "" {
 		e.Status(http.StatusNotFound)
@@ -506,8 +511,8 @@ func (p *Provider) authorize(e *router.Exchange) error {
 // Token handles requests to the token endpoint (RFC 6749 Section 3.2).
 //
 // It authenticates the requesting client (via HTTP Basic or POST parameters)
-// and processes the specified grant_type. Supported flows depend on which
-// [Grant] implementations have been registered with [Provider.Register].
+// and processes the specified grant_type using the [Grant] implementations
+// previously registered with [Provider.Register].
 // Returns a JSON response containing an access token and optional refresh token.
 func (p *Provider) Token(e *router.Exchange) error {
 	return wrap(e, p.token)
@@ -813,6 +818,9 @@ func (p *Provider) revoke(e *router.Exchange) error {
 //
 // It authenticates the client and issues a device code and a user code,
 // which the client displays to the resource owner.
+//
+// Note: This endpoint requires a valid [Config.VerificationURI] to be
+// provided during provider initialization.
 func (p *Provider) DeviceAuthorization(e *router.Exchange) error {
 	return wrap(e, p.deviceAuthorization)
 }
