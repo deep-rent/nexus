@@ -54,18 +54,18 @@ type Google struct {
 //
 // If no scopes are provided, it defaults to standard OpenID Connect scopes
 // ("openid", "email", "profile").
-func New(c Config) *Google {
-	if len(c.Scopes) == 0 {
-		c.Scopes = []string{"openid", "email", "profile"}
+func New(cfg Config) *Google {
+	if len(cfg.Scopes) == 0 {
+		cfg.Scopes = []string{"openid", "email", "profile"}
 	}
-	if c.AuthURL == "" {
-		c.AuthURL = DefaultAuthURL
+	if cfg.AuthURL == "" {
+		cfg.AuthURL = DefaultAuthURL
 	}
-	if c.TokenURL == "" {
-		c.TokenURL = DefaultTokenURL
+	if cfg.TokenURL == "" {
+		cfg.TokenURL = DefaultTokenURL
 	}
-	if c.UserInfoURL == "" {
-		c.UserInfoURL = DefaultUserInfoURL
+	if cfg.UserInfoURL == "" {
+		cfg.UserInfoURL = DefaultUserInfoURL
 	}
 
 	t := http.DefaultTransport.(*http.Transport).Clone()
@@ -74,7 +74,7 @@ func New(c Config) *Google {
 	t.IdleConnTimeout = 90 * time.Second
 
 	return &Google{
-		cfg: c,
+		cfg: cfg,
 		client: &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: t,
