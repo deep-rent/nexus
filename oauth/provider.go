@@ -91,6 +91,13 @@ type Config struct {
 	// VerificationURI is the endpoint where users authorize device codes.
 	// Required if using the Device Authorization Grant.
 	VerificationURI string
+	// GenerateOpaqueToken overrides the default string generator used for
+	// authorization codes, refresh tokens, device codes, and session keys.
+	// Defaults to [GenerateOpaqueToken].
+	GenerateOpaqueToken func() (string, error)
+	// GenerateUserCode overrides the default string generator for device flow
+	// user codes. Defaults to [GenerateUserCode].
+	GenerateUserCode func() (string, error)
 }
 
 // Provider is the central component that manages OAuth 2.0 flows, token
@@ -111,6 +118,8 @@ type Provider struct {
 	deviceCodeLifetime   time.Duration
 	verificationURI      string
 	issuer               string
+	generateOpaqueToken  func() (string, error)
+	generateUserCode     func() (string, error)
 }
 
 // NewProvider creates a new Provider with the specified configuration.
@@ -174,6 +183,16 @@ func NewProvider(cfg Config) *Provider {
 		}
 	}
 
+	generateOpaqueToken := cfg.GenerateOpaqueToken
+	if generateOpaqueToken == nil {
+		generateOpaqueToken = GenerateOpaqueToken
+	}
+
+	generateUserCode := cfg.GenerateUserCode
+	if generateUserCode == nil {
+		generateUserCode = GenerateUserCode
+	}
+
 	return &Provider{
 		signer:               cfg.Signer,
 		verifier:             cfg.Verifier,
@@ -190,6 +209,8 @@ func NewProvider(cfg Config) *Provider {
 		deviceCodeLifetime:   deviceCodeLifetime,
 		verificationURI:      cfg.VerificationURI,
 		issuer:               issuer,
+		generateOpaqueToken:  generateOpaqueToken,
+		generateUserCode:     generateUserCode,
 	}
 }
 
@@ -428,7 +449,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
-	code, err := opaque()
+	code, err := p.generateOpaqueToken()
 	if err != nil {
 		p.logger.ErrorContext(
 			e.Context(),
@@ -591,7 +612,7 @@ func (p *Provider) token(e *router.Exchange) error {
 	}
 
 	if iss.Refreshable {
-		token, err := opaque()
+		token, err := p.generateOpaqueToken()
 		if err != nil {
 			p.logger.ErrorContext(
 				e.Context(),
@@ -815,7 +836,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	deviceCode, err := opaque()
+	deviceCode, err := p.generateOpaqueToken()
 	if err != nil {
 		p.logger.ErrorContext(
 			e.Context(),
@@ -829,7 +850,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	userCode, err := userCode()
+	userCode, err := p.generateUserCode()
 	if err != nil {
 		p.logger.ErrorContext(
 			e.Context(),
@@ -951,7 +972,7 @@ func (p *Provider) login(e *router.Exchange) error {
 		}
 	}
 
-	key, err := opaque()
+	key, err := p.generateOpaqueToken()
 	if err != nil {
 		p.logger.ErrorContext(
 			e.Context(),

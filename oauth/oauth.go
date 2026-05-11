@@ -514,9 +514,10 @@ func match(s, pattern string) bool {
 	return true
 }
 
-// opaque generates a high-entropy, base64-encoded string suitable for use as
-// a secure token, such as an authorization code, refresh token, or session key.
-func opaque() (string, error) {
+// GenerateOpaqueToken generates a high-entropy, base64-encoded string
+// suitable for use as a secure token, such as an authorization code, refresh
+// token, or session key.
+func GenerateOpaqueToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -524,8 +525,9 @@ func opaque() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// userCode generates a random 8-character string for the user code.
-func userCode() (string, error) {
+// GenerateUserCode generates a random 8-character string for the
+// user code.
+func GenerateUserCode() (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
