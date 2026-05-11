@@ -28,7 +28,7 @@ import (
 // making it ideal for API error responses.
 type Error map[string][]string
 
-// Error implements the error interface, providing a consolidated string
+// Error implements the [error] interface, providing a consolidated string
 // representation of all validation failures.
 func (e Error) Error() string {
 	var sb strings.Builder
@@ -57,7 +57,7 @@ type Validatable interface {
 // Test validates a single [Validatable] instance or a slice of them.
 // It returns a composite error if any validation checks fail, or nil if
 // all checks pass.
-func Test(target any) error {
+func Test(target any) Error {
 	if t, ok := target.(Validatable); ok {
 		v := New()
 		t.Validate(v)
@@ -98,7 +98,7 @@ func New() *Validator {
 
 // Error returns the composite validation error if any checks failed, or nil
 // if all checks passed.
-func (v *Validator) Error() error {
+func (v *Validator) Error() Error {
 	if len(v.errs) == 0 {
 		return nil
 	}
