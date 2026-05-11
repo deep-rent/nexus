@@ -438,6 +438,7 @@ type AuthorizationServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
+	KeySetURI                         string   `json:"jwks_uri,omitempty"`
 	IntrospectionEndpoint             string   `json:"introspection_endpoint,omitempty"`
 	RevocationEndpoint                string   `json:"revocation_endpoint,omitempty"`
 	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint,omitempty"`

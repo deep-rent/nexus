@@ -25,6 +25,7 @@ import (
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/internal/pkce"
+	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
 )
@@ -241,6 +242,7 @@ const (
 	PathLogout              = BasePath + "/logout"
 	PathIntrospect          = BasePath + "/introspect"
 	PathWellKnown           = BasePath + "/.well-known/oauth-authorization-server"
+	PathKeySet              = BasePath + "/jwks.json"
 )
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
@@ -266,6 +268,7 @@ func (p *Provider) Mount(r *router.Router) {
 
 	if p.issuer != "" {
 		r.HandleFunc("GET "+PathWellKnown, p.WellKnown)
+		r.HandleFunc("GET "+PathKeySet, p.JWKS)
 	}
 }
 
@@ -293,6 +296,7 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		Issuer:                      p.issuer,
 		AuthorizationEndpoint:       p.issuer + PathAuthorize,
 		TokenEndpoint:               p.issuer + PathToken,
+		KeySetURI:                   p.issuer + PathKeySet,
 		RevocationEndpoint:          p.issuer + PathRevoke,
 		IntrospectionEndpoint:       p.issuer + PathIntrospect,
 		DeviceAuthorizationEndpoint: p.issuer + PathDeviceAuthorization,
@@ -305,6 +309,35 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 
 	e.SetHeader("Cache-Control", "public, max-age=3600")
 	return e.JSON(http.StatusOK, res)
+}
+
+// JWKS handles the JSON Web Key Set endpoint (RFC 7517).
+//
+// It exposes the public keys used by the authorization server to sign tokens,
+// allowing external resource servers and clients to verify signatures.
+//
+// Note: This endpoint is only enabled if a valid URL issuer was specified by
+// the configured JWT signer.
+func (p *Provider) JWKS(e *router.Exchange) error {
+	raw, err := jwk.WriteSet(p.signer.KeySet())
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to marshal JWKS",
+			slog.Any("error", err),
+		)
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to generate jwks",
+		}
+	}
+
+	e.SetHeader("Content-Type", "application/jwk-set+json")
+	e.SetHeader("Cache-Control", "public, max-age=3600")
+	e.Status(http.StatusOK)
+	_, err = e.W.Write(raw)
+	return err
 }
 
 // Authorize handles requests to the authorization endpoint (RFC 6749
