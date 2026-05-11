@@ -1132,16 +1132,12 @@ func (p *Provider) Logout(e *router.Exchange) error {
 // ExternalLogin initiates a social authentication flow by redirecting the
 // resource owner to the requested external identity provider.
 func (p *Provider) ExternalLogin(e *router.Exchange) error {
-	return wrap(e, p.externalLogin)
-}
-
-func (p *Provider) externalLogin(e *router.Exchange) error {
 	name := e.R.PathValue("provider")
 	idp, ok := p.identityProviders[name]
 	if !ok {
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusNotFound,
-			Code:        ErrorCodeInvalidRequest,
+			Reason:      "",
 			Description: "unknown identity provider",
 		}
 	}
@@ -1154,9 +1150,9 @@ func (p *Provider) externalLogin(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      "",
 			Description: "failed to generate state",
 		}
 	}
@@ -1179,9 +1175,9 @@ func (p *Provider) externalLogin(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      "",
 			Description: "failed to initiate external login",
 		}
 	}
@@ -1195,25 +1191,21 @@ func (p *Provider) externalLogin(e *router.Exchange) error {
 // verifies the state, exchanges credentials for an external identity, and
 // establishes a local session.
 func (p *Provider) ExternalCallback(e *router.Exchange) error {
-	return wrap(e, p.externalCallback)
-}
-
-func (p *Provider) externalCallback(e *router.Exchange) error {
 	name := e.R.PathValue("provider")
 	idp, ok := p.identityProviders[name]
 	if !ok {
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusNotFound,
-			Code:        ErrorCodeInvalidRequest,
+			Reason:      "",
 			Description: "unknown identity provider",
 		}
 	}
 
-	stateCookie, err := e.Cookie(p.stateCookieName)
-	if err != nil || stateCookie.Value == "" {
-		return &Error{
+	cookie, err := e.Cookie(p.stateCookieName)
+	if err != nil || cookie.Value == "" {
+		return &router.Error{
 			Status:      http.StatusBadRequest,
-			Code:        ErrorCodeInvalidRequest,
+			Reason:      "",
 			Description: "missing or expired state cookie",
 		}
 	}
@@ -1230,10 +1222,10 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 	})
 
 	queryState := e.Query().Get("state")
-	if queryState != stateCookie.Value {
-		return &Error{
+	if queryState != cookie.Value {
+		return &router.Error{
 			Status:      http.StatusBadRequest,
-			Code:        ErrorCodeInvalidRequest,
+			Reason:      "",
 			Description: "state mismatch",
 		}
 	}
