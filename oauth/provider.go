@@ -100,10 +100,10 @@ type Config struct {
 	// user code to authorize a device. This field is mandatory if the
 	// [GrantTypeDeviceCode] is registered via [WithGrant].
 	VerificationURI string
-	// LoginPageURI is the frontend URL where users are directed to log in.
+	// LoginTerminalURI is the frontend URL where users are directed to log in.
 	// This is used for redirects during external auth failures or session
 	// timeouts. Required if identity providers are configured.
-	LoginPageURI string
+	LoginTerminalURI string
 	// LoginRedirectURI is the URL where resource owners are redirected after
 	// a successful social login flow. Required if identity providers are
 	// configured.
@@ -164,7 +164,7 @@ type Provider struct {
 	realm                string
 	verificationURI      string
 	issuer               string
-	loginPageURI         *url.URL
+	loginTerminalURI     *url.URL
 	loginRedirectURI     string
 	generateOpaqueToken  func() (string, error)
 	generateUserCode     func() (string, error)
@@ -247,13 +247,13 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		generateUserCode = GenerateUserCode
 	}
 
-	var loginPageURI *url.URL
-	if cfg.LoginPageURI != "" {
-		u, err := url.Parse(cfg.LoginPageURI)
+	var loginTerminalURI *url.URL
+	if cfg.LoginTerminalURI != "" {
+		u, err := url.Parse(cfg.LoginTerminalURI)
 		if err != nil {
-			panic(fmt.Errorf("oauth: invalid login page uri: %w", err))
+			panic(fmt.Errorf("oauth: invalid login terminal uri: %w", err))
 		}
-		loginPageURI = u
+		loginTerminalURI = u
 	}
 
 	p := &Provider{
@@ -273,7 +273,7 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		deviceCodeLifetime:   deviceCodeLifetime,
 		realm:                realm,
 		verificationURI:      cfg.VerificationURI,
-		loginPageURI:         loginPageURI,
+		loginTerminalURI:     loginTerminalURI,
 		loginRedirectURI:     cfg.LoginRedirectURI,
 		issuer:               issuer,
 		generateOpaqueToken:  generateOpaqueToken,
@@ -285,8 +285,8 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 	}
 
 	if len(p.identityProviders) != 0 {
-		if p.loginPageURI == nil {
-			panic("oauth: login page uri is required for identity providers")
+		if p.loginTerminalURI == nil {
+			panic("oauth: login terminal uri is required for identity providers")
 		}
 		if p.loginRedirectURI == "" {
 			panic("oauth: login redirect uri is required for identity providers")
@@ -388,6 +388,7 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 	}
 
 	e.SetHeader("Cache-Control", "public, max-age=3600")
+
 	return e.JSON(http.StatusOK, res)
 }
 
@@ -495,15 +496,15 @@ func (p *Provider) authorize(e *router.Exchange) error {
 	codeChallengeMethod := data.Get("code_challenge_method")
 
 	fail := func(code, desc string) error {
-		body := url.Values{}
-		body.Set("error", code)
-		body.Set("error_description", desc)
+		params := url.Values{}
+		params.Set("error", code)
+		params.Set("error_description", desc)
 		// RFC 6749 Section 4.1.2.1: The state parameter is REQUIRED if it
 		// was present in the client authorization request.
 		if state != "" {
-			body.Set("state", state)
+			params.Set("state", state)
 		}
-		return e.RedirectTo(redirectURI, body, http.StatusFound)
+		return e.RedirectTo(redirectURI, params, http.StatusFound)
 	}
 
 	switch {
@@ -924,6 +925,7 @@ func (p *Provider) revoke(e *router.Exchange) error {
 	}
 
 	e.Status(http.StatusOK)
+
 	return nil
 }
 
@@ -941,6 +943,14 @@ func (p *Provider) DeviceAuthorization(e *router.Exchange) error {
 
 // deviceAuthorization contains the logic for device authorization requests.
 func (p *Provider) deviceAuthorization(e *router.Exchange) error {
+	if p.verificationURI == "" {
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "device authorization is not configured",
+		}
+	}
+
 	pro, err := p.authenticate(e)
 	if err != nil {
 		return err
@@ -951,14 +961,6 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeUnauthorizedClient,
 			Description: "client is not allowed to use device code grant",
-		}
-	}
-
-	if p.verificationURI == "" {
-		return &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "device authorization is not configured",
 		}
 	}
 
@@ -1031,6 +1033,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 
 	e.SetHeader("Cache-Control", "no-store")
 	e.SetHeader("Pragma", "no-cache")
+
 	return e.JSON(http.StatusOK, res)
 }
 
@@ -1146,7 +1149,9 @@ func (p *Provider) Logout(e *router.Exchange) error {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
+
 	e.NoContent()
+
 	return nil
 }
 
@@ -1211,7 +1216,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 func (p *Provider) ExternalCallback(e *router.Exchange) error {
 	err := p.externalCallback(e)
 	if v, ok := errors.AsType[*router.Error](err); ok {
-		u := *p.loginPageURI
+		u := *p.loginTerminalURI
 		q := u.Query()
 		params := v.Query()
 		for key := range params {
@@ -1347,6 +1352,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 
 	e.SetHeader("Location", p.loginRedirectURI)
 	e.Status(http.StatusFound)
+
 	return nil
 }
 
