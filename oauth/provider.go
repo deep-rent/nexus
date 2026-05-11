@@ -1023,38 +1023,15 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 // the CORS middleware must be configured with AllowCredentials set to true,
 // and AllowOrigin must not be a wildcard ("*").
 func (p *Provider) Login(e *router.Exchange) error {
-	return wrap(e, p.login)
-}
-
-// login contains the logic for resource owner authentication.
-func (p *Provider) login(e *router.Exchange) error {
-	var req LoginRequest
-	if err := e.BindJSON(&req); err != nil {
+	var cred LoginRequest
+	if err := e.BindJSON(&cred); err != nil {
 		return err
-	}
-
-	username := req.Username
-	if username == "" {
-		return &Error{
-			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeAccessDenied,
-			Description: "missing username",
-		}
-	}
-
-	password := req.Password
-	if password == "" {
-		return &Error{
-			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeAccessDenied,
-			Description: "missing password",
-		}
 	}
 
 	sub, err := p.subjects.Authenticate(
 		e.Context(),
-		username,
-		password,
+		cred.Username,
+		cred.Password,
 	)
 	if err != nil {
 		p.logger.ErrorContext(
@@ -1063,16 +1040,16 @@ func (p *Provider) login(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      router.ReasonServerError,
 			Description: "failed to lookup subject",
 		}
 	}
 	if sub == nil {
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeAccessDenied,
+			Reason:      router.ReasonValidationFailed,
 			Description: "invalid credentials",
 		}
 	}
@@ -1085,9 +1062,9 @@ func (p *Provider) login(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      router.ReasonServerError,
 			Description: "failed to generate session key",
 		}
 	}
@@ -1099,9 +1076,9 @@ func (p *Provider) login(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      router.ReasonServerError,
 			Description: "failed to create subject session",
 		}
 	}
