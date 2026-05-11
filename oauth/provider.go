@@ -56,7 +56,7 @@ type Config struct {
 	// This option is mandatory.
 	Signer jwt.Signer
 	// Verifier is the JWT verifier used to validate tokens.
-	// This option is mandatory.
+	// Optional; if omitted, token introspection will not be deactivated.
 	Verifier jwt.Verifier[*auth.Claims]
 	// Clients provides access to registered client applications.
 	// This option is mandatory.
@@ -120,9 +120,6 @@ func NewProvider(cfg Config) *Provider {
 	if cfg.Signer == nil {
 		panic("oauth: signer is required")
 	}
-	if cfg.Verifier == nil {
-		panic("oauth: verifier is required")
-	}
 	if cfg.Clients == nil {
 		panic("oauth: client store is required")
 	}
@@ -173,6 +170,7 @@ func NewProvider(cfg Config) *Provider {
 
 	return &Provider{
 		signer:               cfg.Signer,
+		verifier:             cfg.Verifier,
 		clients:              cfg.Clients,
 		sessions:             cfg.Sessions,
 		subjects:             cfg.Subjects,
@@ -220,9 +218,12 @@ func (p *Provider) Mount(r *router.Router) {
 		r.HandleFunc("POST "+pathDeviceAuthorization, p.DeviceAuthorization)
 	}
 
+	if p.verifier != nil {
+		r.HandleFunc("POST "+pathIntrospect, p.Introspect)
+	}
+
 	r.HandleFunc("POST "+pathLogin, p.Login)
 	r.HandleFunc("POST "+pathLogout, p.Logout)
-	r.HandleFunc("POST "+pathIntrospect, p.Introspect)
 
 	if p.issuer != "" {
 		r.HandleFunc("GET "+pathWellKnown, p.WellKnown)
@@ -975,6 +976,12 @@ func (p *Provider) cookie(key string) *http.Cookie {
 // request and uses the configured [jwt.Verifier] to check the provided token's
 // validity.
 func (p *Provider) Introspect(e *router.Exchange) error {
+	// Exit if token verification is not supported.
+	if p.verifier == nil {
+		e.Status(http.StatusNotFound)
+		return nil
+	}
+
 	return wrap(e, p.introspect)
 }
 
