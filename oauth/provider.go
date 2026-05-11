@@ -214,6 +214,9 @@ const (
 )
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
+//
+// Note: All desired grant types must be registered via [Provider.Register]
+// before calling this method.
 func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("GET "+pathAuthorize, p.Authorize)
 	r.HandleFunc("POST "+pathAuthorize, p.Authorize)
