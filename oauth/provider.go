@@ -273,6 +273,7 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		},
 	}
 
+	e.SetHeader("Cache-Control", "public, max-age=3600")
 	return e.JSON(http.StatusOK, res)
 }
 
