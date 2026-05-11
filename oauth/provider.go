@@ -16,6 +16,7 @@ package oauth
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -33,6 +34,7 @@ const (
 	DefaultAccessTokenLifetime  = 5 * time.Minute
 	DefaultRefreshTokenLifetime = 7 * 24 * time.Hour
 	DefaultAuthCodeLifetime     = 10 * time.Minute
+	DefaultRealm                = "OAuth2"
 )
 
 // Config holds the configuration options for an OAuth 2.0 Provider.
@@ -47,6 +49,7 @@ type Config struct {
 	AccessTokenLifetime  time.Duration
 	RefreshTokenLifetime time.Duration
 	AuthCodeLifetime     time.Duration
+	Realm                string
 }
 
 // Provider is the central component that manages OAuth 2.0 flows, token
@@ -63,6 +66,7 @@ type Provider struct {
 	accessTokenLifetime  time.Duration
 	refreshTokenLifetime time.Duration
 	authCodeLifetime     time.Duration
+	realm                string
 }
 
 // NewProvider creates a new Provider with the specified configuration.
@@ -87,6 +91,11 @@ func NewProvider(cfg Config) *Provider {
 		panic("oauth: subject store is required")
 	}
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	sessionCookieName := cfg.SessionCookieName
 	if sessionCookieName == "" {
 		sessionCookieName = DefaultSessionCookieName
@@ -107,9 +116,9 @@ func NewProvider(cfg Config) *Provider {
 		authCodeLifetime = DefaultAuthCodeLifetime
 	}
 
-	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
+	realm := cfg.Realm
+	if realm == "" {
+		realm = DefaultRealm
 	}
 
 	return &Provider{
@@ -123,6 +132,7 @@ func NewProvider(cfg Config) *Provider {
 		accessTokenLifetime:  accessTokenLifetime,
 		refreshTokenLifetime: refreshTokenLifetime,
 		authCodeLifetime:     authCodeLifetime,
+		realm:                realm,
 	}
 }
 
@@ -391,6 +401,7 @@ func (p *Provider) token(e *router.Exchange) error {
 			"Failed to retrieve subject for claims",
 			slog.Any("error", err),
 		)
+
 		return &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
@@ -405,6 +416,7 @@ func (p *Provider) token(e *router.Exchange) error {
 			"Subject not found for claims",
 			slog.String("subject", iss.Subject),
 		)
+
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidGrant,
@@ -494,7 +506,7 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	}
 
 	if clientID == "" {
-		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
+		p.challenge(e)
 		return nil, &Error{
 			Status:      http.StatusUnauthorized,
 			Code:        ErrorCodeInvalidClient,
@@ -518,7 +530,7 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	}
 
 	if client == nil {
-		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
+		p.challenge(e)
 		return nil, &Error{
 			Status:      http.StatusUnauthorized,
 			Code:        ErrorCodeInvalidClient,
@@ -527,7 +539,7 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	}
 
 	if clientSecret == "" && !client.Public() {
-		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
+		p.challenge(e)
 		return nil, &Error{
 			Status:      http.StatusUnauthorized,
 			Code:        ErrorCodeInvalidClient,
@@ -536,7 +548,7 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	}
 
 	if clientSecret != "" && !client.VerifySecret(clientSecret) {
-		e.SetHeader("WWW-Authenticate", "Basic realm=\"OAuth2\"")
+		p.challenge(e)
 		return nil, &Error{
 			Status:      http.StatusUnauthorized,
 			Code:        ErrorCodeInvalidClient,
@@ -550,6 +562,10 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 		Logger:   p.logger,
 		data:     data,
 	}, nil
+}
+
+func (p *Provider) challenge(e *router.Exchange) {
+	e.SetHeader("WWW-Authenticate", fmt.Sprintf("Basic realm=%q", p.realm))
 }
 
 // Revoke handles token revocation requests.
