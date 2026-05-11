@@ -30,31 +30,58 @@ import (
 )
 
 const (
-	// DefaultSessionCookieName is used if no session cookie name is configured.
+	// DefaultSessionCookieName is the default name for the cookie used to
+	// track the resource owner's session.
 	DefaultSessionCookieName = "session"
-	// DefaultAccessTokenLifetime is the default duration for access tokens.
+	// DefaultAccessTokenLifetime is the default duration for which an
+	// access token is valid.
 	DefaultAccessTokenLifetime = 5 * time.Minute
-	// DefaultRefreshTokenLifetime is the default duration for refresh tokens.
+	// DefaultRefreshTokenLifetime is the default duration for which a
+	// refresh token is valid.
 	DefaultRefreshTokenLifetime = 7 * 24 * time.Hour
-	// DefaultAuthCodeLifetime is the default duration for auth codes.
+	// DefaultAuthCodeLifetime is the default duration for which an
+	// authorization code is valid.
 	DefaultAuthCodeLifetime = 10 * time.Minute
-	// DefaultRealm is the default authentication realm name.
+	// DefaultRealm is the default authentication realm name used in
+	// WWW-Authenticate headers.
 	DefaultRealm = "OAuth2"
 )
 
 // Config holds the configuration options for an OAuth 2.0 Provider.
 type Config struct {
-	Signer               jwt.Signer
-	Verifier             jwt.Verifier[*auth.Claims]
-	Clients              ClientStore
-	Sessions             SessionStore
-	Subjects             SubjectStore
-	Logger               *slog.Logger
-	SessionCookieName    string
-	AccessTokenLifetime  time.Duration
+	// Signer is the JWT signer used to issue access tokens.
+	// This option is mandatory.
+	Signer jwt.Signer
+	// Verifier is the JWT verifier used to validate tokens.
+	// This option is mandatory.
+	Verifier jwt.Verifier[*auth.Claims]
+	// Clients provides access to registered client applications.
+	// This option is mandatory.
+	Clients ClientStore
+	// Sessions provides access to authorization artifacts (codes, refresh tokens).
+	// This option is mandatory.
+	Sessions SessionStore
+	// Subjects provides access to resource owner identities and sessions.
+	// This option is mandatory.
+	Subjects SubjectStore
+	// Logger is the structured logger used by the provider.
+	// Optional; defaults to [slog.Default].
+	Logger *slog.Logger
+	// SessionCookieName is the name of the session cookie.
+	// Optional; defaults to [DefaultSessionCookieName].
+	SessionCookieName string
+	// AccessTokenLifetime defines how long issued access tokens remain valid.
+	// Optional; defaults to [DefaultAccessTokenLifetime].
+	AccessTokenLifetime time.Duration
+	// RefreshTokenLifetime defines how long issued refresh tokens remain valid.
+	// Optional; defaults to [DefaultRefreshTokenLifetime].
 	RefreshTokenLifetime time.Duration
-	AuthCodeLifetime     time.Duration
-	Realm                string
+	// AuthCodeLifetime defines how long issued authorization codes remain valid.
+	// Optional; defaults to [DefaultAuthCodeLifetime].
+	AuthCodeLifetime time.Duration
+	// Realm is the authentication realm name for challenges.
+	// Optional; defaults to [DefaultRealm].
+	Realm string
 }
 
 // Provider is the central component that manages OAuth 2.0 flows, token
@@ -75,23 +102,21 @@ type Provider struct {
 }
 
 // NewProvider creates a new Provider with the specified configuration.
+//
+// It panics if any mandatory options are missing.
 func NewProvider(cfg Config) *Provider {
 	if cfg.Signer == nil {
 		panic("oauth: signer is required")
 	}
-
 	if cfg.Verifier == nil {
 		panic("oauth: verifier is required")
 	}
-
 	if cfg.Clients == nil {
 		panic("oauth: client store is required")
 	}
-
 	if cfg.Sessions == nil {
 		panic("oauth: session store is required")
 	}
-
 	if cfg.Subjects == nil {
 		panic("oauth: subject store is required")
 	}
@@ -100,27 +125,22 @@ func NewProvider(cfg Config) *Provider {
 	if logger == nil {
 		logger = slog.Default()
 	}
-
 	sessionCookieName := cfg.SessionCookieName
 	if sessionCookieName == "" {
 		sessionCookieName = DefaultSessionCookieName
 	}
-
 	accessTokenLifetime := cfg.AccessTokenLifetime
 	if accessTokenLifetime == 0 {
 		accessTokenLifetime = DefaultAccessTokenLifetime
 	}
-
 	refreshTokenLifetime := cfg.RefreshTokenLifetime
 	if refreshTokenLifetime == 0 {
 		refreshTokenLifetime = DefaultRefreshTokenLifetime
 	}
-
 	authCodeLifetime := cfg.AuthCodeLifetime
 	if authCodeLifetime == 0 {
 		authCodeLifetime = DefaultAuthCodeLifetime
 	}
-
 	realm := cfg.Realm
 	if realm == "" {
 		realm = DefaultRealm
@@ -155,7 +175,14 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST /introspect", p.Introspect)
 }
 
-// Authorize handles the authorization endpoint requests.
+// Authorize handles requests to the authorization endpoint (RFC 6749
+// Section 3.1).
+//
+// It supports both GET and POST requests. The handler validates the client
+// identity, redirect URI, and requested scopes. If the resource owner
+// has an active session (previously established via [Provider.Login]), it
+// generates an authorization code and redirects the user-agent back to
+// the client's redirect URI.
 func (p *Provider) Authorize(e *router.Exchange) error {
 	return wrap(e, p.authorize)
 }
@@ -261,7 +288,6 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
-	// Verify the resource owner's session established during login.
 	// Authenticate the resource owner using the session cookie established by
 	// the login endpoint.
 	cookie, err := e.Cookie(p.sessionCookieName)
@@ -295,7 +321,6 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
-	// Generate and store the authorization code state.
 	code, err := opaque()
 	if err != nil {
 		p.logger.ErrorContext(
@@ -346,7 +371,12 @@ func (p *Provider) authorize(e *router.Exchange) error {
 	return e.RedirectTo(redirectURI, params, http.StatusFound)
 }
 
-// Token handles the token endpoint requests.
+// Token handles requests to the token endpoint (RFC 6749 Section 3.2).
+//
+// It authenticates the requesting client (via HTTP Basic or POST parameters)
+// and processes the specified grant_type. Supported flows depend on which
+// [Grant] implementations have been registered with [Provider.Register].
+// Returns a JSON response containing an access token and optional refresh token.
 func (p *Provider) Token(e *router.Exchange) error {
 	return wrap(e, p.token)
 }
@@ -431,7 +461,6 @@ func (p *Provider) token(e *router.Exchange) error {
 		}
 	}
 
-	// Generate and sign the final JWT access token.
 	token, err := p.signer.Sign(claims)
 	if err != nil {
 		p.logger.ErrorContext(
@@ -454,7 +483,6 @@ func (p *Provider) token(e *router.Exchange) error {
 		Scope:       iss.Scope,
 	}
 
-	// Optionally issue a refresh token if the grant permits it.
 	if iss.Refreshable {
 		token, err := opaque()
 		if err != nil {
@@ -498,9 +526,6 @@ func (p *Provider) token(e *router.Exchange) error {
 	return e.JSON(http.StatusOK, res)
 }
 
-// authenticate parses the client credentials from the request and retrieves
-// the corresponding [Client] from the [ClientStore]. It handles both HTTP
-// Basic and POST body credentials.
 func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	data, err := e.ReadForm()
 	if err != nil {
@@ -511,8 +536,6 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 		}
 	}
 
-	// RFC 6749 allows client credentials to be provided via HTTP Basic Auth
-	// or as part of the request body.
 	clientID, clientSecret, ok := e.R.BasicAuth()
 	if !ok {
 		clientID = data.Get("client_id")
@@ -552,8 +575,6 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 		}
 	}
 
-	// Confidential clients MUST provide a secret; public clients (e.g., SPAs)
-	// are not required to do so.
 	if clientSecret == "" && !client.Public() {
 		p.challenge(e)
 		return nil, &Error{
@@ -587,7 +608,12 @@ func (p *Provider) challenge(e *router.Exchange) {
 	e.SetHeader("WWW-Authenticate", fmt.Sprintf("Basic realm=%q", p.realm))
 }
 
-// Revoke handles token revocation requests.
+// Revoke handles token revocation requests per RFC 7009.
+//
+// It allows clients to signal that a previously obtained refresh token is no
+// longer needed. The handler authenticates the client and, if the provided
+// token is a valid refresh token belonging to that client, removes it from the
+// [SessionStore].
 func (p *Provider) Revoke(e *router.Exchange) error {
 	return wrap(e, p.revoke)
 }
@@ -621,6 +647,10 @@ func (p *Provider) revoke(e *router.Exchange) error {
 }
 
 // Login handles the resource owner authentication and establishes a session.
+//
+// It expects a JSON payload with username and password. On success, it
+// generates a high-entropy session key, stores it via [SubjectStore], and sets
+// a secure session cookie on the user-agent.
 func (p *Provider) Login(e *router.Exchange) error {
 	return wrap(e, p.login)
 }
@@ -632,10 +662,28 @@ func (p *Provider) login(e *router.Exchange) error {
 		return err
 	}
 
+	username := req.Username
+	if username == "" {
+		return &Error{
+			Status:      http.StatusUnauthorized,
+			Code:        ErrorCodeAccessDenied,
+			Description: "missing username",
+		}
+	}
+
+	password := req.Password
+	if password == "" {
+		return &Error{
+			Status:      http.StatusUnauthorized,
+			Code:        ErrorCodeAccessDenied,
+			Description: "missing password",
+		}
+	}
+
 	sub, err := p.subjects.Authenticate(
 		e.Context(),
-		req.Username,
-		req.Password,
+		username,
+		password,
 	)
 	if err != nil {
 		p.logger.ErrorContext(
@@ -693,6 +741,10 @@ func (p *Provider) login(e *router.Exchange) error {
 }
 
 // Logout terminates the resource owner's session.
+//
+// It identifies the session via the session cookie, deletes the mapping from
+// the [SubjectStore], and clears the cookie on the user-agent by setting a
+// negative Max-Age value.
 func (p *Provider) Logout(e *router.Exchange) error {
 	cookie, err := e.Cookie(p.sessionCookieName)
 	if err == nil && cookie.Value != "" {
@@ -710,6 +762,11 @@ func (p *Provider) Logout(e *router.Exchange) error {
 	return nil
 }
 
+// cookie constructs an [http.Cookie] for the resource owner session.
+//
+// If the provided key is empty, it returns a cookie with a negative Max-Age
+// to signal the user-agent to delete it. Otherwise, it creates a secure,
+// HTTP-only cookie with the session key.
 func (p *Provider) cookie(key string) *http.Cookie {
 	c := &http.Cookie{
 		Name:     p.sessionCookieName,
@@ -725,7 +782,12 @@ func (p *Provider) cookie(key string) *http.Cookie {
 	return c
 }
 
-// Introspect handles the token introspection endpoint requests.
+// Introspect handles token introspection requests (RFC 7662).
+//
+// It allows authorized resource servers to query the metadata and active status
+// of a given access token. The handler authenticates the client making the
+// request and uses the configured [jwt.Verifier] to check the provided token's
+// validity.
 func (p *Provider) Introspect(e *router.Exchange) error {
 	return wrap(e, p.introspect)
 }

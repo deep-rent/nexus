@@ -23,13 +23,15 @@ import (
 // machine-to-machine authentication.
 type clientCredentialsGrant struct{}
 
-// ClientCredentialsGrant returns a new Grant implementation for the Client
+// ClientCredentialsGrant returns a new grant implementation for the Client
 // Credentials flow.
+//
+// Pass the result to [Provider.Register] to enable this grant.
 func ClientCredentialsGrant() Grant {
 	return &clientCredentialsGrant{}
 }
 
-// Type returns [GrantTypeClientCredentials].
+// Type implements [Grant].
 func (g *clientCredentialsGrant) Type() GrantType {
 	return GrantTypeClientCredentials
 }

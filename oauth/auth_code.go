@@ -26,13 +26,15 @@ import (
 // flow.
 type authCodeGrant struct{}
 
-// AuthCodeGrant returns a new Grant implementation for the Authorization Code
+// AuthCodeGrant returns a new grant implementation for the Authorization Code
 // flow, including Proof Key for Code Exchange (PKCE) validation.
+//
+// Pass the result to [Provider.Register] to enable this grant.
 func AuthCodeGrant() Grant {
 	return &authCodeGrant{}
 }
 
-// Type returns [GrantTypeAuthorizationCode].
+// Type implements [Grant].
 func (g *authCodeGrant) Type() GrantType {
 	return GrantTypeAuthorizationCode
 }

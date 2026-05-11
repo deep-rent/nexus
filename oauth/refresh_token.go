@@ -23,13 +23,15 @@ import (
 // refreshTokenGrant implements the [Grant] interface for token rotation.
 type refreshTokenGrant struct{}
 
-// RefreshTokenGrant returns a new Grant implementation for the Refresh Token
+// RefreshTokenGrant returns a new grant implementation for the Refresh Token
 // flow.
+//
+// Pass the result to [Provider.Register] to enable this grant.
 func RefreshTokenGrant() Grant {
 	return &refreshTokenGrant{}
 }
 
-// Type returns [GrantTypeRefreshToken].
+// Type implements [Grant].
 func (g *refreshTokenGrant) Type() GrantType {
 	return GrantTypeRefreshToken
 }

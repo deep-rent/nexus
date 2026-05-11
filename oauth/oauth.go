@@ -36,8 +36,8 @@
 //
 //	// Initialize the provider with required stores and signers.
 //	p := oauth.NewProvider(oauth.Config{
-//	  Signer:   jwtSigner,
-//	  Verifier: jwtVerifier,
+//	  Signer:   mySigner,
+//	  Verifier: myVerifier,
 //	  Clients:  myClientStore,
 //	  Sessions: mySessionStore,
 //	  Subjects: mySubjectStore,
@@ -66,7 +66,7 @@ import (
 	"time"
 )
 
-// GrantType defines the various methods for obtaining an access token.
+// GrantType defines the various flows for obtaining an access token.
 type GrantType string
 
 const (
@@ -255,7 +255,7 @@ const (
 	ErrorCodeInvalidScope = "invalid_scope"
 	// ErrorCodeServerError indicates an internal server error occurred.
 	ErrorCodeServerError = "server_error"
-	// ErrorCodeTemporarilyUnavailable indicates server is overloaded.
+	// ErrorCodeTemporarilyUnavailable signals the server is overloaded.
 	ErrorCodeTemporarilyUnavailable = "temporarily_unavailable"
 	// ErrorCodeUnauthorizedClient indicates client is not authorized for grant.
 	ErrorCodeUnauthorizedClient = "unauthorized_client"
@@ -375,12 +375,29 @@ type IntrospectionResponse struct {
 }
 
 // LoginRequest represents the payload for the resource owner login endpoint.
+//
+// It is consumed by [Provider.Login] to authenticate a resource owner and
+// initiate a secure session via the [SubjectStore.Authenticate] method.
 type LoginRequest struct {
-	Username string `json:"username" valid:",required"`
-	Password string `json:"password" valid:",required"`
+	// Username is the unique identifier (e.g., an email address or handle)
+	// used by the resource owner to authenticate. This value is passed to
+	// [SubjectStore.Authenticate] to resolve the [Subject].
+	Username string `json:"username"`
+	// Password is the secret credential provided by the resource owner.
+	// It is used to verify the identity of the user during the login process.
+	Password string `json:"password"`
 }
 
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
+//
+// Patterns support the '*' wildcard for matching segments. For example:
+//   - "https://*.deep.rent/*" matches "https://app.deep.rent/callback"
+//   - "https://deep.rent/login?*" matches "https://deep.rent/login?state=xyz"
+//   - "http://localhost:*" matches "http://localhost:3000"
+//   - "https://deep.rent/auth" matches only that exact URI
+//
+// This utility function is particularly useful for implementing the [Client]
+// interface.
 func VerifyRedirectURI(uri string, whitelist []string) bool {
 	for _, pattern := range whitelist {
 		if match(uri, pattern) {
