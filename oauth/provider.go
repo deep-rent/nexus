@@ -834,7 +834,7 @@ func (p *Provider) introspect(e *router.Exchange) error {
 	return e.JSON(http.StatusOK, res)
 }
 
-// wrap executes the handler and translates any returned [*Error] into an HTTP
+// wrap executes the handler and translates any returned [Error] into an HTTP
 // JSON response using the error's defined status code.
 func wrap(e *router.Exchange, handler func(*router.Exchange) error) error {
 	err := handler(e)
