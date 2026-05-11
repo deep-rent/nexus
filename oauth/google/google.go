@@ -109,10 +109,11 @@ type Google struct {
 
 var _ oauth.IdentityProvider = (*Google)(nil)
 
-// New creates a new Google identity provider with an optimized HTTP client.
+// New creates a new Google identity provider with the given configuration
+// options.
 //
-// If no scopes are provided, it defaults to standard OpenID Connect scopes
-// ("openid", "email", "profile"). It panics if options are missing or invalid.
+// It panics if the [Config.ClientID], [Config.ClientSecret], or
+// [Config.RedirectURI] are empty, or if the provided URLs are malformed.
 func New(cfg Config) *Google {
 	g := &Google{}
 
