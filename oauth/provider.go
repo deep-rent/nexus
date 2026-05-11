@@ -442,7 +442,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidRequest,
-			Description: "missing client ID",
+			Description: "missing client id",
 		}
 	}
 
@@ -1344,6 +1344,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+
 	e.SetHeader("Location", p.loginRedirectURI)
 	e.Status(http.StatusFound)
 	return nil
