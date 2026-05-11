@@ -838,6 +838,10 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 // It expects a JSON payload with username and password. On success, it
 // generates a high-entropy session key, stores it via [SubjectStore], and sets
 // a secure session cookie on the user-agent.
+//
+// Note: When calling this endpoint from a cross-origin frontend (e.g., an SPA),
+// the CORS middleware must be configured with AllowCredentials set to true,
+// and AllowOrigin must not be a wildcard ("*").
 func (p *Provider) Login(e *router.Exchange) error {
 	return wrap(e, p.login)
 }
