@@ -126,8 +126,8 @@ type Option func(*Provider)
 //
 // The name parameter identifies the provider in the URL paths (e.g., "google"
 // results in a login path of /oauth/login/google). If identity providers
-// are registered, the [Config.LoginRedirectURI] must be provided in the
-// initial configuration.
+// are registered, the [Config.LoginTerminalURI] and [Config.LoginRedirectURI]
+// options must be provided in the initial configuration.
 func WithIdentityProvider(name string, impl IdentityProvider) Option {
 	return func(p *Provider) {
 		p.identityProviders[name] = impl
