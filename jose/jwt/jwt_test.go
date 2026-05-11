@@ -90,6 +90,10 @@ func TestSigner_Defaults(t *testing.T) {
 		t.Errorf("s.Issuer() = %q; want %q", got, want)
 	}
 
+	if got, want := s.KeySet().Len(), 1; got != want {
+		t.Errorf("s.KeySet().Len() = %d; want %d", got, want)
+	}
+
 	c := &testClaims{Role: "user"}
 	raw, err := s.Sign(c)
 	if err != nil {
@@ -125,6 +129,10 @@ func TestSigner_Rotation(t *testing.T) {
 	k2 := mockKeyPair(t, "k2")
 	s := jwt.NewSigner([]jwk.KeyPair{k1, k2})
 	c := &testClaims{Reserved: jwt.Reserved{Sub: "test"}}
+
+	if got, want := s.KeySet().Len(), 2; got != want {
+		t.Errorf("s.KeySet().Len() = %d; want %d", got, want)
+	}
 
 	t1, err := s.Sign(c)
 	if err != nil {

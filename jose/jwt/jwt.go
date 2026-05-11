@@ -668,6 +668,10 @@ type Signer interface {
 	// Issuer returns the value of the "iss" claim included in tokens produced
 	// by this signer by default, or an empty string if it is omitted.
 	Issuer() string
+	// KeySet returns the JWKS containing the public keys corresponding to the
+	// private keys used by this signer. This is primarily used to expose a
+	// JWKS endpoint for external verification.
+	KeySet() jwk.Set
 	// Sign applies the signer's configuration (issuer, audience, and temporal
 	// validity) directly to the mutable claims object, then signs it.
 	Sign(claims MutableClaims) ([]byte, error)
@@ -744,6 +748,8 @@ func WithSignerClock(now func() time.Time) SignerOption {
 type signer struct {
 	// rot handles key rotation.
 	rot rotor.Rotor[jwk.KeyPair]
+	// set is the JSON Web Key Set representing the public keys of the signer.
+	set jwk.Set
 	// cfg contains the generation rules.
 	cfg signerConfig
 }
@@ -768,14 +774,24 @@ func NewSigner(keys []jwk.KeyPair, opts ...SignerOption) Signer {
 		opt(&cfg)
 	}
 
+	pub := make([]jwk.Key, len(keys))
+	for i, k := range keys {
+		pub[i] = k
+	}
+	set := jwk.NewSet(pub...)
+
 	return &signer{
 		rot: rotor.New(keys),
+		set: set,
 		cfg: cfg,
 	}
 }
 
 // Issuer implements the [Signer] interface.
 func (s *signer) Issuer() string { return s.cfg.iss }
+
+// KeySet implements the [Signer] interface.
+func (s *signer) KeySet() jwk.Set { return s.set }
 
 // Sign implements the [Signer] interface.
 func (s *signer) Sign(claims MutableClaims) ([]byte, error) {
