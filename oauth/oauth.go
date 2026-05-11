@@ -151,8 +151,11 @@ type SubjectStore interface {
 	//
 	// This is used for social login flows. If no local subject is linked to
 	// the external ID, it returns nil, nil (allowing for Just-In-Time
-	// provisioning).
-	GetSubjectByExternalID(ctx context.Context, provider, externalID string) (Subject, error)
+	// provisioning if the implementation chooses to do so).
+	GetSubjectByExternalID(
+		ctx context.Context,
+		provider string, identity ExternalIdentity,
+	) (Subject, error)
 	// GetSubjectBySession retrieves the authenticated subject via their
 	// session key.
 	//
@@ -409,6 +412,14 @@ type Grant interface {
 type ExternalIdentity struct {
 	// Subject is the unique identifier of the user at the external provider.
 	Subject string
+	// Email is the user's primary email address.
+	Email string
+	// EmailVerified indicates whether the email address has been verified.
+	EmailVerified bool
+	// Name is the user's full name.
+	Name string
+	// Picture is the URL of the user's profile picture.
+	Picture string
 }
 
 // IdentityProvider defines the contract for external social authentication
@@ -417,10 +428,10 @@ type IdentityProvider interface {
 	// AuthURL generates the authorization URL to redirect the user-agent.
 	// The state parameter must be included in the URL to prevent CSRF.
 	AuthURL(ctx context.Context, state string) (string, error)
-	// Exchange processes the callback request and retrieves the external
+	// Process processes the callback request and returns the external
 	// identity. Implementations should extract the authorization code or
 	// tokens from the request and exchange them securely.
-	Exchange(ctx context.Context, req *http.Request) (*ExternalIdentity, error)
+	Process(ctx context.Context, req *http.Request) (ExternalIdentity, error)
 }
 
 // TokenResponse outlines the payload returned after a successful token grant.

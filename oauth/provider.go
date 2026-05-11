@@ -1237,7 +1237,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 		}
 	}
 
-	identity, err := idp.Exchange(e.Context(), e.R)
+	identity, err := idp.Process(e.Context(), e.R)
 	if err != nil {
 		p.logger.ErrorContext(
 			e.Context(),
@@ -1255,7 +1255,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 	sub, err := p.subjects.GetSubjectByExternalID(
 		e.Context(),
 		name,
-		identity.Subject,
+		identity,
 	)
 	if err != nil {
 		p.logger.ErrorContext(
