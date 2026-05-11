@@ -21,7 +21,9 @@ import (
 
 type clientCredentialsGrant struct{}
 
-func ClienCredentialsGrant() Grant {
+// ClientCredentialsGrant returns a new Grant implementation for the Client
+// Credentials flow.
+func ClientCredentialsGrant() Grant {
 	return &clientCredentialsGrant{}
 }
 
