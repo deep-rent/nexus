@@ -32,7 +32,7 @@ import (
 const (
 	// DefaultSessionCookieName is the default name for the cookie used to
 	// track the resource owner's session.
-	DefaultSessionCookieName = "session"
+	DefaultSessionCookieName = "oauth_session"
 	// DefaultAccessTokenLifetime is the default duration for which an
 	// access token is valid.
 	DefaultAccessTokenLifetime = 5 * time.Minute
