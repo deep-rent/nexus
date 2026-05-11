@@ -420,17 +420,35 @@ type ExternalIdentity struct {
 	Name string
 	// Picture is the URL of the user's profile picture.
 	Picture string
+	// Raw contains the original, unparsed claims returned by the provider.
+	// This allows the [SubjectStore] to extract provider-specific data
+	// (e.g., custom tenant IDs or specific profile fields) during
+	// JIT provisioning.
+	Raw map[string]any
 }
 
 // IdentityProvider defines the contract for external social authentication
 // providers (e.g., Google, GitHub, Apple).
+//
+// Implementations are responsible for defining the provider-specific OAuth 2.0
+// or OIDC flows. The core [Provider] manages CSRF protection (state generation
+// and validation) and the final local session creation, allowing implementations
+// to focus purely on the external exchange.
 type IdentityProvider interface {
 	// AuthURL generates the authorization URL to redirect the user-agent.
-	// The state parameter must be included in the URL to prevent CSRF.
+	//
+	// Implementations must append the provided state string to the URL's
+	// query parameters (e.g., `?state=...`). The redirect URI should point
+	// to the server's registered ExternalCallback endpoint.
 	AuthURL(ctx context.Context, state string) (string, error)
 	// Process processes the callback request and returns the external
-	// identity. Implementations should extract the authorization code or
-	// tokens from the request and exchange them securely.
+	// identity.
+	//
+	// Implementations should extract the authorization code from the request
+	// and exchange it securely via the external provider's API. Note that the
+	// core [Provider] already validates the state parameter against a secure
+	// cookie prior to calling this method, so implementations do not need to
+	// perform additional CSRF checks.
 	Process(ctx context.Context, req *http.Request) (ExternalIdentity, error)
 }
 
