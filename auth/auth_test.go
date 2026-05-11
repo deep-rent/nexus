@@ -97,9 +97,30 @@ func TestClaims_HasScope(t *testing.T) {
 	}
 }
 
+func TestClaims_Delegated(t *testing.T) {
+	t.Parallel()
+
+	c1 := &auth.Claims{}
+	if c1.Delegated() {
+		t.Errorf("Claims.Delegated() = true; want false")
+	}
+
+	c2 := &auth.Claims{Azp: "client1"}
+	c2.Sub = "client1"
+	if c2.Delegated() {
+		t.Errorf("Claims.Delegated() = true; want false")
+	}
+
+	c3 := &auth.Claims{Azp: "client1"}
+	c3.Sub = "user1"
+	if !c3.Delegated() {
+		t.Errorf("Claims.Delegated() = false; want true")
+	}
+}
+
 func TestRules(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Roles: []string{"a", "b"}}
+	c := &auth.Claims{Roles: []string{"a", "b"}, Scope: auth.Scope{"read", "write"}}
 
 	tests := []struct {
 		name    string
@@ -112,6 +133,12 @@ func TestRules(t *testing.T) {
 		{"AnyRole failure", auth.AnyRole[*auth.Claims]("c", "d"), true},
 		{"AllRoles success", auth.AllRoles[*auth.Claims]("a", "b"), false},
 		{"AllRoles failure", auth.AllRoles[*auth.Claims]("a", "c"), true},
+		{"HasScope success", auth.HasScope[*auth.Claims]("read"), false},
+		{"HasScope failure", auth.HasScope[*auth.Claims]("delete"), true},
+		{"AnyScope success", auth.AnyScope[*auth.Claims]("delete", "read"), false},
+		{"AnyScope failure", auth.AnyScope[*auth.Claims]("delete", "update"), true},
+		{"AllScopes success", auth.AllScopes[*auth.Claims]("read", "write"), false},
+		{"AllScopes failure", auth.AllScopes[*auth.Claims]("read", "delete"), true},
 	}
 
 	for _, tt := range tests {
