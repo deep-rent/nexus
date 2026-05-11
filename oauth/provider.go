@@ -91,6 +91,10 @@ type Config struct {
 	// VerificationURI is the endpoint where users authorize device codes.
 	// Required if using the Device Authorization Grant.
 	VerificationURI string
+	// Issuer is the authorization server's issuer identifier.
+	// It is used to generate absolute URLs in the discovery endpoint.
+	// Optional; defaults to an empty string.
+	Issuer string
 }
 
 // Provider is the central component that manages OAuth 2.0 flows, token
@@ -110,6 +114,7 @@ type Provider struct {
 	realm                string
 	deviceCodeLifetime   time.Duration
 	verificationURI      string
+	issuer               string
 }
 
 // NewProvider creates a new Provider with the specified configuration.
@@ -175,22 +180,65 @@ func NewProvider(cfg Config) *Provider {
 		realm:                realm,
 		deviceCodeLifetime:   deviceCodeLifetime,
 		verificationURI:      cfg.VerificationURI,
+		issuer:               strings.TrimRight(cfg.Issuer, "/"),
 	}
 }
 
 // Register adds a new grant type handler to the provider.
 func (p *Provider) Register(grant Grant) { p.grants[grant.Type()] = grant }
 
+const (
+	pathAuthorize           = "/authorize"
+	pathToken               = "/token"
+	pathRevoke              = "/revoke"
+	pathDeviceAuthorization = "/device_authorization"
+	pathLogin               = "/login"
+	pathLogout              = "/logout"
+	pathIntrospect          = "/introspect"
+	pathWellKnown           = "/.well-known/oauth-authorization-server"
+)
+
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
 func (p *Provider) Mount(r *router.Router) {
-	r.HandleFunc("GET /authorize", p.Authorize)
-	r.HandleFunc("POST /authorize", p.Authorize)
-	r.HandleFunc("POST /token", p.Token)
-	r.HandleFunc("POST /revoke", p.Revoke)
-	r.HandleFunc("POST /device_authorization", p.DeviceAuthorization)
-	r.HandleFunc("POST /login", p.Login)
-	r.HandleFunc("POST /logout", p.Logout)
-	r.HandleFunc("POST /introspect", p.Introspect)
+	r.HandleFunc("GET "+pathAuthorize, p.Authorize)
+	r.HandleFunc("POST "+pathAuthorize, p.Authorize)
+	r.HandleFunc("POST "+pathToken, p.Token)
+	r.HandleFunc("POST "+pathRevoke, p.Revoke)
+	r.HandleFunc("POST "+pathDeviceAuthorization, p.DeviceAuthorization)
+	r.HandleFunc("POST "+pathLogin, p.Login)
+	r.HandleFunc("POST "+pathLogout, p.Logout)
+	r.HandleFunc("POST "+pathIntrospect, p.Introspect)
+	r.HandleFunc("GET "+pathWellKnown, p.WellKnown)
+}
+
+// WellKnown handles the OAuth 2.0 Authorization Server Metadata endpoint
+// (RFC 8414) and OpenID Connect Discovery.
+func (p *Provider) WellKnown(e *router.Exchange) error {
+	return wrap(e, p.wellKnown)
+}
+
+// wellKnown contains the logic for the metadata endpoint.
+func (p *Provider) wellKnown(e *router.Exchange) error {
+	var grants []string
+	for g := range p.grants {
+		grants = append(grants, string(g))
+	}
+
+	res := AuthorizationServerMetadata{
+		Issuer:                      p.issuer,
+		AuthorizationEndpoint:       p.issuer + pathAuthorize,
+		TokenEndpoint:               p.issuer + pathToken,
+		RevocationEndpoint:          p.issuer + pathRevoke,
+		IntrospectionEndpoint:       p.issuer + pathIntrospect,
+		DeviceAuthorizationEndpoint: p.issuer + pathDeviceAuthorization,
+		GrantTypesSupported:         grants,
+		ResponseTypesSupported:      []string{"code"},
+		TokenEndpointAuthMethodsSupported: []string{
+			"client_secret_basic", "client_secret_post",
+		},
+	}
+
+	return e.JSON(http.StatusOK, res)
 }
 
 // Authorize handles requests to the authorization endpoint (RFC 6749
