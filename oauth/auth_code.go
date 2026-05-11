@@ -114,11 +114,20 @@ func (g *authCodeGrant) Authorize(
 	// Validate the redirect URI if one was provided in the initial
 	// authorization request.
 	redirectURI := pro.Get("redirect_uri")
-	if redirectURI != "" && c.RedirectURI != redirectURI {
-		return nil, &Error{
-			Status:      http.StatusBadRequest,
-			Code:        ErrorCodeInvalidGrant,
-			Description: "redirect URI mismatch",
+	if c.RedirectURI != "" {
+		if redirectURI == "" {
+			return nil, &Error{
+				Status:      http.StatusBadRequest,
+				Code:        ErrorCodeInvalidRequest,
+				Description: "missing redirect_uri parameter",
+			}
+		}
+		if c.RedirectURI != redirectURI {
+			return nil, &Error{
+				Status:      http.StatusBadRequest,
+				Code:        ErrorCodeInvalidGrant,
+				Description: "redirect URI mismatch",
+			}
 		}
 	}
 
