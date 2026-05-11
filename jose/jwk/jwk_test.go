@@ -399,6 +399,64 @@ func TestSingleton(t *testing.T) {
 	}
 }
 
+func TestNewSet(t *testing.T) {
+	t.Parallel()
+
+	k1 := &mockKey{
+		alg: "RS256",
+		kid: "k1",
+		x5t: "t1",
+	}
+	k2 := &mockKey{
+		alg: "RS256",
+		kid: "k2",
+		x5t: "t2",
+	}
+	k3 := &mockKey{
+		alg: "RS256",
+		kid: "k1", // Overwrites k1
+		x5t: "t3",
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet()
+		if got, want := s.Len(), 0; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+	})
+
+	t.Run("singleton", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k1)
+		if got, want := s.Len(), 1; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+	})
+
+	t.Run("multiple", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k1, k2)
+		if got, want := s.Len(), 2; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+		if got := s.Find(mockHint{alg: "RS256", kid: "k2"}); got != k2 {
+			t.Errorf("Find(k2) = %v; want %v", got, k2)
+		}
+	})
+
+	t.Run("overwrite", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k1, k3)
+		if got, want := s.Len(), 2; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+		if got := s.Find(mockHint{alg: "RS256", kid: "k1"}); got != k3 {
+			t.Errorf("Find(k1) = %v; want %v", got, k3)
+		}
+	})
+}
+
 func TestSingletonSet_Find(t *testing.T) {
 	t.Parallel()
 

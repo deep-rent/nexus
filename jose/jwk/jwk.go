@@ -368,6 +368,33 @@ func (s *set) Find(hint Hint) Key {
 	return k
 }
 
+// NewSet constructs a new [Set] containing the provided keys.
+//
+// It is primarily used to programmatically build a JSON Web Key Set from
+// individual keys, for instance when preparing to expose a JWKS endpoint.
+// If multiple keys share the same Key ID or Thumbprint, the latter keys
+// in the slice will overwrite the earlier ones in the internal lookup maps.
+func NewSet(keys ...Key) Set {
+	if len(keys) == 0 {
+		return empty
+	}
+	if len(keys) == 1 {
+		return Singleton(keys[0])
+	}
+	s := newSet(len(keys))
+	for _, k := range keys {
+		i := len(s.keys)
+		s.keys = append(s.keys, k)
+		if kid := k.KeyID(); kid != "" {
+			s.kid[kid] = i
+		}
+		if x5t := k.Thumbprint(); x5t != "" {
+			s.x5t[x5t] = i
+		}
+	}
+	return s
+}
+
 // emptySet represents a [Set] containing no keys.
 type emptySet struct{}
 
