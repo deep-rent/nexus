@@ -27,7 +27,10 @@ import (
 type authCodeGrant struct{}
 
 // AuthCodeGrant returns a new grant implementation for the Authorization Code
-// flow, including Proof Key for Code Exchange (PKCE) validation.
+// flow.
+//
+// Note: This implementation strictly mandates PKCE (RFC 7636) to mitigate
+// authorization code injection and interception attacks.
 //
 // Pass the result to [Provider.Register] to enable this grant.
 func AuthCodeGrant() Grant {
