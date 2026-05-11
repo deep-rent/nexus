@@ -289,21 +289,6 @@ func (e Error) Error() string {
 	return e.Code + ": " + e.Description
 }
 
-// Query converts the error into query parameters for use in 302 Redirects.
-// This is typically used during the Authorization Code flow when validation
-// fails at the authorization endpoint.
-func (e Error) Query() url.Values {
-	params := url.Values{}
-	params.Set("error", e.Code)
-	if e.Description != "" {
-		params.Set("error_description", e.Description)
-	}
-	if e.URI != "" {
-		params.Set("error_uri", e.URI)
-	}
-	return params
-}
-
 // Proposal represents the raw input of an OAuth 2.0 grant request. It
 // encapsulates the verified identity of the requesting client and the
 // unvalidated parameters provided in the request body.
