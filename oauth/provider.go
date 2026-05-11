@@ -232,6 +232,9 @@ func (p *Provider) Mount(r *router.Router) {
 
 // WellKnown handles the OAuth 2.0 Authorization Server Metadata endpoint
 // (RFC 8414) for endpoint discovery.
+//
+// Note: This endpoint is only enabled if a valid URL issuer was specified by
+// the configured JWT signer.
 func (p *Provider) WellKnown(e *router.Exchange) error {
 	if p.issuer == "" {
 		e.Status(http.StatusNotFound)
@@ -732,6 +735,7 @@ func (p *Provider) revoke(e *router.Exchange) error {
 			"Failed to retrieve refresh token during revocation",
 			slog.Any("error", err),
 		)
+
 		return &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
