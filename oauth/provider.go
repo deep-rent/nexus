@@ -284,7 +284,7 @@ func (p *Provider) Supports(grant GrantType) bool {
 // BasePath is the common prefix for all OAuth 2.0 endpoints.
 const BasePath = "/oauth"
 
-// path constants define the specific endpoints managed by the [Provider].
+// Path constants define the specific endpoints managed by the [Provider].
 const (
 	PathAuthorize           = BasePath + "/authorize"
 	PathToken               = BasePath + "/token"
