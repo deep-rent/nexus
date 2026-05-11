@@ -219,9 +219,9 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 
 // wellKnown contains the logic for the metadata endpoint.
 func (p *Provider) wellKnown(e *router.Exchange) error {
-	var grants []string
-	for g := range p.grants {
-		grants = append(grants, string(g))
+	grants := make([]string, 0, len(p.grants))
+	for grant := range p.grants {
+		grants = append(grants, string(grant))
 	}
 
 	res := AuthorizationServerMetadata{
