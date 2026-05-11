@@ -638,7 +638,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 			ae = &Error{
 				Status:      http.StatusInternalServerError,
 				Reason:      ReasonServerError,
-				Description: "internal server error",
+				Description: "an unhandled internal error occurred",
 			}
 		}
 
