@@ -19,6 +19,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,7 +33,10 @@ const (
 	DefaultAuthURL     = "https://accounts.google.com/o/oauth2/v2/auth"
 	DefaultTokenURL    = "https://oauth2.googleapis.com/token"
 	DefaultUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
+	DefaultTimeout     = 5 * time.Second
 )
+
+var DefaultScopes = []string{"openid", "email", "profile"}
 
 // Config holds the configuration for the Google identity provider.
 type Config struct {
@@ -42,57 +47,114 @@ type Config struct {
 	AuthURL      string
 	TokenURL     string
 	UserInfoURL  string
+	Timeout      time.Duration
 }
 
 // Google implements the [oauth.IdentityProvider] interface for Google login.
 type Google struct {
-	cfg    Config
-	client *http.Client
+	clientID     string
+	clientSecret string
+	redirectURI  string
+	scope        string
+	authURL      *url.URL
+	tokenURL     string
+	userInfoURL  string
+	client       *http.Client
 }
 
 // New creates a new Google identity provider with an optimized HTTP client.
 //
 // If no scopes are provided, it defaults to standard OpenID Connect scopes
-// ("openid", "email", "profile").
+// ("openid", "email", "profile"). It panics if options are missing or invalid.
 func New(cfg Config) *Google {
-	if len(cfg.Scopes) == 0 {
-		cfg.Scopes = []string{"openid", "email", "profile"}
-	}
-	if cfg.AuthURL == "" {
-		cfg.AuthURL = DefaultAuthURL
-	}
-	if cfg.TokenURL == "" {
-		cfg.TokenURL = DefaultTokenURL
-	}
-	if cfg.UserInfoURL == "" {
-		cfg.UserInfoURL = DefaultUserInfoURL
+	g := &Google{}
+
+	if clientID := cfg.ClientID; clientID == "" {
+		panic("google: missing client ID")
+	} else {
+		g.clientID = clientID
 	}
 
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.MaxIdleConns = 100
-	t.MaxIdleConnsPerHost = 100
-	t.IdleConnTimeout = 90 * time.Second
-
-	return &Google{
-		cfg: cfg,
-		client: &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: t,
-		},
+	if clientSecret := cfg.ClientSecret; clientSecret == "" {
+		panic("google: missing client secret")
+	} else {
+		g.clientSecret = clientSecret
 	}
+
+	if redirectURI := cfg.RedirectURI; redirectURI == "" {
+		panic("google: missing redirect URI")
+	} else {
+		g.redirectURI = redirectURI
+	}
+
+	scopes := cfg.Scopes
+	if len(scopes) == 0 {
+		scopes = DefaultScopes
+	}
+	g.scope = strings.Join(scopes, " ")
+
+	authURL := cfg.AuthURL
+	if authURL == "" {
+		authURL = DefaultAuthURL
+	}
+	if u, err := url.Parse(authURL); err != nil {
+		panic("google: invalid auth URL")
+	} else {
+		g.authURL = u
+	}
+
+	tokenURL := cfg.TokenURL
+	if tokenURL == "" {
+		tokenURL = DefaultTokenURL
+	}
+	if _, err := url.Parse(tokenURL); err != nil {
+		panic("google: invalid token URL")
+	} else {
+		g.tokenURL = tokenURL
+	}
+
+	userInfoURL := cfg.UserInfoURL
+	if userInfoURL == "" {
+		userInfoURL = DefaultUserInfoURL
+	}
+	if _, err := url.Parse(userInfoURL); err != nil {
+		panic("google: invalid userinfo URL")
+	} else {
+		g.userInfoURL = userInfoURL
+	}
+
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+
+	t := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: timeout / 3}).DialContext,
+		TLSHandshakeTimeout:   timeout / 3,
+		ResponseHeaderTimeout: timeout * 9 / 10,
+		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   100,
+		IdleConnTimeout:       90 * time.Second,
+	}
+
+	g.client = &http.Client{
+		Timeout:   timeout,
+		Transport: t,
+	}
+	return g
 }
 
 // AuthURL implements [oauth.IdentityProvider].
 func (g *Google) AuthURL(ctx context.Context, state string) (string, error) {
-	u, err := url.Parse(g.cfg.AuthURL)
-	if err != nil {
-		return "", err
-	}
+	u := *g.authURL
+
 	q := u.Query()
-	q.Set("client_id", g.cfg.ClientID)
-	q.Set("redirect_uri", g.cfg.RedirectURI)
+	q.Set("client_id", g.clientID)
+	q.Set("redirect_uri", g.redirectURI)
 	q.Set("response_type", "code")
-	q.Set("scope", strings.Join(g.cfg.Scopes, " "))
+	q.Set("scope", g.scope)
 	q.Set("state", state)
 	u.RawQuery = q.Encode()
 
@@ -137,16 +199,16 @@ func (g *Google) Process(
 
 func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 	data := url.Values{}
-	data.Set("client_id", g.cfg.ClientID)
-	data.Set("client_secret", g.cfg.ClientSecret)
-	data.Set("redirect_uri", g.cfg.RedirectURI)
+	data.Set("client_id", g.clientID)
+	data.Set("client_secret", g.clientSecret)
+	data.Set("redirect_uri", g.redirectURI)
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
 
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		g.cfg.TokenURL,
+		g.tokenURL,
 		strings.NewReader(data.Encode()),
 	)
 	if err != nil {
@@ -160,7 +222,10 @@ func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("execute token request: %w", err)
 	}
+
+	r := io.LimitReader(res.Body, 1<<16)
 	defer func() {
+		_, _ = io.Copy(io.Discard, r)
 		_ = res.Body.Close()
 	}()
 
@@ -171,7 +236,8 @@ func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 	var body struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.UnmarshalRead(res.Body, &body); err != nil {
+
+	if err := json.UnmarshalRead(r, &body); err != nil {
 		return "", fmt.Errorf("decode token response: %w", err)
 	}
 	return body.AccessToken, nil
@@ -185,7 +251,7 @@ func (g *Google) userInfo(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		g.cfg.UserInfoURL,
+		g.userInfoURL,
 		nil,
 	)
 	if err != nil {
@@ -197,7 +263,10 @@ func (g *Google) userInfo(
 	if err != nil {
 		return eid, fmt.Errorf("execute userinfo request: %w", err)
 	}
+
+	r := io.LimitReader(res.Body, 1<<16)
 	defer func() {
+		_, _ = io.Copy(io.Discard, r)
 		_ = res.Body.Close()
 	}()
 
@@ -205,7 +274,7 @@ func (g *Google) userInfo(
 		return eid, fmt.Errorf("userinfo returned status %d", code)
 	}
 
-	if err := json.UnmarshalRead(res.Body, &eid); err != nil {
+	if err := json.UnmarshalRead(r, &eid); err != nil {
 		return eid, fmt.Errorf("decode userinfo response: %w", err)
 	}
 
