@@ -100,6 +100,10 @@ type Config struct {
 	// user code to authorize a device. This field is mandatory if the
 	// [GrantTypeDeviceCode] is registered via [WithGrant].
 	VerificationURI string
+	// LoginPageURI is the frontend URL where users are directed to log in.
+	// This is used for redirects during external auth failures or session
+	// timeouts. Required if identity providers are configured.
+	LoginPageURI string
 	// LoginRedirectURI is the URL where resource owners are redirected after
 	// a successful social login flow. Required if identity providers are
 	// configured.
@@ -160,6 +164,7 @@ type Provider struct {
 	realm                string
 	verificationURI      string
 	issuer               string
+	loginPageURI         *url.URL
 	loginRedirectURI     string
 	generateOpaqueToken  func() (string, error)
 	generateUserCode     func() (string, error)
@@ -242,6 +247,15 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		generateUserCode = GenerateUserCode
 	}
 
+	var loginPageURI *url.URL
+	if cfg.LoginPageURI != "" {
+		u, err := url.Parse(cfg.LoginPageURI)
+		if err != nil {
+			panic(fmt.Errorf("oauth: invalid login page uri: %w", err))
+		}
+		loginPageURI = u
+	}
+
 	p := &Provider{
 		signer:               cfg.Signer,
 		verifier:             cfg.Verifier,
@@ -259,6 +273,8 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		deviceCodeLifetime:   deviceCodeLifetime,
 		realm:                realm,
 		verificationURI:      cfg.VerificationURI,
+		loginPageURI:         loginPageURI,
+		loginRedirectURI:     cfg.LoginRedirectURI,
 		issuer:               issuer,
 		generateOpaqueToken:  generateOpaqueToken,
 		generateUserCode:     generateUserCode,
@@ -268,8 +284,13 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		opt(p)
 	}
 
-	if len(p.identityProviders) != 0 && p.loginRedirectURI == "" {
-		panic("oauth: login redirect uri is required for identity providers")
+	if len(p.identityProviders) != 0 {
+		if p.loginPageURI == nil {
+			panic("oauth: login page uri is required for identity providers")
+		}
+		if p.loginRedirectURI == "" {
+			panic("oauth: login redirect uri is required for identity providers")
+		}
 	}
 
 	return p
@@ -456,14 +477,14 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidRequest,
-			Description: "missing redirect URI",
+			Description: "missing redirect uri",
 		}
 	}
 	if !client.VerifyRedirectURI(redirectURI) {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidRequest,
-			Description: "invalid redirect URI",
+			Description: "invalid redirect uri",
 		}
 	}
 
@@ -1135,11 +1156,8 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 	name := e.R.PathValue("provider")
 	idp, ok := p.identityProviders[name]
 	if !ok {
-		return &router.Error{
-			Status:      http.StatusNotFound,
-			Reason:      "",
-			Description: "unknown identity provider",
-		}
+		e.Status(http.StatusNotFound)
+		return nil
 	}
 
 	state, err := p.generateOpaqueToken()
@@ -1152,7 +1170,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 
 		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Reason:      "",
+			Reason:      router.ReasonServerError,
 			Description: "failed to generate state",
 		}
 	}
@@ -1177,7 +1195,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 
 		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Reason:      "",
+			Reason:      router.ReasonServerError,
 			Description: "failed to initiate external login",
 		}
 	}
@@ -1191,12 +1209,30 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 // verifies the state, exchanges credentials for an external identity, and
 // establishes a local session.
 func (p *Provider) ExternalCallback(e *router.Exchange) error {
+	err := p.externalCallback(e)
+	if v, ok := errors.AsType[*router.Error](err); ok {
+		u := *p.loginPageURI
+		q := u.Query()
+		params := v.Query()
+		for key := range params {
+			q.Set(key, params.Get(key))
+		}
+		u.RawQuery = q.Encode()
+
+		e.SetHeader("Location", u.String())
+		e.Status(http.StatusFound)
+		return nil
+	}
+	return err
+}
+
+func (p *Provider) externalCallback(e *router.Exchange) error {
 	name := e.R.PathValue("provider")
 	idp, ok := p.identityProviders[name]
 	if !ok {
 		return &router.Error{
 			Status:      http.StatusNotFound,
-			Reason:      "",
+			Reason:      router.ReasonValidationFailed,
 			Description: "unknown identity provider",
 		}
 	}
@@ -1205,7 +1241,7 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 	if err != nil || cookie.Value == "" {
 		return &router.Error{
 			Status:      http.StatusBadRequest,
-			Reason:      "",
+			Reason:      router.ReasonValidationFailed,
 			Description: "missing or expired state cookie",
 		}
 	}
@@ -1225,7 +1261,7 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 	if queryState != cookie.Value {
 		return &router.Error{
 			Status:      http.StatusBadRequest,
-			Reason:      "",
+			Reason:      router.ReasonValidationFailed,
 			Description: "state mismatch",
 		}
 	}
@@ -1238,9 +1274,9 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeAccessDenied,
+			Reason:      auth.ReasonAuthenticationFailed,
 			Description: "failed to exchange external credentials",
 		}
 	}
@@ -1257,16 +1293,16 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      router.ReasonValidationFailed,
 			Description: "failed to lookup subject",
 		}
 	}
 	if sub == nil {
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeAccessDenied,
+			Reason:      auth.ReasonAuthenticationFailed,
 			Description: "external identity is not linked to any local subject",
 		}
 	}
@@ -1279,9 +1315,9 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      router.ReasonServerError,
 			Description: "failed to generate session key",
 		}
 	}
@@ -1293,9 +1329,9 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 			slog.Any("error", err),
 		)
 
-		return &Error{
+		return &router.Error{
 			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
+			Reason:      router.ReasonServerError,
 			Description: "failed to create subject session",
 		}
 	}
