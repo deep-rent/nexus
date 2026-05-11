@@ -134,26 +134,32 @@ func NewProvider(cfg Config) *Provider {
 	if logger == nil {
 		logger = slog.Default()
 	}
+
 	sessionCookieName := cfg.SessionCookieName
 	if sessionCookieName == "" {
 		sessionCookieName = DefaultSessionCookieName
 	}
+
 	accessTokenLifetime := cfg.AccessTokenLifetime
 	if accessTokenLifetime == 0 {
 		accessTokenLifetime = DefaultAccessTokenLifetime
 	}
+
 	refreshTokenLifetime := cfg.RefreshTokenLifetime
 	if refreshTokenLifetime == 0 {
 		refreshTokenLifetime = DefaultRefreshTokenLifetime
 	}
+
 	authCodeLifetime := cfg.AuthCodeLifetime
 	if authCodeLifetime == 0 {
 		authCodeLifetime = DefaultAuthCodeLifetime
 	}
+
 	realm := cfg.Realm
 	if realm == "" {
 		realm = DefaultRealm
 	}
+
 	deviceCodeLifetime := cfg.DeviceCodeLifetime
 	if deviceCodeLifetime == 0 {
 		deviceCodeLifetime = DefaultDeviceCodeLifetime
