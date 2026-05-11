@@ -34,7 +34,7 @@
 //
 // Example:
 //
-//	// Initialize the provider with required stores and signers.
+//	// Initialize the provider with required options.
 //	p := oauth.NewProvider(oauth.Config{
 //	  Signer:   mySigner,
 //	  Verifier: myVerifier,
