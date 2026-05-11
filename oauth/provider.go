@@ -194,7 +194,11 @@ func NewProvider(cfg Config) *Provider {
 }
 
 // Register adds a new grant type handler to the provider.
-func (p *Provider) Register(grant Grant) { p.grants[grant.Type()] = grant }
+// It returns the [Provider] pointer to allow for method chaining.
+func (p *Provider) Register(grant Grant) *Provider {
+	p.grants[grant.Type()] = grant
+	return p
+}
 
 // Supports checks whether the given grant type has been registered.
 func (p *Provider) Supports(grant GrantType) bool {

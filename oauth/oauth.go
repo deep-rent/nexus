@@ -44,9 +44,9 @@
 //	})
 //
 //	// Register the standard grant types.
-//	p.Register(oauth.AuthCodeGrant())
-//	p.Register(oauth.ClientCredentialsGrant())
-//	p.Register(oauth.RefreshTokenGrant())
+//	p.Register(oauth.AuthCodeGrant()).
+//	  Register(oauth.ClientCredentialsGrant()).
+//	  Register(oauth.RefreshTokenGrant())
 //
 //	// Mount the endpoints onto a router.
 //	r := router.New()
