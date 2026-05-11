@@ -70,14 +70,18 @@ import (
 const Scheme = "Bearer"
 
 const (
+	// ReasonAuthenticationFailed serves as a generic fallback for identity
+	// verification errors that do not map to a more specific reason.
+	ReasonAuthenticationFailed = "authentication_failed"
 	// ReasonMissingToken indicates that the Authorization header was either
 	// missing or did not contain a valid Bearer token.
 	ReasonMissingToken = "missing_token"
-	// ReasonInvalidToken indicates that the token was provided but failed
-	// verification (e.g., expired, mismatched signature, or malformed).
+	// ReasonInvalidToken indicates a token was provided but is unusable,
+	// typically due to expiration, a malformed structure, or a signature
+	// mismatch.
 	ReasonInvalidToken = "invalid_token"
-	// ReasonInsufficientPrivileges indicates that the token is valid, but the
-	// associated claims failed to satisfy the required authorization rules.
+	// ReasonInsufficientPrivileges indicates the user is authenticated, but
+	// their assigned scopes or roles do not permit access to the resource.
 	ReasonInsufficientPrivileges = "insufficient_privileges"
 )
 
