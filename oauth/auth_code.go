@@ -119,7 +119,7 @@ func (g *authCodeGrant) Authorize(
 			return nil, &Error{
 				Status:      http.StatusBadRequest,
 				Code:        ErrorCodeInvalidRequest,
-				Description: "missing redirect_uri parameter",
+				Description: "missing redirect URI",
 			}
 		}
 		if c.RedirectURI != redirectURI {
