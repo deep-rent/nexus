@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package oauth implements the core protocols for an OAuth 2.0 (RFC 6749)
-// authorization server.
+// Package oauth implements the core protocols for an OAuth 2.0 authorization
+// server.
 //
 // The package provides a flexible and extensible framework for issuing access
 // tokens to clients. It abstracts the complexity of the OAuth 2.0 flows,
@@ -60,6 +60,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -76,6 +77,8 @@ const (
 	GrantTypeClientCredentials GrantType = "client_credentials"
 	// GrantTypeRefreshToken refers to the "refresh_token" grant.
 	GrantTypeRefreshToken GrantType = "refresh_token"
+	// GrantTypeDeviceCode refers to the "urn:ietf:params:oauth:grant-type:device_code" grant.
+	GrantTypeDeviceCode GrantType = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 // Client represents an OAuth 2.0 registered client application.
@@ -204,6 +207,29 @@ type RefreshToken struct {
 	Lifetime time.Duration
 }
 
+// DeviceCode holds the state bound to a device authorization request.
+//
+// Unlike authorization codes, device codes are polled by the client over a
+// longer period until the resource owner completes the authorization on a
+// separate device.
+type DeviceCode struct {
+	// DeviceCode is the unique, high-entropy string polled by the client.
+	DeviceCode string
+	// UserCode is the short, user-friendly string entered by the resource owner.
+	UserCode string
+	// ClientID is the ID of the client that requested the code.
+	ClientID string
+	// SubjectID is the unique identifier of the authenticated resource owner.
+	// It remains empty until the user authorizes the request.
+	SubjectID string
+	// Scope is the list of permissions approved by the resource owner.
+	Scope string
+	// Status indicates the current state: "pending", "authorized", or "denied".
+	Status string
+	// ExpiresAt defines when this code is no longer valid.
+	ExpiresAt time.Time
+}
+
 // SessionStore abstracts the persistence layer for ephemeral authorization
 // artifacts.
 //
@@ -240,6 +266,20 @@ type SessionStore interface {
 	//
 	// It should return an error only if the removal operation fails.
 	DeleteRefreshToken(ctx context.Context, token string) error
+	// GetDeviceCode retrieves a device code by its value.
+	//
+	// If found, it must return the data and nil.
+	// If not found, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetDeviceCode(ctx context.Context, deviceCode string) (DeviceCode, error)
+	// CreateDeviceCode stores a new device code.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateDeviceCode(ctx context.Context, data DeviceCode) error
+	// DeleteDeviceCode removes a device code.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteDeviceCode(ctx context.Context, deviceCode string) error
 }
 
 const (
@@ -263,6 +303,12 @@ const (
 	ErrorCodeUnsupportedGrantType = "unsupported_grant_type"
 	// ErrorCodeUnsupportedResponseType indicates response type is not supported.
 	ErrorCodeUnsupportedResponseType = "unsupported_response_type"
+	// ErrorCodeAuthorizationPending indicates the user hasn't authorized yet.
+	ErrorCodeAuthorizationPending = "authorization_pending"
+	// ErrorCodeSlowDown indicates the client is polling too fast.
+	ErrorCodeSlowDown = "slow_down"
+	// ErrorCodeExpiredToken indicates the device code has expired.
+	ErrorCodeExpiredToken = "expired_token"
 )
 
 // Error represents an RFC 6749 compliant error response.
@@ -360,6 +406,17 @@ type TokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
+// DeviceAuthorizationResponse outlines the payload returned from the device
+// authorization endpoint.
+type DeviceAuthorizationResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval,omitempty"`
+}
+
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload.
 type IntrospectionResponse struct {
 	Active   bool      `json:"active"`
@@ -450,4 +507,14 @@ func opaque() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// userCode generates a random 8-character string for the user code.
+func userCode() (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	s := strings.ToUpper(hex.EncodeToString(b))
+	return s[:4] + "-" + s[4:], nil
 }

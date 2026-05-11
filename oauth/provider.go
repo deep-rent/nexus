@@ -42,6 +42,9 @@ const (
 	// DefaultAuthCodeLifetime is the default duration for which an
 	// authorization code is valid.
 	DefaultAuthCodeLifetime = 10 * time.Minute
+	// DefaultDeviceCodeLifetime is the default duration for which a
+	// device code is valid.
+	DefaultDeviceCodeLifetime = 15 * time.Minute
 	// DefaultRealm is the default authentication realm name used in
 	// WWW-Authenticate headers.
 	DefaultRealm = "OAuth2"
@@ -79,9 +82,15 @@ type Config struct {
 	// AuthCodeLifetime defines how long issued authorization codes remain valid.
 	// Optional; defaults to [DefaultAuthCodeLifetime].
 	AuthCodeLifetime time.Duration
+	// DeviceCodeLifetime defines how long issued device codes remain valid.
+	// Optional; defaults to [DefaultDeviceCodeLifetime].
+	DeviceCodeLifetime time.Duration
 	// Realm is the authentication realm name for challenges.
 	// Optional; defaults to [DefaultRealm].
 	Realm string
+	// VerificationURI is the endpoint where users authorize device codes.
+	// Required if using the Device Authorization Grant.
+	VerificationURI string
 }
 
 // Provider is the central component that manages OAuth 2.0 flows, token
@@ -99,6 +108,8 @@ type Provider struct {
 	refreshTokenLifetime time.Duration
 	authCodeLifetime     time.Duration
 	realm                string
+	deviceCodeLifetime   time.Duration
+	verificationURI      string
 }
 
 // NewProvider creates a new Provider with the specified configuration.
@@ -145,6 +156,10 @@ func NewProvider(cfg Config) *Provider {
 	if realm == "" {
 		realm = DefaultRealm
 	}
+	deviceCodeLifetime := cfg.DeviceCodeLifetime
+	if deviceCodeLifetime == 0 {
+		deviceCodeLifetime = DefaultDeviceCodeLifetime
+	}
 
 	return &Provider{
 		signer:               cfg.Signer,
@@ -158,6 +173,8 @@ func NewProvider(cfg Config) *Provider {
 		refreshTokenLifetime: refreshTokenLifetime,
 		authCodeLifetime:     authCodeLifetime,
 		realm:                realm,
+		deviceCodeLifetime:   deviceCodeLifetime,
+		verificationURI:      cfg.VerificationURI,
 	}
 }
 
@@ -170,6 +187,7 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST /authorize", p.Authorize)
 	r.HandleFunc("POST /token", p.Token)
 	r.HandleFunc("POST /revoke", p.Revoke)
+	r.HandleFunc("POST /device_authorization", p.DeviceAuthorization)
 	r.HandleFunc("POST /login", p.Login)
 	r.HandleFunc("POST /logout", p.Logout)
 	r.HandleFunc("POST /introspect", p.Introspect)
@@ -269,7 +287,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 	case !client.CanUseGrant(GrantTypeAuthorizationCode):
 		return fail(
 			ErrorCodeUnauthorizedClient,
-			"client is not authorized to use authorization code grant",
+			"client is not allowed to use authorization code grant",
 		)
 	case codeChallenge == "":
 		return fail(
@@ -644,6 +662,108 @@ func (p *Provider) revoke(e *router.Exchange) error {
 
 	e.Status(http.StatusOK)
 	return nil
+}
+
+// DeviceAuthorization handles requests to the device authorization endpoint
+// (RFC 8628 Section 3.1).
+//
+// It authenticates the client and issues a device code and a user code,
+// which the client displays to the resource owner.
+func (p *Provider) DeviceAuthorization(e *router.Exchange) error {
+	return wrap(e, p.deviceAuthorization)
+}
+
+// deviceAuthorization contains the logic for device authorization requests.
+func (p *Provider) deviceAuthorization(e *router.Exchange) error {
+	pro, err := p.authenticate(e)
+	if err != nil {
+		return err
+	}
+
+	if !pro.Client.CanUseGrant(GrantTypeDeviceCode) {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeUnauthorizedClient,
+			Description: "client is not allowed to use device code grant",
+		}
+	}
+
+	if p.verificationURI == "" {
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "device authorization is not configured",
+		}
+	}
+
+	deviceCode, err := opaque()
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to generate device code",
+			slog.Any("error", err),
+		)
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to generate device code",
+		}
+	}
+
+	userCode, err := userCode()
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to generate user code",
+			slog.Any("error", err),
+		)
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to generate user code",
+		}
+	}
+
+	scope := pro.Get("scope")
+	if scope != "" && !pro.Client.CanUseScope(scope) {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidScope,
+			Description: "scope is not allowed for client",
+		}
+	}
+
+	expiresAt := time.Now().Add(p.deviceCodeLifetime)
+
+	if err := p.sessions.CreateDeviceCode(e.Context(), DeviceCode{
+		DeviceCode: deviceCode,
+		UserCode:   userCode,
+		ClientID:   pro.Client.ID(),
+		Scope:      scope,
+		Status:     "pending",
+		ExpiresAt:  expiresAt,
+	}); err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to store device code",
+			slog.Any("error", err),
+		)
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to store device code",
+		}
+	}
+
+	res := DeviceAuthorizationResponse{
+		DeviceCode:      deviceCode,
+		UserCode:        userCode,
+		VerificationURI: p.verificationURI,
+		ExpiresIn:       int(p.deviceCodeLifetime.Seconds()),
+		Interval:        5,
+	}
+
+	return e.JSON(http.StatusOK, res)
 }
 
 // Login handles the resource owner authentication and establishes a session.
