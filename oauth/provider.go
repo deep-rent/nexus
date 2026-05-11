@@ -93,7 +93,8 @@ type Config struct {
 	VerificationURI string
 	// Issuer is the authorization server's issuer identifier.
 	// It is used to generate absolute URLs in the discovery endpoint.
-	// Optional; defaults to an empty string.
+	// Optional; defaults to the configured signer's issuer if it is specified
+	// and a valid URL.
 	Issuer string
 }
 
@@ -199,6 +200,12 @@ func NewProvider(cfg Config) *Provider {
 
 // Register adds a new grant type handler to the provider.
 func (p *Provider) Register(grant Grant) { p.grants[grant.Type()] = grant }
+
+// Supports checks whether the given grant type has been registered.
+func (p *Provider) Supports(grant GrantType) bool {
+	_, ok := p.grants[grant]
+	return ok
+}
 
 const (
 	pathAuthorize           = "/authorize"
