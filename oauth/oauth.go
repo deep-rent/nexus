@@ -47,6 +47,7 @@
 //	p.Register(oauth.AuthCodeGrant())
 //	p.Register(oauth.ClientCredentialsGrant())
 //	p.Register(oauth.RefreshTokenGrant())
+//	p.Register(oauth.DeviceCodeGrant())
 //
 //	// Mount the endpoints onto a router.
 //	r := router.New()
