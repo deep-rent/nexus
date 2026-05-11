@@ -242,6 +242,10 @@ type SecurityConfig struct {
 	// CrossOriginOpenerPolicy sets the Cross-Origin-Opener-Policy header.
 	// Recommended: "same-origin"
 	CrossOriginOpenerPolicy string
+	// CrossOriginEmbedderPolicy sets the Cross-Origin-Embedder-Policy header.
+	CrossOriginEmbedderPolicy string
+	// CrossOriginResourcePolicy sets the Cross-Origin-Resource-Policy header.
+	CrossOriginResourcePolicy string
 }
 
 // DefaultSecurityConfig provides a baseline configuration.
@@ -249,12 +253,13 @@ type SecurityConfig struct {
 // It enables HSTS for 1 year, disables MIME sniffing, and protects against
 // clickjacking by denying framing.
 var DefaultSecurityConfig = SecurityConfig{
-	STSMaxAge:               31536000,
-	STSIncludeSubdomains:    true,
-	FrameOptions:            "DENY",
-	NoSniff:                 true,
-	PermissionsPolicy:       "geolocation=(),microphone=(),camera=(),payment=()",
-	CrossOriginOpenerPolicy: "same-origin",
+	STSMaxAge:                 31536000,
+	STSIncludeSubdomains:      true,
+	FrameOptions:              "DENY",
+	NoSniff:                   true,
+	PermissionsPolicy:         "geolocation=(),microphone=(),camera=(),payment=()",
+	CrossOriginOpenerPolicy:   "same-origin",
+	CrossOriginResourcePolicy: "same-origin",
 }
 
 // Secure returns a middleware [Pipe] that sets security-related HTTP headers.
@@ -309,7 +314,17 @@ func Secure(cfg SecurityConfig) Pipe {
 				h.Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
 			}
 
-			// 8. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
+			// 8. Cross-Origin-Embedder-Policy
+			if cfg.CrossOriginEmbedderPolicy != "" {
+				h.Set("Cross-Origin-Embedder-Policy", cfg.CrossOriginEmbedderPolicy)
+			}
+
+			// 9. Cross-Origin-Resource-Policy
+			if cfg.CrossOriginResourcePolicy != "" {
+				h.Set("Cross-Origin-Resource-Policy", cfg.CrossOriginResourcePolicy)
+			}
+
+			// 10. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
 			h.Set("X-Permitted-Cross-Domain-Policies", "none")
 
 			next.ServeHTTP(w, r)
