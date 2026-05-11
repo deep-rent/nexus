@@ -625,6 +625,8 @@ func (p *Provider) token(e *router.Exchange) error {
 		res.RefreshToken = token
 	}
 
+	e.SetHeader("Cache-Control", "no-store")
+	e.SetHeader("Pragma", "no-cache")
 	return e.JSON(http.StatusOK, res)
 }
 
@@ -642,6 +644,13 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	if !ok {
 		clientID = data.Get("client_id")
 		clientSecret = data.Get("client_secret")
+	} else if data.Has("client_id") || data.Has("client_secret") {
+		// RFC 6749 Section 2.3.1: MUST NOT use more than one auth method.
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidRequest,
+			Description: "multiple client authentication methods used",
+		}
 	}
 
 	if clientID == "" {
@@ -868,6 +877,8 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		Interval:        5,
 	}
 
+	e.SetHeader("Cache-Control", "no-store")
+	e.SetHeader("Pragma", "no-cache")
 	return e.JSON(http.StatusOK, res)
 }
 
