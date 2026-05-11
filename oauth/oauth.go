@@ -69,6 +69,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/deep-rent/nexus/valid"
 )
 
 // GrantType defines the various flows for obtaining an access token.
@@ -513,6 +515,14 @@ type LoginRequest struct {
 	// It is used to verify the identity of the user during the login process.
 	Password string `json:"password"`
 }
+
+// Validate implements the [valid.Validatable] interface.
+func (r *LoginRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("username", r.Username)
+	v.NotEmpty("password", r.Password)
+}
+
+var _ valid.Validatable = (*LoginRequest)(nil)
 
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
 //
