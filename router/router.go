@@ -63,6 +63,7 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
+	"github.com/deep-rent/nexus/uuid"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -179,6 +180,10 @@ func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
 }
 
+func ErrorID() string {
+	return uuid.New().String()
+}
+
 // Exchange acts as a context object for a single HTTP request/response cycle.
 //
 // It wraps the underlying [*http.Request] and [http.ResponseWriter] to provide
@@ -254,19 +259,11 @@ func (e *Exchange) BindJSON(v any) *Error {
 	}
 
 	if err := valid.Test(v); err != nil {
-		if ctx, ok := errors.AsType[valid.Error](err); ok {
-			return &Error{
-				Status:      http.StatusBadRequest,
-				Reason:      ReasonValidationFailed,
-				Description: fmt.Sprintf("input violates %d constraints", len(ctx)),
-				Context:     ctx,
-			}
-		}
 		return &Error{
-			Status:      http.StatusInternalServerError,
-			Reason:      ReasonServerError,
-			Description: "an unexpected error occurred during input validation",
-			Cause:       err,
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonValidationFailed,
+			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Context:     err,
 		}
 	}
 
@@ -359,29 +356,6 @@ func (e *Exchange) Cookie(name string) (*http.Cookie, error) {
 // dropped.
 func (e *Exchange) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(e.W, cookie)
-}
-
-// RedirectTo constructs a URL with query parameters and redirects the client.
-func (e *Exchange) RedirectTo(base string, params url.Values, code int) error {
-	u, err := url.Parse(base)
-	if err != nil {
-		return &Error{
-			Status:      http.StatusInternalServerError,
-			Reason:      ReasonServerError,
-			Description: "invalid redirect target",
-		}
-	}
-
-	q := u.Query()
-	for k, vs := range params {
-		for _, v := range vs {
-			q.Add(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
-
-	http.Redirect(e.W, e.R, u.String(), code)
-	return nil
 }
 
 // Handler defines the interface for HTTP request handlers used by the [Router].
@@ -634,11 +608,19 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		ae := &Error{}
 		ok := errors.As(err, &ae)
 		if !ok {
-			logger.Error("An internal server error occurred", slog.Any("err", err))
+			id := ErrorID()
+
+			logger.Error(
+				"An internal server error occurred",
+				slog.String("error_id", id),
+				slog.Any("err", err),
+			)
+
 			ae = &Error{
 				Status:      http.StatusInternalServerError,
 				Reason:      ReasonServerError,
 				Description: "an unhandled internal error occurred",
+				ID:          id,
 			}
 		}
 

@@ -375,50 +375,6 @@ func TestExchange_Redirect(t *testing.T) {
 	}
 }
 
-func TestExchange_RedirectTo(t *testing.T) {
-	t.Parallel()
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
-
-	params := url.Values{}
-	params.Set("code", "123")
-	params.Set("state", "xyz")
-
-	err := e.RedirectTo(
-		"https://client.com/cb?version=2",
-		params,
-		http.StatusFound,
-	)
-	if err != nil {
-		t.Fatalf("RedirectTo() err = %v; want nil", err)
-	}
-
-	if got, want := rec.Code, http.StatusFound; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
-	}
-
-	loc, _ := url.Parse(rec.Header().Get("Location"))
-	if got, want := loc.Host, "client.com"; got != want {
-		t.Errorf("loc.Host = %q; want %q", got, want)
-	}
-	if got, want := loc.Path, "/cb"; got != want {
-		t.Errorf("loc.Path = %q; want %q", got, want)
-	}
-
-	q := loc.Query()
-	if got, want := q.Get("code"), "123"; got != want {
-		t.Errorf("query.code = %q; want %q", got, want)
-	}
-	if got, want := q.Get("state"), "xyz"; got != want {
-		t.Errorf("query.state = %q; want %q", got, want)
-	}
-	if got, want := q.Get("version"), "2"; got != want {
-		t.Errorf("query.version = %q; want %q", got, want)
-	}
-}
-
 func TestExchange_MetadataHelpers(t *testing.T) {
 	t.Parallel()
 
@@ -820,27 +776,6 @@ func TestExchange_JSONMarshalError(t *testing.T) {
 
 	if err == nil {
 		t.Error("JSON() err = nil; want non-nil for unmarshalable type")
-	}
-}
-
-func TestExchange_RedirectToError(t *testing.T) {
-	t.Parallel()
-
-	rec := httptest.NewRecorder()
-	e := &router.Exchange{W: router.NewResponseWriter(rec)}
-
-	err := e.RedirectTo("http://site.com/\nerror", nil, http.StatusFound)
-
-	if err == nil {
-		t.Fatal("RedirectTo() err = nil; want non-nil for invalid URL")
-	}
-
-	var x *router.Error
-	if !errors.As(err, &x) {
-		t.Fatalf("err is %T; want *router.Error", err)
-	}
-	if got, want := x.Reason, router.ReasonServerError; got != want {
-		t.Errorf("x.Reason = %q; want %q", got, want)
 	}
 }
 
