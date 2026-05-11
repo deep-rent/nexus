@@ -12,6 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package google provides a Google identity provider implementation for OAuth2.
+//
+// This package implements the [oauth.IdentityProvider] interface to facilitate
+// social login using Google's OpenID Connect (OIDC) endpoints. It handles the
+// generation of authorization URLs, the exchange of authorization codes for
+// access tokens, and the retrieval of user identity information.
+//
+// # Usage
+//
+// To use the Google provider, initialize it with a [Config] and register it
+// with your OAuth manager.
+//
+// Example:
+//
+//	provider := google.New(google.Config{
+//		ClientID:     "your-client-id",
+//		ClientSecret: "your-client-secret",
+//		RedirectURI:  "https://example.com/callback",
+//	})
+//
+//	// Generate the redirect URL for the user.
+//	url, _ := provider.AuthURL(ctx, "state-token")
 package google
 
 import (
@@ -30,24 +52,47 @@ import (
 )
 
 const (
-	DefaultAuthURL     = "https://accounts.google.com/o/oauth2/v2/auth"
-	DefaultTokenURL    = "https://oauth2.googleapis.com/token"
+	// DefaultAuthURL is the default Google OAuth 2.0 authorization endpoint.
+	DefaultAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
+	// DefaultTokenURL is the default Google OAuth 2.0 token exchange endpoint.
+	DefaultTokenURL = "https://oauth2.googleapis.com/token"
+	// DefaultUserInfoURL is the default OpenID Connect userinfo endpoint.
 	DefaultUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
-	DefaultTimeout     = 5 * time.Second
+	// DefaultTimeout is the default duration for network requests.
+	DefaultTimeout = 5 * time.Second
 )
 
+// DefaultScopes contains the standard OIDC scopes used if none are specified.
 var DefaultScopes = []string{"openid", "email", "profile"}
+
+const maxBodySize = 1 << 16 // 64 KB
 
 // Config holds the configuration for the Google identity provider.
 type Config struct {
-	ClientID     string
+	// ClientID is the public identifier for the application.
+	// This option is mandatory.
+	ClientID string
+	// ClientSecret is the secret shared between the app and Google.
+	// This option is mandatory.
 	ClientSecret string
-	RedirectURI  string
-	Scopes       []string
-	AuthURL      string
-	TokenURL     string
-	UserInfoURL  string
-	Timeout      time.Duration
+	// RedirectURI is the URL where Google will send the authorization code.
+	// This option is mandatory.
+	RedirectURI string
+	// Scopes defines the permissions requested from the user.
+	// Defaults to [DefaultScopes].
+	Scopes []string
+	// AuthURL allows overriding the default authorization endpoint.
+	// Defaults to [DefaultAuthURL].
+	AuthURL string
+	// TokenURL allows overriding the default token exchange endpoint.
+	// Defaults to [DefaultTokenURL].
+	TokenURL string
+	// UserInfoURL allows overriding the default identity retrieval endpoint.
+	// Defaults to [DefaultUserInfoURL].
+	UserInfoURL string
+	// Timeout sets the maximum duration for identity provider network calls.
+	// Defaults to [DefaultTimeout].
+	Timeout time.Duration
 }
 
 // Google implements the [oauth.IdentityProvider] interface for Google login.
@@ -61,6 +106,8 @@ type Google struct {
 	userInfoURL  string
 	client       *http.Client
 }
+
+var _ oauth.IdentityProvider = (*Google)(nil)
 
 // New creates a new Google identity provider with an optimized HTTP client.
 //
@@ -128,9 +175,12 @@ func New(cfg Config) *Google {
 		timeout = DefaultTimeout
 	}
 
+	// t defines a transport with aggressive timeouts for high availability.
 	t := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: timeout / 3}).DialContext,
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout: timeout / 3,
+		}).DialContext,
 		TLSHandshakeTimeout:   timeout / 3,
 		ResponseHeaderTimeout: timeout * 9 / 10,
 		ExpectContinueTimeout: 1 * time.Second,
@@ -148,7 +198,7 @@ func New(cfg Config) *Google {
 
 // AuthURL implements [oauth.IdentityProvider].
 func (g *Google) AuthURL(ctx context.Context, state string) (string, error) {
-	u := *g.authURL
+	u := *g.authURL // Create a shallow copy to ensure thread-safety
 
 	q := u.Query()
 	q.Set("client_id", g.clientID)
@@ -168,6 +218,7 @@ func (g *Google) Process(
 ) (oauth.ExternalIdentity, error) {
 	q := req.URL.Query()
 
+	// Check if Google returned an error string in the query parameters.
 	if desc := q.Get("error"); desc != "" {
 		err := fmt.Errorf("google auth error: %s", desc)
 		return oauth.ExternalIdentity{}, err
@@ -197,6 +248,7 @@ func (g *Google) Process(
 	return identity, nil
 }
 
+// exchange swaps the authorization code for a bearer access token.
 func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 	data := url.Values{}
 	data.Set("client_id", g.clientID)
@@ -223,8 +275,9 @@ func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 		return "", fmt.Errorf("execute token request: %w", err)
 	}
 
-	r := io.LimitReader(res.Body, 1<<16)
+	r := io.LimitReader(res.Body, maxBodySize)
 	defer func() {
+		// Exhaust the reader and close the body to enable keep-alive.
 		_, _ = io.Copy(io.Discard, r)
 		_ = res.Body.Close()
 	}()
@@ -243,6 +296,7 @@ func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 	return body.AccessToken, nil
 }
 
+// userInfo fetches the identity claims from the Google UserInfo endpoint.
 func (g *Google) userInfo(
 	ctx context.Context,
 	token string,
@@ -264,8 +318,9 @@ func (g *Google) userInfo(
 		return eid, fmt.Errorf("execute userinfo request: %w", err)
 	}
 
-	r := io.LimitReader(res.Body, 1<<16)
+	r := io.LimitReader(res.Body, maxBodySize)
 	defer func() {
+		// Exhaust the reader and close the body to enable keep-alive.
 		_, _ = io.Copy(io.Discard, r)
 		_ = res.Body.Close()
 	}()
