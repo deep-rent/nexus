@@ -238,9 +238,9 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		return nil
 	}
 
-	grants := make([]string, 0, len(p.grants))
+	types := make([]string, 0, len(p.grants))
 	for grant := range p.grants {
-		grants = append(grants, string(grant))
+		types = append(types, string(grant))
 	}
 
 	res := AuthorizationServerMetadata{
@@ -250,10 +250,11 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		RevocationEndpoint:          p.issuer + pathRevoke,
 		IntrospectionEndpoint:       p.issuer + pathIntrospect,
 		DeviceAuthorizationEndpoint: p.issuer + pathDeviceAuthorization,
-		GrantTypesSupported:         grants,
+		GrantTypesSupported:         types,
 		ResponseTypesSupported:      []string{"code"},
 		TokenEndpointAuthMethodsSupported: []string{
 			"client_secret_basic", "client_secret_post",
+			"client_secret_basic", "client_secret_post", "none",
 		},
 	}
 
@@ -355,6 +356,11 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		return fail(
 			ErrorCodeUnauthorizedClient,
 			"client is not allowed to use authorization code grant",
+		)
+	case scope != "" && !client.CanUseScope(scope):
+		return fail(
+			ErrorCodeInvalidScope,
+			"requested scope is not allowed for this client",
 		)
 	case codeChallenge == "":
 		return fail(
@@ -717,6 +723,26 @@ func (p *Provider) revoke(e *router.Exchange) error {
 			Code:        ErrorCodeInvalidRequest,
 			Description: "missing token",
 		}
+	}
+
+	// Validate token ownership before revocation per RFC 7009 Section 2.1
+	r, err := p.sessions.GetRefreshToken(e.Context(), token)
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to retrieve refresh token during revocation",
+			slog.Any("error", err),
+		)
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to retrieve token",
+		}
+	}
+	if r.Token == "" || r.ClientID != pro.Client.ID() {
+		// Token not found or belongs to another client. Return 200 OK.
+		e.Status(http.StatusOK)
+		return nil
 	}
 
 	if err := p.sessions.DeleteRefreshToken(e.Context(), token); err != nil {
