@@ -76,7 +76,7 @@ func Test(target any) Error {
 // interface.
 // It returns a composite error if any element fails validation, or nil if
 // all elements are valid.
-func Each(target any) error {
+func Each(target any) Error {
 	v := New()
 	v.Each("", target)
 	return v.Error()
