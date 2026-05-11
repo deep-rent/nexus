@@ -19,6 +19,8 @@ import (
 	"net/http"
 )
 
+// clientCredentialsGrant implements the [Grant] interface for
+// machine-to-machine authentication.
 type clientCredentialsGrant struct{}
 
 // ClientCredentialsGrant returns a new Grant implementation for the Client
@@ -27,14 +29,17 @@ func ClientCredentialsGrant() Grant {
 	return &clientCredentialsGrant{}
 }
 
+// Type returns [GrantTypeClientCredentials].
 func (g *clientCredentialsGrant) Type() GrantType {
 	return GrantTypeClientCredentials
 }
 
+// Authorize implements [Grant].
 func (g *clientCredentialsGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
 ) (*Issuance, error) {
+	// Validate that the client is permitted to use the requested scopes.
 	scope := pro.Get("scope")
 	if scope != "" && !pro.Client.CanUseScope(scope) {
 		return nil, &Error{
@@ -50,3 +55,5 @@ func (g *clientCredentialsGrant) Authorize(
 		Refreshable: false,
 	}, nil
 }
+
+var _ Grant = (*clientCredentialsGrant)(nil)

@@ -22,6 +22,8 @@ import (
 	"github.com/deep-rent/nexus/internal/pkce"
 )
 
+// authCodeGrant implements the [Grant] interface for the Authorization Code
+// flow.
 type authCodeGrant struct{}
 
 // AuthCodeGrant returns a new Grant implementation for the Authorization Code
@@ -30,10 +32,12 @@ func AuthCodeGrant() Grant {
 	return &authCodeGrant{}
 }
 
+// Type returns [GrantTypeAuthorizationCode].
 func (g *authCodeGrant) Type() GrantType {
 	return GrantTypeAuthorizationCode
 }
 
+// Authorize implements [Grant].
 func (g *authCodeGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
@@ -56,6 +60,7 @@ func (g *authCodeGrant) Authorize(
 		}
 	}
 
+	// Retrieve the authorization code state from the session store.
 	c, err := pro.Sessions.GetAuthCode(ctx, code)
 	if err != nil {
 		pro.Logger.ErrorContext(
@@ -71,6 +76,7 @@ func (g *authCodeGrant) Authorize(
 		}
 	}
 
+	// Ensure the code exists and has not expired.
 	if c.Code == "" {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
@@ -79,6 +85,7 @@ func (g *authCodeGrant) Authorize(
 		}
 	}
 
+	// Delete the code immediately to prevent replay attacks.
 	if err := pro.Sessions.DeleteAuthCode(ctx, code); err != nil {
 		pro.Logger.ErrorContext(
 			ctx,
@@ -93,6 +100,7 @@ func (g *authCodeGrant) Authorize(
 		}
 	}
 
+	// Validate that the client making the request is the one who requested it.
 	if c.ClientID != pro.Client.ID() {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
@@ -101,6 +109,8 @@ func (g *authCodeGrant) Authorize(
 		}
 	}
 
+	// Validate the redirect URI if one was provided in the initial
+	// authorization request.
 	redirectURI := pro.Get("redirect_uri")
 	if redirectURI != "" && c.RedirectURI != redirectURI {
 		return nil, &Error{
@@ -110,6 +120,7 @@ func (g *authCodeGrant) Authorize(
 		}
 	}
 
+	// Perform PKCE verification to protect against interception.
 	if !pkce.Verify(
 		codeVerifier,
 		c.CodeChallenge,
@@ -128,3 +139,5 @@ func (g *authCodeGrant) Authorize(
 		Refreshable: true,
 	}, nil
 }
+
+var _ Grant = (*authCodeGrant)(nil)

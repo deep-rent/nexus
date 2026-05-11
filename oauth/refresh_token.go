@@ -20,6 +20,7 @@ import (
 	"net/http"
 )
 
+// refreshTokenGrant implements the [Grant] interface for token rotation.
 type refreshTokenGrant struct{}
 
 // RefreshTokenGrant returns a new Grant implementation for the Refresh Token
@@ -28,10 +29,12 @@ func RefreshTokenGrant() Grant {
 	return &refreshTokenGrant{}
 }
 
+// Type returns [GrantTypeRefreshToken].
 func (g *refreshTokenGrant) Type() GrantType {
 	return GrantTypeRefreshToken
 }
 
+// Authorize implements [Grant].
 func (g *refreshTokenGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
@@ -45,6 +48,7 @@ func (g *refreshTokenGrant) Authorize(
 		}
 	}
 
+	// Retrieve the refresh token details from the session store.
 	r, err := pro.Sessions.GetRefreshToken(ctx, token)
 	if err != nil {
 		pro.Logger.ErrorContext(
@@ -59,6 +63,7 @@ func (g *refreshTokenGrant) Authorize(
 		}
 	}
 
+	// Ensure the token is valid and not yet expired.
 	if r.Token == "" {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
@@ -67,6 +72,7 @@ func (g *refreshTokenGrant) Authorize(
 		}
 	}
 
+	// Ensure the token belongs to the client attempting to use it.
 	if r.ClientID != pro.Client.ID() {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
@@ -75,6 +81,8 @@ func (g *refreshTokenGrant) Authorize(
 		}
 	}
 
+	// Revoke the old refresh token to ensure rotation security.
+	// New tokens are issued by the [Provider] later in the pipeline.
 	if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
 		pro.Logger.ErrorContext(
 			ctx,
@@ -95,3 +103,5 @@ func (g *refreshTokenGrant) Authorize(
 		Refreshable: true,
 	}, nil
 }
+
+var _ Grant = (*refreshTokenGrant)(nil)

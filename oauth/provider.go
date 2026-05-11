@@ -30,11 +30,16 @@ import (
 )
 
 const (
-	DefaultSessionCookieName    = "session"
-	DefaultAccessTokenLifetime  = 5 * time.Minute
+	// DefaultSessionCookieName is used if no session cookie name is configured.
+	DefaultSessionCookieName = "session"
+	// DefaultAccessTokenLifetime is the default duration for access tokens.
+	DefaultAccessTokenLifetime = 5 * time.Minute
+	// DefaultRefreshTokenLifetime is the default duration for refresh tokens.
 	DefaultRefreshTokenLifetime = 7 * 24 * time.Hour
-	DefaultAuthCodeLifetime     = 10 * time.Minute
-	DefaultRealm                = "OAuth2"
+	// DefaultAuthCodeLifetime is the default duration for auth codes.
+	DefaultAuthCodeLifetime = 10 * time.Minute
+	// DefaultRealm is the default authentication realm name.
+	DefaultRealm = "OAuth2"
 )
 
 // Config holds the configuration options for an OAuth 2.0 Provider.
@@ -256,6 +261,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
+	// Verify the resource owner's session established during login.
 	// Authenticate the resource owner using the session cookie established by
 	// the login endpoint.
 	cookie, err := e.Cookie(p.sessionCookieName)
@@ -289,6 +295,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
+	// Generate and store the authorization code state.
 	code, err := opaque()
 	if err != nil {
 		p.logger.ErrorContext(
@@ -424,6 +431,7 @@ func (p *Provider) token(e *router.Exchange) error {
 		}
 	}
 
+	// Generate and sign the final JWT access token.
 	token, err := p.signer.Sign(claims)
 	if err != nil {
 		p.logger.ErrorContext(
@@ -446,6 +454,7 @@ func (p *Provider) token(e *router.Exchange) error {
 		Scope:       iss.Scope,
 	}
 
+	// Optionally issue a refresh token if the grant permits it.
 	if iss.Refreshable {
 		token, err := opaque()
 		if err != nil {
@@ -489,6 +498,9 @@ func (p *Provider) token(e *router.Exchange) error {
 	return e.JSON(http.StatusOK, res)
 }
 
+// authenticate parses the client credentials from the request and retrieves
+// the corresponding [Client] from the [ClientStore]. It handles both HTTP
+// Basic and POST body credentials.
 func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	data, err := e.ReadForm()
 	if err != nil {
@@ -499,6 +511,8 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 		}
 	}
 
+	// RFC 6749 allows client credentials to be provided via HTTP Basic Auth
+	// or as part of the request body.
 	clientID, clientSecret, ok := e.R.BasicAuth()
 	if !ok {
 		clientID = data.Get("client_id")
@@ -538,6 +552,8 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 		}
 	}
 
+	// Confidential clients MUST provide a secret; public clients (e.g., SPAs)
+	// are not required to do so.
 	if clientSecret == "" && !client.Public() {
 		p.challenge(e)
 		return nil, &Error{
@@ -564,6 +580,9 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	}, nil
 }
 
+// challenge sets the WWW-Authenticate header to signal to the client that
+// HTTP Basic authentication is required, as mandated by RFC 6749 Section 5.2
+// for client authentication failures.
 func (p *Provider) challenge(e *router.Exchange) {
 	e.SetHeader("WWW-Authenticate", fmt.Sprintf("Basic realm=%q", p.realm))
 }

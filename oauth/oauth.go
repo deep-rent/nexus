@@ -12,6 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package oauth implements the core protocols for an OAuth 2.0 authorization
+// server.
+//
+// The package provides a flexible and extensible framework for issuing access
+// tokens to clients. It abstracts the complexity of the OAuth 2.0 flows,
+// including Authorization Code, Client Credentials, and Refresh Token grants,
+// while allowing developers to provide custom implementations for client and
+// session management.
+//
+// Architecture:
+// The core of the package is the [Provider], which manages the lifecycle of
+// authorization requests and token issuance. It relies on a set of interfaces
+// ([ClientStore], [SubjectStore], [SessionStore]) that must be implemented to
+// bridge the library with the underlying database or persistence layer.
+//
+// # Usage
+//
+// To use this package, initialize a [Provider] with your store implementations
+// and register the desired [Grant] types.
+//
+// Example:
+//
+//	// Initialize the provider with required stores and signers.
+//	p := oauth.NewProvider(oauth.Config{
+//	  Signer:   jwtSigner,
+//	  Verifier: jwtVerifier,
+//	  Clients:  myClientStore,
+//	  Sessions: mySessionStore,
+//	  Subjects: mySubjectStore,
+//	})
+//
+//	// Register the standard grant types.
+//	p.Register(oauth.AuthCodeGrant())
+//	p.Register(oauth.ClientCredentialsGrant())
+//	p.Register(oauth.RefreshTokenGrant())
+//
+//	// Mount the endpoints onto a router.
+//	r := router.New()
+//	p.Mount(r)
+//
+//	// Start serving.
+//	http.ListenAndServe(":8080", r)
 package oauth
 
 import (
@@ -24,12 +66,16 @@ import (
 	"time"
 )
 
+// GrantType defines the various methods for obtaining an access token.
 type GrantType string
 
 const (
+	// GrantTypeAuthorizationCode refers to the "authorization_code" grant.
 	GrantTypeAuthorizationCode GrantType = "authorization_code"
+	// GrantTypeClientCredentials refers to the "client_credentials" grant.
 	GrantTypeClientCredentials GrantType = "client_credentials"
-	GrantTypeRefreshToken      GrantType = "refresh_token"
+	// GrantTypeRefreshToken refers to the "refresh_token" grant.
+	GrantTypeRefreshToken GrantType = "refresh_token"
 )
 
 // Client represents an OAuth 2.0 registered client application.
@@ -197,15 +243,25 @@ type SessionStore interface {
 }
 
 const (
-	ErrorCodeAccessDenied            = "access_denied"
-	ErrorCodeInvalidClient           = "invalid_client"
-	ErrorCodeInvalidGrant            = "invalid_grant"
-	ErrorCodeInvalidRequest          = "invalid_request"
-	ErrorCodeInvalidScope            = "invalid_scope"
-	ErrorCodeServerError             = "server_error"
-	ErrorCodeTemporarilyUnavailable  = "temporarily_unavailable"
-	ErrorCodeUnauthorizedClient      = "unauthorized_client"
-	ErrorCodeUnsupportedGrantType    = "unsupported_grant_type"
+	// ErrorCodeAccessDenied indicates user or server denied the request.
+	ErrorCodeAccessDenied = "access_denied"
+	// ErrorCodeInvalidClient indicates client authentication failed.
+	ErrorCodeInvalidClient = "invalid_client"
+	// ErrorCodeInvalidGrant indicates provided grant is invalid or expired.
+	ErrorCodeInvalidGrant = "invalid_grant"
+	// ErrorCodeInvalidRequest indicates request is missing a parameter.
+	ErrorCodeInvalidRequest = "invalid_request"
+	// ErrorCodeInvalidScope indicates requested scope is invalid.
+	ErrorCodeInvalidScope = "invalid_scope"
+	// ErrorCodeServerError indicates an internal server error occurred.
+	ErrorCodeServerError = "server_error"
+	// ErrorCodeTemporarilyUnavailable indicates server is overloaded.
+	ErrorCodeTemporarilyUnavailable = "temporarily_unavailable"
+	// ErrorCodeUnauthorizedClient indicates client is not authorized for grant.
+	ErrorCodeUnauthorizedClient = "unauthorized_client"
+	// ErrorCodeUnsupportedGrantType indicates grant type is not supported.
+	ErrorCodeUnsupportedGrantType = "unsupported_grant_type"
+	// ErrorCodeUnsupportedResponseType indicates response type is not supported.
 	ErrorCodeUnsupportedResponseType = "unsupported_response_type"
 )
 
@@ -253,9 +309,12 @@ func (e Error) Query() url.Values {
 // unvalidated parameters provided in the request body.
 type Proposal struct {
 	// Client is the authenticated entity making the request (read-only).
-	Client   Client
+	Client Client
+	// Sessions provides access to the [SessionStore] for managing
+	// authorization codes and refresh tokens.
 	Sessions SessionStore
-	Logger   *slog.Logger
+	// Logger provides a context-aware logger for the grant handler.
+	Logger *slog.Logger
 	// data contains the raw form values.
 	data url.Values
 }
