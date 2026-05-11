@@ -34,6 +34,9 @@ const (
 	// DefaultSessionCookieName is the default name for the cookie used to
 	// track the resource owner's session.
 	DefaultSessionCookieName = "oauth_session"
+	// DefaultStateCookieName is the default name for the cookie used to
+	// store the OAuth 2.0 state parameter during external login flows.
+	DefaultStateCookieName = "oauth_state"
 	// DefaultAccessTokenLifetime is the default duration for which an
 	// access token is valid.
 	DefaultAccessTokenLifetime = 5 * time.Minute
@@ -74,6 +77,10 @@ type Config struct {
 	// SessionCookieName is the name of the session cookie.
 	// Optional; defaults to [DefaultSessionCookieName].
 	SessionCookieName string
+	// StateCookieName is the name of the cookie used to store the state
+	// parameter during external login flows.
+	// Optional; defaults to [DefaultStateCookieName].
+	StateCookieName string
 	// AccessTokenLifetime defines how long issued access tokens remain valid.
 	// Optional; defaults to [DefaultAccessTokenLifetime].
 	AccessTokenLifetime time.Duration
@@ -93,6 +100,13 @@ type Config struct {
 	// user code to authorize a device. This field is mandatory if the
 	// [GrantTypeDeviceCode] is registered via [Provider.Register].
 	VerificationURI string
+	// IdentityProviders is a map of external social login providers.
+	// The key is the provider name (e.g., "google").
+	IdentityProviders map[string]IdentityProvider
+	// LoginRedirectURI is the URL where resource owners are redirected after
+	// a successful social login flow. Required if identity providers are
+	// configured.
+	LoginRedirectURI string
 	// GenerateOpaqueToken overrides the default string generator used for
 	// authorization codes, refresh tokens, device codes, and session keys.
 	// Defaults to [GenerateOpaqueToken].
@@ -113,6 +127,7 @@ type Provider struct {
 	grants               map[GrantType]Grant
 	logger               *slog.Logger
 	sessionCookieName    string
+	stateCookieName      string
 	accessTokenLifetime  time.Duration
 	refreshTokenLifetime time.Duration
 	authCodeLifetime     time.Duration
@@ -120,6 +135,8 @@ type Provider struct {
 	realm                string
 	verificationURI      string
 	issuer               string
+	identityProviders    map[string]IdentityProvider
+	loginRedirectURI     string
 	generateOpaqueToken  func() (string, error)
 	generateUserCode     func() (string, error)
 }
@@ -149,6 +166,11 @@ func NewProvider(cfg Config) *Provider {
 	sessionCookieName := cfg.SessionCookieName
 	if sessionCookieName == "" {
 		sessionCookieName = DefaultSessionCookieName
+	}
+
+	stateCookieName := cfg.StateCookieName
+	if stateCookieName == "" {
+		stateCookieName = DefaultStateCookieName
 	}
 
 	accessTokenLifetime := cfg.AccessTokenLifetime
@@ -195,6 +217,11 @@ func NewProvider(cfg Config) *Provider {
 		generateUserCode = GenerateUserCode
 	}
 
+	identityProviders := cfg.IdentityProviders
+	if len(identityProviders) != 0 && cfg.LoginRedirectURI == "" {
+		panic("oauth: login redirect URI is required when identity providers are configured")
+	}
+
 	return &Provider{
 		signer:               cfg.Signer,
 		verifier:             cfg.Verifier,
@@ -204,6 +231,7 @@ func NewProvider(cfg Config) *Provider {
 		grants:               make(map[GrantType]Grant),
 		logger:               logger,
 		sessionCookieName:    sessionCookieName,
+		stateCookieName:      stateCookieName,
 		accessTokenLifetime:  accessTokenLifetime,
 		refreshTokenLifetime: refreshTokenLifetime,
 		authCodeLifetime:     authCodeLifetime,
@@ -243,6 +271,8 @@ const (
 	PathIntrospect          = BasePath + "/introspect"
 	PathWellKnown           = BasePath + "/.well-known/oauth-authorization-server"
 	PathKeySet              = BasePath + "/jwks.json"
+	PathExternalLogin       = BasePath + "/login/{provider}"
+	PathExternalCallback    = BasePath + "/callback/{provider}"
 )
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
@@ -265,6 +295,11 @@ func (p *Provider) Mount(r *router.Router) {
 
 	r.HandleFunc("POST "+PathLogin, p.Login)
 	r.HandleFunc("POST "+PathLogout, p.Logout)
+
+	if len(p.identityProviders) != 0 {
+		r.HandleFunc("GET "+PathExternalLogin, p.ExternalLogin)
+		r.HandleFunc("GET "+PathExternalCallback, p.ExternalCallback)
+	}
 
 	if p.issuer != "" {
 		r.HandleFunc("GET "+PathWellKnown, p.WellKnown)
@@ -326,6 +361,7 @@ func (p *Provider) JWKS(e *router.Exchange) error {
 			"Failed to marshal JWKS",
 			slog.Any("error", err),
 		)
+
 		return &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
@@ -1046,7 +1082,14 @@ func (p *Provider) login(e *router.Exchange) error {
 		}
 	}
 
-	e.SetCookie(p.cookie(key))
+	e.SetCookie(&http.Cookie{
+		Name:     p.sessionCookieName,
+		Value:    key,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	e.NoContent()
 	return nil
 }
@@ -1072,29 +1115,209 @@ func (p *Provider) Logout(e *router.Exchange) error {
 	// Note: The double-quotes around the asterisk are required by the spec.
 	e.SetHeader("Clear-Site-Data", `"*"`)
 
-	e.SetCookie(p.cookie(""))
+	e.SetCookie(&http.Cookie{
+		Name:     p.sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
 	e.NoContent()
 	return nil
 }
 
-// cookie constructs an [http.Cookie] for the resource owner session.
-//
-// If the provided key is empty, it returns a cookie with a negative Max-Age
-// to signal the user-agent to delete it. Otherwise, it creates a secure,
-// HTTP-only cookie with the session key.
-func (p *Provider) cookie(key string) *http.Cookie {
-	c := &http.Cookie{
+// ExternalLogin initiates a social authentication flow by redirecting the
+// resource owner to the requested external identity provider.
+func (p *Provider) ExternalLogin(e *router.Exchange) error {
+	return wrap(e, p.externalLogin)
+}
+
+func (p *Provider) externalLogin(e *router.Exchange) error {
+	name := e.R.PathValue("provider")
+	idp, ok := p.identityProviders[name]
+	if !ok {
+		return &Error{
+			Status:      http.StatusNotFound,
+			Code:        ErrorCodeInvalidRequest,
+			Description: "unknown identity provider",
+		}
+	}
+
+	state, err := p.generateOpaqueToken()
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to generate state",
+			slog.Any("error", err),
+		)
+
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to generate state",
+		}
+	}
+
+	e.SetCookie(&http.Cookie{
+		Name:     p.stateCookieName,
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   300,
+	})
+
+	authURL, err := idp.AuthURL(e.Context(), state)
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to generate auth url",
+			slog.Any("error", err),
+		)
+
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to initiate external login",
+		}
+	}
+
+	e.SetHeader("Location", authURL)
+	e.Status(http.StatusFound)
+	return nil
+}
+
+// ExternalCallback handles the redirect from an external identity provider,
+// verifies the state, exchanges credentials for an external identity, and
+// establishes a local session.
+func (p *Provider) ExternalCallback(e *router.Exchange) error {
+	return wrap(e, p.externalCallback)
+}
+
+func (p *Provider) externalCallback(e *router.Exchange) error {
+	name := e.R.PathValue("provider")
+	idp, ok := p.identityProviders[name]
+	if !ok {
+		return &Error{
+			Status:      http.StatusNotFound,
+			Code:        ErrorCodeInvalidRequest,
+			Description: "unknown identity provider",
+		}
+	}
+
+	stateCookie, err := e.Cookie(p.stateCookieName)
+	if err != nil || stateCookie.Value == "" {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidRequest,
+			Description: "missing or expired state cookie",
+		}
+	}
+
+	// Clear the state cookie immediately to prevent replay attacks.
+	e.SetCookie(&http.Cookie{
+		Name:     p.stateCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	queryState := e.Query().Get("state")
+	if queryState != stateCookie.Value {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidRequest,
+			Description: "state mismatch",
+		}
+	}
+
+	identity, err := idp.Exchange(e.Context(), e.R)
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"External exchange failed",
+			slog.Any("error", err),
+		)
+
+		return &Error{
+			Status:      http.StatusUnauthorized,
+			Code:        ErrorCodeAccessDenied,
+			Description: "failed to exchange external credentials",
+		}
+	}
+
+	sub, err := p.subjects.GetSubjectByExternalID(
+		e.Context(),
+		name,
+		identity.Subject,
+	)
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"External subject lookup failed",
+			slog.Any("error", err),
+		)
+
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to lookup subject",
+		}
+	}
+	if sub == nil {
+		return &Error{
+			Status:      http.StatusUnauthorized,
+			Code:        ErrorCodeAccessDenied,
+			Description: "external identity is not linked to any local subject",
+		}
+	}
+
+	key, err := p.generateOpaqueToken()
+	if err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to generate session key",
+			slog.Any("error", err),
+		)
+
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to generate session key",
+		}
+	}
+
+	if err := p.subjects.CreateSession(e.Context(), key, sub.ID()); err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to create subject session",
+			slog.Any("error", err),
+		)
+
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to create subject session",
+		}
+	}
+
+	e.SetCookie(&http.Cookie{
 		Name:     p.sessionCookieName,
 		Value:    key,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
-	}
-	if key == "" {
-		c.MaxAge = -1
-	}
-	return c
+	})
+	e.SetHeader("Location", p.loginRedirectURI)
+	e.Status(http.StatusFound)
+	return nil
 }
 
 // Introspect handles token introspection requests (RFC 7662).

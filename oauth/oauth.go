@@ -62,6 +62,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -145,6 +146,13 @@ type SubjectStore interface {
 	// If the user is not found, it must return nil and nil.
 	// It should return an error only if the storage lookup fails.
 	GetSubject(ctx context.Context, id string) (Subject, error)
+	// GetSubjectByExternalID retrieves a subject linked to an external
+	// identity provider.
+	//
+	// This is used for social login flows. If no local subject is linked to
+	// the external ID, it returns nil, nil (allowing for Just-In-Time
+	// provisioning).
+	GetSubjectByExternalID(ctx context.Context, provider, externalID string) (Subject, error)
 	// GetSubjectBySession retrieves the authenticated subject via their
 	// session key.
 	//
@@ -395,6 +403,24 @@ type Grant interface {
 	// expired codes, or insufficient permissions, it returns nil and an [Error].
 	// Other types of errors will be handled as unexpected failures.
 	Authorize(ctx context.Context, pro *Proposal) (*Issuance, error)
+}
+
+// ExternalIdentity represents a user identity verified by an external provider.
+type ExternalIdentity struct {
+	// Subject is the unique identifier of the user at the external provider.
+	Subject string
+}
+
+// IdentityProvider defines the contract for external social authentication
+// providers (e.g., Google, GitHub, Apple).
+type IdentityProvider interface {
+	// AuthURL generates the authorization URL to redirect the user-agent.
+	// The state parameter must be included in the URL to prevent CSRF.
+	AuthURL(ctx context.Context, state string) (string, error)
+	// Exchange processes the callback request and retrieves the external
+	// identity. Implementations should extract the authorization code or
+	// tokens from the request and exchange them securely.
+	Exchange(ctx context.Context, req *http.Request) (*ExternalIdentity, error)
 }
 
 // TokenResponse outlines the payload returned after a successful token grant.
