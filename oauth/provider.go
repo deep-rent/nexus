@@ -227,15 +227,19 @@ func (p *Provider) Supports(grant GrantType) bool {
 	return ok
 }
 
+// basePath is the common prefix for all OAuth 2.0 endpoints.
+const basePath = "/oauth"
+
+// path constants define the specific endpoints managed by the [Provider].
 const (
-	pathAuthorize           = "/authorize"
-	pathToken               = "/token"
-	pathRevoke              = "/revoke"
-	pathDeviceAuthorization = "/device_authorization"
-	pathLogin               = "/login"
-	pathLogout              = "/logout"
-	pathIntrospect          = "/introspect"
-	pathWellKnown           = "/.well-known/oauth-authorization-server"
+	pathAuthorize           = basePath + "/authorize"
+	pathToken               = basePath + "/token"
+	pathRevoke              = basePath + "/revoke"
+	pathDeviceAuthorization = basePath + "/device_authorization"
+	pathLogin               = basePath + "/login"
+	pathLogout              = basePath + "/logout"
+	pathIntrospect          = basePath + "/introspect"
+	pathWellKnown           = basePath + "/.well-known/oauth-authorization-server"
 )
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
