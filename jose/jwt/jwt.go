@@ -665,6 +665,9 @@ func encode(src []byte) []byte {
 
 // Signer defines the interface for a configured, reusable JWT creator.
 type Signer interface {
+	// Issuer returns the value of the "iss" claim included in tokens produced
+	// by this signer by default, or an empty string if it is omitted.
+	Issuer() string
 	// Sign applies the signer's configuration (issuer, audience, and temporal
 	// validity) directly to the mutable claims object, then signs it.
 	Sign(claims MutableClaims) ([]byte, error)
@@ -697,7 +700,8 @@ func WithIssuedAt(use bool) SignerOption {
 }
 
 // WithIssuer sets the "iss" (Issuer) claim for all tokens created by this
-// signer. If the user-provided claims already contain an issuer, this
+// signer. This is typically the URL of the authorization server.
+// If the user-provided claims already contain an issuer, this
 // configuration will overwrite it.
 func WithIssuer(iss string) SignerOption {
 	return func(c *signerConfig) {
@@ -769,6 +773,9 @@ func NewSigner(keys []jwk.KeyPair, opts ...SignerOption) Signer {
 		cfg: cfg,
 	}
 }
+
+// Issuer implements the [Signer] interface.
+func (s *signer) Issuer() string { return s.cfg.iss }
 
 // Sign implements the [Signer] interface.
 func (s *signer) Sign(claims MutableClaims) ([]byte, error) {

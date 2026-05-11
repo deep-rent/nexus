@@ -86,6 +86,10 @@ func TestSigner_Defaults(t *testing.T) {
 		jwt.WithSignerClock(func() time.Time { return now }),
 	)
 
+	if got, want := s.Issuer(), "nexus"; got != want {
+		t.Errorf("s.Issuer() = %q; want %q", got, want)
+	}
+
 	c := &testClaims{Role: "user"}
 	raw, err := s.Sign(c)
 	if err != nil {
