@@ -457,7 +457,7 @@ func (p *Provider) token(e *router.Exchange) error {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidGrant,
-			Description: "subject not found",
+			Description: "subject no longer available",
 		}
 	}
 
