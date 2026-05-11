@@ -208,12 +208,23 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST "+pathLogin, p.Login)
 	r.HandleFunc("POST "+pathLogout, p.Logout)
 	r.HandleFunc("POST "+pathIntrospect, p.Introspect)
-	r.HandleFunc("GET "+pathWellKnown, p.WellKnown)
+
+	if p.issuer != "" {
+		r.HandleFunc("GET "+pathWellKnown, p.WellKnown)
+	}
 }
 
 // WellKnown handles the OAuth 2.0 Authorization Server Metadata endpoint
 // (RFC 8414) for endpoint discovery.
 func (p *Provider) WellKnown(e *router.Exchange) error {
+	if p.issuer == "" {
+		return &router.Error{
+			Status:      http.StatusNotFound,
+			Reason:      "not_found",
+			Description: "metadata endpoint is disabled",
+		}
+	}
+
 	grants := make([]string, 0, len(p.grants))
 	for grant := range p.grants {
 		grants = append(grants, string(grant))
