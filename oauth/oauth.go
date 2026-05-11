@@ -36,11 +36,13 @@
 //
 //	// 1. Define the configuration with mandatory stores and signers.
 //	cfg := oauth.Config{
-//	  Signer:   mySigner,
-//	  Verifier: myVerifier,
-//	  Clients:  myClientStore,
-//	  Sessions: mySessionStore,
-//	  Subjects: mySubjectStore,
+//	  Signer:           mySigner,
+//	  Verifier:         myVerifier,
+//	  Clients:          myClientStore,
+//	  Sessions:         mySessionStore,
+//	  Subjects:         mySubjectStore,
+//	  LoginPageURI:     "https://app.example.com/login",
+//	  LoginRedirectURI: "https://app.example.com/dashboard",
 //	}
 //
 //	// 2. Initialize the provider and register grants or identity providers.
