@@ -1002,6 +1002,10 @@ func (p *Provider) Logout(e *router.Exchange) error {
 		}
 	}
 
+	// Instruct the browser to wipe all local state (cookies, storage, cache).
+	// Note: The double-quotes around the asterisk are required by the spec.
+	e.SetHeader("Clear-Site-Data", `"*"`)
+
 	e.SetCookie(p.cookie(""))
 	e.NoContent()
 	return nil
