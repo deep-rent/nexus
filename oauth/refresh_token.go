@@ -26,7 +26,7 @@ type refreshTokenGrant struct{}
 // RefreshTokenGrant returns a new grant implementation for the Refresh Token
 // flow.
 //
-// Pass the result to [Provider.Register] to enable this grant.
+// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
 func RefreshTokenGrant() Grant {
 	return &refreshTokenGrant{}
 }

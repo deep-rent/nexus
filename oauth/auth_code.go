@@ -32,7 +32,7 @@ type authCodeGrant struct{}
 // Note: This implementation strictly mandates PKCE (RFC 7636) to mitigate
 // authorization code injection and interception attacks.
 //
-// Pass the result to [Provider.Register] to enable this grant.
+// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
 func AuthCodeGrant() Grant {
 	return &authCodeGrant{}
 }

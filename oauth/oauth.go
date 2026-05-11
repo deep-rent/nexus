@@ -29,30 +29,33 @@
 //
 // # Usage
 //
-// To use this package, initialize a [Provider] with your store implementations
-// and register the desired [Grant] types.
+// To use this package, define a [Config] with your store implementations
+// and initialize a [Provider] using the desired [Grant] types as options.
 //
 // Example:
 //
-//	// Initialize the provider with required options.
-//	p := oauth.NewProvider(oauth.Config{
+//	// 1. Define the configuration with mandatory stores and signers.
+//	cfg := oauth.Config{
 //	  Signer:   mySigner,
 //	  Verifier: myVerifier,
 //	  Clients:  myClientStore,
 //	  Sessions: mySessionStore,
 //	  Subjects: mySubjectStore,
-//	})
+//	}
 //
-//	// Register the standard grant types.
-//	p.Register(oauth.AuthCodeGrant()).
-//	  Register(oauth.ClientCredentialsGrant()).
-//	  Register(oauth.RefreshTokenGrant())
+//	// 2. Initialize the provider and register grants or identity providers.
+//	p := oauth.NewProvider(cfg,
+//	  oauth.WithGrant(oauth.AuthCodeGrant()),
+//	  oauth.WithGrant(oauth.ClientCredentialsGrant()),
+//	  oauth.WithGrant(oauth.RefreshTokenGrant()),
+//	  oauth.WithIdentityProvider("google", myGoogleProvider),
+//	)
 //
-//	// Mount the endpoints onto a router.
+//	// 3. Mount the endpoints onto a router.
 //	r := router.New()
 //	p.Mount(r)
 //
-//	// Start serving.
+//	// 4. Start serving.
 //	http.ListenAndServe(":8080", r)
 package oauth
 

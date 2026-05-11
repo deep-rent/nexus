@@ -26,7 +26,7 @@ type clientCredentialsGrant struct{}
 // ClientCredentialsGrant returns a new grant implementation for the Client
 // Credentials flow.
 //
-// Pass the result to [Provider.Register] to enable this grant.
+// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
 func ClientCredentialsGrant() Grant {
 	return &clientCredentialsGrant{}
 }

@@ -98,11 +98,8 @@ type Config struct {
 	Realm string
 	// VerificationURI is the user-facing URL where resource owners enter the
 	// user code to authorize a device. This field is mandatory if the
-	// [GrantTypeDeviceCode] is registered via [Provider.Register].
+	// [GrantTypeDeviceCode] is registered via [WithGrant].
 	VerificationURI string
-	// IdentityProviders is a map of external social login providers.
-	// The key is the provider name (e.g., "google").
-	IdentityProviders map[string]IdentityProvider
 	// LoginRedirectURI is the URL where resource owners are redirected after
 	// a successful social login flow. Required if identity providers are
 	// configured.
@@ -116,6 +113,33 @@ type Config struct {
 	GenerateUserCode func() (string, error)
 }
 
+// Option defines a functional configuration pattern for a [Provider].
+type Option func(*Provider)
+
+// WithIdentityProvider returns an [Option] that registers an external
+// identity provider for social login flows.
+//
+// The name parameter identifies the provider in the URL paths (e.g., "google"
+// results in a login path of /oauth/login/google). If identity providers
+// are registered, the [Config.LoginRedirectURI] must be provided in the
+// initial configuration.
+func WithIdentityProvider(name string, impl IdentityProvider) Option {
+	return func(p *Provider) {
+		p.identityProviders[name] = impl
+	}
+}
+
+// WithGrant returns an [Option] that enables a specific OAuth 2.0 grant
+// flow on the provider.
+//
+// This allows the provider to process token requests for the associated
+// [GrantType].
+func WithGrant(grant Grant) Option {
+	return func(p *Provider) {
+		p.grants[grant.Type()] = grant
+	}
+}
+
 // Provider is the central component that manages OAuth 2.0 flows, token
 // issuance, and validation.
 type Provider struct {
@@ -125,6 +149,7 @@ type Provider struct {
 	sessions             SessionStore
 	subjects             SubjectStore
 	grants               map[GrantType]Grant
+	identityProviders    map[string]IdentityProvider
 	logger               *slog.Logger
 	sessionCookieName    string
 	stateCookieName      string
@@ -135,16 +160,16 @@ type Provider struct {
 	realm                string
 	verificationURI      string
 	issuer               string
-	identityProviders    map[string]IdentityProvider
 	loginRedirectURI     string
 	generateOpaqueToken  func() (string, error)
 	generateUserCode     func() (string, error)
 }
 
-// NewProvider creates a new Provider with the specified configuration.
+// NewProvider creates a new OAuth 2.0 provider with the specified
+// configuration.
 //
 // It panics if any mandatory options are missing.
-func NewProvider(cfg Config) *Provider {
+func NewProvider(cfg Config, opts ...Option) *Provider {
 	if cfg.Signer == nil {
 		panic("oauth: signer is required")
 	}
@@ -217,18 +242,14 @@ func NewProvider(cfg Config) *Provider {
 		generateUserCode = GenerateUserCode
 	}
 
-	identityProviders := cfg.IdentityProviders
-	if len(identityProviders) != 0 && cfg.LoginRedirectURI == "" {
-		panic("oauth: login redirect URI is required when identity providers are configured")
-	}
-
-	return &Provider{
+	p := &Provider{
 		signer:               cfg.Signer,
 		verifier:             cfg.Verifier,
 		clients:              cfg.Clients,
 		sessions:             cfg.Sessions,
 		subjects:             cfg.Subjects,
 		grants:               make(map[GrantType]Grant),
+		identityProviders:    make(map[string]IdentityProvider),
 		logger:               logger,
 		sessionCookieName:    sessionCookieName,
 		stateCookieName:      stateCookieName,
@@ -242,12 +263,15 @@ func NewProvider(cfg Config) *Provider {
 		generateOpaqueToken:  generateOpaqueToken,
 		generateUserCode:     generateUserCode,
 	}
-}
 
-// Register adds a new grant type handler to the provider.
-// It returns the [Provider] pointer to allow for method chaining.
-func (p *Provider) Register(grant Grant) *Provider {
-	p.grants[grant.Type()] = grant
+	for _, opt := range opts {
+		opt(p)
+	}
+
+	if len(p.identityProviders) != 0 && p.loginRedirectURI == "" {
+		panic("oauth: login redirect uri is required for identity providers")
+	}
+
 	return p
 }
 
@@ -580,9 +604,9 @@ func (p *Provider) authorize(e *router.Exchange) error {
 // Token handles requests to the token endpoint (RFC 6749 Section 3.2).
 //
 // It authenticates the requesting client (via HTTP Basic or POST parameters)
-// and processes the specified grant_type using the [Grant] implementations
-// previously registered with [Provider.Register].
-// Returns a JSON response containing an access token and optional refresh token.
+// and processes the specified grant type using the [Grant] implementations
+// previously registered via [WithGrant]. Returns a JSON response containing an
+// access token and optional refresh token.
 func (p *Provider) Token(e *router.Exchange) error {
 	return wrap(e, p.token)
 }
