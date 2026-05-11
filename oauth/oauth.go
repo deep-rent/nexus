@@ -41,7 +41,7 @@
 //	  Clients:          myClientStore,
 //	  Sessions:         mySessionStore,
 //	  Subjects:         mySubjectStore,
-//	  LoginPageURI:     "https://app.example.com/login",
+//	  LoginTerminalURI: "https://app.example.com/login",
 //	  LoginRedirectURI: "https://app.example.com/dashboard",
 //	}
 //
