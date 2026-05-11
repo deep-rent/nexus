@@ -227,19 +227,19 @@ func (p *Provider) Supports(grant GrantType) bool {
 	return ok
 }
 
-// basePath is the common prefix for all OAuth 2.0 endpoints.
-const basePath = "/oauth"
+// BasePath is the common prefix for all OAuth 2.0 endpoints.
+const BasePath = "/oauth"
 
 // path constants define the specific endpoints managed by the [Provider].
 const (
-	pathAuthorize           = basePath + "/authorize"
-	pathToken               = basePath + "/token"
-	pathRevoke              = basePath + "/revoke"
-	pathDeviceAuthorization = basePath + "/device_authorization"
-	pathLogin               = basePath + "/login"
-	pathLogout              = basePath + "/logout"
-	pathIntrospect          = basePath + "/introspect"
-	pathWellKnown           = basePath + "/.well-known/oauth-authorization-server"
+	PathAuthorize           = BasePath + "/authorize"
+	PathToken               = BasePath + "/token"
+	PathRevoke              = BasePath + "/revoke"
+	PathDeviceAuthorization = BasePath + "/device_authorization"
+	PathLogin               = BasePath + "/login"
+	PathLogout              = BasePath + "/logout"
+	PathIntrospect          = BasePath + "/introspect"
+	PathWellKnown           = BasePath + "/.well-known/oauth-authorization-server"
 )
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
@@ -247,24 +247,24 @@ const (
 // Note: All desired grant types must be registered via [Provider.Register]
 // before calling this method.
 func (p *Provider) Mount(r *router.Router) {
-	r.HandleFunc("GET "+pathAuthorize, p.Authorize)
-	r.HandleFunc("POST "+pathAuthorize, p.Authorize)
-	r.HandleFunc("POST "+pathToken, p.Token)
-	r.HandleFunc("POST "+pathRevoke, p.Revoke)
+	r.HandleFunc("GET "+PathAuthorize, p.Authorize)
+	r.HandleFunc("POST "+PathAuthorize, p.Authorize)
+	r.HandleFunc("POST "+PathToken, p.Token)
+	r.HandleFunc("POST "+PathRevoke, p.Revoke)
 
 	if p.verificationURI != "" && p.Supports(GrantTypeDeviceCode) {
-		r.HandleFunc("POST "+pathDeviceAuthorization, p.DeviceAuthorization)
+		r.HandleFunc("POST "+PathDeviceAuthorization, p.DeviceAuthorization)
 	}
 
 	if p.verifier != nil {
-		r.HandleFunc("POST "+pathIntrospect, p.Introspect)
+		r.HandleFunc("POST "+PathIntrospect, p.Introspect)
 	}
 
-	r.HandleFunc("POST "+pathLogin, p.Login)
-	r.HandleFunc("POST "+pathLogout, p.Logout)
+	r.HandleFunc("POST "+PathLogin, p.Login)
+	r.HandleFunc("POST "+PathLogout, p.Logout)
 
 	if p.issuer != "" {
-		r.HandleFunc("GET "+pathWellKnown, p.WellKnown)
+		r.HandleFunc("GET "+PathWellKnown, p.WellKnown)
 	}
 }
 
@@ -286,11 +286,11 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 
 	res := AuthorizationServerMetadata{
 		Issuer:                      p.issuer,
-		AuthorizationEndpoint:       p.issuer + pathAuthorize,
-		TokenEndpoint:               p.issuer + pathToken,
-		RevocationEndpoint:          p.issuer + pathRevoke,
-		IntrospectionEndpoint:       p.issuer + pathIntrospect,
-		DeviceAuthorizationEndpoint: p.issuer + pathDeviceAuthorization,
+		AuthorizationEndpoint:       p.issuer + PathAuthorize,
+		TokenEndpoint:               p.issuer + PathToken,
+		RevocationEndpoint:          p.issuer + PathRevoke,
+		IntrospectionEndpoint:       p.issuer + PathIntrospect,
+		DeviceAuthorizationEndpoint: p.issuer + PathDeviceAuthorization,
 		GrantTypesSupported:         types,
 		ResponseTypesSupported:      []string{"code"},
 		TokenEndpointAuthMethodsSupported: []string{
