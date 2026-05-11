@@ -330,6 +330,7 @@ type IntrospectionResponse struct {
 	Nbf      time.Time `json:"nbf,omitzero,format:unix"`
 }
 
+// LoginRequest represents the payload for the resource owner login endpoint.
 type LoginRequest struct {
 	Username string `json:"username" valid:",required"`
 	Password string `json:"password" valid:",required"`
@@ -345,6 +346,7 @@ func VerifyRedirectURI(uri string, whitelist []string) bool {
 	return false
 }
 
+// match checks if a string matches a wildcard pattern.
 func match(s, pattern string) bool {
 	// If no wildcard, do a direct comparison.
 	if !strings.Contains(pattern, "*") {
@@ -379,6 +381,8 @@ func match(s, pattern string) bool {
 	return true
 }
 
+// opaque generates a high-entropy, base64-encoded string suitable for use as
+// a secure token, such as an authorization code, refresh token, or session key.
 func opaque() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

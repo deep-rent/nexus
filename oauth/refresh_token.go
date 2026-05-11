@@ -22,6 +22,8 @@ import (
 
 type refreshTokenGrant struct{}
 
+// RefreshTokenGrant returns a new Grant implementation for the Refresh Token
+// flow.
 func RefreshTokenGrant() Grant {
 	return &refreshTokenGrant{}
 }

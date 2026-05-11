@@ -24,6 +24,8 @@ import (
 
 type authCodeGrant struct{}
 
+// AuthCodeGrant returns a new Grant implementation for the Authorization Code
+// flow, including Proof Key for Code Exchange (PKCE) validation.
 func AuthCodeGrant() Grant {
 	return &authCodeGrant{}
 }
@@ -65,7 +67,7 @@ func (g *authCodeGrant) Authorize(
 		return nil, &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
-			Description: "failed to revoke old refresh token",
+			Description: "failed to retrieve authorization code",
 		}
 	}
 
