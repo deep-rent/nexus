@@ -427,8 +427,8 @@ type ExternalIdentity struct {
 //
 // Implementations are responsible for defining the provider-specific OAuth 2.0
 // or OIDC flows. The core [Provider] manages CSRF protection (state generation
-// and validation) and the final local session creation, allowing implementations
-// to focus purely on the external exchange.
+// and validation) and the final local session creation, allowing
+// implementations to focus purely on the external exchange.
 type IdentityProvider interface {
 	// AuthURL generates the authorization URL to redirect the user-agent.
 	//
