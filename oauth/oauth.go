@@ -411,20 +411,15 @@ type Grant interface {
 // ExternalIdentity represents a user identity verified by an external provider.
 type ExternalIdentity struct {
 	// Subject is the unique identifier of the user at the external provider.
-	Subject string
+	Subject string `json:"sub"`
 	// Email is the user's primary email address.
-	Email string
+	Email string `json:"email,omitempty"`
 	// EmailVerified indicates whether the email address has been verified.
-	EmailVerified bool
+	EmailVerified bool `json:"email_verified,omitempty"`
 	// Name is the user's full name.
-	Name string
+	Name string `json:"name,omitempty"`
 	// Picture is the URL of the user's profile picture.
-	Picture string
-	// Raw contains the original, unparsed claims returned by the provider.
-	// This allows the [SubjectStore] to extract provider-specific data
-	// (e.g., custom tenant IDs or specific profile fields) during
-	// JIT provisioning.
-	Raw map[string]any
+	Picture string `json:"picture,omitempty"`
 }
 
 // IdentityProvider defines the contract for external social authentication
