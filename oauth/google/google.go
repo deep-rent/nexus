@@ -133,7 +133,7 @@ func New(cfg Config) *Google {
 	}
 
 	if redirectURI := cfg.RedirectURI; redirectURI == "" {
-		panic("google: missing redirect URI")
+		panic("google: missing redirect uri")
 	} else {
 		g.redirectURI = redirectURI
 	}

@@ -122,14 +122,14 @@ func (g *authCodeGrant) Authorize(
 			return nil, &Error{
 				Status:      http.StatusBadRequest,
 				Code:        ErrorCodeInvalidRequest,
-				Description: "missing redirect URI",
+				Description: "missing redirect uri",
 			}
 		}
 		if c.RedirectURI != redirectURI {
 			return nil, &Error{
 				Status:      http.StatusBadRequest,
 				Code:        ErrorCodeInvalidGrant,
-				Description: "redirect URI mismatch",
+				Description: "redirect uri mismatch",
 			}
 		}
 	}
@@ -143,7 +143,7 @@ func (g *authCodeGrant) Authorize(
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidGrant,
-			Description: "PKCE verification failed",
+			Description: "pkce verification failed",
 		}
 	}
 
