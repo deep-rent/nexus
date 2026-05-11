@@ -219,34 +219,34 @@ func (g *Google) AuthURL(ctx context.Context, state string) (string, error) {
 func (g *Google) Process(
 	ctx context.Context,
 	req *http.Request,
-) (oauth.ExternalIdentity, error) {
+) (oauth.Claimant, error) {
 	q := req.URL.Query()
 
 	// Check if Google returned an error string in the query parameters.
 	if desc := q.Get("error"); desc != "" {
 		err := fmt.Errorf("google auth error: %s", desc)
-		return oauth.ExternalIdentity{}, err
+		return oauth.Claimant{}, err
 	}
 
 	code := q.Get("code")
 	if code == "" {
 		err := errors.New("missing authorization code in callback")
-		return oauth.ExternalIdentity{}, err
+		return oauth.Claimant{}, err
 	}
 
 	accessToken, err := g.exchange(ctx, code)
 	if err != nil {
-		return oauth.ExternalIdentity{}, err
+		return oauth.Claimant{}, err
 	}
 
 	identity, err := g.userInfo(ctx, accessToken)
 	if err != nil {
-		return oauth.ExternalIdentity{}, err
+		return oauth.Claimant{}, err
 	}
 
 	if identity.Subject == "" {
 		err := errors.New("missing subject in userinfo response")
-		return oauth.ExternalIdentity{}, err
+		return oauth.Claimant{}, err
 	}
 
 	return identity, nil
@@ -304,8 +304,8 @@ func (g *Google) exchange(ctx context.Context, code string) (string, error) {
 func (g *Google) userInfo(
 	ctx context.Context,
 	token string,
-) (oauth.ExternalIdentity, error) {
-	var eid oauth.ExternalIdentity
+) (oauth.Claimant, error) {
+	var info oauth.Claimant
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
@@ -313,13 +313,13 @@ func (g *Google) userInfo(
 		nil,
 	)
 	if err != nil {
-		return eid, fmt.Errorf("create userinfo request: %w", err)
+		return info, fmt.Errorf("create userinfo request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	res, err := g.client.Do(req)
 	if err != nil {
-		return eid, fmt.Errorf("execute userinfo request: %w", err)
+		return info, fmt.Errorf("execute userinfo request: %w", err)
 	}
 
 	r := io.LimitReader(res.Body, maxBodySize)
@@ -330,12 +330,12 @@ func (g *Google) userInfo(
 	}()
 
 	if code := res.StatusCode; code != http.StatusOK {
-		return eid, fmt.Errorf("userinfo returned status %d", code)
+		return info, fmt.Errorf("userinfo returned status %d", code)
 	}
 
-	if err := json.UnmarshalRead(r, &eid); err != nil {
-		return eid, fmt.Errorf("decode userinfo response: %w", err)
+	if err := json.UnmarshalRead(r, &info); err != nil {
+		return info, fmt.Errorf("decode userinfo response: %w", err)
 	}
 
-	return eid, nil
+	return info, nil
 }

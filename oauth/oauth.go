@@ -159,7 +159,7 @@ type SubjectStore interface {
 	// provisioning if the implementation chooses to do so).
 	GetSubjectByExternalID(
 		ctx context.Context,
-		provider string, identity ExternalIdentity,
+		provider string, identity Claimant,
 	) (Subject, error)
 	// GetSubjectBySession retrieves the authenticated subject via their
 	// session key.
@@ -413,8 +413,8 @@ type Grant interface {
 	Authorize(ctx context.Context, pro *Proposal) (*Issuance, error)
 }
 
-// ExternalIdentity represents a user identity verified by an external provider.
-type ExternalIdentity struct {
+// Claimant represents a user identity verified by an external provider.
+type Claimant struct {
 	// Subject is the unique identifier of the user at the external provider.
 	Subject string `json:"sub"`
 	// Email is the user's primary email address.
@@ -442,14 +442,14 @@ type IdentityProvider interface {
 	// to the server's registered ExternalCallback endpoint.
 	AuthURL(ctx context.Context, state string) (string, error)
 	// Process processes the callback request and returns the external
-	// identity.
+	// identity information.
 	//
 	// Implementations should extract the authorization code from the request
 	// and exchange it securely via the external provider's API. Note that the
 	// core [Provider] already validates the state parameter against a secure
 	// cookie prior to calling this method, so implementations do not need to
 	// perform additional CSRF checks.
-	Process(ctx context.Context, req *http.Request) (ExternalIdentity, error)
+	Process(ctx context.Context, req *http.Request) (Claimant, error)
 }
 
 // TokenResponse outlines the payload returned after a successful token grant.
