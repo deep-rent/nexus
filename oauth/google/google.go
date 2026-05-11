@@ -22,18 +22,21 @@
 // # Usage
 //
 // To use the Google provider, initialize it with a [Config] and register it
-// with your OAuth manager.
+// with your [oauth.Provider].
 //
 // Example:
 //
-//	provider := google.New(google.Config{
+//	googleProvider := google.New(google.Config{
 //		ClientID:     "your-client-id",
 //		ClientSecret: "your-client-secret",
 //		RedirectURI:  "https://example.com/callback",
 //	})
 //
 //	// Generate the redirect URL for the user.
-//	url, _ := provider.AuthURL(ctx, "state-token")
+//	provider := oauth.NewProvider(
+//	  oauth.Config{/* ... */},
+//	  oauth.WithIdentityProvider("google", googleProvider),
+//	)
 package google
 
 import (
