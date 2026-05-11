@@ -224,7 +224,11 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST "+pathAuthorize, p.Authorize)
 	r.HandleFunc("POST "+pathToken, p.Token)
 	r.HandleFunc("POST "+pathRevoke, p.Revoke)
-	r.HandleFunc("POST "+pathDeviceAuthorization, p.DeviceAuthorization)
+
+	if p.Supports(GrantTypeDeviceCode) {
+		r.HandleFunc("POST "+pathDeviceAuthorization, p.DeviceAuthorization)
+	}
+
 	r.HandleFunc("POST "+pathLogin, p.Login)
 	r.HandleFunc("POST "+pathLogout, p.Logout)
 	r.HandleFunc("POST "+pathIntrospect, p.Introspect)
