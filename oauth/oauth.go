@@ -71,13 +71,13 @@ import (
 type GrantType string
 
 const (
-	// GrantTypeAuthorizationCode refers to the "authorization_code" grant.
+	// GrantTypeAuthorizationCode refers to the Authorization Code grant.
 	GrantTypeAuthorizationCode GrantType = "authorization_code"
-	// GrantTypeClientCredentials refers to the "client_credentials" grant.
+	// GrantTypeClientCredentials refers to the Client Credentials grant.
 	GrantTypeClientCredentials GrantType = "client_credentials"
-	// GrantTypeRefreshToken refers to the "refresh_token" grant.
+	// GrantTypeRefreshToken refers to the Refresh Token grant.
 	GrantTypeRefreshToken GrantType = "refresh_token"
-	// GrantTypeDeviceCode refers to the "urn:ietf:params:oauth:grant-type:device_code" grant.
+	// GrantTypeDeviceCode refers to the Device Code grant.
 	GrantTypeDeviceCode GrantType = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
@@ -417,7 +417,8 @@ type DeviceAuthorizationResponse struct {
 	Interval                int    `json:"interval,omitempty"`
 }
 
-// IntrospectionResponse outlines the RFC 7662 compliant JSON payload.
+// IntrospectionResponse outlines the RFC 7662 compliant JSON payload returned
+// from the token introspection endpoint.
 type IntrospectionResponse struct {
 	Active   bool      `json:"active"`
 	ClientID string    `json:"client_id,omitempty"`
