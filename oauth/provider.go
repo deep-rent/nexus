@@ -253,7 +253,7 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		GrantTypesSupported:         types,
 		ResponseTypesSupported:      []string{"code"},
 		TokenEndpointAuthMethodsSupported: []string{
-			"client_secret_basic", "client_secret_post",
+			"client_secret_basic", "client_secret_post", "none",
 		},
 	}
 
