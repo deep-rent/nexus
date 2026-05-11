@@ -777,6 +777,7 @@ func (p *Provider) token(e *router.Exchange) error {
 
 	e.SetHeader("Cache-Control", "no-store")
 	e.SetHeader("Pragma", "no-cache")
+
 	return e.JSON(http.StatusOK, res)
 }
 
@@ -1228,6 +1229,7 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 		e.Status(http.StatusFound)
 		return nil
 	}
+
 	return err
 }
 
