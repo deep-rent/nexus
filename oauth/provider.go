@@ -212,7 +212,7 @@ func (p *Provider) Mount(r *router.Router) {
 }
 
 // WellKnown handles the OAuth 2.0 Authorization Server Metadata endpoint
-// (RFC 8414) and OpenID Connect Discovery.
+// (RFC 8414) for endpoint discovery.
 func (p *Provider) WellKnown(e *router.Exchange) error {
 	grants := make([]string, 0, len(p.grants))
 	for grant := range p.grants {
