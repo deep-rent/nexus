@@ -166,6 +166,19 @@ func NewProvider(cfg Config) *Provider {
 		deviceCodeLifetime = DefaultDeviceCodeLifetime
 	}
 
+	issuer := cfg.Issuer
+	if issuer == "" {
+		// Fallback to signer's issuer if it is a valid absolute URL.
+		if iss := cfg.Signer.Issuer(); iss != "" {
+			if u, err := url.Parse(iss); err == nil {
+				if u.Scheme != "" && u.Host != "" {
+					issuer = iss
+				}
+			}
+		}
+	}
+	issuer = strings.TrimRight(issuer, "/")
+
 	return &Provider{
 		signer:               cfg.Signer,
 		clients:              cfg.Clients,
@@ -180,7 +193,7 @@ func NewProvider(cfg Config) *Provider {
 		realm:                realm,
 		deviceCodeLifetime:   deviceCodeLifetime,
 		verificationURI:      cfg.VerificationURI,
-		issuer:               strings.TrimRight(cfg.Issuer, "/"),
+		issuer:               issuer,
 	}
 }
 
