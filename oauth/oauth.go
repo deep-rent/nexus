@@ -580,9 +580,9 @@ func match(s, pattern string) bool {
 	return true
 }
 
-// GenerateOpaqueToken generates a high-entropy, base64-encoded string
+// GenerateOpaqueToken generates a high-entropy, base64url-encoded string
 // suitable for use as a secure token, such as an authorization code, refresh
-// token, or session key.
+// token, or session key. It always contains 43 characters.
 func GenerateOpaqueToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -591,8 +591,8 @@ func GenerateOpaqueToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// GenerateUserCode generates a random 8-character string for the
-// user code.
+// GenerateUserCode generates a random 9-character string of the form XXXX-XXXX
+// for the user code used in the Device Code flow.
 func GenerateUserCode() (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
