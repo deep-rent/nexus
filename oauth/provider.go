@@ -91,11 +91,6 @@ type Config struct {
 	// VerificationURI is the endpoint where users authorize device codes.
 	// Required if using the Device Authorization Grant.
 	VerificationURI string
-	// Issuer is the authorization server's issuer identifier.
-	// It is used to generate absolute URLs in the discovery endpoint.
-	// Optional; defaults to the configured signer's issuer if it is specified
-	// and a valid URL.
-	Issuer string
 }
 
 // Provider is the central component that manages OAuth 2.0 flows, token
@@ -167,18 +162,14 @@ func NewProvider(cfg Config) *Provider {
 		deviceCodeLifetime = DefaultDeviceCodeLifetime
 	}
 
-	issuer := cfg.Issuer
-	if issuer == "" {
-		// Fallback to signer's issuer if it is a valid absolute URL.
-		if iss := cfg.Signer.Issuer(); iss != "" {
-			if u, err := url.Parse(iss); err == nil {
-				if u.Scheme != "" && u.Host != "" {
-					issuer = iss
-				}
+	issuer := ""
+	if iss := strings.TrimRight(cfg.Signer.Issuer(), "/"); iss != "" {
+		if u, err := url.Parse(iss); err == nil {
+			if u.Scheme != "" && u.Host != "" {
+				issuer = iss
 			}
 		}
 	}
-	issuer = strings.TrimRight(issuer, "/")
 
 	return &Provider{
 		signer:               cfg.Signer,
@@ -242,11 +233,8 @@ func (p *Provider) Mount(r *router.Router) {
 // (RFC 8414) for endpoint discovery.
 func (p *Provider) WellKnown(e *router.Exchange) error {
 	if p.issuer == "" {
-		return &router.Error{
-			Status:      http.StatusNotFound,
-			Reason:      "not_found",
-			Description: "metadata endpoint is disabled",
-		}
+		e.Status(http.StatusNotFound)
+		return nil
 	}
 
 	grants := make([]string, 0, len(p.grants))
