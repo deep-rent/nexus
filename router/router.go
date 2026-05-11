@@ -58,6 +58,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/middleware"
@@ -177,6 +178,26 @@ type Error struct {
 // Error implements the standard [error] interface.
 func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
+}
+
+// Query puts the error information into query parameters for use in
+// redirections.
+// TODO: Implement unit tests.
+func (e *Error) Query() url.Values {
+	q := url.Values{}
+	if e.Status != 0 {
+		q.Set("error_status", strconv.Itoa(e.Status))
+	}
+	if e.Reason != "" {
+		q.Set("error_reason", e.Reason)
+	}
+	if e.Description != "" {
+		q.Set("error_description", e.Description)
+	}
+	if e.ID != "" {
+		q.Set("id", e.ID)
+	}
+	return q
 }
 
 // Exchange acts as a context object for a single HTTP request/response cycle.
