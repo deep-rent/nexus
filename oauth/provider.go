@@ -1208,25 +1208,28 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 
 	e.SetHeader("Location", authURL)
 	e.Status(http.StatusFound)
+
 	return nil
 }
 
 // ExternalCallback handles the redirect from an external identity provider,
 // verifies the state, exchanges credentials for an external identity, and
 // establishes a local session.
+//
+// If a protocol or server error occurs during the exchange, the user-agent
+// is redirected back to the configured login portal with the error details
+// appended as query parameters.
 func (p *Provider) ExternalCallback(e *router.Exchange) error {
 	err := p.externalCallback(e)
 	if v, ok := errors.AsType[*router.Error](err); ok {
 		u := *p.loginTerminalURI
 		q := u.Query()
-		params := v.Query()
-		for key := range params {
-			q.Set(key, params.Get(key))
-		}
+		q.Set("error_reason", v.Reason)
+		q.Set("error_description", v.Description)
 		u.RawQuery = q.Encode()
 
 		e.SetHeader("Location", u.String())
-		e.Status(http.StatusFound)
+		e.Status(v.Status)
 		return nil
 	}
 
