@@ -35,6 +35,7 @@ const (
 	DefaultAuthCodeLifetime     = 10 * time.Minute
 )
 
+// Config holds the configuration options for an OAuth 2.0 Provider.
 type Config struct {
 	Signer               jwt.Signer
 	Verifier             jwt.Verifier[*auth.Claims]
@@ -48,6 +49,8 @@ type Config struct {
 	AuthCodeLifetime     time.Duration
 }
 
+// Provider is the central component that manages OAuth 2.0 flows, token
+// issuance, and validation.
 type Provider struct {
 	signer               jwt.Signer
 	verifier             jwt.Verifier[*auth.Claims]
@@ -62,6 +65,7 @@ type Provider struct {
 	authCodeLifetime     time.Duration
 }
 
+// NewProvider creates a new Provider with the specified configuration.
 func NewProvider(cfg Config) *Provider {
 	if cfg.Signer == nil {
 		panic("oauth: signer is required")
@@ -122,6 +126,7 @@ func NewProvider(cfg Config) *Provider {
 	}
 }
 
+// Register adds a new grant type handler to the provider.
 func (p *Provider) Register(grant Grant) { p.grants[grant.Type()] = grant }
 
 // Mount registers the OAuth 2.0 endpoints onto the provided router.
@@ -135,10 +140,12 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST /introspect", p.Introspect)
 }
 
+// Authorize handles the authorization endpoint requests.
 func (p *Provider) Authorize(e *router.Exchange) error {
 	return wrap(e, p.authorize)
 }
 
+// authorize contains the logic for the authorization endpoint.
 func (p *Provider) authorize(e *router.Exchange) error {
 	data := e.Query()
 
@@ -322,17 +329,19 @@ func (p *Provider) authorize(e *router.Exchange) error {
 	return e.RedirectTo(redirectURI, params, http.StatusFound)
 }
 
+// Token handles the token endpoint requests.
 func (p *Provider) Token(e *router.Exchange) error {
 	return wrap(e, p.token)
 }
 
+// token contains the logic for the token endpoint.
 func (p *Provider) token(e *router.Exchange) error {
 	pro, err := p.authenticate(e)
 	if err != nil {
 		return err
 	}
 
-	grantType := GrantType(pro.data.Get("grant_type"))
+	grantType := GrantType(pro.Get("grant_type"))
 	if grantType == "" {
 		return &Error{
 			Status:      http.StatusBadRequest,
@@ -377,12 +386,30 @@ func (p *Provider) token(e *router.Exchange) error {
 		e.Context(),
 		iss.Subject,
 	); err != nil {
+		p.logger.ErrorContext(
+			e.Context(),
+			"Failed to retrieve subject for claims",
+			slog.Any("error", err),
+		)
+		return &Error{
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
+			Description: "failed to retrieve subject",
+		}
 	} else if sub != nil {
 		claims.Sub = sub.ID()
 		claims.Roles = sub.Roles()
 	} else {
-		// TODO: Failed to retrieve subject for claims. Which error should
-		// we return?
+		p.logger.ErrorContext(
+			e.Context(),
+			"Subject not found for claims",
+			slog.String("subject", iss.Subject),
+		)
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidGrant,
+			Description: "subject not found",
+		}
 	}
 
 	token, err := p.signer.Sign(claims)
@@ -525,10 +552,12 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	}, nil
 }
 
+// Revoke handles token revocation requests.
 func (p *Provider) Revoke(e *router.Exchange) error {
 	return wrap(e, p.revoke)
 }
 
+// revoke contains the logic for token revocation.
 func (p *Provider) revoke(e *router.Exchange) error {
 	pro, err := p.authenticate(e)
 	if err != nil {
@@ -556,10 +585,12 @@ func (p *Provider) revoke(e *router.Exchange) error {
 	return nil
 }
 
+// Login handles the resource owner authentication and establishes a session.
 func (p *Provider) Login(e *router.Exchange) error {
 	return wrap(e, p.login)
 }
 
+// login contains the logic for resource owner authentication.
 func (p *Provider) login(e *router.Exchange) error {
 	var req LoginRequest
 	if err := e.BindJSON(&req); err != nil {
@@ -615,8 +646,8 @@ func (p *Provider) login(e *router.Exchange) error {
 		)
 
 		return &Error{
-			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeAccessDenied,
+			Status:      http.StatusInternalServerError,
+			Code:        ErrorCodeServerError,
 			Description: "failed to create subject session",
 		}
 	}
@@ -626,6 +657,7 @@ func (p *Provider) login(e *router.Exchange) error {
 	return nil
 }
 
+// Logout terminates the resource owner's session.
 func (p *Provider) Logout(e *router.Exchange) error {
 	cookie, err := e.Cookie(p.sessionCookieName)
 	if err == nil && cookie.Value != "" {
@@ -658,10 +690,12 @@ func (p *Provider) cookie(key string) *http.Cookie {
 	return c
 }
 
+// Introspect handles the token introspection endpoint requests.
 func (p *Provider) Introspect(e *router.Exchange) error {
 	return wrap(e, p.introspect)
 }
 
+// introspect contains the logic for the token introspection endpoint.
 func (p *Provider) introspect(e *router.Exchange) error {
 	pro, err := p.authenticate(e)
 	if err != nil {
@@ -703,6 +737,8 @@ func (p *Provider) introspect(e *router.Exchange) error {
 	return e.JSON(http.StatusOK, res)
 }
 
+// wrap executes the handler and translates any returned [*Error] into an HTTP
+// JSON response using the error's defined status code.
 func wrap(e *router.Exchange, handler func(*router.Exchange) error) error {
 	err := handler(e)
 	if v, ok := errors.AsType[*Error](err); ok {
