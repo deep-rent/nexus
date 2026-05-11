@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package oauth implements the core protocols for an OAuth 2.0 authorization
-// server.
+// Package oauth implements the core protocols for an OAuth 2.0 (RFC 6749)
+// authorization server.
 //
 // The package provides a flexible and extensible framework for issuing access
 // tokens to clients. It abstracts the complexity of the OAuth 2.0 flows,
