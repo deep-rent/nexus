@@ -214,7 +214,7 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST "+pathToken, p.Token)
 	r.HandleFunc("POST "+pathRevoke, p.Revoke)
 
-	if p.Supports(GrantTypeDeviceCode) {
+	if p.verificationURI != "" && p.Supports(GrantTypeDeviceCode) {
 		r.HandleFunc("POST "+pathDeviceAuthorization, p.DeviceAuthorization)
 	}
 
