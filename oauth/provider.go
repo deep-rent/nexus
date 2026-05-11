@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -481,11 +482,20 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			Description: "missing redirect uri",
 		}
 	}
-	if !client.VerifyRedirectURI(redirectURI) {
+	u, err := url.Parse(redirectURI)
+	if err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidRequest,
 			Description: "invalid redirect uri",
+		}
+	}
+
+	if !client.VerifyRedirectURI(redirectURI) {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidRequest,
+			Description: "redirect uri not allowed",
 		}
 	}
 
@@ -496,15 +506,16 @@ func (p *Provider) authorize(e *router.Exchange) error {
 	codeChallengeMethod := data.Get("code_challenge_method")
 
 	fail := func(code, desc string) error {
-		params := url.Values{}
-		params.Set("error", code)
-		params.Set("error_description", desc)
+		q := u.Query()
+		q.Set("error", code)
+		q.Set("error_description", desc)
 		// RFC 6749 Section 4.1.2.1: The state parameter is REQUIRED if it
 		// was present in the client authorization request.
 		if state != "" {
-			params.Set("state", state)
+			q.Set("state", state)
 		}
-		return e.RedirectTo(redirectURI, params, http.StatusFound)
+		u.RawQuery = q.Encode()
+		return e.Redirect(u.String(), http.StatusFound)
 	}
 
 	switch {
@@ -614,13 +625,14 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		}
 	}
 
-	params := url.Values{}
-	params.Set("code", code)
+	q := u.Query()
+	q.Set("code", code)
 	if state != "" {
-		params.Set("state", state)
+		q.Set("state", state)
 	}
+	u.RawQuery = q.Encode()
 
-	return e.RedirectTo(redirectURI, params, http.StatusFound)
+	return e.Redirect(u.String(), http.StatusFound)
 }
 
 // Token handles requests to the token endpoint (RFC 6749 Section 3.2).
@@ -1116,7 +1128,9 @@ func (p *Provider) Login(e *router.Exchange) error {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+
 	e.NoContent()
+
 	return nil
 }
 
@@ -1224,12 +1238,17 @@ func (p *Provider) ExternalCallback(e *router.Exchange) error {
 	if v, ok := errors.AsType[*router.Error](err); ok {
 		u := *p.loginTerminalURI
 		q := u.Query()
+		q.Set("error_status", strconv.Itoa(v.Status))
 		q.Set("error_reason", v.Reason)
 		q.Set("error_description", v.Description)
+		if v.ID != "" {
+			q.Set("error_id", v.ID)
+		}
 		u.RawQuery = q.Encode()
 
 		e.SetHeader("Location", u.String())
 		e.Status(v.Status)
+
 		return nil
 	}
 
@@ -1278,9 +1297,12 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 
 	identity, err := idp.Process(e.Context(), e.R)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
-			"External exchange failed",
+			"Failed to process external exchange",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1288,6 +1310,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 			Status:      http.StatusUnauthorized,
 			Reason:      auth.ReasonAuthenticationFailed,
 			Description: "failed to exchange external credentials",
+			ID:          id,
 		}
 	}
 
@@ -1297,9 +1320,12 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 		identity,
 	)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"External subject lookup failed",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1307,6 +1333,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonValidationFailed,
 			Description: "failed to lookup subject",
+			ID:          id,
 		}
 	}
 	if sub == nil {
@@ -1319,9 +1346,12 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 
 	key, err := p.generateOpaqueToken()
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate session key",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1329,13 +1359,17 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to generate session key",
+			ID:          id,
 		}
 	}
 
 	if err := p.subjects.CreateSession(e.Context(), key, sub.ID()); err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to create subject session",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1343,6 +1377,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to create subject session",
+			ID:          id,
 		}
 	}
 
