@@ -1077,7 +1077,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		UserCode:   userCode,
 		ClientID:   pro.Client.ID(),
 		Scope:      scope,
-		Status:     "pending",
+		Status:     DeviceCodeStatusPending,
 		ExpiresAt:  expiresAt,
 	}); err != nil {
 		id := router.ErrorID()
