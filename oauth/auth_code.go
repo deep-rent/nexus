@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/deep-rent/nexus/internal/pkce"
+	"github.com/deep-rent/nexus/router"
 )
 
 // authCodeGrant implements the [Grant] interface for the Authorization Code
@@ -68,9 +69,12 @@ func (g authCodeGrant) Authorize(
 	// Retrieve the authorization code state from the session store.
 	c, err := pro.Sessions.GetAuthCode(ctx, code)
 	if err != nil {
+		id := router.ErrorID()
+
 		pro.Logger.ErrorContext(
 			ctx,
 			"Failed to retrieve authorization code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -78,6 +82,7 @@ func (g authCodeGrant) Authorize(
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve authorization code",
+			ID:          id,
 		}
 	}
 
@@ -92,9 +97,12 @@ func (g authCodeGrant) Authorize(
 
 	// Delete the code immediately to prevent replay attacks.
 	if err := pro.Sessions.DeleteAuthCode(ctx, code); err != nil {
+		id := router.ErrorID()
+
 		pro.Logger.ErrorContext(
 			ctx,
 			"Failed to delete authorization code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -102,6 +110,7 @@ func (g authCodeGrant) Authorize(
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to delete authorization code",
+			ID:          id,
 		}
 	}
 

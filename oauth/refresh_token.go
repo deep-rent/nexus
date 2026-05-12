@@ -18,6 +18,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+
+	"github.com/deep-rent/nexus/router"
 )
 
 // refreshTokenGrant implements the [Grant] interface for token rotation.
@@ -53,15 +55,20 @@ func (g refreshTokenGrant) Authorize(
 	// Retrieve the refresh token details from the session store.
 	r, err := pro.Sessions.GetRefreshToken(ctx, token)
 	if err != nil {
+		id := router.ErrorID()
+
 		pro.Logger.ErrorContext(
 			ctx,
 			"Failed to retrieve refresh token",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
+
 		return nil, &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve refresh token",
+			ID:          id,
 		}
 	}
 
@@ -86,9 +93,12 @@ func (g refreshTokenGrant) Authorize(
 	// Revoke the old refresh token to ensure rotation security.
 	// New tokens are issued by the [Provider] later in the pipeline.
 	if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
+		id := router.ErrorID()
+
 		pro.Logger.ErrorContext(
 			ctx,
 			"Failed to revoke old refresh token",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -96,6 +106,7 @@ func (g refreshTokenGrant) Authorize(
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to revoke old refresh token",
+			ID:          id,
 		}
 	}
 

@@ -19,6 +19,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/deep-rent/nexus/router"
 )
 
 // deviceCodeGrant implements the [Grant] interface for the Device
@@ -56,15 +58,20 @@ func (g deviceCodeGrant) Authorize(
 
 	c, err := pro.Sessions.GetDeviceCode(ctx, code)
 	if err != nil {
+		id := router.ErrorID()
+
 		pro.Logger.ErrorContext(
 			ctx,
 			"Failed to retrieve device code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
+
 		return nil, &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve device code",
+			ID:          id,
 		}
 	}
 
@@ -92,40 +99,56 @@ func (g deviceCodeGrant) Authorize(
 		}
 	}
 
-	switch c.Status {
-	case "pending":
+	switch status := c.Status; status {
+	case DeviceCodeStatusPending:
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeAuthorizationPending,
 			Description: "authorization pending",
 		}
-	case "denied":
+	case DeviceCodeStatusDenied:
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeAccessDenied,
 			Description: "resource owner denied the request",
 		}
-	case "authorized":
+	case DeviceCodeStatusAuthorized:
 		// Proceed to token issuance below.
 	default:
+		id := router.ErrorID()
+
+		pro.Logger.ErrorContext(
+			ctx,
+			"Encountered an illegal device code code status",
+			slog.String("status", string(status)),
+			slog.String("error_id", id),
+			slog.Any("error", err),
+		)
+
 		return nil, &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
-			Description: "invalid device code status",
+			Description: "illegal device code status",
+			ID:          id,
 		}
 	}
 
 	// Delete the code immediately upon successful authorization to prevent reuse.
 	if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
+		id := router.ErrorID()
+
 		pro.Logger.ErrorContext(
 			ctx,
 			"Failed to delete device code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
+
 		return nil, &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to delete device code",
+			ID:          id,
 		}
 	}
 
