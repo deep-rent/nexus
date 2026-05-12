@@ -294,6 +294,10 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		}
 	}
 
+	if p.Supports(GrantTypeDeviceCode) && p.verificationURI == "" {
+		panic("oauth: verification uri is required for device code grant")
+	}
+
 	return p
 }
 
@@ -331,7 +335,7 @@ func (p *Provider) Mount(r *router.Router) {
 	r.HandleFunc("POST "+PathToken, p.Token)
 	r.HandleFunc("POST "+PathRevoke, p.Revoke)
 
-	if p.verificationURI != "" && p.Supports(GrantTypeDeviceCode) {
+	if p.Supports(GrantTypeDeviceCode) {
 		r.HandleFunc("POST "+PathDeviceAuthorization, p.DeviceAuthorization)
 	}
 
@@ -357,7 +361,7 @@ func (p *Provider) Mount(r *router.Router) {
 // (RFC 8414) for endpoint discovery.
 //
 // Note: This endpoint is only enabled if a valid URL issuer was specified by
-// the configured JWT signer.
+// the configured [jwt.Signer].
 //
 // The returned metadata dynamically includes endpoints for token revocation,
 // introspection, and device authorization only if the provider is correctly
@@ -403,9 +407,12 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 func (p *Provider) JWKS(e *router.Exchange) error {
 	raw, err := jwk.WriteSet(p.signer.KeySet())
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
-			"Failed to marshal JWKS",
+			"Failed to serialize JWKS",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -413,6 +420,7 @@ func (p *Provider) JWKS(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to generate jwks",
+			ID:          id,
 		}
 	}
 
@@ -420,6 +428,7 @@ func (p *Provider) JWKS(e *router.Exchange) error {
 	e.SetHeader("Cache-Control", "public, max-age=3600")
 	e.Status(http.StatusOK)
 	_, err = e.W.Write(raw)
+
 	return err
 }
 
@@ -450,9 +459,12 @@ func (p *Provider) authorize(e *router.Exchange) error {
 
 	client, err := p.clients.GetClient(e.Context(), clientID)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to retrieve client",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -460,6 +472,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve client",
+			ID:          id,
 		}
 	}
 
@@ -495,7 +508,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidRequest,
-			Description: "redirect uri not allowed",
+			Description: "redirect uri not allowed for client",
 		}
 	}
 
@@ -564,9 +577,12 @@ func (p *Provider) authorize(e *router.Exchange) error {
 	key := cookie.Value
 	sub, err := p.subjects.GetSubjectBySession(e.Context(), key)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to lookup subject by session",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -574,6 +590,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to lookup subject",
+			ID:          id,
 		}
 	}
 
@@ -586,9 +603,12 @@ func (p *Provider) authorize(e *router.Exchange) error {
 
 	code, err := p.generateOpaqueToken()
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate authorization code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -596,6 +616,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to generate authorization code",
+			ID:          id,
 		}
 	}
 
@@ -612,9 +633,12 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			Lifetime:            p.authCodeLifetime,
 		},
 	); err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to store authorization code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -622,6 +646,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to store authorization code",
+			ID:          id,
 		}
 	}
 
@@ -697,9 +722,12 @@ func (p *Provider) token(e *router.Exchange) error {
 		e.Context(),
 		iss.Subject,
 	); err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to retrieve subject for claims",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -707,6 +735,7 @@ func (p *Provider) token(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve subject",
+			ID:          id,
 		}
 	} else if sub != nil {
 		claims.Sub = sub.ID()
@@ -727,9 +756,12 @@ func (p *Provider) token(e *router.Exchange) error {
 
 	token, err := p.signer.Sign(claims)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to sign access token",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -737,6 +769,7 @@ func (p *Provider) token(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to mint access token",
+			ID:          id,
 		}
 	}
 
@@ -750,9 +783,12 @@ func (p *Provider) token(e *router.Exchange) error {
 	if iss.Refreshable {
 		token, err := p.generateOpaqueToken()
 		if err != nil {
+			id := router.ErrorID()
+
 			p.logger.ErrorContext(
 				e.Context(),
 				"Failed to generate refresh token",
+				slog.String("error_id", id),
 				slog.Any("error", err),
 			)
 
@@ -760,6 +796,7 @@ func (p *Provider) token(e *router.Exchange) error {
 				Status:      http.StatusInternalServerError,
 				Code:        ErrorCodeServerError,
 				Description: "failed to generate refresh token",
+				ID:          id,
 			}
 		}
 
@@ -771,9 +808,12 @@ func (p *Provider) token(e *router.Exchange) error {
 			Lifetime:  p.refreshTokenLifetime,
 		})
 		if err != nil {
+			id := router.ErrorID()
+
 			p.logger.ErrorContext(
 				e.Context(),
 				"Failed to save refresh token",
+				slog.String("error_id", id),
 				slog.Any("error", err),
 			)
 
@@ -781,6 +821,7 @@ func (p *Provider) token(e *router.Exchange) error {
 				Status:      http.StatusInternalServerError,
 				Code:        ErrorCodeServerError,
 				Description: "failed to save refresh token",
+				ID:          id,
 			}
 		}
 
@@ -827,9 +868,12 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 
 	client, err := p.clients.GetClient(e.Context(), clientID)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Client lookup failed",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -837,6 +881,7 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve client",
+			ID:          id,
 		}
 	}
 
@@ -911,9 +956,12 @@ func (p *Provider) revoke(e *router.Exchange) error {
 	// Validate token ownership before revocation per RFC 7009 Section 2.1
 	r, err := p.sessions.GetRefreshToken(e.Context(), token)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to retrieve refresh token during revocation",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -921,6 +969,7 @@ func (p *Provider) revoke(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to retrieve token",
+			ID:          id,
 		}
 	}
 	if r.Token == "" || r.ClientID != pro.Client.ID() {
@@ -957,11 +1006,8 @@ func (p *Provider) DeviceAuthorization(e *router.Exchange) error {
 // deviceAuthorization contains the logic for device authorization requests.
 func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 	if p.verificationURI == "" {
-		return &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "device authorization is not configured",
-		}
+		e.Status(http.StatusNotFound)
+		return nil
 	}
 
 	pro, err := p.authenticate(e)
@@ -979,29 +1025,39 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 
 	deviceCode, err := p.generateOpaqueToken()
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate device code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
+
 		return &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to generate device code",
+			ID:          id,
 		}
 	}
 
 	userCode, err := p.generateUserCode()
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate user code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
+
 		return &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to generate user code",
+			ID:          id,
 		}
 	}
 
@@ -1024,15 +1080,20 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		Status:     "pending",
 		ExpiresAt:  expiresAt,
 	}); err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to store device code",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
+
 		return &Error{
 			Status:      http.StatusInternalServerError,
 			Code:        ErrorCodeServerError,
 			Description: "failed to store device code",
+			ID:          id,
 		}
 	}
 
@@ -1071,9 +1132,12 @@ func (p *Provider) Login(e *router.Exchange) error {
 		cred.Password,
 	)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Subject authentication lookup failed",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1081,6 +1145,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to lookup subject",
+			ID:          id,
 		}
 	}
 	if sub == nil {
@@ -1093,9 +1158,12 @@ func (p *Provider) Login(e *router.Exchange) error {
 
 	key, err := p.generateOpaqueToken()
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate session key",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1103,13 +1171,17 @@ func (p *Provider) Login(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to generate session key",
+			ID:          id,
 		}
 	}
 
 	if err := p.subjects.CreateSession(e.Context(), key, sub.ID()); err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to create subject session",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1117,6 +1189,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to create subject session",
+			ID:          id,
 		}
 	}
 
@@ -1182,9 +1255,12 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 
 	state, err := p.generateOpaqueToken()
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate state",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1192,6 +1268,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to generate state",
+			ID:          id,
 		}
 	}
 
@@ -1207,9 +1284,12 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 
 	authURL, err := idp.AuthURL(e.Context(), state)
 	if err != nil {
+		id := router.ErrorID()
+
 		p.logger.ErrorContext(
 			e.Context(),
 			"Failed to generate auth url",
+			slog.String("error_id", id),
 			slog.Any("error", err),
 		)
 
@@ -1217,6 +1297,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 			Status:      http.StatusInternalServerError,
 			Reason:      router.ReasonServerError,
 			Description: "failed to initiate external login",
+			ID:          id,
 		}
 	}
 
