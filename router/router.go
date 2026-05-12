@@ -180,6 +180,12 @@ func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
 }
 
+// ErrorID generates a unique, string-based identifier intended for use
+// in the [Error.ID] field.
+//
+// This identifier helps correlate client-side error reports with server-side
+// logs, making it easier to trace the specific occurrence of an issue
+// through the system.
 func ErrorID() string {
 	return uuid.New().String()
 }
