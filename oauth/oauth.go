@@ -342,6 +342,9 @@ type Error struct {
 	// URI is an optional link to a web page providing further information about
 	// the error type.
 	URI string `json:"error_uri,omitempty"`
+	// ID is a trace identifier for the specific occurrence of the error.
+	// This field is not part of the specification.
+	ID string `json:"error_id,omitempty"`
 }
 
 // Error implements the standard [error] interface. It builds a formatted string
