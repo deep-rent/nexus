@@ -468,16 +468,11 @@ type VerifierOption func(*verifierConfig)
 
 // verifierConfig holds the configuration options for a [Verifier].
 type verifierConfig struct {
-	// issuers is the list of trusted issuers.
-	issuers []string
-	// audiences is the list of trusted audiences.
-	audiences []string
-	// leeway is the clock skew tolerance.
-	leeway time.Duration
-	// age is the maximum allowed token age.
-	age time.Duration
-	// now is the time source for validation.
-	now func() time.Time
+	issuers   []string         // Set of trusted issuers
+	audiences []string         // Set of trusted audiences
+	leeway    time.Duration    // Clock skew tolerance
+	age       time.Duration    // Maximum allowed token age
+	now       func() time.Time // Time source for temporal validation
 }
 
 // WithIssuers adds one or more trusted issuers to the verifier. If a token's
@@ -664,16 +659,24 @@ func encode(src []byte) []byte {
 }
 
 // Signer defines the interface for a configured, reusable JWT creator.
+// It encapsulates the cryptographic keys and standard claim configurations
+// needed to produce consistent, valid tokens.
 type Signer interface {
-	// Issuer returns the value of the "iss" claim included in tokens produced
-	// by this signer by default, or an empty string if it is omitted.
+	// Issuer returns the "iss" (Issuer) claim value that this signer applies
+	// to all tokens. Returns an empty string if the claim is not configured.
 	Issuer() string
-	// KeySet returns the JWKS containing the public keys corresponding to the
-	// private keys used by this signer. This is primarily used to expose a
-	// JWKS endpoint for external verification.
+	// KeySet returns the JSON Web Key Set (JWKS) containing the public keys
+	// that correspond to the private keys held by this signer. This enables
+	// consumers to verify signatures produced by this Signer.
 	KeySet() jwk.Set
-	// Sign applies the signer's configuration (issuer, audience, and temporal
-	// validity) directly to the mutable claims object, then signs it.
+	// Lifetime returns the default duration for which a produced token is
+	// considered valid. This value is used to calculate the "exp" (Expires At)
+	// claim during the signing process.
+	Lifetime() time.Duration
+	// Sign applies the signer's configuration directly claims object, then
+	// signs it to obtain the final signed JWS compact representation.
+	//
+	// It modifies the input claims object in-place before signing.
 	Sign(claims MutableClaims) ([]byte, error)
 }
 
@@ -682,16 +685,11 @@ type SignerOption func(*signerConfig)
 
 // signerConfig holds the configuration options for a [Signer].
 type signerConfig struct {
-	// iat determines if "iat" should be added automatically.
-	iat bool
-	// iss is the fixed issuer to set.
-	iss string
-	// aud is the fixed audience list to set.
-	aud []string
-	// ttl is the token lifetime for calculating "exp".
-	ttl time.Duration
-	// now is the time source for timestamping.
-	now func() time.Time
+	iat bool             // Whether or not to add the "iat" (Issued At) claim
+	iss string           // Fixed issuer to include
+	aud []string         // Fixed audience list to include
+	ttl time.Duration    // Token lifetime for calulating the expiration time
+	now func() time.Time // Time source for timestamping
 }
 
 // WithIssuedAt enables or disables automatic setting of the "iat" (Issued At)
@@ -792,6 +790,9 @@ func (s *signer) Issuer() string { return s.cfg.iss }
 
 // KeySet implements the [Signer] interface.
 func (s *signer) KeySet() jwk.Set { return s.set }
+
+// Lifetime implements the [Signer] interface.
+func (s *signer) Lifetime() time.Duration { return s.cfg.ttl }
 
 // Sign implements the [Signer] interface.
 func (s *signer) Sign(claims MutableClaims) ([]byte, error) {
