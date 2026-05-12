@@ -34,16 +34,16 @@ type authCodeGrant struct{}
 //
 // Pass the result to [NewProvider] using [WithGrant] to enable this grant.
 func AuthCodeGrant() Grant {
-	return &authCodeGrant{}
+	return authCodeGrant{}
 }
 
 // Type implements [Grant].
-func (g *authCodeGrant) Type() GrantType {
+func (g authCodeGrant) Type() GrantType {
 	return GrantTypeAuthorizationCode
 }
 
 // Authorize implements [Grant].
-func (g *authCodeGrant) Authorize(
+func (g authCodeGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
 ) (*Issuance, error) {

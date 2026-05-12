@@ -32,16 +32,16 @@ type deviceCodeGrant struct{}
 // Bear in mind that it requires the [Config.VerificationURI] option to be
 // specified.
 func DeviceCodeGrant() Grant {
-	return &deviceCodeGrant{}
+	return deviceCodeGrant{}
 }
 
 // Type implements [Grant].
-func (g *deviceCodeGrant) Type() GrantType {
+func (g deviceCodeGrant) Type() GrantType {
 	return GrantTypeDeviceCode
 }
 
 // Authorize implements [Grant].
-func (g *deviceCodeGrant) Authorize(
+func (g deviceCodeGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
 ) (*Issuance, error) {

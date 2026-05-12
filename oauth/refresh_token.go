@@ -28,16 +28,16 @@ type refreshTokenGrant struct{}
 //
 // Pass the result to [NewProvider] using [WithGrant] to enable this grant.
 func RefreshTokenGrant() Grant {
-	return &refreshTokenGrant{}
+	return refreshTokenGrant{}
 }
 
 // Type implements [Grant].
-func (g *refreshTokenGrant) Type() GrantType {
+func (g refreshTokenGrant) Type() GrantType {
 	return GrantTypeRefreshToken
 }
 
 // Authorize implements [Grant].
-func (g *refreshTokenGrant) Authorize(
+func (g refreshTokenGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
 ) (*Issuance, error) {

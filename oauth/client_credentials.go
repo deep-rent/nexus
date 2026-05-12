@@ -28,16 +28,16 @@ type clientCredentialsGrant struct{}
 //
 // Pass the result to [NewProvider] using [WithGrant] to enable this grant.
 func ClientCredentialsGrant() Grant {
-	return &clientCredentialsGrant{}
+	return clientCredentialsGrant{}
 }
 
 // Type implements [Grant].
-func (g *clientCredentialsGrant) Type() GrantType {
+func (g clientCredentialsGrant) Type() GrantType {
 	return GrantTypeClientCredentials
 }
 
 // Authorize implements [Grant].
-func (g *clientCredentialsGrant) Authorize(
+func (g clientCredentialsGrant) Authorize(
 	ctx context.Context,
 	pro *Proposal,
 ) (*Issuance, error) {
