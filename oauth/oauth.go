@@ -225,6 +225,26 @@ type RefreshToken struct {
 	Lifetime time.Duration
 }
 
+// DeviceCodeStatus represents the state of a device authorization request
+// during the polling process of a Device Authorization Grant.
+type DeviceCodeStatus string
+
+const (
+	// DeviceCodeStatusPending indicates the authorization request is still
+	// active and the user has not yet completed the verification steps.
+	// The client should continue to poll the token endpoint.
+	DeviceCodeStatusPending DeviceCodeStatus = "pending"
+
+	// DeviceCodeStatusDenied indicates the authorization request was rejected by
+	// the user or the authorization server. The client must stop polling.
+	DeviceCodeStatusDenied DeviceCodeStatus = "denied"
+
+	// DeviceCodeStatusAuthorized indicates the user has successfully approved
+	// the request. The client can now proceed to use the device code to
+	// obtain tokens.
+	DeviceCodeStatusAuthorized DeviceCodeStatus = "authorized"
+)
+
 // DeviceCode holds the state bound to a device authorization request.
 //
 // Unlike authorization codes, device codes are polled by the client over a
@@ -243,7 +263,7 @@ type DeviceCode struct {
 	// Scope is the list of permissions approved by the resource owner.
 	Scope string
 	// Status indicates the current state: "pending", "authorized", or "denied".
-	Status string
+	Status DeviceCodeStatus
 	// ExpiresAt defines when this code is no longer valid.
 	ExpiresAt time.Time
 }
