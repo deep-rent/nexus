@@ -824,3 +824,15 @@ func TestMiddleware_Connectivity(t *testing.T) {
 		})
 	}
 }
+
+func TestErrorID(t *testing.T) {
+	id := router.ErrorID()
+
+	if id == "" {
+		t.Error("ErrorID() returned an empty string")
+	}
+
+	if id == router.ErrorID() {
+		t.Error("ErrorID() returned non-unique strings")
+	}
+}
