@@ -38,9 +38,6 @@ const (
 	// DefaultStateCookieName is the default name for the cookie used to
 	// store the OAuth 2.0 state parameter during external login flows.
 	DefaultStateCookieName = "oauth_state"
-	// DefaultAccessTokenLifetime is the default duration for which an
-	// access token is valid.
-	DefaultAccessTokenLifetime = 5 * time.Minute
 	// DefaultRefreshTokenLifetime is the default duration for which a
 	// refresh token is valid.
 	DefaultRefreshTokenLifetime = 7 * 24 * time.Hour
@@ -58,64 +55,104 @@ const (
 // Config holds the configuration options for an OAuth 2.0 Provider.
 type Config struct {
 	// Signer is the JWT signer used to issue access tokens.
+	//
 	// This option is mandatory.
 	Signer jwt.Signer
-	// Verifier is the JWT verifier used to validate tokens.
-	// Optional; if omitted, token introspection will not be deactivated.
+	// Verifier is the JWT verifier used to validate access tokens during
+	// introspection requests.
+	//
+	// Optional; if omitted, token introspection will be deactivated.
 	Verifier jwt.Verifier[*auth.Claims]
 	// Clients provides access to registered client applications.
+	//
 	// This option is mandatory.
 	Clients ClientStore
-	// Sessions provides access to authorization artifacts (codes, refresh tokens).
+	// Sessions provides access to authorization artifacts.
+	//
 	// This option is mandatory.
 	Sessions SessionStore
 	// Subjects provides access to resource owner identities and sessions.
+	//
 	// This option is mandatory.
 	Subjects SubjectStore
 	// Logger is the structured logger used by the provider.
 	// Optional; defaults to [slog.Default].
 	Logger *slog.Logger
 	// SessionCookieName is the name of the session cookie.
+	//
 	// Optional; defaults to [DefaultSessionCookieName].
 	SessionCookieName string
 	// StateCookieName is the name of the cookie used to store the state
-	// parameter during external login flows.
+	// parameter during external login flows. Only used when identity providers
+	// are registered.
+	//
 	// Optional; defaults to [DefaultStateCookieName].
 	StateCookieName string
-	// AccessTokenLifetime defines how long issued access tokens remain valid.
-	// Optional; defaults to [DefaultAccessTokenLifetime].
-	AccessTokenLifetime time.Duration
 	// RefreshTokenLifetime defines how long issued refresh tokens remain valid.
+	// Only used when [GrantTypeRefreshToken] is enabled.
+	//
 	// Optional; defaults to [DefaultRefreshTokenLifetime].
 	RefreshTokenLifetime time.Duration
 	// AuthCodeLifetime defines how long issued authorization codes remain valid.
+	// Only used when [GrantTypeAuthorizationCode] is enabled.
+	//
 	// Optional; defaults to [DefaultAuthCodeLifetime].
 	AuthCodeLifetime time.Duration
 	// DeviceCodeLifetime defines how long issued device codes remain valid.
+	//
 	// Optional; defaults to [DefaultDeviceCodeLifetime].
 	DeviceCodeLifetime time.Duration
 	// Realm is the authentication realm name for challenges.
+	//
 	// Optional; defaults to [DefaultRealm].
 	Realm string
 	// VerificationURI is the user-facing URL where resource owners enter the
-	// user code to authorize a device. This field is mandatory if the
-	// [GrantTypeDeviceCode] is registered via [WithGrant].
+	// user code to authorize a device.
+	//
+	// Required if [GrantTypeDeviceCode] is enabled.
 	VerificationURI string
 	// LoginTerminalURI is the frontend URL where users are directed to log in.
 	// This is used for redirects during external auth failures or session
-	// timeouts. Required if identity providers are configured.
+	// timeouts.
+	//
+	// Required if identity providers are configured.
 	LoginTerminalURI string
 	// LoginRedirectURI is the URL where resource owners are redirected after
-	// a successful social login flow. Required if identity providers are
-	// configured.
+	// a successful social login flow.
+	//
+	// Required if identity providers are configured.
 	LoginRedirectURI string
-	// GenerateOpaqueToken overrides the default string generator used for
-	// authorization codes, refresh tokens, device codes, and session keys.
-	// Defaults to [GenerateOpaqueToken].
-	GenerateOpaqueToken func() (string, error)
+	// GenerateSessionKey overrides the default string generator used for
+	// session keys for login requests.
+	//
+	// Defaults to [GenerateSessionKey].
+	GenerateSessionKey func() (string, error)
+	// GenerateAuthCode overrides the default string generator used for
+	// authorization codes. Only used when [GrantTypeRefreshToken] is enabled.
+	//
+	// Optional; defaults to [GenerateAuthCode].
+	GenerateAuthCode func() (string, error)
+	// GenerateRefreshToken overrides the default string generator used for
+	// refresh tokens. Only used when [GrantTypeRefreshToken] is enabled.
+	//
+	// Optional; defaults to [GenerateRefreshToken].
+	GenerateRefreshToken func() (string, error)
+	// GenerateDeviceCode overrides the default string generator used for
+	// device codes. Only used when [GrantTypeDeviceCode] is enabled.
+	//
+	// Optional; defaults to [GenerateDeviceCode].
+	GenerateDeviceCode func() (string, error)
 	// GenerateUserCode overrides the default string generator for device flow
-	// user codes. Defaults to [GenerateUserCode].
+	// user codes. Only used when [GrantTypeDeviceCode] is enabled.
+	//
+	// Optional; defaults to [GenerateUserCode].
 	GenerateUserCode func() (string, error)
+	// GenerateState overrides the default string generator for state nonces
+	// used in external login requests. Only used when identity providers are
+	// registered.
+	//
+	// Optional; defaults to [GenerateState].
+	GenerateState func() (string, error)
 }
 
 // Option defines a functional configuration pattern for a [Provider].
@@ -167,8 +204,12 @@ type Provider struct {
 	issuer               string
 	loginTerminalURI     *url.URL
 	loginRedirectURI     string
-	generateOpaqueToken  func() (string, error)
+	generateSessionKey   func() (string, error)
+	generateAuthCode     func() (string, error)
+	generateRefreshToken func() (string, error)
+	generateDeviceCode   func() (string, error)
 	generateUserCode     func() (string, error)
+	generateState        func() (string, error)
 }
 
 // NewProvider creates a new OAuth 2.0 provider with the specified
@@ -189,46 +230,6 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		panic("oauth: subject store is required")
 	}
 
-	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	sessionCookieName := cfg.SessionCookieName
-	if sessionCookieName == "" {
-		sessionCookieName = DefaultSessionCookieName
-	}
-
-	stateCookieName := cfg.StateCookieName
-	if stateCookieName == "" {
-		stateCookieName = DefaultStateCookieName
-	}
-
-	accessTokenLifetime := cfg.AccessTokenLifetime
-	if accessTokenLifetime <= 0 {
-		accessTokenLifetime = DefaultAccessTokenLifetime
-	}
-
-	refreshTokenLifetime := cfg.RefreshTokenLifetime
-	if refreshTokenLifetime <= 0 {
-		refreshTokenLifetime = DefaultRefreshTokenLifetime
-	}
-
-	authCodeLifetime := cfg.AuthCodeLifetime
-	if authCodeLifetime <= 0 {
-		authCodeLifetime = DefaultAuthCodeLifetime
-	}
-
-	deviceCodeLifetime := cfg.DeviceCodeLifetime
-	if deviceCodeLifetime <= 0 {
-		deviceCodeLifetime = DefaultDeviceCodeLifetime
-	}
-
-	realm := cfg.Realm
-	if realm == "" {
-		realm = DefaultRealm
-	}
-
 	issuer := ""
 	if iss := strings.TrimRight(cfg.Signer.Issuer(), "/"); iss != "" {
 		if u, err := url.Parse(iss); err == nil {
@@ -238,64 +239,119 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		}
 	}
 
-	generateOpaqueToken := cfg.GenerateOpaqueToken
-	if generateOpaqueToken == nil {
-		generateOpaqueToken = GenerateOpaqueToken
-	}
-
-	generateUserCode := cfg.GenerateUserCode
-	if generateUserCode == nil {
-		generateUserCode = GenerateUserCode
-	}
-
-	var loginTerminalURI *url.URL
-	if cfg.LoginTerminalURI != "" {
-		u, err := url.Parse(cfg.LoginTerminalURI)
-		if err != nil {
-			panic(fmt.Errorf("oauth: invalid login terminal uri: %w", err))
-		}
-		loginTerminalURI = u
-	}
-
 	p := &Provider{
-		signer:               cfg.Signer,
-		verifier:             cfg.Verifier,
-		clients:              cfg.Clients,
-		sessions:             cfg.Sessions,
-		subjects:             cfg.Subjects,
-		grants:               make(map[GrantType]Grant),
-		identityProviders:    make(map[string]IdentityProvider),
-		logger:               logger,
-		sessionCookieName:    sessionCookieName,
-		stateCookieName:      stateCookieName,
-		accessTokenLifetime:  accessTokenLifetime,
-		refreshTokenLifetime: refreshTokenLifetime,
-		authCodeLifetime:     authCodeLifetime,
-		deviceCodeLifetime:   deviceCodeLifetime,
-		realm:                realm,
-		verificationURI:      cfg.VerificationURI,
-		loginTerminalURI:     loginTerminalURI,
-		loginRedirectURI:     cfg.LoginRedirectURI,
-		issuer:               issuer,
-		generateOpaqueToken:  generateOpaqueToken,
-		generateUserCode:     generateUserCode,
+		signer:            cfg.Signer,
+		verifier:          cfg.Verifier,
+		clients:           cfg.Clients,
+		sessions:          cfg.Sessions,
+		subjects:          cfg.Subjects,
+		grants:            make(map[GrantType]Grant),
+		identityProviders: make(map[string]IdentityProvider),
+		issuer:            issuer,
 	}
 
 	for _, opt := range opts {
 		opt(p)
 	}
 
+	if logger := cfg.Logger; logger != nil {
+		p.logger = logger
+	} else {
+		p.logger = slog.Default()
+	}
+
+	if key := cfg.SessionCookieName; key != "" {
+		p.sessionCookieName = key
+	} else {
+		p.sessionCookieName = DefaultSessionCookieName
+	}
+
+	if realm := cfg.Realm; realm != "" {
+		p.realm = realm
+	} else {
+		p.realm = DefaultRealm
+	}
+
+	if gen := cfg.GenerateSessionKey; gen != nil {
+		p.generateSessionKey = gen
+	} else {
+		p.generateSessionKey = GenerateSessionKey
+	}
+
 	if len(p.identityProviders) != 0 {
-		if p.loginTerminalURI == nil {
+		if uri := cfg.LoginTerminalURI; uri != "" {
+			u, err := url.Parse(uri)
+			if err != nil {
+				panic(fmt.Errorf("oauth: invalid login terminal uri: %w", err))
+			}
+			p.loginTerminalURI = u
+		} else {
 			panic("oauth: login terminal uri is required for identity providers")
 		}
-		if p.loginRedirectURI == "" {
+		if uri := cfg.LoginRedirectURI; uri != "" {
+			p.loginRedirectURI = uri
+		} else {
 			panic("oauth: login redirect uri is required for identity providers")
+		}
+		if key := cfg.StateCookieName; key != "" {
+			p.stateCookieName = key
+		} else {
+			p.stateCookieName = DefaultStateCookieName
+		}
+
+		if gen := cfg.GenerateState; gen != nil {
+			p.generateState = gen
+		} else {
+			p.generateState = GenerateState
 		}
 	}
 
-	if p.Supports(GrantTypeDeviceCode) && p.verificationURI == "" {
-		panic("oauth: verification uri is required for device code grant")
+	if p.Supports(GrantTypeAuthorizationCode) {
+		if ttl := cfg.AuthCodeLifetime; ttl > 0 {
+			p.authCodeLifetime = ttl
+		} else {
+			p.authCodeLifetime = DefaultAuthCodeLifetime
+		}
+	}
+
+	if p.Supports(GrantTypeRefreshToken) {
+		if ttl := cfg.RefreshTokenLifetime; ttl > 0 {
+			p.refreshTokenLifetime = ttl
+		} else {
+			p.refreshTokenLifetime = DefaultRefreshTokenLifetime
+		}
+
+		if gen := cfg.GenerateRefreshToken; gen != nil {
+			p.generateRefreshToken = gen
+		} else {
+			p.generateRefreshToken = GenerateRefreshToken
+		}
+	}
+
+	if p.Supports(GrantTypeDeviceCode) {
+		if uri := cfg.VerificationURI; uri != "" {
+			p.verificationURI = uri
+		} else {
+			panic("oauth: verification uri is required for device flow")
+		}
+
+		if ttl := cfg.DeviceCodeLifetime; ttl > 0 {
+			p.deviceCodeLifetime = ttl
+		} else {
+			p.deviceCodeLifetime = DefaultDeviceCodeLifetime
+		}
+
+		if gen := cfg.GenerateDeviceCode; gen != nil {
+			p.generateDeviceCode = gen
+		} else {
+			p.generateDeviceCode = GenerateDeviceCode
+		}
+
+		if gen := cfg.GenerateUserCode; gen != nil {
+			p.generateUserCode = gen
+		} else {
+			p.generateUserCode = GenerateUserCode
+		}
 	}
 
 	return p
@@ -601,7 +657,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
-	code, err := p.generateOpaqueToken()
+	code, err := p.generateAuthCode()
 	if err != nil {
 		id := router.ErrorID()
 
@@ -773,15 +829,17 @@ func (p *Provider) token(e *router.Exchange) error {
 		}
 	}
 
+	expiresIn := uint64(p.signer.Lifetime().Seconds())
+
 	res := TokenResponse{
 		AccessToken: string(token),
 		TokenType:   auth.Scheme,
-		ExpiresIn:   int(p.accessTokenLifetime.Seconds()),
+		ExpiresIn:   expiresIn,
 		Scope:       iss.Scope,
 	}
 
-	if iss.Refreshable {
-		token, err := p.generateOpaqueToken()
+	if iss.Refreshable && p.Supports(GrantTypeRefreshToken) {
+		token, err := p.generateRefreshToken()
 		if err != nil {
 			id := router.ErrorID()
 
@@ -1023,7 +1081,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	deviceCode, err := p.generateOpaqueToken()
+	deviceCode, err := p.generateDeviceCode()
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1156,7 +1214,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 		}
 	}
 
-	key, err := p.generateOpaqueToken()
+	key, err := p.generateSessionKey()
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1253,7 +1311,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 		return nil
 	}
 
-	state, err := p.generateOpaqueToken()
+	state, err := p.generateState()
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1425,7 +1483,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 		}
 	}
 
-	key, err := p.generateOpaqueToken()
+	key, err := p.generateSessionKey()
 	if err != nil {
 		id := router.ErrorID()
 
