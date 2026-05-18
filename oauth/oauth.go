@@ -549,6 +549,24 @@ func (r *LoginRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*LoginRequest)(nil)
 
+// BasePath is the common prefix for all OAuth 2.0 endpoints.
+const BasePath = "/oauth"
+
+// Path constants define the specific endpoints managed by the [Provider].
+const (
+	PathAuthorize           = BasePath + "/authorize"
+	PathToken               = BasePath + "/token"
+	PathRevoke              = BasePath + "/revoke"
+	PathDeviceAuthorization = BasePath + "/device_authorization"
+	PathLogin               = BasePath + "/login"
+	PathLogout              = BasePath + "/logout"
+	PathIntrospect          = BasePath + "/introspect"
+	PathWellKnown           = BasePath + "/.well-known/oauth-authorization-server"
+	PathKeySet              = BasePath + "/jwks.json"
+	PathExternalLogin       = BasePath + "/login/{provider}"
+	PathExternalCallback    = BasePath + "/callback/{provider}"
+)
+
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
 //
 // Patterns support the '*' wildcard for matching segments. For example:
