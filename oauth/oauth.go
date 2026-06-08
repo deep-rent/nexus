@@ -201,8 +201,8 @@ type AuthCode struct {
 	CodeChallenge string
 	// CodeChallengeMethod is the hashing algorithm used for PKCE validation.
 	CodeChallengeMethod string
-	// Lifetime defines when this code expires.
-	Lifetime time.Duration
+	// ExpiresAt defines when this code expires.
+	ExpiresAt time.Time
 }
 
 // RefreshToken holds the state bound to a refresh token.
@@ -221,8 +221,8 @@ type RefreshToken struct {
 	// Scope represents the permissions granted for the duration of
 	// this session.
 	Scope string
-	// Lifetime defines the expiration window of this specific token.
-	Lifetime time.Duration
+	// ExpiresAt defines when this specific token expires.
+	ExpiresAt time.Time
 }
 
 // DeviceCodeStatus represents the state of a device authorization request
@@ -549,6 +549,21 @@ const (
 	PathExternalCallback    = "/callback/{provider}"
 )
 
+// AuthorizationServerMetadata represents the OAuth 2.0 Authorization Server
+// Metadata payload (RFC 8414).
+type AuthorizationServerMetadata struct {
+	Issuer                            string   `json:"issuer"`
+	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
+	TokenEndpoint                     string   `json:"token_endpoint"`
+	KeySetURI                         string   `json:"jwks_uri,omitempty"`
+	IntrospectionEndpoint             string   `json:"introspection_endpoint,omitempty"`
+	RevocationEndpoint                string   `json:"revocation_endpoint,omitempty"`
+	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint,omitempty"`
+	GrantTypesSupported               []string `json:"grant_types_supported,omitempty"`
+	ResponseTypesSupported            []string `json:"response_types_supported,omitempty"`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+}
+
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
 //
 // Patterns support the '*' wildcard for matching segments. For example:
@@ -561,16 +576,28 @@ const (
 // interface.
 func VerifyRedirectURI(uri string, whitelist []string) bool {
 	for _, pattern := range whitelist {
-		if match(uri, pattern) {
+		if matchRedirectURI(uri, pattern) {
 			return true
 		}
 	}
 	return false
 }
 
-// match checks if a string matches a wildcard pattern.
-func match(s, pattern string) bool {
-	// If no wildcard, do a direct comparison.
+func splitHostPort(hostPort string) (host, port string) {
+	kolon := strings.LastIndex(hostPort, ":")
+	if kolon == -1 {
+		return hostPort, ""
+	}
+	if strings.HasPrefix(hostPort, "[") {
+		endBracket := strings.Index(hostPort, "]")
+		if endBracket != -1 && kolon < endBracket {
+			return hostPort, ""
+		}
+	}
+	return hostPort[:kolon], hostPort[kolon+1:]
+}
+
+func matchSegment(s, pattern string) bool {
 	if !strings.Contains(pattern, "*") {
 		return s == pattern
 	}
@@ -580,24 +607,74 @@ func match(s, pattern string) bool {
 		return true
 	}
 
-	// Ensure the string starts with the first part of the pattern.
 	if !strings.HasPrefix(s, parts[0]) {
 		return false
 	}
 
 	p := s[len(parts[0]):]
 	for i := 1; i < len(parts); i++ {
-		// If it's the last part, it must be a suffix.
 		if i == len(parts)-1 {
 			return strings.HasSuffix(p, parts[i])
 		}
 
-		// Find the next segment.
 		idx := strings.Index(p, parts[i])
 		if idx == -1 {
 			return false
 		}
 		p = p[idx+len(parts[i]):]
+	}
+
+	return true
+}
+
+func matchRedirectURI(uri, pattern string) bool {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return false
+	}
+
+	// Pre-process pattern for wildcard port to allow url.Parse to succeed.
+	hasWildcardPort := false
+	parsePattern := pattern
+	if strings.Contains(pattern, ":*") {
+		hasWildcardPort = true
+		parsePattern = strings.ReplaceAll(pattern, ":*", ":0")
+	}
+
+	p, err := url.Parse(parsePattern)
+	if err != nil {
+		return false
+	}
+
+	// 1. Match Scheme
+	if u.Scheme != p.Scheme {
+		return false
+	}
+
+	// 2. Match Host and Port
+	uHost, uPort := splitHostPort(u.Host)
+	pHost, pPort := splitHostPort(p.Host)
+
+	if hasWildcardPort {
+		pPort = "*"
+	}
+
+	if !matchSegment(uHost, pHost) {
+		return false
+	}
+
+	if pPort != "*" && uPort != pPort {
+		return false
+	}
+
+	// 3. Match Path
+	if !matchSegment(u.Path, p.Path) {
+		return false
+	}
+
+	// 4. Match Query
+	if p.RawQuery != "" && !matchSegment(u.RawQuery, p.RawQuery) {
+		return false
 	}
 
 	return true
