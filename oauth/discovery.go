@@ -15,17 +15,50 @@
 package oauth
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/deep-rent/nexus/router"
 )
 
 type DiscoveryConfig struct {
-
+	Issuer                  string
+	BaseURI                 string
+	AuthorizationPath       string
+	TokenPath               string
+	KeySetPath              string
+	IntrospectionPath       string
+	RevocationPath          string
+	DeviceAuthorizationPath string
+	GrantTypesSupported     []string
+	MaxAge                  int
 }
 
 type Discovery struct {
-	meta AuthorizationServerMetadata
+	meta   AuthorizationServerMetadata
+	maxAge int
+}
+
+func NewDiscovery(cfg *DiscoveryConfig) *Discovery {
+	baseURI := cfg.BaseURI
+
+	return &Discovery{
+		meta: AuthorizationServerMetadata{
+			Issuer:                      baseURI,
+			AuthorizationEndpoint:       baseURI + PathAuthorize,
+			TokenEndpoint:               baseURI + PathToken,
+			KeySetURI:                   baseURI + PathKeySet,
+			RevocationEndpoint:          baseURI + PathRevoke,
+			IntrospectionEndpoint:       baseURI + PathIntrospect,
+			DeviceAuthorizationEndpoint: baseURI + PathDeviceAuthorization,
+			GrantTypesSupported:         cfg.GrantTypesSupported,
+			ResponseTypesSupported:      []string{"code"},
+			TokenEndpointAuthMethodsSupported: []string{
+				"client_secret_basic", "client_secret_post", "none",
+			},
+		},
+		maxAge: cfg.MaxAge,
+	}
 }
 
 // ServeHTTP handles the OAuth 2.0 Authorization Server Metadata endpoint
@@ -38,7 +71,7 @@ type Discovery struct {
 // introspection, and device authorization only if the provider is correctly
 // configured or the respective grants are registered.
 func (d *Discovery) ServeHTTP(e *router.Exchange) error {
-	e.SetHeader("Cache-Control", "public, max-age=3600")
+	e.SetHeader("Cache-Control", fmt.Sprintf("public, max-age=%d", d.maxAge))
 
 	return e.JSON(http.StatusOK, d.meta)
 }
