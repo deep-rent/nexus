@@ -512,21 +512,6 @@ type IntrospectionResponse struct {
 	Nbf      time.Time `json:"nbf,omitzero,format:unix"`
 }
 
-// AuthorizationServerMetadata represents the OAuth 2.0 Authorization Server
-// Metadata payload (RFC 8414).
-type AuthorizationServerMetadata struct {
-	Issuer                            string   `json:"issuer"`
-	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
-	TokenEndpoint                     string   `json:"token_endpoint"`
-	KeySetURI                         string   `json:"jwks_uri,omitempty"`
-	IntrospectionEndpoint             string   `json:"introspection_endpoint,omitempty"`
-	RevocationEndpoint                string   `json:"revocation_endpoint,omitempty"`
-	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint,omitempty"`
-	GrantTypesSupported               []string `json:"grant_types_supported,omitempty"`
-	ResponseTypesSupported            []string `json:"response_types_supported,omitempty"`
-	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
-}
-
 // LoginRequest represents the payload for the resource owner login endpoint.
 //
 // It is consumed by [Provider.Login] to authenticate a resource owner and
