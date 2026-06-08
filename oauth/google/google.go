@@ -58,7 +58,7 @@ const (
 	// DefaultAuthURL is the default Google OAuth 2.0 authorization endpoint.
 	DefaultAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
 	// DefaultTokenURL is the default Google OAuth 2.0 token exchange endpoint.
-	DefaultTokenURL = "https://oauth2.googleapis.com/token"
+	DefaultTokenURL = "https://oauth2.googleapis.com/token" //nolint:gosec
 	// DefaultUserInfoURL is the default OpenID Connect userinfo endpoint.
 	DefaultUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
 	// DefaultTimeout is the default duration for network requests.
