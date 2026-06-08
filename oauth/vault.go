@@ -15,16 +15,48 @@
 package oauth
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/deep-rent/nexus/jose/jwk"
+	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
 )
 
+type VaultConfig struct {
+	Signer jwt.Signer
+	Logger *slog.Logger
+	MaxAge int
+}
+
 type Vault struct {
-	keySet jwk.Set
+	signer jwt.Signer
 	logger *slog.Logger
+	maxAge int
+}
+
+func NewVault(cfg *VaultConfig) *Vault {
+	signer := cfg.Signer
+	if signer == nil {
+		panic("oauth: signer is required")
+	}
+
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	maxAge := cfg.MaxAge
+	if maxAge <= 0 {
+		maxAge = 3600
+	}
+
+	return &Vault{
+		signer: signer,
+		logger: logger,
+		maxAge: maxAge,
+	}
 }
 
 // ServeHTTP handles the JSON Web Key Set endpoint (RFC 7517).
@@ -35,7 +67,7 @@ type Vault struct {
 // Note: This endpoint is only enabled if a valid URL issuer was specified by
 // the configured JWT signer.
 func (v *Vault) ServeHTTP(e *router.Exchange) error {
-	raw, err := jwk.WriteSet(v.keySet)
+	raw, err := jwk.WriteSet(v.signer.KeySet())
 	if err != nil {
 		id := router.ErrorID()
 
@@ -55,7 +87,7 @@ func (v *Vault) ServeHTTP(e *router.Exchange) error {
 	}
 
 	e.SetHeader("Content-Type", "application/jwk-set+json")
-	e.SetHeader("Cache-Control", "public, max-age=3600")
+	e.SetHeader("Cache-Control", fmt.Sprintf("public, max-age=%d", v.maxAge))
 
 	e.Status(http.StatusOK)
 	_, err = e.W.Write(raw)
