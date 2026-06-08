@@ -1,4 +1,5 @@
 {
+  "editor.defaultFormatter": null,
   "editor.formatOnSave": true,
   "editor.formatOnType": true,
   "files.associations": {
@@ -19,13 +20,8 @@
       100
     ]
   },
-  "[plaintext]": {
-    "editor.formatOnSave": false
-  },
-  "go.lintTool": "golangci-lint",
-  "go.lintFlags": [
-    "--path-mode=abs"
-  ],
+  "go.lintTool": "golangci-lint-v2",
+  "go.lintFlags": [],
   "go.formatTool": "gofumpt",
   "go.alternateTools": {},
   "go.formatFlags": [],
