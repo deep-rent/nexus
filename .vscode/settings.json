@@ -30,10 +30,7 @@
     "editor.defaultFormatter": "redhat.vscode-yaml"
   },
   "go.lintTool": "golangci-lint-v2",
-  "go.lintFlags": [],
   "go.formatTool": "gofumpt",
-  "go.alternateTools": {},
-  "go.formatFlags": [],
   "go.toolsEnvVars": {
     "GOEXPERIMENT": "jsonv2"
   },
