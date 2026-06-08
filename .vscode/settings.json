@@ -24,17 +24,11 @@
   },
   "go.lintTool": "golangci-lint",
   "go.lintFlags": [
-    "--path-mode=abs",
-    "--fast-only"
+    "--path-mode=abs"
   ],
-  "go.formatTool": "custom",
-  "go.alternateTools": {
-    "customFormatter": "golangci-lint"
-  },
-  "go.formatFlags": [
-    "fmt",
-    "--stdin"
-  ],
+  "go.formatTool": "gofumpt",
+  "go.alternateTools": {},
+  "go.formatFlags": [],
   "go.toolsEnvVars": {
     "GOEXPERIMENT": "jsonv2"
   },
