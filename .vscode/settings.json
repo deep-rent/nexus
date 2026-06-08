@@ -20,6 +20,15 @@
       100
     ]
   },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
   "go.lintTool": "golangci-lint-v2",
   "go.lintFlags": [],
   "go.formatTool": "gofumpt",
