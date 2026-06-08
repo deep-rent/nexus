@@ -50,6 +50,12 @@ const (
 	// DefaultRealm is the default authentication realm name used in
 	// WWW-Authenticate headers.
 	DefaultRealm = "OAuth2"
+	// DefaultMetaMaxAge is the default max-age cache control header for
+	// the well-known endpoint.
+	DefaultMetaMaxAge = 86400
+	// DefaultJWKSMaxAge is the default max-age cache control header for
+	// the JWKS endpoint.
+	DefaultJWKSMaxAge = 3600
 )
 
 // Config holds the configuration options for an OAuth 2.0 Provider.
@@ -61,7 +67,7 @@ type Config struct {
 	// Verifier is the JWT verifier used to validate access tokens during
 	// introspection requests.
 	//
-	// Optional; if omitted, token introspection will be deactivated.
+	// Optional, if omitted, token introspection will be deactivated.
 	Verifier jwt.Verifier[*auth.Claims]
 	// Clients provides access to registered client applications.
 	//
@@ -76,35 +82,35 @@ type Config struct {
 	// This option is mandatory.
 	Subjects SubjectStore
 	// Logger is the structured logger used by the provider.
-	// Optional; defaults to [slog.Default].
+	// Optional, defaults to [slog.Default].
 	Logger *slog.Logger
 	// SessionCookieName is the name of the session cookie.
 	//
-	// Optional; defaults to [DefaultSessionCookieName].
+	// Optional, defaults to [DefaultSessionCookieName].
 	SessionCookieName string
 	// StateCookieName is the name of the cookie used to store the state
 	// parameter during external login flows. Only used when identity providers
 	// are registered.
 	//
-	// Optional; defaults to [DefaultStateCookieName].
+	// Optional, defaults to [DefaultStateCookieName].
 	StateCookieName string
 	// RefreshTokenLifetime defines how long issued refresh tokens remain valid.
 	// Only used when [GrantTypeRefreshToken] is enabled.
 	//
-	// Optional; defaults to [DefaultRefreshTokenLifetime].
+	// Optional, defaults to [DefaultRefreshTokenLifetime].
 	RefreshTokenLifetime time.Duration
 	// AuthCodeLifetime defines how long issued authorization codes remain valid.
 	// Only used when [GrantTypeAuthorizationCode] is enabled.
 	//
-	// Optional; defaults to [DefaultAuthCodeLifetime].
+	// Optional, defaults to [DefaultAuthCodeLifetime].
 	AuthCodeLifetime time.Duration
 	// DeviceCodeLifetime defines how long issued device codes remain valid.
 	//
-	// Optional; defaults to [DefaultDeviceCodeLifetime].
+	// Optional, defaults to [DefaultDeviceCodeLifetime].
 	DeviceCodeLifetime time.Duration
 	// Realm is the authentication realm name for challenges.
 	//
-	// Optional; defaults to [DefaultRealm].
+	// Optional, defaults to [DefaultRealm].
 	Realm string
 	// VerificationURI is the user-facing URL where resource owners enter the
 	// user code to authorize a device.
@@ -130,29 +136,39 @@ type Config struct {
 	// GenerateAuthCode overrides the default string generator used for
 	// authorization codes. Only used when [GrantTypeRefreshToken] is enabled.
 	//
-	// Optional; defaults to [GenerateAuthCode].
+	// Optional, defaults to [GenerateAuthCode].
 	GenerateAuthCode func() (string, error)
 	// GenerateRefreshToken overrides the default string generator used for
 	// refresh tokens. Only used when [GrantTypeRefreshToken] is enabled.
 	//
-	// Optional; defaults to [GenerateRefreshToken].
+	// Optional, defaults to [GenerateRefreshToken].
 	GenerateRefreshToken func() (string, error)
 	// GenerateDeviceCode overrides the default string generator used for
 	// device codes. Only used when [GrantTypeDeviceCode] is enabled.
 	//
-	// Optional; defaults to [GenerateDeviceCode].
+	// Optional, defaults to [GenerateDeviceCode].
 	GenerateDeviceCode func() (string, error)
 	// GenerateUserCode overrides the default string generator for device flow
 	// user codes. Only used when [GrantTypeDeviceCode] is enabled.
 	//
-	// Optional; defaults to [GenerateUserCode].
+	// Optional, defaults to [GenerateUserCode].
 	GenerateUserCode func() (string, error)
 	// GenerateState overrides the default string generator for state nonces
 	// used in external login requests. Only used when identity providers are
 	// registered.
 	//
-	// Optional; defaults to [GenerateState].
+	// Optional, defaults to [GenerateState].
 	GenerateState func() (string, error)
+	// MetaMaxAge defines the max-age cache control header for the well-known
+	// endpoint.
+	//
+	// Optional, defaults to [DefaultMetaMaxAge].
+	MetaMaxAge int
+	// JWKSMaxAge defines the max-age cache control header for the JWKS
+	// endpoint.
+	//
+	// Optional, defaults to [DefaultJWKSMaxAge].
+	JWKSMaxAge int
 }
 
 // Option defines a functional configuration pattern for a [Provider].
@@ -185,31 +201,32 @@ func WithGrant(grant Grant) Option {
 // Provider is the central component that manages OAuth 2.0 flows, token
 // issuance, and validation.
 type Provider struct {
-	signer               jwt.Signer
-	verifier             jwt.Verifier[*auth.Claims]
-	clients              ClientStore
-	sessions             SessionStore
-	subjects             SubjectStore
-	grants               map[GrantType]Grant
-	identityProviders    map[string]IdentityProvider
-	logger               *slog.Logger
-	sessionCookieName    string
-	stateCookieName      string
-	accessTokenLifetime  time.Duration
-	refreshTokenLifetime time.Duration
-	authCodeLifetime     time.Duration
-	deviceCodeLifetime   time.Duration
-	realm                string
-	verificationURI      string
-	issuer               string
-	loginTerminalURI     *url.URL
-	loginRedirectURI     string
-	generateSessionKey   func() (string, error)
-	generateAuthCode     func() (string, error)
-	generateRefreshToken func() (string, error)
-	generateDeviceCode   func() (string, error)
-	generateUserCode     func() (string, error)
-	generateState        func() (string, error)
+	signer                 jwt.Signer
+	verifier               jwt.Verifier[*auth.Claims]
+	clients                ClientStore
+	sessions               SessionStore
+	subjects               SubjectStore
+	grants                 map[GrantType]Grant
+	identityProviders      map[string]IdentityProvider
+	logger                 *slog.Logger
+	sessionCookieName      string
+	stateCookieName        string
+	refreshTokenLifetime   time.Duration
+	authCodeLifetime       time.Duration
+	deviceCodeLifetime     time.Duration
+	realm                  string
+	verificationURI        string
+	issuer                 string
+	loginTerminalURI       *url.URL
+	loginRedirectURI       string
+	generateSessionKey     func() (string, error)
+	generateAuthCode       func() (string, error)
+	generateRefreshToken   func() (string, error)
+	generateDeviceCode     func() (string, error)
+	generateUserCode       func() (string, error)
+	generateState          func() (string, error)
+	metaCacheControlHeader string
+	jwksCacheControlHeader string
 }
 
 // NewProvider creates a new OAuth 2.0 provider with the specified
@@ -354,6 +371,20 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 		}
 	}
 
+	metaMaxAge := cfg.MetaMaxAge
+	if metaMaxAge <= 0 {
+		metaMaxAge = DefaultMetaMaxAge
+	}
+
+	p.metaCacheControlHeader = fmt.Sprintf("public, max-age=%d", metaMaxAge)
+
+	jwksMaxAge := cfg.JWKSMaxAge
+	if jwksMaxAge <= 0 {
+		jwksMaxAge = DefaultJWKSMaxAge
+	}
+
+	p.jwksCacheControlHeader = fmt.Sprintf("public, max-age=%d", jwksMaxAge)
+
 	return p
 }
 
@@ -415,24 +446,27 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		types = append(types, string(grant))
 	}
 
-	res := AuthorizationServerMetadata{
-		Issuer:                      p.issuer,
-		AuthorizationEndpoint:       p.issuer + PathAuthorize,
-		TokenEndpoint:               p.issuer + PathToken,
-		KeySetURI:                   p.issuer + PathKeySet,
-		RevocationEndpoint:          p.issuer + PathRevoke,
-		IntrospectionEndpoint:       p.issuer + PathIntrospect,
-		DeviceAuthorizationEndpoint: p.issuer + PathDeviceAuthorization,
-		GrantTypesSupported:         types,
-		ResponseTypesSupported:      []string{"code"},
+	meta := AuthorizationServerMetadata{
+		Issuer:                 p.issuer,
+		AuthorizationEndpoint:  p.issuer + PathAuthorize,
+		TokenEndpoint:          p.issuer + PathToken,
+		KeySetURI:              p.issuer + PathKeySet,
+		RevocationEndpoint:     p.issuer + PathRevoke,
+		IntrospectionEndpoint:  p.issuer + PathIntrospect,
+		GrantTypesSupported:    types,
+		ResponseTypesSupported: []string{"code"},
 		TokenEndpointAuthMethodsSupported: []string{
 			"client_secret_basic", "client_secret_post", "none",
 		},
 	}
 
-	e.SetHeader("Cache-Control", "public, max-age=3600")
+	if p.Supports(GrantTypeAuthorizationCode) {
+		meta.DeviceAuthorizationEndpoint = p.issuer + PathDeviceAuthorization
+	}
 
-	return e.JSON(http.StatusOK, res)
+	e.SetHeader("Cache-Control", p.metaCacheControlHeader)
+
+	return e.JSON(http.StatusOK, meta)
 }
 
 // JWKS handles the JSON Web Key Set endpoint (RFC 7517).
@@ -463,7 +497,7 @@ func (p *Provider) JWKS(e *router.Exchange) error {
 	}
 
 	e.SetHeader("Content-Type", "application/jwk-set+json")
-	e.SetHeader("Cache-Control", "public, max-age=3600")
+	e.SetHeader("Cache-Control", p.jwksCacheControlHeader)
 	e.Status(http.StatusOK)
 	_, err = e.W.Write(raw)
 
@@ -668,7 +702,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 			SubjectID:           sub.ID(),
 			CodeChallenge:       codeChallenge,
 			CodeChallengeMethod: codeChallengeMethod,
-			Lifetime:            p.authCodeLifetime,
+			ExpiresAt:           time.Now().Add(p.authCodeLifetime),
 		},
 	); err != nil {
 		id := router.ErrorID()
@@ -845,7 +879,7 @@ func (p *Provider) token(e *router.Exchange) error {
 			ClientID:  pro.Client.ID(),
 			SubjectID: iss.Subject,
 			Scope:     iss.Scope,
-			Lifetime:  p.refreshTokenLifetime,
+			ExpiresAt: time.Now().Add(p.refreshTokenLifetime),
 		})
 		if err != nil {
 			id := router.ErrorID()
@@ -888,12 +922,33 @@ func (p *Provider) authenticate(e *router.Exchange) (*Proposal, error) {
 	if !ok {
 		clientID = data.Get("client_id")
 		clientSecret = data.Get("client_secret")
-	} else if data.Has("client_id") || data.Has("client_secret") {
-		// RFC 6749 Section 2.3.1: MUST NOT use more than one auth method.
-		return nil, &Error{
-			Status:      http.StatusBadRequest,
-			Code:        ErrorCodeInvalidRequest,
-			Description: "multiple client authentication methods used",
+	} else {
+		if data.Has("client_id") || data.Has("client_secret") {
+			// RFC 6749 Section 2.3.1: MUST NOT use more than one auth method.
+			return nil, &Error{
+				Status:      http.StatusBadRequest,
+				Code:        ErrorCodeInvalidRequest,
+				Description: "multiple client authentication methods used",
+			}
+		}
+		var err error
+		clientID, err = url.QueryUnescape(clientID)
+		if err != nil {
+			p.challenge(e)
+			return nil, &Error{
+				Status:      http.StatusUnauthorized,
+				Code:        ErrorCodeInvalidClient,
+				Description: "invalid basic auth client id encoding",
+			}
+		}
+		clientSecret, err = url.QueryUnescape(clientSecret)
+		if err != nil {
+			p.challenge(e)
+			return nil, &Error{
+				Status:      http.StatusUnauthorized,
+				Code:        ErrorCodeInvalidClient,
+				Description: "invalid basic auth client secret encoding",
+			}
 		}
 	}
 
@@ -1560,7 +1615,7 @@ func (p *Provider) introspect(e *router.Exchange) error {
 	} else {
 		res = IntrospectionResponse{
 			Active:   true,
-			ClientID: pro.Client.ID(),
+			ClientID: claims.Azp,
 			Scope:    claims.Scope.String(),
 			Jti:      claims.Jti,
 			Iss:      claims.Iss,
