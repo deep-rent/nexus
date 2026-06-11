@@ -70,6 +70,36 @@ func TestVerifyRedirectURI(t *testing.T) {
 			want:      false,
 		},
 		{
+			name:      "wildcard port with path match success",
+			uri:       "http://localhost:8080/callback",
+			whitelist: []string{"http://localhost:*/callback"},
+			want:      true,
+		},
+		{
+			name:      "wildcard port with path and query match success",
+			uri:       "http://localhost:4200/auth?state=xyz",
+			whitelist: []string{"http://localhost:*/auth?state=*"},
+			want:      true,
+		},
+		{
+			name:      "strict query bypass attempt: unexpected query parameters",
+			uri:       "https://deep.rent/callback?malicious_param=true",
+			whitelist: []string{"https://deep.rent/callback"},
+			want:      false,
+		},
+		{
+			name:      "strict query bypass attempt: mismatched query",
+			uri:       "https://deep.rent/callback?foo=bar",
+			whitelist: []string{"https://deep.rent/callback?foo=baz"},
+			want:      false,
+		},
+		{
+			name:      "fragment rejection bypass attempt",
+			uri:       "https://deep.rent/callback#access_token=stolen",
+			whitelist: []string{"https://deep.rent/callback"},
+			want:      false,
+		},
+		{
 			name:      "bypass attempt: host-spanning wildcard",
 			uri:       "https://attacker.com/deep.rent/",
 			whitelist: []string{"https://*.deep.rent/*"},
@@ -93,7 +123,13 @@ func TestVerifyRedirectURI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := VerifyRedirectURI(tt.uri, tt.whitelist)
 			if got != tt.want {
-				t.Errorf("VerifyRedirectURI(%q, %v) = %t; want %t", tt.uri, tt.whitelist, got, tt.want)
+				t.Errorf(
+					"VerifyRedirectURI(%q, %v) = %t; want %t",
+					tt.uri,
+					tt.whitelist,
+					got,
+					tt.want,
+				)
 			}
 		})
 	}
