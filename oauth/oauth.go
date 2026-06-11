@@ -309,7 +309,7 @@ type SessionStore interface {
 	// If found, it must return the data and nil.
 	// If not found, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
-	GetDeviceCode(ctx context.Context, deviceCode string) (DeviceCode, error)
+	GetDeviceCode(ctx context.Context, code string) (DeviceCode, error)
 	// CreateDeviceCode stores a new device code.
 	//
 	// It should return an error only if the persistence operation fails.
@@ -317,7 +317,7 @@ type SessionStore interface {
 	// DeleteDeviceCode removes a device code.
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteDeviceCode(ctx context.Context, deviceCode string) error
+	DeleteDeviceCode(ctx context.Context, code string) error
 }
 
 const (
