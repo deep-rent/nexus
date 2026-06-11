@@ -572,31 +572,96 @@ type AuthorizationServerMetadata struct {
 //   - "http://localhost:*" matches "http://localhost:3000"
 //   - "https://deep.rent/auth" matches only that exact URI
 //
-// This utility function is particularly useful for implementing the [Client]
+// Per OAuth 2.0 specifications, URIs containing fragments (e.g., #token)
+// are strictly rejected. Query parameters must match the pattern exactly
+// unless a wildcard is provided, preventing unauthorized parameter injection.
+//
+// This function is particularly helpful for implementing the [Client]
 // interface.
 func VerifyRedirectURI(uri string, whitelist []string) bool {
-	for _, pattern := range whitelist {
-		if matchRedirectURI(uri, pattern) {
+	for _, p := range whitelist {
+		if matchRedirectURI(uri, p) {
 			return true
 		}
 	}
 	return false
 }
 
-func splitHostPort(hostPort string) (host, port string) {
-	kolon := strings.LastIndex(hostPort, ":")
-	if kolon == -1 {
-		return hostPort, ""
+// matchRedirectURI parses the incoming URI and a given pattern, validating
+// that the URI's scheme, host, port, path, and query parameters safely conform
+// to the pattern's rules. It strictly isolates port wildcards (e.g., ":*")
+// to prevent string corruption and rejects any incoming URIs containing
+// fragments.
+func matchRedirectURI(uri, pattern string) bool {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return false
 	}
-	if strings.HasPrefix(hostPort, "[") {
-		endBracket := strings.Index(hostPort, "]")
-		if endBracket != -1 && kolon < endBracket {
-			return hostPort, ""
-		}
+
+	// OAuth 2.0 specifications forbid fragments in redirect URIs.
+	if u.Fragment != "" {
+		return false
 	}
-	return hostPort[:kolon], hostPort[kolon+1:]
+
+	// Dynamically isolate the host block to safely replace :* without corrupting
+	// query parameters or paths.
+	end := strings.Index(pattern, "://")
+	if end == -1 {
+		end = 0
+	} else {
+		end += 3
+	}
+
+	start := strings.Index(pattern[end:], "/")
+	if start == -1 {
+		start = len(pattern)
+	} else {
+		start += end
+	}
+
+	wildcardPort := false
+	parsePattern := pattern
+
+	if j := strings.LastIndex(pattern[:start], ":*"); j != -1 {
+		wildcardPort = true
+		parsePattern = pattern[:j] + ":0" + pattern[start:]
+	}
+
+	p, err := url.Parse(parsePattern)
+	if err != nil {
+		return false
+	}
+
+	if u.Scheme != p.Scheme {
+		return false
+	}
+
+	if !matchSegment(u.Hostname(), p.Hostname()) {
+		return false
+	}
+
+	if !wildcardPort && u.Port() != p.Port() {
+		return false
+	}
+
+	if !matchSegment(u.Path, p.Path) {
+		return false
+	}
+
+	// Strict query matching logic to prevent parameter injection bypasses.
+	if !matchSegment(u.RawQuery, p.RawQuery) {
+		return false
+	}
+
+	return true
 }
 
+// matchSegment evaluates whether a string satisfies a wildcard pattern.
+//
+// If the pattern lacks asterisks, it executes a strict equality check.
+// Otherwise, it splits the pattern by '*' and sequentially verifies that the
+// input string contains each substring in order, ensuring correct prefix and
+// suffix placement.
 func matchSegment(s, pattern string) bool {
 	if !strings.Contains(pattern, "*") {
 		return s == pattern
@@ -611,70 +676,16 @@ func matchSegment(s, pattern string) bool {
 		return false
 	}
 
-	p := s[len(parts[0]):]
+	rem := s[len(parts[0]):]
 	for i := 1; i < len(parts); i++ {
 		if i == len(parts)-1 {
-			return strings.HasSuffix(p, parts[i])
+			return strings.HasSuffix(rem, parts[i])
 		}
-
-		idx := strings.Index(p, parts[i])
-		if idx == -1 {
+		j := strings.Index(rem, parts[i])
+		if j == -1 {
 			return false
 		}
-		p = p[idx+len(parts[i]):]
-	}
-
-	return true
-}
-
-func matchRedirectURI(uri, pattern string) bool {
-	u, err := url.Parse(uri)
-	if err != nil {
-		return false
-	}
-
-	// Pre-process pattern for wildcard port to allow url.Parse to succeed.
-	hasWildcardPort := false
-	parsePattern := pattern
-	if strings.Contains(pattern, ":*") {
-		hasWildcardPort = true
-		parsePattern = strings.ReplaceAll(pattern, ":*", ":0")
-	}
-
-	p, err := url.Parse(parsePattern)
-	if err != nil {
-		return false
-	}
-
-	// 1. Match Scheme
-	if u.Scheme != p.Scheme {
-		return false
-	}
-
-	// 2. Match Host and Port
-	uHost, uPort := splitHostPort(u.Host)
-	pHost, pPort := splitHostPort(p.Host)
-
-	if hasWildcardPort {
-		pPort = "*"
-	}
-
-	if !matchSegment(uHost, pHost) {
-		return false
-	}
-
-	if pPort != "*" && uPort != pPort {
-		return false
-	}
-
-	// 3. Match Path
-	if !matchSegment(u.Path, p.Path) {
-		return false
-	}
-
-	// 4. Match Query
-	if p.RawQuery != "" && !matchSegment(u.RawQuery, p.RawQuery) {
-		return false
+		rem = rem[j+len(parts[i]):]
 	}
 
 	return true
