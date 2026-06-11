@@ -691,39 +691,41 @@ func matchSegment(s, pattern string) bool {
 	return true
 }
 
+type TokenGeneratorFn func(context.Context) (string, error)
+
 // GenerateSessionKey returns a random 43-character, base64url-encoded string
 // for use as a session key.
-func GenerateSessionKey() (string, error) {
+func GenerateSessionKey(context.Context) (string, error) {
 	return opaque()
 }
 
 // GenerateAuthCode returns a random 43-character, base64url-encoded string
 // for use as an authorization code.
-func GenerateAuthCode() (string, error) {
+func GenerateAuthCode(context.Context) (string, error) {
 	return opaque()
 }
 
 // GenerateRefreshToken returns a random 43-character, base64url-encoded string
 // for use as a refresh token.
-func GenerateRefreshToken() (string, error) {
+func GenerateRefreshToken(context.Context) (string, error) {
 	return opaque()
 }
 
 // GenerateDeviceCode returns a random 43-character, base64url-encoded string
 // for use as a device code.
-func GenerateDeviceCode() (string, error) {
+func GenerateDeviceCode(context.Context) (string, error) {
 	return opaque()
 }
 
 // GenerateState returns a random 43-character, base64url-encoded string
 // for use as a state parameter.
-func GenerateState() (string, error) {
+func GenerateState(context.Context) (string, error) {
 	return opaque()
 }
 
 // GenerateUserCode generates a random 9-character string of the form XXXX-XXXX
 // for use as a user code.
-func GenerateUserCode() (string, error) {
+func GenerateUserCode(context.Context) (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		return "", err

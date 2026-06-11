@@ -132,33 +132,33 @@ type Config struct {
 	// session keys for login requests.
 	//
 	// Defaults to [GenerateSessionKey].
-	GenerateSessionKey func() (string, error)
+	GenerateSessionKey TokenGeneratorFn
 	// GenerateAuthCode overrides the default string generator used for
 	// authorization codes. Only used when [GrantTypeRefreshToken] is enabled.
 	//
 	// Optional, defaults to [GenerateAuthCode].
-	GenerateAuthCode func() (string, error)
+	GenerateAuthCode TokenGeneratorFn
 	// GenerateRefreshToken overrides the default string generator used for
 	// refresh tokens. Only used when [GrantTypeRefreshToken] is enabled.
 	//
 	// Optional, defaults to [GenerateRefreshToken].
-	GenerateRefreshToken func() (string, error)
+	GenerateRefreshToken TokenGeneratorFn
 	// GenerateDeviceCode overrides the default string generator used for
 	// device codes. Only used when [GrantTypeDeviceCode] is enabled.
 	//
 	// Optional, defaults to [GenerateDeviceCode].
-	GenerateDeviceCode func() (string, error)
+	GenerateDeviceCode TokenGeneratorFn
 	// GenerateUserCode overrides the default string generator for device flow
 	// user codes. Only used when [GrantTypeDeviceCode] is enabled.
 	//
 	// Optional, defaults to [GenerateUserCode].
-	GenerateUserCode func() (string, error)
+	GenerateUserCode TokenGeneratorFn
 	// GenerateState overrides the default string generator for state nonces
 	// used in external login requests. Only used when identity providers are
 	// registered.
 	//
 	// Optional, defaults to [GenerateState].
-	GenerateState func() (string, error)
+	GenerateState TokenGeneratorFn
 	// MetaMaxAge defines the max-age cache control header for the well-known
 	// endpoint.
 	//
@@ -219,12 +219,12 @@ type Provider struct {
 	issuer                 string
 	loginTerminalURI       *url.URL
 	loginRedirectURI       string
-	generateSessionKey     func() (string, error)
-	generateAuthCode       func() (string, error)
-	generateRefreshToken   func() (string, error)
-	generateDeviceCode     func() (string, error)
-	generateUserCode       func() (string, error)
-	generateState          func() (string, error)
+	generateSessionKey     TokenGeneratorFn
+	generateAuthCode       TokenGeneratorFn
+	generateRefreshToken   TokenGeneratorFn
+	generateDeviceCode     TokenGeneratorFn
+	generateUserCode       TokenGeneratorFn
+	generateState          TokenGeneratorFn
 	metaCacheControlHeader string
 	jwksCacheControlHeader string
 }
@@ -673,7 +673,7 @@ func (p *Provider) authorize(e *router.Exchange) error {
 		)
 	}
 
-	code, err := p.generateAuthCode()
+	code, err := p.generateAuthCode(e.Context())
 	if err != nil {
 		id := router.ErrorID()
 
@@ -855,7 +855,7 @@ func (p *Provider) token(e *router.Exchange) error {
 	}
 
 	if iss.Refreshable && p.Supports(GrantTypeRefreshToken) {
-		token, err := p.generateRefreshToken()
+		token, err := p.generateRefreshToken(e.Context())
 		if err != nil {
 			id := router.ErrorID()
 
@@ -1118,7 +1118,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	deviceCode, err := p.generateDeviceCode()
+	deviceCode, err := p.generateDeviceCode(e.Context())
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1137,7 +1137,7 @@ func (p *Provider) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	userCode, err := p.generateUserCode()
+	userCode, err := p.generateUserCode(e.Context())
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1251,7 +1251,7 @@ func (p *Provider) Login(e *router.Exchange) error {
 		}
 	}
 
-	key, err := p.generateSessionKey()
+	key, err := p.generateSessionKey(e.Context())
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1348,7 +1348,7 @@ func (p *Provider) ExternalLogin(e *router.Exchange) error {
 		return nil
 	}
 
-	state, err := p.generateState()
+	state, err := p.generateState(e.Context())
 	if err != nil {
 		id := router.ErrorID()
 
@@ -1520,7 +1520,7 @@ func (p *Provider) externalCallback(e *router.Exchange) error {
 		}
 	}
 
-	key, err := p.generateSessionKey()
+	key, err := p.generateSessionKey(e.Context())
 	if err != nil {
 		id := router.ErrorID()
 
