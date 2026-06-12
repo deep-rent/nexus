@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -227,6 +228,7 @@ type Provider struct {
 	generateState          TokenGeneratorFn
 	metaCacheControlHeader string
 	jwksCacheControlHeader string
+	metadata               AuthorizationServerMetadata
 }
 
 // NewProvider creates a new OAuth 2.0 provider with the specified
@@ -385,6 +387,32 @@ func NewProvider(cfg Config, opts ...Option) *Provider {
 
 	p.jwksCacheControlHeader = fmt.Sprintf("public, max-age=%d", jwksMaxAge)
 
+	if p.issuer != "" {
+		types := make([]string, 0, len(p.grants))
+		for grant := range p.grants {
+			types = append(types, string(grant))
+		}
+		sort.Strings(types)
+
+		p.metadata = AuthorizationServerMetadata{
+			Issuer:                 p.issuer,
+			AuthorizationEndpoint:  p.issuer + PathAuthorize,
+			TokenEndpoint:          p.issuer + PathToken,
+			KeySetURI:              p.issuer + PathKeySet,
+			RevocationEndpoint:     p.issuer + PathRevoke,
+			IntrospectionEndpoint:  p.issuer + PathIntrospect,
+			GrantTypesSupported:    types,
+			ResponseTypesSupported: []string{"code"},
+			TokenEndpointAuthMethodsSupported: []string{
+				"client_secret_basic", "client_secret_post", "none",
+			},
+		}
+
+		if p.Supports(GrantTypeDeviceCode) {
+			p.metadata.DeviceAuthorizationEndpoint = p.issuer + PathDeviceAuthorization
+		}
+	}
+
 	return p
 }
 
@@ -441,32 +469,9 @@ func (p *Provider) WellKnown(e *router.Exchange) error {
 		return nil
 	}
 
-	types := make([]string, 0, len(p.grants))
-	for grant := range p.grants {
-		types = append(types, string(grant))
-	}
-
-	meta := AuthorizationServerMetadata{
-		Issuer:                 p.issuer,
-		AuthorizationEndpoint:  p.issuer + PathAuthorize,
-		TokenEndpoint:          p.issuer + PathToken,
-		KeySetURI:              p.issuer + PathKeySet,
-		RevocationEndpoint:     p.issuer + PathRevoke,
-		IntrospectionEndpoint:  p.issuer + PathIntrospect,
-		GrantTypesSupported:    types,
-		ResponseTypesSupported: []string{"code"},
-		TokenEndpointAuthMethodsSupported: []string{
-			"client_secret_basic", "client_secret_post", "none",
-		},
-	}
-
-	if p.Supports(GrantTypeAuthorizationCode) {
-		meta.DeviceAuthorizationEndpoint = p.issuer + PathDeviceAuthorization
-	}
-
 	e.SetHeader("Cache-Control", p.metaCacheControlHeader)
 
-	return e.JSON(http.StatusOK, meta)
+	return e.JSON(http.StatusOK, p.metadata)
 }
 
 // JWKS handles the JSON Web Key Set endpoint (RFC 7517).
