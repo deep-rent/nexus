@@ -277,4 +277,3 @@ func TestIsValidVerifier(t *testing.T) {
 		})
 	}
 }
-

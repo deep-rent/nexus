@@ -102,4 +102,3 @@ func IsValidVerifier(s string) bool {
 	}
 	return true
 }
-

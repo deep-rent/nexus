@@ -102,8 +102,6 @@ func Supports(method string) bool {
 // Section 4.1.
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
-
-
 // explode converts a string to a byte slice without allocations.
 // The returned slice must not be modified.
 func explode(s string) []byte {
