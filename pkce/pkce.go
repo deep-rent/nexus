@@ -45,6 +45,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"unsafe"
 )
 
 const (
@@ -107,6 +108,12 @@ func isValidVerifier(s string) bool {
 	return true
 }
 
+// unsafeBytes converts a string to a byte slice without allocations.
+// The returned slice must not be modified.
+func unsafeBytes(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
+}
+
 // Verifier creates a cryptographically secure random string to serve as a PKCE
 // code verifier. The length parameter determines the number of characters in
 // the resulting string, which must be between [MinVerifierLength] and
@@ -149,7 +156,7 @@ func Challenge(verifier, method string) (string, error) {
 	switch method {
 	case MethodS256:
 		// Hash the verifier using SHA-256 and encode the raw bytes.
-		sum := sha256.Sum256([]byte(verifier))
+		sum := sha256.Sum256(unsafeBytes(verifier))
 		return base64.RawURLEncoding.EncodeToString(sum[:]), nil
 	case MethodPlain:
 		return verifier, nil
@@ -167,15 +174,44 @@ func Verify(verifier, challenge, method string) bool {
 		return false
 	}
 
-	exp, err := Challenge(verifier, method)
-	if err != nil {
+	if len(verifier) < MinVerifierLength || len(verifier) > MaxVerifierLength {
 		return false
 	}
 
-	// Hash both strings using SHA-256 to ensure equal-length comparison inputs,
-	// mitigating length-based timing leaks during the constant-time comparison.
-	hExp := sha256.Sum256([]byte(exp))
-	hChallenge := sha256.Sum256([]byte(challenge))
+	if !isValidVerifier(verifier) {
+		return false
+	}
 
-	return subtle.ConstantTimeCompare(hExp[:], hChallenge[:]) == 1
+	switch method {
+	case MethodS256:
+		if len(challenge) != 43 {
+			return false
+		}
+		// Hash the verifier.
+		sum := sha256.Sum256(unsafeBytes(verifier))
+
+		// Decode the challenge into a stack-allocated buffer to avoid allocations.
+		var decoded [32]byte
+		n, err := base64.RawURLEncoding.Decode(decoded[:], unsafeBytes(challenge))
+		if err != nil || n != 32 {
+			return false
+		}
+
+		return subtle.ConstantTimeCompare(sum[:], decoded[:]) == 1
+
+	case MethodPlain:
+		if len(challenge) < MinVerifierLength || len(challenge) > MaxVerifierLength {
+			return false
+		}
+
+		// Hash both values to ensure equal-length comparison inputs,
+		// mitigating length-based timing leaks during the constant-time comparison.
+		hExp := sha256.Sum256(unsafeBytes(verifier))
+		hChallenge := sha256.Sum256(unsafeBytes(challenge))
+
+		return subtle.ConstantTimeCompare(hExp[:], hChallenge[:]) == 1
+
+	default:
+		return false
+	}
 }
