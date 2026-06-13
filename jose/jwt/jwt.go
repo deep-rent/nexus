@@ -392,7 +392,8 @@ func decode(src []byte) ([]byte, error) {
 }
 
 // Verify first parses a JWT and then verifies its signature against a given key
-// resolver. The type parameter T specifies the target struct for the token's claims.
+// resolver. The type parameter T specifies the target struct for the token's
+// claims.
 //
 // This function only checks the cryptographic signature, not the content of the
 // claims. For claim validation (e.g., issuer, audience, expiration), create and
