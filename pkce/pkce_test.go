@@ -169,3 +169,44 @@ func BenchmarkVerifier(b *testing.B) {
 		_, _ = pkce.Verifier(128)
 	}
 }
+
+func TestIsUnreserved(t *testing.T) {
+	tests := []struct {
+		name string
+		give string
+		want bool
+	}{
+		{"all unreserved characters", pkce.Alphabet, true},
+		{"contains invalid character", "abcd!123", false},
+		{"empty string", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pkce.IsUnreserved(tt.give); got != tt.want {
+				t.Errorf("IsUnreserved(%q) = %v, want %v", tt.give, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSupports(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		want   bool
+	}{
+		{"S256 supported", pkce.MethodS256, true},
+		{"plain supported", pkce.MethodPlain, true},
+		{"unsupported method", "S512", false},
+		{"empty method", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pkce.Supports(tt.method); got != tt.want {
+				t.Errorf("Supports(%q) = %v, want %v", tt.method, got, tt.want)
+			}
+		})
+	}
+}
