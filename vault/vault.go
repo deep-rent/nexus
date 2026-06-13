@@ -38,6 +38,7 @@ var ErrKeyNotFound = errors.New("key not found in vault")
 // signing keys ([jwk.KeyPair]). It abstracts away the underlying implementation
 // details of external sources like KMS, HSM, or HashiCorp Vault.
 type Vault interface {
+	router.Handler
 	// Keys returns an iterator over all valid [jwk.KeyPair]s managed by this vault.
 	// This is useful for exposing public keys via a JSON Web Key Set (JWKS) endpoint.
 	Keys(ctx context.Context) (iter.Seq[jwk.KeyPair], error)
@@ -49,10 +50,6 @@ type Vault interface {
 	// Active retrieves the currently active [jwk.KeyPair] intended for signing
 	// new tokens. It returns [ErrKeyNotFound] if the vault is empty.
 	Active(ctx context.Context) (jwk.KeyPair, error)
-
-	// ServeHTTP exposes the vault's public keys as a JSON Web Key Set (JWKS).
-	// It implements the [router.Handler] interface.
-	ServeHTTP(e *router.Exchange) error
 }
 
 // Source represents an external backend (e.g., KMS, HashiCorp Vault) capable of
@@ -69,10 +66,10 @@ type Source interface {
 type vault struct {
 	source Source
 
-	mu        sync.RWMutex
-	jwksBytes []byte
-	etag      string
-	lastMod   time.Time
+	mu      sync.RWMutex
+	jwks    []byte
+	etag    string
+	lastMod time.Time
 }
 
 // New creates a new [Vault] backed by the provided [Source].
@@ -158,13 +155,12 @@ func (v *vault) ServeHTTP(e *router.Exchange) error {
 	v.mu.Lock()
 	if v.etag != etag {
 		v.etag = etag
-		v.jwksBytes = payload
+		v.jwks = payload
 		v.lastMod = time.Now().UTC()
 	}
 	lastMod := v.lastMod
 	v.mu.Unlock()
 
-	// Check conditional headers
 	if v := e.GetHeader("If-None-Match"); v != "" {
 		if v == etag {
 			e.Status(http.StatusNotModified)
