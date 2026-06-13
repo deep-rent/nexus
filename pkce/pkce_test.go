@@ -1,4 +1,4 @@
-package pkce
+package pkce_test
 
 import (
 	"crypto/sha256"
@@ -8,7 +8,12 @@ import (
 	"testing"
 
 	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/pkce"
 )
+
+func isUnreserved(c rune) bool {
+	return ascii.IsAlphaNum(c) || c == '-' || c == '.' || c == '_' || c == '~'
+}
 
 func TestVerifier(t *testing.T) {
 	tests := []struct {
@@ -16,16 +21,16 @@ func TestVerifier(t *testing.T) {
 		length  int
 		wantErr error
 	}{
-		{"valid min length", MinVerifierLength, nil},
+		{"valid min length", pkce.MinVerifierLength, nil},
 		{"valid mid length", 80, nil},
-		{"valid max length", MaxVerifierLength, nil},
-		{"invalid too short", MinVerifierLength - 1, ErrInvalidLength},
-		{"invalid too long", MaxVerifierLength + 1, ErrInvalidLength},
+		{"valid max length", pkce.MaxVerifierLength, nil},
+		{"invalid too short", pkce.MinVerifierLength - 1, pkce.ErrInvalidLength},
+		{"invalid too long", pkce.MaxVerifierLength + 1, pkce.ErrInvalidLength},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Verifier(tt.length)
+			got, err := pkce.Verifier(tt.length)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Verifier() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -43,9 +48,8 @@ func TestVerifier(t *testing.T) {
 	}
 }
 
-
 func TestChallenge(t *testing.T) {
-	validVerifier := strings.Repeat("a", MinVerifierLength)
+	validVerifier := strings.Repeat("a", pkce.MinVerifierLength)
 	invalidVerifier := validVerifier + "!"
 
 	tests := []struct {
@@ -58,14 +62,14 @@ func TestChallenge(t *testing.T) {
 		{
 			name:     "valid s256",
 			verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
-			method:   MethodS256,
+			method:   pkce.MethodS256,
 			want:     "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
 			wantErr:  nil,
 		},
 		{
 			name:     "valid plain",
 			verifier: validVerifier,
-			method:   MethodPlain,
+			method:   pkce.MethodPlain,
 			want:     validVerifier,
 			wantErr:  nil,
 		},
@@ -74,27 +78,27 @@ func TestChallenge(t *testing.T) {
 			verifier: validVerifier,
 			method:   "invalid",
 			want:     "",
-			wantErr:  ErrUnsupportedMethod,
+			wantErr:  pkce.ErrUnsupportedMethod,
 		},
 		{
 			name:     "invalid characters",
 			verifier: invalidVerifier,
-			method:   MethodS256,
+			method:   pkce.MethodS256,
 			want:     "",
-			wantErr:  ErrInvalidVerifier,
+			wantErr:  pkce.ErrInvalidVerifier,
 		},
 		{
 			name:     "invalid length too short",
 			verifier: "too-short",
-			method:   MethodS256,
+			method:   pkce.MethodS256,
 			want:     "",
-			wantErr:  ErrInvalidLength,
+			wantErr:  pkce.ErrInvalidLength,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Challenge(tt.verifier, tt.method)
+			got, err := pkce.Challenge(tt.verifier, tt.method)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Challenge() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -121,19 +125,19 @@ func TestVerify(t *testing.T) {
 		method    string
 		want      bool
 	}{
-		{"valid s256 match", v, c, MethodS256, true},
-		{"valid plain match", v, v, MethodPlain, true},
-		{"mismatch s256", v, "invalid-challenge", MethodS256, false},
-		{"mismatch plain", v, "invalid-challenge", MethodPlain, false},
-		{"empty verifier", "", c, MethodS256, false},
-		{"empty challenge", v, "", MethodS256, false},
-		{"invalid verifier characters", v + "!", c, MethodS256, false},
+		{"valid s256 match", v, c, pkce.MethodS256, true},
+		{"valid plain match", v, v, pkce.MethodPlain, true},
+		{"mismatch s256", v, "invalid-challenge", pkce.MethodS256, false},
+		{"mismatch plain", v, "invalid-challenge", pkce.MethodPlain, false},
+		{"empty verifier", "", c, pkce.MethodS256, false},
+		{"empty challenge", v, "", pkce.MethodS256, false},
+		{"invalid verifier characters", v + "!", c, pkce.MethodS256, false},
 		{"invalid method", v, c, "invalid-method", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Verify(tt.verifier, tt.challenge, tt.method); got != tt.want {
+			if got := pkce.Verify(tt.verifier, tt.challenge, tt.method); got != tt.want {
 				t.Errorf("Verify() = %v, want %v", got, tt.want)
 			}
 		})
@@ -141,16 +145,16 @@ func TestVerify(t *testing.T) {
 }
 
 func BenchmarkVerify(b *testing.B) {
-	v, _ := Verifier(128)
-	c, _ := Challenge(v, MethodS256)
+	v, _ := pkce.Verifier(128)
+	c, _ := pkce.Challenge(v, pkce.MethodS256)
 
 	for b.Loop() {
-		Verify(v, c, MethodS256)
+		pkce.Verify(v, c, pkce.MethodS256)
 	}
 }
 
 func BenchmarkVerifier(b *testing.B) {
 	for b.Loop() {
-		_, _ = Verifier(128)
+		_, _ = pkce.Verifier(128)
 	}
 }
