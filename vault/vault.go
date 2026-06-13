@@ -141,13 +141,12 @@ func (v *vault) ServeHTTP(e *router.Exchange) error {
 		return err
 	}
 
-	// Convert to jwk.Key slice for Set creation
-	pubKeys := make([]jwk.Key, len(keys))
+	pub := make([]jwk.Key, len(keys))
 	for i, k := range keys {
-		pubKeys[i] = k
+		pub[i] = k
 	}
 
-	set := jwk.NewSet(pubKeys...)
+	set := jwk.NewSet(pub...)
 	payload, err := jwk.WriteSet(set)
 	if err != nil {
 		return err
