@@ -19,11 +19,15 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
-	"github.com/deep-rent/nexus/jose/vault"
+	"github.com/deep-rent/nexus/router"
+	"github.com/deep-rent/nexus/vault"
 )
 
 // mockSource is a simple in-memory implementation of vault.Source for testing.
@@ -162,5 +166,96 @@ func TestVault_Keys(t *testing.T) {
 
 	if count != 2 {
 		t.Errorf("expected 2 keys, got %d", count)
+	}
+}
+
+func TestStaticSource_Rotation(t *testing.T) {
+	ctx := context.Background()
+	key1 := generateTestKeyPair(t, "key-1")
+	key2 := generateTestKeyPair(t, "key-2")
+	key3 := generateTestKeyPair(t, "key-3")
+
+	src := vault.NewStaticSource(key1, key2, key3)
+	v := vault.New(src)
+
+	// First call
+	active1, _ := v.Active(ctx)
+	if active1.KeyID() != "key-1" {
+		t.Errorf("expected key-1, got %s", active1.KeyID())
+	}
+
+	// Second call
+	active2, _ := v.Active(ctx)
+	if active2.KeyID() != "key-2" {
+		t.Errorf("expected key-2, got %s", active2.KeyID())
+	}
+
+	// Third call
+	active3, _ := v.Active(ctx)
+	if active3.KeyID() != "key-3" {
+		t.Errorf("expected key-3, got %s", active3.KeyID())
+	}
+
+	// Wraparound call
+	active4, _ := v.Active(ctx)
+	if active4.KeyID() != "key-1" {
+		t.Errorf("expected key-1, got %s", active4.KeyID())
+	}
+}
+
+func TestVault_ServeHTTP(t *testing.T) {
+	key1 := generateTestKeyPair(t, "key-B")
+	key2 := generateTestKeyPair(t, "key-A")
+
+	src := vault.NewStaticSource(key1, key2)
+	v := vault.New(src)
+
+	r := router.New()
+	r.Handle("GET /jwks", v)
+
+	req := httptest.NewRequest(http.MethodGet, "/jwks", nil)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", res.StatusCode)
+	}
+
+	if res.Header.Get("Content-Type") != "application/jwk-set+json" {
+		t.Errorf("unexpected content type: %s", res.Header.Get("Content-Type"))
+	}
+
+	etag := res.Header.Get("ETag")
+	if etag == "" {
+		t.Errorf("expected ETag header")
+	}
+
+	lastMod := res.Header.Get("Last-Modified")
+	if lastMod == "" {
+		t.Errorf("expected Last-Modified header")
+	}
+
+	// Test If-None-Match
+	req2 := httptest.NewRequest(http.MethodGet, "/jwks", nil)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+
+	r.ServeHTTP(rec2, req2)
+	if rec2.Result().StatusCode != http.StatusNotModified {
+		t.Errorf("expected status 304, got %d", rec2.Result().StatusCode)
+	}
+
+	// Test If-Modified-Since
+	req3 := httptest.NewRequest(http.MethodGet, "/jwks", nil)
+	// Add 1 second to last mod to simulate future request
+	parsedLastMod, _ := time.Parse(http.TimeFormat, lastMod)
+	req3.Header.Set("If-Modified-Since", parsedLastMod.Add(time.Second).Format(http.TimeFormat))
+	rec3 := httptest.NewRecorder()
+
+	r.ServeHTTP(rec3, req3)
+	if rec3.Result().StatusCode != http.StatusNotModified {
+		t.Errorf("expected status 304, got %d", rec3.Result().StatusCode)
 	}
 }

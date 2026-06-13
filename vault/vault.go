@@ -18,11 +18,17 @@ package vault
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"iter"
+	"net/http"
 	"slices"
+	"sync"
+	"time"
 
 	"github.com/deep-rent/nexus/jose/jwk"
+	"github.com/deep-rent/nexus/router"
 )
 
 // ErrKeyNotFound is returned when a requested key cannot be found in the vault.
@@ -43,6 +49,10 @@ type Vault interface {
 	// Active retrieves the currently active [jwk.KeyPair] intended for signing
 	// new tokens. It returns [ErrKeyNotFound] if the vault is empty.
 	Active(ctx context.Context) (jwk.KeyPair, error)
+
+	// ServeHTTP exposes the vault's public keys as a JSON Web Key Set (JWKS).
+	// It implements the [router.Handler] interface.
+	ServeHTTP(e *router.Exchange) error
 }
 
 // Source represents an external backend (e.g., KMS, HashiCorp Vault) capable of
@@ -58,12 +68,14 @@ type Source interface {
 // retrieve the key material on demand.
 type vault struct {
 	source Source
+
+	mu        sync.RWMutex
+	jwksBytes []byte
+	etag      string
+	lastMod   time.Time
 }
 
 // New creates a new [Vault] backed by the provided [Source].
-// For simplicity, this implementation currently fetches keys from the source
-// on every invocation. Future enhancements could introduce caching and background
-// refreshing.
 func New(source Source) Vault {
 	return &vault{
 		source: source,
@@ -119,6 +131,84 @@ func (v *vault) Active(ctx context.Context) (jwk.KeyPair, error) {
 		return nil, ErrKeyNotFound
 	}
 	return keys[0], nil
+}
+
+// ServeHTTP implements [router.Handler] and [Vault].
+func (v *vault) ServeHTTP(e *router.Exchange) error {
+	ctx := e.Context()
+	keys, err := v.source.Load(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Stabilize the output since source.Load() might return keys in a
+	// rotated order. We sort them by KeyID or Thumbprint.
+	sortedKeys := make([]jwk.KeyPair, len(keys))
+	copy(sortedKeys, keys)
+	slices.SortFunc(sortedKeys, func(a, b jwk.KeyPair) int {
+		idA := a.KeyID()
+		if idA == "" {
+			idA = a.Thumbprint()
+		}
+		idB := b.KeyID()
+		if idB == "" {
+			idB = b.Thumbprint()
+		}
+		if idA < idB {
+			return -1
+		}
+		if idA > idB {
+			return 1
+		}
+		return 0
+	})
+
+	// Convert to jwk.Key slice for Set creation
+	pubKeys := make([]jwk.Key, len(sortedKeys))
+	for i, k := range sortedKeys {
+		pubKeys[i] = k
+	}
+
+	set := jwk.NewSet(pubKeys...)
+	payload, err := jwk.WriteSet(set)
+	if err != nil {
+		return err
+	}
+
+	hash := sha256.Sum256(payload)
+	etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
+
+	v.mu.Lock()
+	if v.etag != etag {
+		v.etag = etag
+		v.jwksBytes = payload
+		v.lastMod = time.Now().UTC()
+	}
+	lastMod := v.lastMod
+	v.mu.Unlock()
+
+	// Check conditional headers
+	if v := e.GetHeader("If-None-Match"); v != "" {
+		if v == etag {
+			e.Status(http.StatusNotModified)
+			return nil
+		}
+	} else if v := e.GetHeader("If-Modified-Since"); v != "" {
+		if t, err := time.Parse(http.TimeFormat, v); err == nil {
+			if !lastMod.After(t.Add(time.Second)) { // Ignore sub-second precision
+				e.Status(http.StatusNotModified)
+				return nil
+			}
+		}
+	}
+
+	e.SetHeader("Content-Type", "application/jwk-set+json")
+	e.SetHeader("ETag", etag)
+	e.SetHeader("Last-Modified", lastMod.Format(http.TimeFormat))
+	e.Status(http.StatusOK)
+
+	_, err = e.W.Write(payload)
+	return err
 }
 
 var _ Vault = (*vault)(nil)
