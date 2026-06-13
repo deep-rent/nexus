@@ -172,12 +172,10 @@ func Verify(verifier, challenge, method string) bool {
 		return false
 	}
 
-	// Ensure constant-time comparison doesn't panic due to unequal lengths.
-	if len(exp) != len(challenge) {
-		return false
-	}
+	// Hash both strings using SHA-256 to ensure equal-length comparison inputs,
+	// mitigating length-based timing leaks during the constant-time comparison.
+	hExp := sha256.Sum256([]byte(exp))
+	hChallenge := sha256.Sum256([]byte(challenge))
 
-	// Mitigate timing attacks during verification by ensuring the comparison
-	// time does not depend on the contents of the strings.
-	return subtle.ConstantTimeCompare([]byte(exp), []byte(challenge)) == 1
+	return subtle.ConstantTimeCompare(hExp[:], hChallenge[:]) == 1
 }
