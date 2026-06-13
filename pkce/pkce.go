@@ -79,12 +79,32 @@ var (
 	// ErrUnsupportedMethod indicates that the provided challenge method is not
 	// supported. Valid methods are [MethodS256] and [MethodPlain].
 	ErrUnsupportedMethod = errors.New("pkce: unsupported challenge method")
+
+	// ErrInvalidVerifier indicates that the provided code verifier contains
+	// characters that are not allowed by RFC 7636.
+	ErrInvalidVerifier = errors.New("pkce: code verifier contains invalid characters")
 )
 
 // Supports checks if the provided challenge method string is supported by this
 // package. It returns true for [MethodS256] and [MethodPlain].
 func Supports(method string) bool {
 	return method == MethodS256 || method == MethodPlain
+}
+
+// isValidVerifier checks if a string only contains unreserved characters
+// as defined in RFC 7636 Section 4.1: [A-Z], [a-z], [0-9], "-", ".", "_", "~".
+func isValidVerifier(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '.' || c == '_' || c == '~' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // Verifier creates a cryptographically secure random string to serve as a PKCE
@@ -120,6 +140,10 @@ func Verifier(length int) (string, error) {
 func Challenge(verifier, method string) (string, error) {
 	if len(verifier) < MinVerifierLength || len(verifier) > MaxVerifierLength {
 		return "", ErrInvalidLength
+	}
+
+	if !isValidVerifier(verifier) {
+		return "", ErrInvalidVerifier
 	}
 
 	switch method {
