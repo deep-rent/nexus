@@ -21,13 +21,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/pkce"
 )
-
-func isUnreserved(c rune) bool {
-	return ascii.IsAlphaNum(c) || c == '-' || c == '.' || c == '_' || c == '~'
-}
 
 func TestVerifier(t *testing.T) {
 	tests := []struct {
@@ -55,7 +50,7 @@ func TestVerifier(t *testing.T) {
 			if len(got) != tt.length {
 				t.Errorf("Verifier() length = %d, want %d", len(got), tt.length)
 			}
-			if !ascii.All(got, isUnreserved) {
+			if !pkce.IsUnreserved(got) {
 				t.Errorf("Verifier() contains invalid characters: %q", got)
 			}
 		})
