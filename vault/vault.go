@@ -141,32 +141,9 @@ func (v *vault) ServeHTTP(e *router.Exchange) error {
 		return err
 	}
 
-	// Stabilize the output since source.Load() might return keys in a
-	// rotated order. We sort them by KeyID or Thumbprint.
-	sortedKeys := make([]jwk.KeyPair, len(keys))
-	copy(sortedKeys, keys)
-
-	slices.SortFunc(sortedKeys, func(a, b jwk.KeyPair) int {
-		idA := a.KeyID()
-		if idA == "" {
-			idA = a.Thumbprint()
-		}
-		idB := b.KeyID()
-		if idB == "" {
-			idB = b.Thumbprint()
-		}
-		if idA < idB {
-			return -1
-		}
-		if idA > idB {
-			return 1
-		}
-		return 0
-	})
-
 	// Convert to jwk.Key slice for Set creation
-	pubKeys := make([]jwk.Key, len(sortedKeys))
-	for i, k := range sortedKeys {
+	pubKeys := make([]jwk.Key, len(keys))
+	for i, k := range keys {
 		pubKeys[i] = k
 	}
 

@@ -455,6 +455,18 @@ func TestNewSet(t *testing.T) {
 			t.Errorf("Find(k1) = %v; want %v", got, k3)
 		}
 	})
+
+	t.Run("sorting", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k2, k1)
+		var order []string
+		for k := range s.Keys() {
+			order = append(order, k.KeyID())
+		}
+		if len(order) != 2 || order[0] != "k1" || order[1] != "k2" {
+			t.Errorf("Keys() order = %v; want [k1 k2]", order)
+		}
+	})
 }
 
 func TestSingletonSet_Find(t *testing.T) {

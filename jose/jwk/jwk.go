@@ -86,6 +86,7 @@ import (
 	"log/slog"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cloudflare/circl/sign/ed448"
@@ -372,8 +373,11 @@ func (s *set) Find(hint Hint) Key {
 //
 // It is primarily used to programmatically build a JSON Web Key Set from
 // individual keys, for instance when preparing to expose a JWKS endpoint.
+// The keys are sorted lexicographically by their Key ID (or Thumbprint if
+// Key ID is absent) to guarantee a deterministic output order.
+//
 // If multiple keys share the same Key ID or Thumbprint, the latter keys
-// in the slice will overwrite the earlier ones in the internal lookup maps.
+// after sorting will overwrite the earlier ones in the internal lookup maps.
 func NewSet(keys ...Key) Set {
 	if len(keys) == 0 {
 		return empty
@@ -381,8 +385,12 @@ func NewSet(keys ...Key) Set {
 	if len(keys) == 1 {
 		return Singleton(keys[0])
 	}
-	s := newSet(len(keys))
-	for _, k := range keys {
+
+	sorted := slices.Clone(keys)
+	slices.SortFunc(sorted, compare)
+
+	s := newSet(len(sorted))
+	for _, k := range sorted {
 		i := len(s.keys)
 		s.keys = append(s.keys, k)
 		if kid := k.KeyID(); kid != "" {
@@ -393,6 +401,18 @@ func NewSet(keys ...Key) Set {
 		}
 	}
 	return s
+}
+
+func compare(a, b Key) int {
+	u := a.KeyID()
+	if u == "" {
+		u = a.Thumbprint()
+	}
+	v := b.KeyID()
+	if v == "" {
+		v = b.Thumbprint()
+	}
+	return strings.Compare(u, v)
 }
 
 // emptySet represents a [Set] containing no keys.
