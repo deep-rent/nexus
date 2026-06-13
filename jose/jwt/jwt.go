@@ -505,7 +505,7 @@ func WithClock(now func() time.Time) VerifierOption {
 
 // verifier is the default implementation of the [Verifier] interface.
 type verifier[T Claims] struct {
-	resolver  jwk.Resolver
+	keys      jwk.Resolver
 	issuers   []string
 	audiences []string
 	leeway    time.Duration
@@ -519,7 +519,7 @@ var _ Verifier[Claims] = (*verifier[Claims])(nil)
 // NewVerifier creates a new [Verifier] bound to a specific JWK resolver.
 // The type parameter T is the user-defined struct for the token's claims.
 func NewVerifier[T Claims](
-	resolver jwk.Resolver,
+	keys jwk.Resolver,
 	opts ...VerifierOption,
 ) Verifier[T] {
 	cfg := verifierConfig{
@@ -530,7 +530,7 @@ func NewVerifier[T Claims](
 	}
 
 	return &verifier[T]{
-		resolver:  resolver,
+		keys:      keys,
 		issuers:   cfg.issuers,
 		audiences: cfg.audiences,
 		leeway:    cfg.leeway,
@@ -541,7 +541,7 @@ func NewVerifier[T Claims](
 
 // Verify implements the [Verifier] interface.
 func (v *verifier[T]) Verify(in []byte) (T, error) {
-	c, err := Verify[T](v.resolver, in)
+	c, err := Verify[T](v.keys, in)
 	if err != nil {
 		var zero T
 		return zero, err
