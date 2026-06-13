@@ -79,11 +79,15 @@ var (
 
 	// ErrUnsupportedMethod indicates that the provided challenge method is not
 	// supported. Valid methods are [MethodS256] and [MethodPlain].
-	ErrUnsupportedMethod = errors.New("pkce: unsupported challenge method")
+	ErrUnsupportedMethod = errors.New(
+		"pkce: unsupported challenge method",
+	)
 
 	// ErrInvalidVerifier indicates that the provided code verifier contains
 	// characters that are not allowed by RFC 7636.
-	ErrInvalidVerifier = errors.New("pkce: code verifier contains invalid characters")
+	ErrInvalidVerifier = errors.New(
+		"pkce: code verifier contains invalid characters",
+	)
 )
 
 // Supports checks if the provided challenge method string is supported by this
@@ -91,6 +95,10 @@ var (
 func Supports(method string) bool {
 	return method == MethodS256 || method == MethodPlain
 }
+
+// alphabet contains the unreserved characters as defined in RFC 7636
+// Section 4.1.
+const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
 // isValidVerifier checks if a string only contains unreserved characters
 // as defined in RFC 7636 Section 4.1: [A-Z], [a-z], [0-9], "-", ".", "_", "~".
@@ -108,10 +116,10 @@ func isValidVerifier(s string) bool {
 	return true
 }
 
-// unsafeBytes converts a string to a byte slice without allocations.
+// explode converts a string to a byte slice without allocations.
 // The returned slice must not be modified.
-func unsafeBytes(s string) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s))
+func explode(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s)) //nolint:gosec
 }
 
 // Verifier creates a cryptographically secure random string to serve as a PKCE
@@ -123,19 +131,12 @@ func Verifier(length int) (string, error) {
 		return "", ErrInvalidLength
 	}
 
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-	const maxByte = 198 // 66 * 3 to eliminate modulo bias (198 < 256)
-
 	result := make([]byte, length)
 
 	// Pre-allocate a buffer of random bytes. Since about 22.6% (58/256) of bytes
 	// are discarded to avoid modulo bias, allocating 1.4x of length is highly
-	// likely to be sufficient to fill the result slice in a single rand.Read call.
-	bufLen := (length * 14) / 10
-	if bufLen < 32 {
-		bufLen = 32
-	}
-	buf := make([]byte, bufLen)
+	// likely to be sufficient to fill the result slice in a single call.
+	buf := make([]byte, max((length*14)/10, 32))
 
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
@@ -153,14 +154,14 @@ func Verifier(length int) (string, error) {
 		val := buf[bufIdx]
 		bufIdx++
 
-		if val < maxByte {
+		if val < 198 { // 66 * 3 to eliminate modulo bias (198 < 256)
 			result[i] = alphabet[val%66]
 			i++
 		}
 	}
 
 	// Convert the byte slice to a string without copying.
-	return unsafe.String(&result[0], len(result)), nil
+	return unsafe.String(&result[0], len(result)), nil //nolint:gosec
 }
 
 // Challenge computes a code challenge from a given code verifier and challenge
@@ -179,7 +180,7 @@ func Challenge(verifier, method string) (string, error) {
 	switch method {
 	case MethodS256:
 		// Hash the verifier using SHA-256 and encode the raw bytes.
-		sum := sha256.Sum256(unsafeBytes(verifier))
+		sum := sha256.Sum256(explode(verifier))
 		return base64.RawURLEncoding.EncodeToString(sum[:]), nil
 	case MethodPlain:
 		return verifier, nil
@@ -211,11 +212,11 @@ func Verify(verifier, challenge, method string) bool {
 			return false
 		}
 		// Hash the verifier.
-		sum := sha256.Sum256(unsafeBytes(verifier))
+		sum := sha256.Sum256(explode(verifier))
 
 		// Decode the challenge into a stack-allocated buffer to avoid allocations.
 		var decoded [32]byte
-		n, err := base64.RawURLEncoding.Decode(decoded[:], unsafeBytes(challenge))
+		n, err := base64.RawURLEncoding.Decode(decoded[:], explode(challenge))
 		if err != nil || n != 32 {
 			return false
 		}
@@ -223,14 +224,18 @@ func Verify(verifier, challenge, method string) bool {
 		return subtle.ConstantTimeCompare(sum[:], decoded[:]) == 1
 
 	case MethodPlain:
-		if len(challenge) < MinVerifierLength || len(challenge) > MaxVerifierLength {
+		if len(challenge) < MinVerifierLength {
+			return false
+		}
+
+		if len(challenge) > MaxVerifierLength {
 			return false
 		}
 
 		// Hash both values to ensure equal-length comparison inputs,
 		// mitigating length-based timing leaks during the constant-time comparison.
-		hExp := sha256.Sum256(unsafeBytes(verifier))
-		hChallenge := sha256.Sum256(unsafeBytes(challenge))
+		hExp := sha256.Sum256(explode(verifier))
+		hChallenge := sha256.Sum256(explode(challenge))
 
 		return subtle.ConstantTimeCompare(hExp[:], hChallenge[:]) == 1
 
