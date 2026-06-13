@@ -3,6 +3,7 @@ package pkce
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -13,17 +14,17 @@ func TestVerifier(t *testing.T) {
 		length  int
 		wantErr error
 	}{
-		{"Valid Min Length", MinVerifierLength, nil},
-		{"Valid Mid Length", 80, nil},
-		{"Valid Max Length", MaxVerifierLength, nil},
-		{"Invalid Too Short", MinVerifierLength - 1, ErrInvalidLength},
-		{"Invalid Too Long", MaxVerifierLength + 1, ErrInvalidLength},
+		{"valid min length", MinVerifierLength, nil},
+		{"valid mid length", 80, nil},
+		{"valid max length", MaxVerifierLength, nil},
+		{"invalid too short", MinVerifierLength - 1, ErrInvalidLength},
+		{"invalid too long", MaxVerifierLength + 1, ErrInvalidLength},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := Verifier(tt.length)
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Verifier() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
@@ -45,42 +46,42 @@ func TestChallenge(t *testing.T) {
 	invalidVerifier := validVerifier + "!"
 
 	tests := []struct {
-		name      string
-		verifier  string
-		method    string
-		want      string
-		wantErr   error
+		name     string
+		verifier string
+		method   string
+		want     string
+		wantErr  error
 	}{
 		{
-			name:     "Valid S256",
+			name:     "valid s256",
 			verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
 			method:   MethodS256,
 			want:     "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
 			wantErr:  nil,
 		},
 		{
-			name:     "Valid Plain",
+			name:     "valid plain",
 			verifier: validVerifier,
 			method:   MethodPlain,
 			want:     validVerifier,
 			wantErr:  nil,
 		},
 		{
-			name:     "Invalid Method",
+			name:     "invalid method",
 			verifier: validVerifier,
 			method:   "invalid",
 			want:     "",
 			wantErr:  ErrUnsupportedMethod,
 		},
 		{
-			name:     "Invalid Characters",
+			name:     "invalid characters",
 			verifier: invalidVerifier,
 			method:   MethodS256,
 			want:     "",
 			wantErr:  ErrInvalidVerifier,
 		},
 		{
-			name:     "Invalid Length Too Short",
+			name:     "invalid length too short",
 			verifier: "too-short",
 			method:   MethodS256,
 			want:     "",
@@ -91,7 +92,7 @@ func TestChallenge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := Challenge(tt.verifier, tt.method)
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Challenge() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
@@ -117,14 +118,14 @@ func TestVerify(t *testing.T) {
 		method    string
 		want      bool
 	}{
-		{"Valid S256 Match", v, c, MethodS256, true},
-		{"Valid Plain Match", v, v, MethodPlain, true},
-		{"Mismatch S256", v, "invalid-challenge", MethodS256, false},
-		{"Mismatch Plain", v, "invalid-challenge", MethodPlain, false},
-		{"Empty Verifier", "", c, MethodS256, false},
-		{"Empty Challenge", v, "", MethodS256, false},
-		{"Invalid Verifier Characters", v + "!", c, MethodS256, false},
-		{"Invalid Method", v, c, "invalid-method", false},
+		{"valid s256 match", v, c, MethodS256, true},
+		{"valid plain match", v, v, MethodPlain, true},
+		{"mismatch s256", v, "invalid-challenge", MethodS256, false},
+		{"mismatch plain", v, "invalid-challenge", MethodPlain, false},
+		{"empty verifier", "", c, MethodS256, false},
+		{"empty challenge", v, "", MethodS256, false},
+		{"invalid verifier characters", v + "!", c, MethodS256, false},
+		{"invalid method", v, c, "invalid-method", false},
 	}
 
 	for _, tt := range tests {
@@ -139,16 +140,14 @@ func TestVerify(t *testing.T) {
 func BenchmarkVerify(b *testing.B) {
 	v, _ := Verifier(128)
 	c, _ := Challenge(v, MethodS256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		Verify(v, c, MethodS256)
 	}
 }
 
 func BenchmarkVerifier(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = Verifier(128)
 	}
 }
-
-
