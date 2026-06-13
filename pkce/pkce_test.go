@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 func TestVerifier(t *testing.T) {
@@ -34,7 +36,7 @@ func TestVerifier(t *testing.T) {
 			if len(got) != tt.length {
 				t.Errorf("Verifier() length = %d, want %d", len(got), tt.length)
 			}
-			if !isValidVerifier(got) {
+			if !ascii.IsValidVerifier(got) {
 				t.Errorf("Verifier() contains invalid characters: %q", got)
 			}
 		})

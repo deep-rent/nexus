@@ -46,6 +46,8 @@ import (
 	"errors"
 	"fmt"
 	"unsafe"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 const (
@@ -100,21 +102,7 @@ func Supports(method string) bool {
 // Section 4.1.
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
-// isValidVerifier checks if a string only contains unreserved characters
-// as defined in RFC 7636 Section 4.1: [A-Z], [a-z], [0-9], "-", ".", "_", "~".
-func isValidVerifier(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c >= 'a' && c <= 'z') ||
-			(c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') ||
-			c == '-' || c == '.' || c == '_' || c == '~' {
-			continue
-		}
-		return false
-	}
-	return true
-}
+
 
 // explode converts a string to a byte slice without allocations.
 // The returned slice must not be modified.
@@ -173,7 +161,7 @@ func Challenge(verifier, method string) (string, error) {
 		return "", ErrInvalidLength
 	}
 
-	if !isValidVerifier(verifier) {
+	if !ascii.IsValidVerifier(verifier) {
 		return "", ErrInvalidVerifier
 	}
 
@@ -202,7 +190,7 @@ func Verify(verifier, challenge, method string) bool {
 		return false
 	}
 
-	if !isValidVerifier(verifier) {
+	if !ascii.IsValidVerifier(verifier) {
 		return false
 	}
 
