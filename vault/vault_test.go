@@ -28,31 +28,17 @@ import (
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/vault"
+	"github.com/deep-rent/nexus/vault/store/mock"
 )
-
-// mockSource is a simple in-memory implementation of vault.Source for testing.
-type mockSource struct {
-	keys []jwk.KeyPair
-	err  error
-}
-
-func (m *mockSource) Load(ctx context.Context) ([]jwk.KeyPair, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.keys, nil
-}
 
 // mockHint implements jwk.Hint for testing.
 type mockHint struct {
 	alg string
 	kid string
-	x5t string
 }
 
-func (h mockHint) Algorithm() string  { return h.alg }
-func (h mockHint) KeyID() string      { return h.kid }
-func (h mockHint) Thumbprint() string { return h.x5t }
+func (h mockHint) Algorithm() string { return h.alg }
+func (h mockHint) KeyID() string     { return h.kid }
 
 func generateTestKeyPair(t *testing.T, kid string) jwk.KeyPair {
 	t.Helper()
@@ -66,25 +52,30 @@ func generateTestKeyPair(t *testing.T, kid string) jwk.KeyPair {
 
 func TestVault_Active(t *testing.T) {
 	ctx := context.Background()
-	key1 := generateTestKeyPair(t, "key-1")
-	key2 := generateTestKeyPair(t, "key-2")
+	kek := []byte("01234567890123456789012345678901") // 32 bytes
+	
+	key1 := generateTestKeyPair(t, "key-1") // older
+	key2 := generateTestKeyPair(t, "key-2") // newer (active)
 
 	t.Run("success", func(t *testing.T) {
-		src := &mockSource{keys: []jwk.KeyPair{key1, key2}}
-		v := vault.New(src)
+		src := mock.New(kek)
+		// Because mock Load returns in reverse chronological order, 
+		// the last prepopulated key is returned first (active).
+		src.Prepopulate(key1, key2)
+		v := vault.New(src, kek)
 
 		active, err := v.Next(ctx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if active.KeyID() != "key-1" {
-			t.Errorf("expected active kid %q, got %q", "key-1", active.KeyID())
+		if active.KeyID() != "key-2" {
+			t.Errorf("expected active kid %q, got %q", "key-2", active.KeyID())
 		}
 	})
 
 	t.Run("empty vault", func(t *testing.T) {
-		src := &mockSource{keys: []jwk.KeyPair{}}
-		v := vault.New(src)
+		src := mock.New(kek)
+		v := vault.New(src, kek)
 
 		_, err := v.Next(ctx)
 		if !errors.Is(err, vault.ErrKeyNotFound) {
@@ -93,23 +84,26 @@ func TestVault_Active(t *testing.T) {
 	})
 
 	t.Run("source error", func(t *testing.T) {
-		srcErr := errors.New("source error")
-		src := &mockSource{err: srcErr}
-		v := vault.New(src)
+		src := mock.New(kek)
+		src.Prepopulate(key1)
+		v := vault.New(src, []byte("wrong-kek-will-cause-error"))
 
 		_, err := v.Next(ctx)
-		if !errors.Is(err, srcErr) {
-			t.Errorf("expected %v, got %v", srcErr, err)
+		if err == nil {
+			t.Errorf("expected error due to invalid KEK, got nil")
 		}
 	})
 }
 
 func TestVault_Find(t *testing.T) {
 	ctx := context.Background()
+	kek := []byte("01234567890123456789012345678901")
 	key1 := generateTestKeyPair(t, "key-1")
 	key2 := generateTestKeyPair(t, "key-2")
-	src := &mockSource{keys: []jwk.KeyPair{key1, key2}}
-	v := vault.New(src)
+	
+	src := mock.New(kek)
+	src.Prepopulate(key1, key2)
+	v := vault.New(src, kek)
 
 	t.Run("found by kid", func(t *testing.T) {
 		hint := mockHint{alg: jwa.RS256.String(), kid: "key-2"}
@@ -148,10 +142,13 @@ func TestVault_Find(t *testing.T) {
 
 func TestVault_Keys(t *testing.T) {
 	ctx := context.Background()
+	kek := []byte("01234567890123456789012345678901")
 	key1 := generateTestKeyPair(t, "key-1")
 	key2 := generateTestKeyPair(t, "key-2")
-	src := &mockSource{keys: []jwk.KeyPair{key1, key2}}
-	v := vault.New(src)
+	
+	src := mock.New(kek)
+	src.Prepopulate(key1, key2)
+	v := vault.New(src, kek)
 
 	keysIter, err := v.Keys(ctx)
 	if err != nil {
@@ -168,49 +165,18 @@ func TestVault_Keys(t *testing.T) {
 	}
 }
 
-func TestStaticSource_Rotation(t *testing.T) {
-	ctx := context.Background()
-	key1 := generateTestKeyPair(t, "key-1")
-	key2 := generateTestKeyPair(t, "key-2")
-	key3 := generateTestKeyPair(t, "key-3")
+func TestProvider_ServeHTTP(t *testing.T) {
+	kek := []byte("01234567890123456789012345678901")
+	key1 := generateTestKeyPair(t, "key-A")
+	key2 := generateTestKeyPair(t, "key-B")
 
-	src := vault.NewStaticSource(key1, key2, key3)
-	v := vault.New(src)
-
-	// First call
-	active1, _ := v.Next(ctx)
-	if active1.KeyID() != "key-1" {
-		t.Errorf("expected key-1, got %s", active1.KeyID())
-	}
-
-	// Second call
-	active2, _ := v.Next(ctx)
-	if active2.KeyID() != "key-2" {
-		t.Errorf("expected key-2, got %s", active2.KeyID())
-	}
-
-	// Third call
-	active3, _ := v.Next(ctx)
-	if active3.KeyID() != "key-3" {
-		t.Errorf("expected key-3, got %s", active3.KeyID())
-	}
-
-	// Wraparound call
-	active4, _ := v.Next(ctx)
-	if active4.KeyID() != "key-1" {
-		t.Errorf("expected key-1, got %s", active4.KeyID())
-	}
-}
-
-func TestVault_ServeHTTP(t *testing.T) {
-	key1 := generateTestKeyPair(t, "key-B")
-	key2 := generateTestKeyPair(t, "key-A")
-
-	src := vault.NewStaticSource(key1, key2)
-	v := vault.New(src)
+	src := mock.New(kek)
+	src.Prepopulate(key1, key2)
+	v := vault.New(src, kek)
+	p := vault.NewProvider(v)
 
 	r := router.New()
-	r.Handle("GET /jwks", v)
+	r.Handle("GET /jwks", p)
 
 	req := httptest.NewRequest(http.MethodGet, "/jwks", nil)
 	rec := httptest.NewRecorder()
