@@ -159,7 +159,7 @@ func Challenge(verifier, method string) (string, error) {
 		return "", ErrInvalidLength
 	}
 
-	if !ascii.IsValidVerifier(verifier) {
+	if !ascii.All(verifier, isUnreserved) {
 		return "", ErrInvalidVerifier
 	}
 
@@ -188,7 +188,7 @@ func Verify(verifier, challenge, method string) bool {
 		return false
 	}
 
-	if !ascii.IsValidVerifier(verifier) {
+	if !ascii.All(verifier, isUnreserved) {
 		return false
 	}
 
@@ -228,4 +228,11 @@ func Verify(verifier, challenge, method string) bool {
 	default:
 		return false
 	}
+}
+
+// isUnreserved reports whether the given rune is an unreserved ASCII character.
+// According to RFC 7636 Section 4.1, unreserved characters are:
+// [A-Z], [a-z], [0-9], "-", ".", "_", "~".
+func isUnreserved(c rune) bool {
+	return ascii.IsAlphaNum(c) || c == '-' || c == '.' || c == '_' || c == '~'
 }

@@ -254,25 +254,46 @@ func TestToUpper(t *testing.T) {
 	}
 }
 
-func TestIsValidVerifier(t *testing.T) {
+func TestAll(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
 		give string
+		fn   func(rune) bool
 		want bool
 	}{
-		{"valid verifier", "abc-xyz.123_~", true},
-		{"invalid symbol space", "abc xyz", false},
-		{"invalid symbol exclamation", "abc!", false},
-		{"invalid non-ascii", "abc日本語", false},
+		{
+			name: "all lowercase true",
+			give: "abcdefg",
+			fn:   ascii.IsLower,
+			want: true,
+		},
+		{
+			name: "all lowercase false",
+			give: "abcDefg",
+			fn:   ascii.IsLower,
+			want: false,
+		},
+		{
+			name: "all digits true",
+			give: "12345",
+			fn:   ascii.IsDigit,
+			want: true,
+		},
+		{
+			name: "all digits false",
+			give: "123a45",
+			fn:   ascii.IsDigit,
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, want := ascii.IsValidVerifier(tt.give), tt.want; got != want {
-				t.Errorf("IsValidVerifier(%q) = %v; want %v", tt.give, got, want)
+			if got, want := ascii.All(tt.give, tt.fn), tt.want; got != want {
+				t.Errorf("All(%q) = %v; want %v", tt.give, got, want)
 			}
 		})
 	}

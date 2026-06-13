@@ -36,12 +36,13 @@ func TestVerifier(t *testing.T) {
 			if len(got) != tt.length {
 				t.Errorf("Verifier() length = %d, want %d", len(got), tt.length)
 			}
-			if !ascii.IsValidVerifier(got) {
+			if !ascii.All(got, isUnreserved) {
 				t.Errorf("Verifier() contains invalid characters: %q", got)
 			}
 		})
 	}
 }
+
 
 func TestChallenge(t *testing.T) {
 	validVerifier := strings.Repeat("a", MinVerifierLength)

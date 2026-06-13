@@ -87,18 +87,12 @@ func ToUpper(c rune) rune {
 	return c
 }
 
-// IsValidVerifier reports whether a string only contains PKCE unreserved
-// characters per RFC 7636 Section 4.1: [A-Z], [a-z], [0-9], "-", ".", "_", "~".
-func IsValidVerifier(s string) bool {
+// All reports whether all runes in the string satisfy the given predicate.
+func All(s string, fn func(c rune) bool) bool {
 	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c >= 'a' && c <= 'z') ||
-			(c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') ||
-			c == '-' || c == '.' || c == '_' || c == '~' {
-			continue
+		if !fn(rune(s[i])) {
+			return false
 		}
-		return false
 	}
 	return true
 }
