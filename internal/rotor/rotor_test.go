@@ -156,7 +156,7 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 		concurrency = 50
 		calls       = 100
 	)
-	totalExpected := uint64(concurrency * calls)
+	exp := uint64(concurrency * calls)
 
 	var countA, countB, countC, countD atomic.Uint64
 	var wg sync.WaitGroup
@@ -186,19 +186,18 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	}
 
 	a, b, c := countA.Load(), countB.Load(), countC.Load()
-	if got, want := a+b+c, totalExpected; got != want {
+	if got, want := a+b+c, exp; got != want {
 		t.Errorf("total calls = %d; want %d", got, want)
 	}
 
-	avg := float64(totalExpected) / float64(len(items))
-	// 10% tolerance for distribution check
-	tolerance := avg * 0.1
+	avg := float64(exp) / float64(len(items))
+	tol := avg * 0.1 // 10% tolerance for distribution check
 
 	counts := map[string]uint64{"a": a, "b": b, "c": c}
 	for label, got := range counts {
-		if diff := math.Abs(float64(got) - avg); diff > tolerance {
+		if diff := math.Abs(float64(got) - avg); diff > tol {
 			t.Errorf("distribution for %q = %d; outside tolerance of %f from %f",
-				label, got, tolerance, avg)
+				label, got, tol, avg)
 		}
 	}
 }
