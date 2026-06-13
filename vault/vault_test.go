@@ -56,13 +56,12 @@ func (h mockHint) Thumbprint() string { return h.x5t }
 
 func generateTestKeyPair(t *testing.T, kid string) jwk.KeyPair {
 	t.Helper()
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	prv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("failed to generate RSA key: %v", err)
 	}
 
-	builder := jwk.NewKeyBuilder(jwa.RS256).WithKeyID(kid)
-	return builder.BuildPair(privateKey)
+	return jwk.NewKeyBuilder(jwa.RS256).WithKeyID(kid).BuildPair(prv)
 }
 
 func TestVault_Active(t *testing.T) {
@@ -74,7 +73,7 @@ func TestVault_Active(t *testing.T) {
 		src := &mockSource{keys: []jwk.KeyPair{key1, key2}}
 		v := vault.New(src)
 
-		active, err := v.Active(ctx)
+		active, err := v.Next(ctx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -87,7 +86,7 @@ func TestVault_Active(t *testing.T) {
 		src := &mockSource{keys: []jwk.KeyPair{}}
 		v := vault.New(src)
 
-		_, err := v.Active(ctx)
+		_, err := v.Next(ctx)
 		if !errors.Is(err, vault.ErrKeyNotFound) {
 			t.Errorf("expected ErrKeyNotFound, got %v", err)
 		}
@@ -98,7 +97,7 @@ func TestVault_Active(t *testing.T) {
 		src := &mockSource{err: srcErr}
 		v := vault.New(src)
 
-		_, err := v.Active(ctx)
+		_, err := v.Next(ctx)
 		if !errors.Is(err, srcErr) {
 			t.Errorf("expected %v, got %v", srcErr, err)
 		}
@@ -179,25 +178,25 @@ func TestStaticSource_Rotation(t *testing.T) {
 	v := vault.New(src)
 
 	// First call
-	active1, _ := v.Active(ctx)
+	active1, _ := v.Next(ctx)
 	if active1.KeyID() != "key-1" {
 		t.Errorf("expected key-1, got %s", active1.KeyID())
 	}
 
 	// Second call
-	active2, _ := v.Active(ctx)
+	active2, _ := v.Next(ctx)
 	if active2.KeyID() != "key-2" {
 		t.Errorf("expected key-2, got %s", active2.KeyID())
 	}
 
 	// Third call
-	active3, _ := v.Active(ctx)
+	active3, _ := v.Next(ctx)
 	if active3.KeyID() != "key-3" {
 		t.Errorf("expected key-3, got %s", active3.KeyID())
 	}
 
 	// Wraparound call
-	active4, _ := v.Active(ctx)
+	active4, _ := v.Next(ctx)
 	if active4.KeyID() != "key-1" {
 		t.Errorf("expected key-1, got %s", active4.KeyID())
 	}

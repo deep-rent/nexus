@@ -47,9 +47,9 @@ type Vault interface {
 	// It returns [ErrKeyNotFound] if no matching key is found.
 	Find(ctx context.Context, hint jwk.Hint) (jwk.KeyPair, error)
 
-	// Active retrieves the currently active [jwk.KeyPair] intended for signing
+	// Next retrieves the currently active [jwk.KeyPair] intended for signing
 	// new tokens. It returns [ErrKeyNotFound] if the vault is empty.
-	Active(ctx context.Context) (jwk.KeyPair, error)
+	Next(ctx context.Context) (jwk.KeyPair, error)
 }
 
 // Source represents an external backend (e.g., KMS, HashiCorp Vault) capable of
@@ -118,8 +118,8 @@ func (v *vault) Find(ctx context.Context, hint jwk.Hint) (jwk.KeyPair, error) {
 	return nil, ErrKeyNotFound
 }
 
-// Active implements [Vault].
-func (v *vault) Active(ctx context.Context) (jwk.KeyPair, error) {
+// Next implements [Vault].
+func (v *vault) Next(ctx context.Context) (jwk.KeyPair, error) {
 	keys, err := v.source.Load(ctx)
 	if err != nil {
 		return nil, err
@@ -144,18 +144,19 @@ func (v *vault) ServeHTTP(e *router.Exchange) error {
 	}
 
 	set := jwk.NewSet(pub...)
-	payload, err := jwk.WriteSet(set)
+
+	body, err := jwk.WriteSet(set)
 	if err != nil {
 		return err
 	}
 
-	hash := sha256.Sum256(payload)
+	hash := sha256.Sum256(body)
 	etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
 
 	v.mu.Lock()
 	if v.etag != etag {
 		v.etag = etag
-		v.jwks = payload
+		v.jwks = body
 		v.lastMod = time.Now().UTC()
 	}
 	lastMod := v.lastMod
@@ -180,7 +181,7 @@ func (v *vault) ServeHTTP(e *router.Exchange) error {
 	e.SetHeader("Last-Modified", lastMod.Format(http.TimeFormat))
 	e.Status(http.StatusOK)
 
-	_, err = e.W.Write(payload)
+	_, err = e.W.Write(body)
 	return err
 }
 
