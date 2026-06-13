@@ -44,14 +44,14 @@ func TestNew(t *testing.T) {
 			fn()
 		}
 
-		checkPanic(t, func() { rotor.New([]string{}) })
-		checkPanic(t, func() { rotor.New([]int{}) })
+		checkPanic(t, func() { rotor.New(rotor.Sequential, []string{}) })
+		checkPanic(t, func() { rotor.New(rotor.Sequential, []int{}) })
 	})
 
 	t.Run("succeeds with non-empty slice", func(t *testing.T) {
 		t.Parallel()
 		items := []string{"a", "b", "c"}
-		r := rotor.New(items)
+		r := rotor.New(rotor.Sequential, items)
 
 		if r == nil {
 			t.Fatal("New(items) = nil; want non-nil")
@@ -68,7 +68,7 @@ func TestNew(t *testing.T) {
 	t.Run("succeeds with single item", func(t *testing.T) {
 		t.Parallel()
 		items := []string{"a"}
-		r := rotor.New(items)
+		r := rotor.New(rotor.Sequential, items)
 
 		for range 2 {
 			if got, want := r.Next(), "a"; got != want {
@@ -82,7 +82,7 @@ func TestNew_Copy(t *testing.T) {
 	t.Parallel()
 
 	items := []string{"a", "b", "c"}
-	r := rotor.New(items)
+	r := rotor.New(rotor.Sequential, items)
 	items[0] = "Z"
 
 	if got, want := r.Next(), "a"; got != want {
@@ -110,7 +110,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				r := rotor.New(tt.give)
+				r := rotor.New(rotor.Sequential, tt.give)
 				for i, want := range tt.want {
 					if got := r.Next(); got != want {
 						t.Errorf("Next() #%d = %q; want %q", i+1, got, want)
@@ -123,7 +123,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 	t.Run("int slice", func(t *testing.T) {
 		t.Parallel()
 		items := []int{1, 2}
-		r := rotor.New(items)
+		r := rotor.New(rotor.Sequential, items)
 
 		sequence := []int{1, 2, 1, 2}
 		for i, want := range sequence {
@@ -136,7 +136,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 	t.Run("single item slice", func(t *testing.T) {
 		t.Parallel()
 		items := []bool{true}
-		r := rotor.New(items)
+		r := rotor.New(rotor.Sequential, items)
 
 		for range 3 {
 			if got, want := r.Next(), true; got != want {
@@ -150,7 +150,7 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	t.Parallel()
 
 	items := []string{"a", "b", "c"}
-	r := rotor.New(items)
+	r := rotor.New(rotor.Sequential, items)
 
 	const (
 		concurrency = 50

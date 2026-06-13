@@ -13,22 +13,22 @@
 // limitations under the License.
 
 // Package rotor provides a thread-safe, generic type for rotating through a
-// slice of items in a round-robin fashion.
+// slice of items according to a configurable strategy.
 //
 // This package is intended for load-balancing scenarios, such as selecting
 // backends, rotating API keys, or distributing tasks across a pool of workers.
-// The implementation uses atomic operations to ensure high performance under
-// concurrent access without the need for heavy-weight mutexes.
+// The implementation is designed to ensure high performance under concurrent
+// access without the need for heavy-weight mutexes.
 //
 // # Usage
 //
-// Initialize a rotor with a slice of items and call Next to retrieve the next
-// element in the sequence.
+// Initialize a rotor with a strategy and a slice of items, then call Next to
+// retrieve the next element.
 //
 // Example:
 //
 //	backends := []string{"srv-1", "srv-2", "srv-3"}
-//	r := rotor.New(backends)
+//	r := rotor.New(rotor.Sequential, backends)
 //
 //	// Each call returns the next item in the sequence, wrapping around
 //	// at the end.
@@ -36,7 +36,52 @@
 //	s2 := r.Next() // "srv-2"
 package rotor
 
-import "sync/atomic"
+import (
+	"math/rand/v2"
+	"sync/atomic"
+)
+
+// Strategy represents the strategy type for selecting the next element in
+// a [Rotor].
+type Strategy int
+
+const (
+	// Sequential strategy picks the next element in a round-robin fashion.
+	Sequential Strategy = iota
+	// Random strategy chooses the next element randomly.
+	Random
+)
+
+// strategy defines how the next element index is selected.
+type strategy interface {
+	// Pick returns the next element index given the total number of elements n.
+	Pick(n int) int
+}
+
+// sequential is a strategy that picks the next index in a round-robin fashion.
+type sequential struct {
+	idx atomic.Uint32
+}
+
+// Pick implements the Strategy interface.
+func (s *sequential) Pick(n int) int {
+	var idx uint32
+	for {
+		idx = s.idx.Load()
+		if s.idx.CompareAndSwap(idx, (idx+1)%uint32(n)) { //nolint:gosec
+			break
+		}
+	}
+	return int(idx)
+}
+
+// random is a strategy that picks a random index.
+type random struct{}
+
+// Pick implements the Strategy interface.
+func (r *random) Pick(n int) int {
+	return rand.IntN(n) //nolint:gosec
+}
 
 // Rotor provides thread-safe round-robin access to a slice of items.
 //
@@ -63,8 +108,8 @@ func (s *singleton[E]) Next() E {
 type rotor[E any] struct {
 	// items is the immutable slice of elements to rotate through.
 	items []E
-	// index tracks the current position in the rotation using atomic operations.
-	index atomic.Uint64
+	// strategy determines how the next item is selected.
+	strategy strategy
 }
 
 // New creates a new [Rotor].
@@ -72,7 +117,7 @@ type rotor[E any] struct {
 // It makes a defensive copy of the provided items slice to ensure immutability.
 // This function panics if the items slice is empty. If the slice contains exactly
 // one item, an optimized [Rotor] implementation is returned.
-func New[E any](items []E) Rotor[E] {
+func New[E any](t Strategy, items []E) Rotor[E] {
 	if len(items) == 0 {
 		panic("rotor: items slice must not be empty")
 	}
@@ -81,22 +126,23 @@ func New[E any](items []E) Rotor[E] {
 	}
 	c := make([]E, len(items))
 	copy(c, items)
-	return &rotor[E]{items: c}
+
+	var s strategy
+	switch t {
+	case Random:
+		s = &random{}
+	case Sequential:
+		fallthrough
+	default:
+		s = &sequential{}
+	}
+
+	return &rotor[E]{items: c, strategy: s}
 }
 
 // Next implements the [Rotor] interface.
 //
-// It uses an atomic compare-and-swap loop to increment the internal index and
-// wrap it around the length of the items slice, ensuring that every caller
-// receives a unique index in the sequence until the cycle repeats.
+// It uses the underlying strategy to determine the index of the next item.
 func (r *rotor[E]) Next() E {
-	n := uint64(len(r.items))
-	var idx uint64
-	for {
-		idx = r.index.Load()
-		if r.index.CompareAndSwap(idx, (idx+1)%n) {
-			break
-		}
-	}
-	return r.items[idx]
+	return r.items[r.strategy.Pick(len(r.items))]
 }
