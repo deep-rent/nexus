@@ -98,10 +98,6 @@ func Supports(method string) bool {
 	return method == MethodS256 || method == MethodPlain
 }
 
-// alphabet contains the unreserved characters as defined in RFC 7636
-// Section 4.1.
-const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-
 // explode converts a string to a byte slice without allocations.
 // The returned slice must not be modified.
 func explode(s string) []byte {
@@ -128,17 +124,19 @@ func Verifier(length int) (string, error) {
 		return "", err
 	}
 
-	bufIdx := 0
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+
+	idx := 0
 	for i := 0; i < length; {
-		if bufIdx >= len(buf) {
+		if idx >= len(buf) {
 			// Refill buffer in the rare case we run out of valid bytes.
 			if _, err := rand.Read(buf); err != nil {
 				return "", err
 			}
-			bufIdx = 0
+			idx = 0
 		}
-		val := buf[bufIdx]
-		bufIdx++
+		val := buf[idx]
+		idx++
 
 		if val < 198 { // 66 * 3 to eliminate modulo bias (198 < 256)
 			result[i] = alphabet[val%66]
@@ -220,10 +218,10 @@ func Verify(verifier, challenge, method string) bool {
 
 		// Hash both values to ensure equal-length comparison inputs,
 		// mitigating length-based timing leaks during the constant-time comparison.
-		hExp := sha256.Sum256(explode(verifier))
-		hChallenge := sha256.Sum256(explode(challenge))
+		h1 := sha256.Sum256(explode(verifier))
+		h2 := sha256.Sum256(explode(challenge))
 
-		return subtle.ConstantTimeCompare(hExp[:], hChallenge[:]) == 1
+		return subtle.ConstantTimeCompare(h1[:], h2[:]) == 1
 
 	default:
 		return false
