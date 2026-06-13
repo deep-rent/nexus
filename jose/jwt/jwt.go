@@ -773,7 +773,7 @@ func NewSigner(keys []jwk.KeyPair, opts ...SignerOption) Signer {
 	set := jwk.NewSet(pub...)
 
 	return &signer{
-		rot: rotor.New(rotor.Random, keys),
+		rot: rotor.New(rotor.Sequential, keys),
 		set: set,
 		cfg: cfg,
 	}
