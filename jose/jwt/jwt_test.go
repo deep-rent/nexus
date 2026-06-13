@@ -72,122 +72,20 @@ func TestSignVerify(t *testing.T) {
 	}
 }
 
-func TestSigner_Defaults(t *testing.T) {
-	t.Parallel()
-	k := mockKeyPair(t, "k1")
-	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	offset := 1 * time.Hour
-
-	s := jwt.NewSigner(
-		[]jwk.KeyPair{k},
-		jwt.WithIssuer("nexus"),
-		jwt.WithAudience("api"),
-		jwt.WithLifetime(offset),
-		jwt.WithSignerClock(func() time.Time { return now }),
-	)
-
-	if got, want := s.Issuer(), "nexus"; got != want {
-		t.Errorf("s.Issuer() = %q; want %q", got, want)
-	}
-
-	if got, want := s.KeySet().Len(), 1; got != want {
-		t.Errorf("s.KeySet().Len() = %d; want %d", got, want)
-	}
-
-	c := &testClaims{Role: "user"}
-	raw, err := s.Sign(c)
-	if err != nil {
-		t.Fatalf("s.Sign() error = %v", err)
-	}
-
-	tok, err := jwt.Parse[*testClaims](raw)
-	if err != nil {
-		t.Fatalf("jwt.Parse() error = %v", err)
-	}
-
-	got := tok.Claims()
-	if got, want := got.Issuer(), "nexus"; got != want {
-		t.Errorf("got.Issuer() = %q; want %q", got, want)
-	}
-	if got, want := got.Audience(), "api"; len(got) != 1 || got[0] != want {
-		t.Errorf("got.Audience() = %v; want [%q]", got, want)
-	}
-	if got, want := got.IssuedAt().Unix(), now.Unix(); got != want {
-		t.Errorf("got.IssuedAt() = %d; want %d", got, want)
-	}
-	if val, want := got.ExpiresAt().Unix(), now.Add(offset).Unix(); val != want {
-		t.Errorf("got.ExpiresAt() = %d; want %d", val, want)
-	}
-	if val, want := got.Role, "user"; val != want {
-		t.Errorf("got.Role = %q; want %q", val, want)
-	}
-}
-
-func TestSigner_Rotation(t *testing.T) {
-	t.Parallel()
-	k1 := mockKeyPair(t, "k1")
-	k2 := mockKeyPair(t, "k2")
-	s := jwt.NewSigner([]jwk.KeyPair{k1, k2})
-	c := &testClaims{Reserved: jwt.Reserved{Sub: "test"}}
-
-	if got, want := s.KeySet().Len(), 2; got != want {
-		t.Errorf("s.KeySet().Len() = %d; want %d", got, want)
-	}
-
-	t1, err := s.Sign(c)
-	if err != nil {
-		t.Fatalf("Sign(1) error = %v", err)
-	}
-	parsed1, _ := jwt.Parse[*testClaims](t1)
-	if got, want := parsed1.Header().KeyID(), "k1"; got != want {
-		t.Errorf("KeyID(1) = %q; want %q", got, want)
-	}
-
-	t2, err := s.Sign(c)
-	if err != nil {
-		t.Fatalf("Sign(2) error = %v", err)
-	}
-	parsed2, _ := jwt.Parse[*testClaims](t2)
-	if got, want := parsed2.Header().KeyID(), "k2"; got != want {
-		t.Errorf("KeyID(2) = %q; want %q", got, want)
-	}
-
-	t3, err := s.Sign(c)
-	if err != nil {
-		t.Fatalf("Sign(3) error = %v", err)
-	}
-	parsed3, _ := jwt.Parse[*testClaims](t3)
-	if got, want := parsed3.Header().KeyID(), "k1"; got != want {
-		t.Errorf("KeyID(3) = %q; want %q", got, want)
-	}
-}
-
-func TestNewSigner_Panic(t *testing.T) {
-	t.Parallel()
-
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("NewSigner(nil) did not panic")
-		}
-	}()
-	jwt.NewSigner(nil)
-}
-
 func TestVerifier_Validation(t *testing.T) {
 	t.Parallel()
 	k := mockKeyPair(t, "k1")
 	set := jwk.Singleton(k)
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	s := jwt.NewSigner(
-		[]jwk.KeyPair{k},
-		jwt.WithIssuer("good-iss"),
-		jwt.WithAudience("good-aud"),
-		jwt.WithLifetime(time.Hour),
-		jwt.WithSignerClock(func() time.Time { return now }),
-	)
-
-	token, err := s.Sign(&testClaims{})
+	c := &testClaims{
+		Reserved: jwt.Reserved{
+			Iss: "good-iss",
+			Aud: []string{"good-aud"},
+			Exp: now.Add(time.Hour),
+		},
+	}
+	token, err := jwt.Sign(k, c)
 	if err != nil {
 		t.Fatalf("failed to sign token: %v", err)
 	}
@@ -249,7 +147,6 @@ func TestVerifier_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, err := tt.v.Verify(token)
 			if tt.wantErr == nil {
 				if err != nil {

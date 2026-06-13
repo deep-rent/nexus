@@ -32,9 +32,9 @@
 // The top-level [Verify] function can be used for simple, one-off signature
 // verification without claim validation:
 //
-//	keySet, err := jwk.ParseSet(`{"keys": [...]}`)
+//	set, err := jwk.ParseSet(`{"keys": [...]}`)
 //	if err != nil { /* handle parsing error */ }
-//	claims, err := jwt.Verify[Claims](keySet, []byte("eyJhb..."))
+//	claims, err := jwt.Verify[Claims](set, []byte("eyJhb..."))
 //
 // # Advanced Validation
 //
@@ -43,7 +43,7 @@
 // options:
 //
 //	verifier := jwt.NewVerifier[Claims](
-//	  keySet,
+//	  set,
 //	  jwt.WithIssuers("foo", "bar"),
 //	  jwt.WithAudiences("baz"),
 //	  jwt.WithLeeway(1 * time.Minute),
@@ -54,43 +54,20 @@
 //	if err != nil { /* handle validation error */ }
 //	fmt.Println("Scope:", claims.Scope)
 //
-// # Basic Signing
+// # Signing
 //
 // The top-level [Sign] function can be used to create signed tokens from any
-// JSON-serializable struct or map. This is useful for simple tokens where
-// you manually handle all claims:
+// JSON-serializable struct or map. It requires a [jwk.KeyPair] for signature
+// calculation.
 //
-//	// keyPair must be a jwk.KeyPair (containing a private key)
-//	claims := map[string]any{"sub": "user_123", "admin": true}
-//	token, err := jwt.Sign(keyPair, claims)
-//
-// # Advanced Signing
-//
-// To enforce policies like expiration or consistent issuers, create a reusable
-// [Signer]. Your claims struct must implement [MutableClaims] (embedding
-// [Reserved] handles this automatically).
-//
-//	signer := jwt.NewSigner(
-//	  []jwk.KeyPair{keyPair},
-//	  jwt.WithIssuer("https://api.example.com"),
-//	  jwt.WithLifetime(1 * time.Hour),
-//	)
-//
-//	// The signer will automatically set "iss", "iat", and "exp" on the struct.
 //	claims := &MyClaims{
-//	  Reserved: jwt.Reserved{Subject: "user_123"},
-//	  Scope:    "admin",
+//	  Reserved: jwt.Reserved{
+//	    Sub: "user_123",
+//	    Exp: time.Now().Add(time.Hour),
+//	  },
+//	  Scope: "admin",
 //	}
-//	token, err := signer.Sign(claims)
-//
-// # Usage
-//
-// Verify a JWT using a custom claims struct and standard validation rules.
-//
-// Example:
-//
-//	verifier := jwt.NewVerifier[MyClaims](keySet, jwt.WithIssuers("trusted"))
-//	claims, err := verifier.Verify(tokenBytes)
+//	token, err := jwt.Sign(key, claims)
 package jwt
 
 import (
@@ -103,7 +80,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/rotor"
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
@@ -650,165 +626,4 @@ func encode(src []byte) []byte {
 	dst := make([]byte, base64.RawURLEncoding.EncodedLen(len(src)))
 	base64.RawURLEncoding.Encode(dst, src)
 	return dst
-}
-
-// Signer defines the interface for a configured, reusable JWT creator.
-// It encapsulates the cryptographic keys and standard claim configurations
-// needed to produce consistent, valid tokens.
-type Signer interface {
-	// Issuer returns the "iss" (Issuer) claim value that this signer applies
-	// to all tokens. Returns an empty string if the claim is not configured.
-	Issuer() string
-	// KeySet returns the JSON Web Key Set (JWKS) containing the public keys
-	// that correspond to the private keys held by this signer. This enables
-	// consumers to verify signatures produced by this Signer.
-	KeySet() jwk.Set
-	// Lifetime returns the default duration for which a produced token is
-	// considered valid. This value is used to calculate the "exp" (Expires At)
-	// claim during the signing process.
-	Lifetime() time.Duration
-	// Sign applies the signer's configuration directly claims object, then
-	// signs it to obtain the final signed JWS compact representation.
-	//
-	// It modifies the input claims object in-place before signing.
-	Sign(claims MutableClaims) ([]byte, error)
-}
-
-// SignerOption defines a functional option for configuring a [Signer].
-type SignerOption func(*signerConfig)
-
-// signerConfig holds the configuration options for a [Signer].
-type signerConfig struct {
-	iat bool             // Whether or not to add the "iat" (Issued At) claim
-	iss string           // Fixed issuer to include
-	aud []string         // Fixed audience list to include
-	ttl time.Duration    // Token lifetime for calulating the expiration time
-	now func() time.Time // Time source for timestamping
-}
-
-// WithIssuedAt enables or disables automatic setting of the "iat" (Issued At)
-// claim for all tokens created by this signer. It is enabled by default and
-// will be stamped with the current time.
-func WithIssuedAt(use bool) SignerOption {
-	return func(c *signerConfig) {
-		c.iat = use
-	}
-}
-
-// WithIssuer sets the "iss" (Issuer) claim for all tokens created by this
-// signer. This is typically the URL of the authorization server.
-// If the user-provided claims already contain an issuer, this
-// configuration will overwrite it.
-func WithIssuer(iss string) SignerOption {
-	return func(c *signerConfig) {
-		c.iss = iss
-	}
-}
-
-// WithAudience sets the "aud" (Audience) claim. If the user-provided claims
-// already contain an audience, this configuration will overwrite it.
-func WithAudience(aud ...string) SignerOption {
-	return func(c *signerConfig) {
-		c.aud = aud
-	}
-}
-
-// WithLifetime sets the duration for which tokens are valid. It calculates the
-// "exp" (Expires At) claim by adding this duration to the current time.
-// If zero (default), no "exp" claim is added unless provided in the input
-// claims.
-func WithLifetime(d time.Duration) SignerOption {
-	return func(c *signerConfig) {
-		if d > 0 {
-			c.ttl = d
-		}
-	}
-}
-
-// WithSignerClock sets the function used to retrieve the current time when
-// timestamping tokens ("iat", "nbf", "exp"). This is useful for deterministic
-// testing. The default is [time.Now].
-func WithSignerClock(now func() time.Time) SignerOption {
-	return func(c *signerConfig) {
-		if now != nil {
-			c.now = now
-		}
-	}
-}
-
-// signer is the default implementation of the [Signer] interface.
-type signer struct {
-	// rot handles key rotation.
-	rot rotor.Rotor[jwk.KeyPair]
-	// set is the JSON Web Key Set representing the public keys of the signer.
-	set jwk.Set
-	// cfg contains the generation rules.
-	cfg signerConfig
-}
-
-// Ensure signer implements the Signer interface.
-var _ Signer = (*signer)(nil)
-
-// NewSigner creates a new [Signer] that uses the provided key pool for
-// signing. At least one key pair must be provided in the slice; otherwise, it
-// panics. If multiple keys are given, they will be rotated through in a
-// round-robin fashion to ensure even usage across the key pool.
-func NewSigner(keys []jwk.KeyPair, opts ...SignerOption) Signer {
-	if len(keys) == 0 {
-		panic("jwt: at least one key pair is required to create a signer")
-	}
-
-	cfg := signerConfig{
-		iat: true,
-		now: time.Now,
-	}
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-
-	pub := make([]jwk.Key, len(keys))
-	for i, k := range keys {
-		pub[i] = k
-	}
-	set := jwk.NewSet(pub...)
-
-	return &signer{
-		rot: rotor.New(rotor.Sequential, keys),
-		set: set,
-		cfg: cfg,
-	}
-}
-
-// Issuer implements the [Signer] interface.
-func (s *signer) Issuer() string { return s.cfg.iss }
-
-// KeySet implements the [Signer] interface.
-func (s *signer) KeySet() jwk.Set { return s.set }
-
-// Lifetime implements the [Signer] interface.
-func (s *signer) Lifetime() time.Duration { return s.cfg.ttl }
-
-// Sign implements the [Signer] interface.
-func (s *signer) Sign(claims MutableClaims) ([]byte, error) {
-	now := s.cfg.now()
-	// Always stamp the current time as time of issuance if configured.
-	if s.cfg.iat {
-		claims.SetIssuedAt(now)
-	}
-	// Apply configured issuer name.
-	if s.cfg.iss != "" {
-		claims.SetIssuer(s.cfg.iss)
-	}
-	// Apply configured audience.
-	if len(s.cfg.aud) > 0 {
-		claims.SetAudience(s.cfg.aud)
-	}
-	// Calculate and apply expiration if a lifetime is configured.
-	if s.cfg.ttl > 0 {
-		claims.SetExpiresAt(now.Add(s.cfg.ttl))
-	}
-
-	key := s.rot.Next()
-	// Delegate to the low-level Sign function.
-	return Sign(key, claims)
 }
