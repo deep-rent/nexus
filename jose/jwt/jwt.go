@@ -124,8 +124,6 @@ type header struct {
 	Alg string `json:"alg"`
 	// Kid is the key identifier.
 	Kid string `json:"kid,omitempty"`
-	// X5t is the SHA-256 thumbprint of the X.509 certificate.
-	X5t string `json:"x5t#S256,omitempty"`
 }
 
 // Type returns the "typ" parameter from the header.
@@ -136,9 +134,6 @@ func (h *header) Algorithm() string { return h.Alg }
 
 // KeyID implements [jwk.Hint].
 func (h *header) KeyID() string { return h.Kid }
-
-// Thumbprint implements [jwk.Hint].
-func (h *header) Thumbprint() string { return h.X5t }
 
 var _ Header = (*header)(nil)
 
@@ -613,7 +608,6 @@ func Sign(k jwk.KeyPair, claims any) ([]byte, error) {
 		Typ: "JWT",
 		Alg: k.Algorithm(),
 		Kid: k.KeyID(),
-		X5t: k.Thumbprint(),
 	}
 
 	h, err := json.Marshal(header)

@@ -2,10 +2,12 @@
   "kty": "OKP",
   "d": "xAtpWYX6PPLIN8oe9M0ges_jrGP_fV1rfPwdyu-wQok",
   "use": "sig",
-  "key_ops": ["sign", "verify"],
+  "key_ops": [
+    "sign",
+    "verify"
+  ],
   "crv": "Ed25519",
   "kid": "P6rOVdsYhY_b0VzNdk568I9tYrAnBw-WGgsMZ2zMOvA",
   "x": "bnyiDZAN5ozA37tEaNay_ddD5VuWonAl0bu2Tn9pR_g",
-  "alg": "EdDSA",
-  "x5t#S256": "381004f8c7897d5ab2198c9cc2ab81a831f5d0827472a728c0e991e0b44da189"
+  "alg": "EdDSA"
 }

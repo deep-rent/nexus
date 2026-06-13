@@ -52,17 +52,11 @@ func (s *StaticSource) Load(ctx context.Context) ([]jwk.KeyPair, error) {
 
 	for _, k := range s.keys {
 		// Compare by KeyID to avoid adding the active key again
-		// If keys lack a KeyID, we compare by Thumbprint
-		switch {
-		case k.KeyID() != "" && active.KeyID() != "":
+		if k.KeyID() != "" && active.KeyID() != "" {
 			if k.KeyID() != active.KeyID() {
 				res = append(res, k)
 			}
-		case k.Thumbprint() != "" && active.Thumbprint() != "":
-			if k.Thumbprint() != active.Thumbprint() {
-				res = append(res, k)
-			}
-		default:
+		} else {
 			// Fallback if both are empty (should not happen with proper keys)
 			if k != active { // Pointer comparison
 				res = append(res, k)

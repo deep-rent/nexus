@@ -108,11 +108,6 @@ func (v *vault) Find(ctx context.Context, hint jwk.Hint) (jwk.KeyPair, error) {
 		if kid != "" && k.KeyID() == kid {
 			return k, nil
 		}
-
-		x5t := hint.Thumbprint()
-		if x5t != "" && k.Thumbprint() == x5t {
-			return k, nil
-		}
 	}
 
 	return nil, ErrKeyNotFound
