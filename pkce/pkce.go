@@ -123,21 +123,44 @@ func Verifier(length int) (string, error) {
 		return "", ErrInvalidLength
 	}
 
-	// Calculate the necessary number of random bytes. Base64 encoding converts
-	// 3 bytes into 4 characters. Adding 1 ensures we always generate slightly
-	// more than needed so we can safely truncate to the exact requested length.
-	b := make([]byte, (length*3)/4+1)
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+	const maxByte = 198 // 66 * 3 to eliminate modulo bias (198 < 256)
 
-	if _, err := rand.Read(b); err != nil {
+	result := make([]byte, length)
+
+	// Pre-allocate a buffer of random bytes. Since about 22.6% (58/256) of bytes
+	// are discarded to avoid modulo bias, allocating 1.4x of length is highly
+	// likely to be sufficient to fill the result slice in a single rand.Read call.
+	bufLen := (length * 14) / 10
+	if bufLen < 32 {
+		bufLen = 32
+	}
+	buf := make([]byte, bufLen)
+
+	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
 
-	// Encode using RawURLEncoding to omit padding characters ('='), making it
-	// URL-safe and fully compliant with the ABNF definition in RFC 7636.
-	encoded := base64.RawURLEncoding.EncodeToString(b)
+	bufIdx := 0
+	for i := 0; i < length; {
+		if bufIdx >= len(buf) {
+			// Refill buffer in the rare case we run out of valid bytes.
+			if _, err := rand.Read(buf); err != nil {
+				return "", err
+			}
+			bufIdx = 0
+		}
+		val := buf[bufIdx]
+		bufIdx++
 
-	// Truncate the encoded string to the exact requested length.
-	return encoded[:length], nil
+		if val < maxByte {
+			result[i] = alphabet[val%66]
+			i++
+		}
+	}
+
+	// Convert the byte slice to a string without copying.
+	return unsafe.String(&result[0], len(result)), nil
 }
 
 // Challenge computes a code challenge from a given code verifier and challenge

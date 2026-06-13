@@ -135,3 +135,20 @@ func TestVerify(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkVerify(b *testing.B) {
+	v, _ := Verifier(128)
+	c, _ := Challenge(v, MethodS256)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Verify(v, c, MethodS256)
+	}
+}
+
+func BenchmarkVerifier(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_, _ = Verifier(128)
+	}
+}
+
+
