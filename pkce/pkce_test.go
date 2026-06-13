@@ -25,6 +25,7 @@ import (
 )
 
 func TestVerifier(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		length  int
@@ -39,6 +40,7 @@ func TestVerifier(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := pkce.Verifier(tt.length)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Verifier() error = %v, wantErr %v", err, tt.wantErr)
@@ -58,6 +60,7 @@ func TestVerifier(t *testing.T) {
 }
 
 func TestChallenge(t *testing.T) {
+	t.Parallel()
 	validVerifier := strings.Repeat("a", pkce.MinVerifierLength)
 	invalidVerifier := validVerifier + "!"
 
@@ -107,6 +110,7 @@ func TestChallenge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := pkce.Challenge(tt.verifier, tt.method)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Challenge() error = %v, wantErr %v", err, tt.wantErr)
@@ -123,6 +127,7 @@ func TestChallenge(t *testing.T) {
 }
 
 func TestVerify(t *testing.T) {
+	t.Parallel()
 	v := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 	sum := sha256.Sum256([]byte(v))
 	c := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -146,6 +151,7 @@ func TestVerify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := pkce.Verify(
 				tt.verifier, tt.challenge, tt.method,
 			); got != tt.want {
@@ -171,6 +177,7 @@ func BenchmarkVerifier(b *testing.B) {
 }
 
 func TestIsUnreserved(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		give string
@@ -183,6 +190,7 @@ func TestIsUnreserved(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := pkce.IsUnreserved(tt.give); got != tt.want {
 				t.Errorf("IsUnreserved(%q) = %v, want %v", tt.give, got, tt.want)
 			}
@@ -191,6 +199,7 @@ func TestIsUnreserved(t *testing.T) {
 }
 
 func TestSupports(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		method string
@@ -204,6 +213,7 @@ func TestSupports(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := pkce.Supports(tt.method); got != tt.want {
 				t.Errorf("Supports(%q) = %v, want %v", tt.method, got, tt.want)
 			}
