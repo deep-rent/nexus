@@ -25,7 +25,7 @@
 // Initialize a rotor with a strategy and a slice of items, then call Next to
 // retrieve the next element.
 //
-// Example:
+// Example: Sequential rotation
 //
 //	backends := []string{"srv-1", "srv-2", "srv-3"}
 //	r := rotor.New(rotor.Sequential, backends)
@@ -34,6 +34,14 @@
 //	// at the end.
 //	s1 := r.Next() // "srv-1"
 //	s2 := r.Next() // "srv-2"
+//
+// Example: Random selection
+//
+//	keys := []string{"key-1", "key-2", "key-3"}
+//	r := rotor.New(rotor.Random, keys)
+//
+//	// Each call returns a randomly selected item.
+//	k := r.Next() // e.g. "key-3"
 package rotor
 
 import (
