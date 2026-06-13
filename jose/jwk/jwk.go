@@ -96,6 +96,12 @@ import (
 	"github.com/deep-rent/nexus/scheduler"
 )
 
+// Media types as registered in RFC 7517.
+const (
+	MediaTypeKey = "application/jwk+json"
+	MediaTypeSet = "application/jwk-set+json"
+)
+
 // Hint represents a reference to a [Key], containing the minimum information
 // needed to look one up in a [Set]. It effectively abstracts the JWS header
 // fields used to select a key for signature verification.
