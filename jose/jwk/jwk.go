@@ -86,6 +86,7 @@ import (
 	"log/slog"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cloudflare/circl/sign/ed448"
@@ -102,17 +103,9 @@ type Hint interface {
 	// Algorithm returns the JWA algorithm name that the key is intended for.
 	// This must match the "alg" parameter in the JWS header.
 	Algorithm() string
-	// KeyID returns the unique identifier for the key, or an empty string if
-	// absent. This must match the "kid" parameter in the JWS header.
-	// One of "kid" or "x5t#S256" must be present. If both are present, "kid"
-	// takes precedence during lookups.
+	// KeyID returns the unique identifier for the key. This must match the
+	// "kid" parameter in the JWS header.
 	KeyID() string
-	// Thumbprint returns the base64url-encoded SHA-256 digest of the DER-encoded
-	// X.509 certificate associated with the key, or an empty string if absent.
-	// This must match the "x5t#S256" parameter in the JWS header. One of "kid" or
-	// "x5t#S256" must be present. If both are present, "kid" takes precedence
-	// during lookups.
-	Thumbprint() string
 }
 
 // Key represents a public JSON Web Key (JWK) used for signature verification.
@@ -135,10 +128,9 @@ type Key interface {
 func newKey[T crypto.PublicKey](
 	alg jwa.Algorithm[T],
 	kid string,
-	x5t string,
 	mat T,
 ) Key {
-	return &key[T]{alg: alg, kid: kid, x5t: x5t, mat: mat}
+	return &key[T]{alg: alg, kid: kid, mat: mat}
 }
 
 // key is a concrete implementation of the [Key] interface, generic over the
@@ -148,8 +140,6 @@ type key[T crypto.PublicKey] struct {
 	alg jwa.Algorithm[T]
 	// kid is the unique key identifier.
 	kid string
-	// x5t is the SHA-256 thumbprint of the certificate.
-	x5t string
 	// mat is the actual cryptographic public key material.
 	mat T
 }
@@ -159,9 +149,6 @@ func (k *key[T]) Algorithm() string { return k.alg.String() }
 
 // KeyID implements [Hint].
 func (k *key[T]) KeyID() string { return k.kid }
-
-// Thumbprint implements [Hint].
-func (k *key[T]) Thumbprint() string { return k.x5t }
 
 // Material implements [Key].
 func (k *key[T]) Material() any { return k.mat }
@@ -202,8 +189,6 @@ type KeyBuilder[T crypto.PublicKey] struct {
 	alg jwa.Algorithm[T]
 	// kid is the key identifier to assign.
 	kid string
-	// x5t is the thumbprint to assign.
-	x5t string
 }
 
 // NewKeyBuilder starts the construction of a key for the specified algorithm.
@@ -219,25 +204,14 @@ func (b *KeyBuilder[T]) Algorithm() jwa.Algorithm[T] { return b.alg }
 // KeyID returns the currently configured key identifier, or an empty string.
 func (b *KeyBuilder[T]) KeyID() string { return b.kid }
 
-// Thumbprint returns the currently configured certificate thumbprint, or an
-// empty string.
-func (b *KeyBuilder[T]) Thumbprint() string { return b.x5t }
-
 // WithKeyID sets the "kid" (Key ID) parameter.
 func (b *KeyBuilder[T]) WithKeyID(kid string) *KeyBuilder[T] {
 	b.kid = kid
 	return b
 }
 
-// WithThumbprint sets the "x5t#S256" (SHA-256 Certificate Thumbprint)
-// parameter.
-func (b *KeyBuilder[T]) WithThumbprint(x5t string) *KeyBuilder[T] {
-	b.x5t = x5t
-	return b
-}
-
 // Build creates a verification-only [Key] using the provided public key material.
-// It panics if neither a Key ID nor a Thumbprint has been configured.
+// It panics if a Key ID has not been configured.
 func (b *KeyBuilder[T]) Build(mat T) Key {
 	return b.build(mat)
 }
@@ -246,7 +220,7 @@ func (b *KeyBuilder[T]) Build(mat T) Key {
 //
 // It panics if:
 //  1. The signer's public key cannot be cast to type T.
-//  2. Neither a Key ID nor a Thumbprint has been configured.
+//  2. A Key ID has not been configured.
 func (b *KeyBuilder[T]) BuildPair(signer crypto.Signer) KeyPair {
 	mat, ok := signer.Public().(T)
 	if !ok {
@@ -260,13 +234,12 @@ func (b *KeyBuilder[T]) BuildPair(signer crypto.Signer) KeyPair {
 
 // build is an internal helper to construct the public key part.
 func (b *KeyBuilder[T]) build(mat T) *key[T] {
-	if b.kid == "" && b.x5t == "" {
-		panic("either key id or thumbprint must be set")
+	if b.kid == "" {
+		panic("key id must be set")
 	}
 	return &key[T]{
 		alg: b.alg,
 		kid: b.kid,
-		x5t: b.x5t,
 		mat: mat,
 	}
 }
@@ -327,8 +300,7 @@ type Set interface {
 func newSet(n int) *set {
 	return &set{
 		keys: make([]Key, 0, n),
-		kid:  make(map[string]int, n),
-		x5t:  make(map[string]int, n),
+		kidx: make(map[string]int, n),
 	}
 }
 
@@ -337,10 +309,8 @@ func newSet(n int) *set {
 type set struct {
 	// keys is the slice of keys in the set.
 	keys []Key
-	// kid maps key id to index in keys array.
-	kid map[string]int
-	// x5t maps thumbprint to index in keys array.
-	x5t map[string]int
+	// kidx maps key id to index in keys array.
+	kidx map[string]int
 }
 
 // Keys implements [Set].
@@ -355,9 +325,7 @@ func (s *set) Find(hint Hint) Key {
 		return nil
 	}
 	var k Key
-	if i, ok := s.kid[hint.KeyID()]; ok {
-		k = s.keys[i]
-	} else if i, ok := s.x5t[hint.Thumbprint()]; ok {
+	if i, ok := s.kidx[hint.KeyID()]; ok {
 		k = s.keys[i]
 	} else {
 		return nil
@@ -366,6 +334,42 @@ func (s *set) Find(hint Hint) Key {
 		return nil
 	}
 	return k
+}
+
+// NewSet constructs a new [Set] containing the provided keys.
+//
+// It is primarily used to programmatically build a JSON Web Key Set from
+// individual keys, for instance when preparing to expose a JWKS endpoint.
+// The keys are sorted lexicographically by their Key ID to guarantee a
+// deterministic output order.
+//
+// If multiple keys share the same Key ID, the latter keys after sorting
+// will overwrite the earlier ones in the internal lookup maps.
+func NewSet(keys ...Key) Set {
+	if len(keys) == 0 {
+		return empty
+	}
+	if len(keys) == 1 {
+		return Singleton(keys[0])
+	}
+
+	sorted := slices.Clone(keys)
+	slices.SortFunc(sorted, compare)
+
+	s := newSet(len(sorted))
+	for _, k := range sorted {
+		i := len(s.keys)
+		s.keys = append(s.keys, k)
+		if kid := k.KeyID(); kid != "" {
+			s.kidx[kid] = i
+		}
+	}
+	return s
+}
+
+// compare is a helper function used to compare two keys for sorting purposes.
+func compare(a, b Key) int {
+	return strings.Compare(a.KeyID(), b.KeyID())
 }
 
 // emptySet represents a [Set] containing no keys.
@@ -406,10 +410,6 @@ func (s *singletonSet) Find(hint Hint) Key {
 	if kid != "" && s.key.KeyID() == kid {
 		return s.key
 	}
-	x5t := hint.Thumbprint()
-	if x5t != "" && s.key.Thumbprint() == x5t {
-		return s.key
-	}
 	return nil
 }
 
@@ -447,43 +447,28 @@ func ParseSet(in []byte) (Set, error) {
 		}
 
 		kid := k.KeyID()
-		x5t := k.Thumbprint()
 
-		if kid == "" && x5t == "" {
+		if kid == "" {
 			errs = append(errs, fmt.Errorf(
-				"key at index %d: missing both key id and thumbprint", i,
+				"key at index %d: missing key id", i,
 			))
 			continue
 		}
 		// Check for duplicates before mutating the set.
-		if kid != "" {
-			if _, ok := s.kid[kid]; ok {
-				errs = append(errs, fmt.Errorf(
-					"key at index %d: duplicate key id %q", i, kid,
-				))
-				continue
-			}
+		if _, ok := s.kidx[kid]; ok {
+			errs = append(errs, fmt.Errorf(
+				"key at index %d: duplicate key id %q", i, kid,
+			))
+			continue
 		}
-		if x5t != "" {
-			if _, ok := s.x5t[x5t]; ok {
-				errs = append(errs, fmt.Errorf(
-					"key at index %d: duplicate thumbprint %q", i, x5t,
-				))
-				continue
-			}
-		}
+
 		// Determines the index in the keys'slice where this new key will be
 		// stored. This is safe because we are appending linearly.
 		idx := len(s.keys)
 		// Append the key exactly once.
 		s.keys = append(s.keys, k)
 		// Update the lookup maps.
-		if kid != "" {
-			s.kid[kid] = idx
-		}
-		if x5t != "" {
-			s.x5t[x5t] = idx
-		}
+		s.kidx[kid] = idx
 	}
 	return s, errors.Join(errs...)
 }
@@ -544,7 +529,6 @@ func toRaw(k Key) (*raw, error) {
 	r := &raw{
 		Alg: k.Algorithm(),
 		Kid: k.KeyID(),
-		X5t: k.Thumbprint(),
 		Use: "sig",
 	}
 
@@ -636,7 +620,6 @@ type raw struct {
 	Use string   `json:"use,omitempty"`
 	Ops []string `json:"key_ops,omitempty"`
 	Kid string   `json:"kid,omitempty"`
-	X5t string   `json:"x5t#S256,omitempty"`
 	N   string   `json:"n,omitempty"`
 	E   string   `json:"e,omitempty"`
 	Crv string   `json:"crv,omitempty"`
@@ -659,7 +642,7 @@ func addReader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
 		if err != nil {
 			return nil, err
 		}
-		return newKey(alg, r.Kid, r.X5t, mat), nil
+		return newKey(alg, r.Kid, mat), nil
 	}
 }
 

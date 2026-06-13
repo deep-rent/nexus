@@ -330,6 +330,10 @@ func TestSecure(t *testing.T) {
 				"same-origin",
 			},
 			{
+				"Cross-Origin-Resource-Policy",
+				"same-origin",
+			},
+			{
 				"X-Permitted-Cross-Domain-Policies",
 				"none",
 			},
@@ -345,14 +349,16 @@ func TestSecure(t *testing.T) {
 	t.Run("applies custom config", func(t *testing.T) {
 		t.Parallel()
 		cfg := mw.SecurityConfig{
-			STSMaxAge:               60,
-			STSIncludeSubdomains:    false,
-			FrameOptions:            "SAMEORIGIN",
-			NoSniff:                 true,
-			CSP:                     "default-src 'self'",
-			ReferrerPolicy:          "no-referrer",
-			PermissionsPolicy:       "geolocation=()",
-			CrossOriginOpenerPolicy: "same-origin-allow-popups",
+			STSMaxAge:                 60,
+			STSIncludeSubdomains:      false,
+			FrameOptions:              "SAMEORIGIN",
+			NoSniff:                   true,
+			CSP:                       "default-src 'self'",
+			ReferrerPolicy:            "no-referrer",
+			PermissionsPolicy:         "geolocation=()",
+			CrossOriginOpenerPolicy:   "same-origin-allow-popups",
+			CrossOriginEmbedderPolicy: "require-corp",
+			CrossOriginResourcePolicy: "same-site",
 		}
 		h := mw.Secure(cfg)(mockHandler)
 		rr := httptest.NewRecorder()
@@ -370,6 +376,8 @@ func TestSecure(t *testing.T) {
 			{"Referrer-Policy", "no-referrer"},
 			{"Permissions-Policy", "geolocation=()"},
 			{"Cross-Origin-Opener-Policy", "same-origin-allow-popups"},
+			{"Cross-Origin-Embedder-Policy", "require-corp"},
+			{"Cross-Origin-Resource-Policy", "same-site"},
 			{"X-Permitted-Cross-Domain-Policies", "none"},
 		}
 
@@ -396,6 +404,8 @@ func TestSecure(t *testing.T) {
 			"Referrer-Policy",
 			"Permissions-Policy",
 			"Cross-Origin-Opener-Policy",
+			"Cross-Origin-Embedder-Policy",
+			"Cross-Origin-Resource-Policy",
 		}
 
 		for _, k := range checks {

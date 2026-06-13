@@ -32,13 +32,11 @@ import (
 type mockKey struct {
 	kid string
 	alg string
-	x5t string
 	mat any
 }
 
 func (k *mockKey) Algorithm() string       { return k.alg }
 func (k *mockKey) KeyID() string           { return k.kid }
-func (k *mockKey) Thumbprint() string      { return k.x5t }
 func (k *mockKey) Verify(_, _ []byte) bool { return true }
 func (k *mockKey) Material() any           { return k.mat }
 
@@ -47,12 +45,10 @@ var _ jwk.Key = (*mockKey)(nil)
 type mockHint struct {
 	alg string
 	kid string
-	x5t string
 }
 
-func (h mockHint) Algorithm() string  { return h.alg }
-func (h mockHint) KeyID() string      { return h.kid }
-func (h mockHint) Thumbprint() string { return h.x5t }
+func (h mockHint) Algorithm() string { return h.alg }
+func (h mockHint) KeyID() string     { return h.kid }
 
 var _ jwk.Hint = mockHint{}
 
@@ -71,78 +67,65 @@ func TestParse(t *testing.T) {
 	tests := []struct {
 		alg string
 		kid string
-		x5t string
 		src string
 	}{
 		{
 			"EdDSA",
 			"q3TlIAMpJF6VoTuJuaLZDUzXbFV-k7kLhAi5gYmV37Y",
-			"6fdfc2b56f326d45f47cdddd0a7c6a378ad92241d3183e2479be28604aa4f7a7",
 			"Ed448.json",
 		},
 		{
 			"EdDSA",
 			"P6rOVdsYhY_b0VzNdk568I9tYrAnBw-WGgsMZ2zMOvA",
-			"381004f8c7897d5ab2198c9cc2ab81a831f5d0827472a728c0e991e0b44da189",
 			"Ed25519.json",
 		},
 		{
 			"ES256",
 			"chs_bZZOVng98tfs-pQRig3RTaXszdcZ0WsoyWORzDQ",
-			"8ae7b0b40e5abe8670d6c50500625957e824a6aad1ffc60c7cd5a082bf02cdba",
 			"ES256.json",
 		},
 		{
 			"ES384",
 			"HCgaZlHgiGkHQ9f3Q2FWYs_NtZzQsLWaii8puMRbhhE",
-			"155477264a68dd6aa13969ccbbaa88c93511ccc779b9119441059298c2eb2b27",
 			"ES384.json",
 		},
 		{
 			"ES512",
 			"3xQ6MwN6aFYouSGZyqv9DYvst-CV_12M58EvjJ6wHQs",
-			"036a6650cb354e6227e38bb10cecc56a4958cec5f30417cb7d8b44e5cede1dd5",
 			"ES512.json",
 		},
 		{
 			"PS256",
 			"1iPDx07kLtDB6MeYwD451j-NUaZFv3QS4mFCCdIbaeQ",
-			"0ddbbcbf7bf93b579e2bbb550ebb44400789c64dbceff20b603bfdf2688f152a",
 			"PS256.json",
 		},
 		{
 			"PS384",
 			"5q0HzRnzOR2DivWMl4q2MpKXy8IdnfYMxc-c1s6Olhc",
-			"a371ace0a34d95b88f0cade1607149aa9fadcc3abf942717b36c04f7c00bc124",
 			"PS384.json",
 		},
 		{
 			"PS512",
 			"6f-mwTH8QRxXXZHP7teEem1uqkGFYGPKSDxOqXc3xzQ",
-			"262e6fb460d5d124953cdb83b836025e351d18255add4e0c03ca9c0643e38319",
 			"PS512.json",
 		},
 		{
 			"RS256",
 			"KO4ZegrzU_W1RcC89v05Ev3C2JXHC2aQKNo08ZSbnC4",
-			"72b885d85336f6b4ef73b1df7125ef8f416e63a00d6167aeb2dcaac3e2ce1446",
 			"RS256.json",
 		},
 		{
 			"RS384",
 			"g1jIq7AVMQRV3YHbLk3tJfHUJfwgVuzPzkMK3R1K_GU",
-			"ecd720239f966c6ef8e5212be757302e67b6435def75bed346bbdb183f623d29",
 			"RS384.json",
 		},
 		{
 			"RS512",
 			"DYHSGgm9DBjiFYkciaL3lFjKDPJQc0BO6nS7IacanVU",
-			"f23401b9e029adf752b1ea06b8e02020fb26fe96bf2f885d9c7f00c5ba5ce67e",
 			"RS512.json",
 		},
 		{
 			"ES256",
-			"",
 			"",
 			"ecdsa_short_coordinate.json",
 		},
@@ -163,9 +146,6 @@ func TestParse(t *testing.T) {
 			if got, want := key1.KeyID(), tt.kid; got != want {
 				t.Errorf("key1.KeyID() = %q; want %q", got, want)
 			}
-			if got, want := key1.Thumbprint(), tt.x5t; got != want {
-				t.Errorf("key1.Thumbprint() = %q; want %q", got, want)
-			}
 
 			encoded, err := jwk.Write(key1)
 			if err != nil {
@@ -181,9 +161,6 @@ func TestParse(t *testing.T) {
 			}
 			if got, want := key2.KeyID(), key1.KeyID(); got != want {
 				t.Errorf("key2.KeyID() = %q; want %q", got, want)
-			}
-			if got, want := key2.Thumbprint(), key1.Thumbprint(); got != want {
-				t.Errorf("key2.Thumbprint() = %q; want %q", got, want)
 			}
 		})
 	}
@@ -262,7 +239,6 @@ func TestParseSet_Error(t *testing.T) {
 		file string
 	}{
 		{"duplicate key id", "duplicate_key_id.json"},
-		{"duplicate thumbprint", "duplicate_thumbprint.json"},
 	}
 
 	for _, tt := range tests {
@@ -376,7 +352,6 @@ func TestSingleton(t *testing.T) {
 
 	key := &mockKey{
 		kid: "kid",
-		x5t: "x5t",
 		alg: "alg",
 	}
 	set := jwk.Singleton(key)
@@ -399,13 +374,79 @@ func TestSingleton(t *testing.T) {
 	}
 }
 
+func TestNewSet(t *testing.T) {
+	t.Parallel()
+
+	k1 := &mockKey{
+		alg: "RS256",
+		kid: "k1",
+	}
+	k2 := &mockKey{
+		alg: "RS256",
+		kid: "k2",
+	}
+	k3 := &mockKey{
+		alg: "RS256",
+		kid: "k1", // Overwrites k1
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet()
+		if got, want := s.Len(), 0; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+	})
+
+	t.Run("singleton", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k1)
+		if got, want := s.Len(), 1; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+	})
+
+	t.Run("multiple", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k1, k2)
+		if got, want := s.Len(), 2; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+		if got := s.Find(mockHint{alg: "RS256", kid: "k2"}); got != k2 {
+			t.Errorf("Find(k2) = %v; want %v", got, k2)
+		}
+	})
+
+	t.Run("overwrite", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k1, k3)
+		if got, want := s.Len(), 2; got != want {
+			t.Errorf("Len() = %d; want %d", got, want)
+		}
+		if got := s.Find(mockHint{alg: "RS256", kid: "k1"}); got != k3 {
+			t.Errorf("Find(k1) = %v; want %v", got, k3)
+		}
+	})
+
+	t.Run("sorting", func(t *testing.T) {
+		t.Parallel()
+		s := jwk.NewSet(k2, k1)
+		var order []string
+		for k := range s.Keys() {
+			order = append(order, k.KeyID())
+		}
+		if len(order) != 2 || order[0] != "k1" || order[1] != "k2" {
+			t.Errorf("Keys() order = %v; want [k1 k2]", order)
+		}
+	})
+}
+
 func TestSingletonSet_Find(t *testing.T) {
 	t.Parallel()
 
 	key := &mockKey{
 		alg: "RS256",
 		kid: "key-123",
-		x5t: "thumb-abc",
 	}
 
 	tests := []struct {
@@ -422,14 +463,6 @@ func TestSingletonSet_Find(t *testing.T) {
 			wantFound: true,
 		},
 		{
-			name: "exact match on thumbprint",
-			hint: mockHint{
-				alg: "RS256",
-				x5t: "thumb-abc",
-			},
-			wantFound: true,
-		},
-		{
 			name: "algorithm mismatch returns nil",
 			hint: mockHint{
 				alg: "ES256",
@@ -442,14 +475,6 @@ func TestSingletonSet_Find(t *testing.T) {
 			hint: mockHint{
 				alg: "RS256",
 				kid: "wrong-id",
-			},
-			wantFound: false,
-		},
-		{
-			name: "wrong thumbprint returns nil",
-			hint: mockHint{
-				alg: "RS256",
-				x5t: "wrong-thumb",
 			},
 			wantFound: false,
 		},

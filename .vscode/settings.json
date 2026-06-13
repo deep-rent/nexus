@@ -1,4 +1,5 @@
 {
+  "editor.defaultFormatter": null,
   "editor.formatOnSave": true,
   "editor.formatOnType": true,
   "files.associations": {
@@ -19,22 +20,17 @@
       100
     ]
   },
-  "[plaintext]": {
-    "editor.formatOnSave": false
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
   },
-  "go.lintTool": "golangci-lint",
-  "go.lintFlags": [
-    "--path-mode=abs",
-    "--fast-only"
-  ],
-  "go.formatTool": "custom",
-  "go.alternateTools": {
-    "customFormatter": "golangci-lint"
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
   },
-  "go.formatFlags": [
-    "fmt",
-    "--stdin"
-  ],
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "go.lintTool": "golangci-lint-v2",
+  "go.formatTool": "gofumpt",
   "go.toolsEnvVars": {
     "GOEXPERIMENT": "jsonv2"
   },

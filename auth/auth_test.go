@@ -16,9 +16,11 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/deep-rent/nexus/auth"
@@ -38,7 +40,7 @@ var _ jwt.Verifier[*auth.Claims] = (*mockVerifier[*auth.Claims])(nil)
 
 func TestClaims_HasRole(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Rol: []string{"a", "b"}}
+	c := &auth.Claims{Roles: []string{"a", "b"}}
 
 	wantRoleA := "a"
 	if !c.HasRole(wantRoleA) {
@@ -51,9 +53,74 @@ func TestClaims_HasRole(t *testing.T) {
 	}
 }
 
+func TestScope(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unmarshal string", func(t *testing.T) {
+		var s auth.Scope
+		if err := json.Unmarshal([]byte(`"read write"`), &s); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(s, auth.Scope{"read", "write"}) {
+			t.Errorf("got %v; want [read write]", s)
+		}
+	})
+
+	t.Run("marshal", func(t *testing.T) {
+		s := auth.Scope{"read", "write"}
+		got, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `"read write"`; string(got) != want {
+			t.Errorf("got %s; want %s", got, want)
+		}
+	})
+
+	t.Run("string representation", func(t *testing.T) {
+		s := auth.Scope{"read", "write"}
+		if got, want := s.String(), "read write"; got != want {
+			t.Errorf("got %q; want %q", got, want)
+		}
+	})
+}
+
+func TestClaims_HasScope(t *testing.T) {
+	t.Parallel()
+	c := &auth.Claims{Scope: auth.Scope{"read", "write"}}
+
+	if !c.HasScope("read") {
+		t.Errorf("Claims.HasScope(%q) = false; want true", "read")
+	}
+	if c.HasScope("delete") {
+		t.Errorf("Claims.HasScope(%q) = true; want false", "delete")
+	}
+}
+
+func TestClaims_Delegated(t *testing.T) {
+	t.Parallel()
+
+	c1 := &auth.Claims{}
+	if c1.Delegated() {
+		t.Errorf("Claims.Delegated() = true; want false")
+	}
+
+	c2 := &auth.Claims{Azp: "client1"}
+	c2.Sub = "client1"
+	if c2.Delegated() {
+		t.Errorf("Claims.Delegated() = true; want false")
+	}
+
+	c3 := &auth.Claims{Azp: "client1"}
+	c3.Sub = "user1"
+	if !c3.Delegated() {
+		t.Errorf("Claims.Delegated() = false; want true")
+	}
+}
+
 func TestRules(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Rol: []string{"a", "b"}}
+	c := &auth.Claims{Roles: []string{"a", "b"}, Scope: auth.Scope{"read", "write"}}
 
 	tests := []struct {
 		name    string
@@ -66,6 +133,12 @@ func TestRules(t *testing.T) {
 		{"AnyRole failure", auth.AnyRole[*auth.Claims]("c", "d"), true},
 		{"AllRoles success", auth.AllRoles[*auth.Claims]("a", "b"), false},
 		{"AllRoles failure", auth.AllRoles[*auth.Claims]("a", "c"), true},
+		{"HasScope success", auth.HasScope[*auth.Claims]("read"), false},
+		{"HasScope failure", auth.HasScope[*auth.Claims]("delete"), true},
+		{"AnyScope success", auth.AnyScope[*auth.Claims]("delete", "read"), false},
+		{"AnyScope failure", auth.AnyScope[*auth.Claims]("delete", "update"), true},
+		{"AllScopes success", auth.AllScopes[*auth.Claims]("read", "write"), false},
+		{"AllScopes failure", auth.AllScopes[*auth.Claims]("read", "delete"), true},
 	}
 
 	for _, tt := range tests {
@@ -149,7 +222,7 @@ func TestGuard_Secure(t *testing.T) {
 					if tt.mockErr != nil {
 						return nil, tt.mockErr
 					}
-					return &auth.Claims{Rol: []string{"b"}}, nil
+					return &auth.Claims{Roles: []string{"b"}}, nil
 				},
 			}
 
@@ -206,7 +279,7 @@ func TestGuard_Secure(t *testing.T) {
 
 func TestContextExtraction(t *testing.T) {
 	t.Parallel()
-	want := &auth.Claims{Rol: []string{"tester"}}
+	want := &auth.Claims{Roles: []string{"tester"}}
 
 	v := &mockVerifier[*auth.Claims]{
 		verify: func(in []byte) (*auth.Claims, error) {

@@ -53,10 +53,12 @@ package auth
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/jose/jwt"
@@ -68,14 +70,18 @@ import (
 const Scheme = "Bearer"
 
 const (
+	// ReasonAuthenticationFailed serves as a generic fallback for identity
+	// verification errors that do not map to a more specific reason.
+	ReasonAuthenticationFailed = "authentication_failed"
 	// ReasonMissingToken indicates that the Authorization header was either
 	// missing or did not contain a valid Bearer token.
 	ReasonMissingToken = "missing_token"
-	// ReasonInvalidToken indicates that the token was provided but failed
-	// verification (e.g., expired, mismatched signature, or malformed).
+	// ReasonInvalidToken indicates a token was provided but is unusable,
+	// typically due to expiration, a malformed structure, or a signature
+	// mismatch.
 	ReasonInvalidToken = "invalid_token"
-	// ReasonInsufficientPrivileges indicates that the token is valid, but the
-	// associated claims failed to satisfy the required authorization rules.
+	// ReasonInsufficientPrivileges indicates the user is authenticated, but
+	// their assigned scopes or roles do not permit access to the resource.
 	ReasonInsufficientPrivileges = "insufficient_privileges"
 )
 
@@ -110,30 +116,77 @@ func From[T jwt.Claims](e *router.Exchange) (T, bool) {
 	return FromContext[T](e.Context())
 }
 
-// RoleClaims defines an interface for JWT claims that include role-based
-// access control capabilities.
-type RoleClaims interface {
+// AccessClaims defines an interface for JWT claims that support role-based
+// and scope-based access control checks.
+type AccessClaims interface {
 	jwt.Claims
 	// HasRole checks if the provided role exists within the claims.
 	HasRole(name string) bool
+	// HasScope checks if the provided scope exists within the claims.
+	HasScope(name string) bool
 }
 
-// Claims is a standard implementation of [RoleClaims]. It embeds the standard
-// JWT reserved claims and adds a custom "rol" slice for roles.
+// Scope represents the "scope" claim of a JWT as defined in RFC 6749.
+// It is stored as a space-delimited string in JSON but handled as a slice
+// internally to optimize lookup performance.
+type Scope []string
+
+// UnmarshalJSON handles the parsing of the space-delimited scope string.
+func (s *Scope) UnmarshalJSON(b []byte) error {
+	var raw string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*s = strings.Fields(raw)
+	return nil
+}
+
+// MarshalJSON joins the scopes back into a space-delimited string.
+func (s Scope) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+// String returns the space-delimited string representation.
+func (s Scope) String() string {
+	return strings.Join(s, " ")
+}
+
+// Claims is a standard implementation of [AccessClaims]. It embeds the standard
+// JWT reserved claims and adds additional claims for roles and scopes.
 type Claims struct {
 	jwt.Reserved
-	// Rol is a slice of strings representing the assigned permissions or
-	// groups.
-	Rol []string `json:"rol,omitempty"`
+	// Azp represents the authorized party to which the token was issued.
+	// It typically identifies the client application.
+	Azp string `json:"azp,omitempty"`
+	// Roles represents the application-specific roles assigned to the subject,
+	// used for Role-Based Access Control (RBAC).
+	Roles []string `json:"roles,omitempty"`
+	// Scope represents the set of granted OAuth2/OIDC scopes as defined in
+	// RFC 6749, typically used for delegated authorization.
+	Scope Scope `json:"scope,omitempty"`
 }
 
-// HasRole returns true if the specified role is present in the Roles slice.
+// HasRole implements the [AccessClaims] interface.
 func (c *Claims) HasRole(name string) bool {
-	return slices.Contains(c.Rol, name)
+	return slices.Contains(c.Roles, name)
+}
+
+// HasScope implements the [AccessClaims] interface.
+func (c *Claims) HasScope(name string) bool {
+	return slices.Contains(c.Scope, name)
+}
+
+// Delegated returns true if the token was issued to an authorized party (azp)
+// that is different from the subject (sub).
+//
+// This is useful for distinguishing between a client acting on its own behalf
+// (machine-to-machine) and a client acting on behalf of a user (delegation).
+func (c *Claims) Delegated() bool {
+	return c.Azp != "" && c.Azp != c.Sub
 }
 
 // Ensure Claims implements RoleClaims.
-var _ RoleClaims = (*Claims)(nil)
+var _ AccessClaims = (*Claims)(nil)
 
 // Rule defines an authorization condition that must be met for a request to
 // proceed. Rules are evaluated after the JWT has been successfully verified.
@@ -155,7 +208,7 @@ func (f RuleFunc[T]) Eval(ctx context.Context, claims T) error {
 
 // HasRole creates a [Rule] that enforces the presence of a specific single
 // role.
-func HasRole[T RoleClaims](role string) Rule[T] {
+func HasRole[T AccessClaims](role string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		if !claims.HasRole(role) {
 			return fmt.Errorf("requires role %q", role)
@@ -166,7 +219,7 @@ func HasRole[T RoleClaims](role string) Rule[T] {
 
 // AnyRole creates a [Rule] that passes if the user possesses at least one of
 // the specified roles.
-func AnyRole[T RoleClaims](roles ...string) Rule[T] {
+func AnyRole[T AccessClaims](roles ...string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		if slices.ContainsFunc(roles, claims.HasRole) {
 			return nil
@@ -176,11 +229,45 @@ func AnyRole[T RoleClaims](roles ...string) Rule[T] {
 }
 
 // AllRoles creates a [Rule] that mandates the presence of all specified roles.
-func AllRoles[T RoleClaims](roles ...string) Rule[T] {
+func AllRoles[T AccessClaims](roles ...string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		for _, role := range roles {
 			if !claims.HasRole(role) {
 				return fmt.Errorf("missing required role %q", role)
+			}
+		}
+		return nil
+	})
+}
+
+// HasScope creates a [Rule] that enforces the presence of a specific single
+// scope.
+func HasScope[T AccessClaims](scope string) Rule[T] {
+	return RuleFunc[T](func(ctx context.Context, claims T) error {
+		if !claims.HasScope(scope) {
+			return fmt.Errorf("requires scope %q", scope)
+		}
+		return nil
+	})
+}
+
+// AnyScope creates a [Rule] that passes if the user possesses at least one of
+// the specified scopes.
+func AnyScope[T AccessClaims](scopes ...string) Rule[T] {
+	return RuleFunc[T](func(ctx context.Context, claims T) error {
+		if slices.ContainsFunc(scopes, claims.HasScope) {
+			return nil
+		}
+		return fmt.Errorf("requires at least one of the scopes: %v", scopes)
+	})
+}
+
+// AllScopes creates a [Rule] that mandates the presence of all specified scopes.
+func AllScopes[T AccessClaims](scopes ...string) Rule[T] {
+	return RuleFunc[T](func(ctx context.Context, claims T) error {
+		for _, scope := range scopes {
+			if !claims.HasScope(scope) {
+				return fmt.Errorf("missing required scope %q", scope)
 			}
 		}
 		return nil

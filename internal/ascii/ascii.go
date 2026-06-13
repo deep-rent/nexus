@@ -86,3 +86,13 @@ func ToUpper(c rune) rune {
 	}
 	return c
 }
+
+// All reports whether all runes in the string satisfy the given predicate.
+func All(s string, fn func(c rune) bool) bool {
+	for i := 0; i < len(s); i++ {
+		if !fn(rune(s[i])) {
+			return false
+		}
+	}
+	return true
+}

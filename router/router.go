@@ -63,6 +63,7 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
+	"github.com/deep-rent/nexus/uuid"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -179,6 +180,16 @@ func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
 }
 
+// ErrorID generates a unique, string-based identifier intended for use
+// in the [Error.ID] field.
+//
+// This identifier helps correlate client-side error reports with server-side
+// logs, making it easier to trace the specific occurrence of an issue
+// through the system.
+func ErrorID() string {
+	return uuid.New().String()
+}
+
 // Exchange acts as a context object for a single HTTP request/response cycle.
 //
 // It wraps the underlying [*http.Request] and [http.ResponseWriter] to provide
@@ -254,19 +265,11 @@ func (e *Exchange) BindJSON(v any) *Error {
 	}
 
 	if err := valid.Test(v); err != nil {
-		if ctx, ok := errors.AsType[valid.Error](err); ok {
-			return &Error{
-				Status:      http.StatusBadRequest,
-				Reason:      ReasonValidationFailed,
-				Description: fmt.Sprintf("input violates %d constraints", len(ctx)),
-				Context:     ctx,
-			}
-		}
 		return &Error{
-			Status:      http.StatusInternalServerError,
-			Reason:      ReasonServerError,
-			Description: "an unexpected error occurred during input validation",
-			Cause:       err,
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonValidationFailed,
+			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Context:     err,
 		}
 	}
 
@@ -277,7 +280,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 //
 // Unlike standard [http.Request.FormValue], this strictly accesses PostForm
 // (the request body), ignoring URL query parameters.
-func (e *Exchange) ReadForm() (url.Values, *Error) {
+func (e *Exchange) ReadForm() (url.Values, error) {
 	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
 		return nil, &Error{
 			Status:      http.StatusUnsupportedMediaType,
@@ -347,27 +350,18 @@ func (e *Exchange) Redirect(url string, code int) error {
 	return nil
 }
 
-// RedirectTo constructs a URL with query parameters and redirects the client.
-func (e *Exchange) RedirectTo(base string, params url.Values, code int) error {
-	u, err := url.Parse(base)
-	if err != nil {
-		return &Error{
-			Status:      http.StatusInternalServerError,
-			Reason:      ReasonServerError,
-			Description: "invalid redirect target",
-		}
-	}
+// Cookie retrieves a named cookie from the request.
+// It returns [http.ErrNoCookie] if no such cookie was found.
+// If multiple cookies match the given name, only one cookie will be returned.
+func (e *Exchange) Cookie(name string) (*http.Cookie, error) {
+	return e.R.Cookie(name)
+}
 
-	q := u.Query()
-	for k, vs := range params {
-		for _, v := range vs {
-			q.Add(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
-
-	http.Redirect(e.W, e.R, u.String(), code)
-	return nil
+// SetCookie adds a Set-Cookie header to the response.
+// The provided cookie must have a valid name. Invalid cookies may be silently
+// dropped.
+func (e *Exchange) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(e.W, cookie)
 }
 
 // Handler defines the interface for HTTP request handlers used by the [Router].
@@ -620,11 +614,19 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		ae := &Error{}
 		ok := errors.As(err, &ae)
 		if !ok {
-			logger.Error("An internal server error occurred", slog.Any("err", err))
+			id := ErrorID()
+
+			logger.Error(
+				"An internal server error occurred",
+				slog.String("error_id", id),
+				slog.Any("err", err),
+			)
+
 			ae = &Error{
 				Status:      http.StatusInternalServerError,
 				Reason:      ReasonServerError,
-				Description: "internal server error",
+				Description: "an unhandled internal error occurred",
+				ID:          id,
 			}
 		}
 
