@@ -145,6 +145,7 @@ func (v *vault) ServeHTTP(e *router.Exchange) error {
 	// rotated order. We sort them by KeyID or Thumbprint.
 	sortedKeys := make([]jwk.KeyPair, len(keys))
 	copy(sortedKeys, keys)
+
 	slices.SortFunc(sortedKeys, func(a, b jwk.KeyPair) int {
 		idA := a.KeyID()
 		if idA == "" {
