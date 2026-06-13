@@ -124,8 +124,6 @@ func Verifier(length int) (string, error) {
 		return "", err
 	}
 
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-
 	idx := 0
 	for i := 0; i < length; {
 		if idx >= len(buf) {
@@ -139,7 +137,7 @@ func Verifier(length int) (string, error) {
 		idx++
 
 		if val < 198 { // 66 * 3 to eliminate modulo bias (198 < 256)
-			result[i] = alphabet[val%66]
+			result[i] = Alphabet[val%66]
 			i++
 		}
 	}
@@ -227,6 +225,10 @@ func Verify(verifier, challenge, method string) bool {
 		return false
 	}
 }
+
+// Alphabet is the set of unreserved characters allowed in a PKCE code verifier,
+// as defined in RFC 7636 Section 4.1.
+const Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
 // isUnreserved reports whether the given string contains only unreserved ASCII
 // characters.
