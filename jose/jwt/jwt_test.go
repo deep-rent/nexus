@@ -104,7 +104,7 @@ func TestVerifier_Validation(t *testing.T) {
 				set,
 				jwt.WithIssuers("good-iss"),
 				jwt.WithAudiences("good-aud"),
-				jwt.WithVerifierClock(func() time.Time { return now }),
+				jwt.WithClock(func() time.Time { return now }),
 			),
 			wantErr: nil,
 		},
@@ -113,7 +113,7 @@ func TestVerifier_Validation(t *testing.T) {
 			v: jwt.NewVerifier[*testClaims](
 				set,
 				jwt.WithIssuers("bad-iss"),
-				jwt.WithVerifierClock(func() time.Time { return now }),
+				jwt.WithClock(func() time.Time { return now }),
 			),
 			wantErr: jwt.ErrInvalidIssuer,
 		},
@@ -122,7 +122,7 @@ func TestVerifier_Validation(t *testing.T) {
 			v: jwt.NewVerifier[*testClaims](
 				set,
 				jwt.WithAudiences("bad-aud"),
-				jwt.WithVerifierClock(func() time.Time { return now }),
+				jwt.WithClock(func() time.Time { return now }),
 			),
 			wantErr: jwt.ErrInvalidAudience,
 		},
@@ -130,7 +130,7 @@ func TestVerifier_Validation(t *testing.T) {
 			name: "expired",
 			v: jwt.NewVerifier[*testClaims](
 				set,
-				jwt.WithVerifierClock(func() time.Time { return now.Add(d1) }),
+				jwt.WithClock(func() time.Time { return now.Add(d1) }),
 			),
 			wantErr: jwt.ErrTokenExpired,
 		},
@@ -138,7 +138,7 @@ func TestVerifier_Validation(t *testing.T) {
 			name: "leeway saves",
 			v: jwt.NewVerifier[*testClaims](
 				set,
-				jwt.WithVerifierClock(func() time.Time { return now.Add(d2) }),
+				jwt.WithClock(func() time.Time { return now.Add(d2) }),
 				jwt.WithLeeway(time.Minute),
 			),
 			wantErr: nil,
@@ -174,7 +174,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 		v := jwt.NewVerifier[*testClaims](
 			set,
-			jwt.WithVerifierClock(func() time.Time { return now }),
+			jwt.WithClock(func() time.Time { return now }),
 		)
 		if _, err := v.Verify(raw); !errors.Is(err, jwt.ErrTokenNotYetActive) {
 			t.Errorf("Verify() error = %v; want %v", err, jwt.ErrTokenNotYetActive)
@@ -189,7 +189,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 		v := jwt.NewVerifier[*testClaims](
 			set,
 			jwt.WithMaxAge(time.Hour),
-			jwt.WithVerifierClock(func() time.Time { return now }),
+			jwt.WithClock(func() time.Time { return now }),
 		)
 		if _, err := v.Verify(raw); !errors.Is(err, jwt.ErrTokenTooOld) {
 			t.Errorf("Verify() error = %v; want %v", err, jwt.ErrTokenTooOld)

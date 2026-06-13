@@ -83,12 +83,15 @@ import (
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
+// Type is the media type of a JWT, as defined in RFC 7519.
+const Type = "JWT"
+
 // Header provides access to the metadata associated with a JWT, such as the
 // cryptographic algorithm used to sign the token and identifiers for the
 // signing key.
 //
 // It is an alias for [jwk.Hint], allowing it to be passed directly to a
-// [jwk.Set]'s Find method to locate the appropriate verification key.
+// [jwk.Resolver]'s Find method to locate the appropriate verification key.
 type Header jwk.Hint
 
 // header is the concrete implementation of the [Header] interface, providing
@@ -128,10 +131,10 @@ type Token[T Claims] interface {
 	Header() Header
 	// Claims returns the token's payload claims.
 	Claims() T
-	// Verify checks the token's signature using the provided JWK set.
-	// It returns ErrKeyNotFound if no matching key is found or
-	// ErrInvalidSignature if the signature is incorrect.
-	Verify(set jwk.Set) error
+	// Verify checks the token's signature using the provided JWK resolver.
+	// It returns [ErrKeyNotFound] if no matching key is found or
+	// [ErrInvalidSignature] if the signature is incorrect.
+	Verify(resolver jwk.Resolver) error
 }
 
 // token is the internal implementation of the [Token] interface.
@@ -153,8 +156,8 @@ func (t *token[T]) Header() Header { return t.header }
 func (t *token[T]) Claims() T { return t.claims }
 
 // Verify implements [Token].
-func (t *token[T]) Verify(set jwk.Set) error {
-	key := set.Find(t.header)
+func (t *token[T]) Verify(resolver jwk.Resolver) error {
+	key := resolver.Find(t.header)
 	if key == nil {
 		return ErrKeyNotFound
 	}
@@ -353,7 +356,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 	if err := json.Unmarshal(h, header); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal header: %w", err)
 	}
-	if typ := header.Typ; typ != "" && typ != "JWT" {
+	if typ := header.Typ; typ != "" && typ != Type {
 		return nil, fmt.Errorf("unexpected token type %q", typ)
 	}
 	c, err := decode(in[i+1 : j])
@@ -389,19 +392,19 @@ func decode(src []byte) ([]byte, error) {
 }
 
 // Verify first parses a JWT and then verifies its signature against a given key
-// set. The type parameter T specifies the target struct for the token's claims.
+// resolver. The type parameter T specifies the target struct for the token's claims.
 //
 // This function only checks the cryptographic signature, not the content of the
 // claims. For claim validation (e.g., issuer, audience, expiration), create and
 // configure a [Verifier]. It is a shorthand for [Parse] followed by calling
 // [Token.Verify] on the resulting [Token].
-func Verify[T Claims](set jwk.Set, in []byte) (T, error) {
+func Verify[T Claims](resolver jwk.Resolver, in []byte) (T, error) {
 	tok, err := Parse[T](in)
 	if err != nil {
 		var zero T
 		return zero, err
 	}
-	if err := tok.Verify(set); err != nil {
+	if err := tok.Verify(resolver); err != nil {
 		var zero T
 		return zero, err
 	}
@@ -489,10 +492,10 @@ func WithMaxAge(d time.Duration) VerifierOption {
 	}
 }
 
-// WithVerifierClock sets the function used to retrieve the current time during
+// WithClock sets the function used to retrieve the current time during
 // validation. This is useful for deterministic testing or synchronizing with
 // an external time source. The default is [time.Now].
-func WithVerifierClock(now func() time.Time) VerifierOption {
+func WithClock(now func() time.Time) VerifierOption {
 	return func(c *verifierConfig) {
 		if now != nil {
 			c.now = now
@@ -502,18 +505,23 @@ func WithVerifierClock(now func() time.Time) VerifierOption {
 
 // verifier is the default implementation of the [Verifier] interface.
 type verifier[T Claims] struct {
-	// set is the JWK set used for signature verification.
-	set jwk.Set
-	// cfg contains the validation rules.
-	cfg verifierConfig
+	resolver  jwk.Resolver
+	issuers   []string
+	audiences []string
+	leeway    time.Duration
+	age       time.Duration
+	now       func() time.Time
 }
 
 // Ensure verifier implements the Verifier interface.
 var _ Verifier[Claims] = (*verifier[Claims])(nil)
 
-// NewVerifier creates a new [Verifier] bound to a specific JWK set.
+// NewVerifier creates a new [Verifier] bound to a specific JWK resolver.
 // The type parameter T is the user-defined struct for the token's claims.
-func NewVerifier[T Claims](set jwk.Set, opts ...VerifierOption) Verifier[T] {
+func NewVerifier[T Claims](
+	resolver jwk.Resolver,
+	opts ...VerifierOption,
+) Verifier[T] {
 	cfg := verifierConfig{
 		now: time.Now,
 	}
@@ -522,26 +530,30 @@ func NewVerifier[T Claims](set jwk.Set, opts ...VerifierOption) Verifier[T] {
 	}
 
 	return &verifier[T]{
-		set: set,
-		cfg: cfg,
+		resolver:  resolver,
+		issuers:   cfg.issuers,
+		audiences: cfg.audiences,
+		leeway:    cfg.leeway,
+		age:       cfg.age,
+		now:       cfg.now,
 	}
 }
 
 // Verify implements the [Verifier] interface.
 func (v *verifier[T]) Verify(in []byte) (T, error) {
-	c, err := Verify[T](v.set, in)
+	c, err := Verify[T](v.resolver, in)
 	if err != nil {
 		var zero T
 		return zero, err
 	}
-	now := v.cfg.now()
-	if len(v.cfg.issuers) > 0 && !slices.Contains(v.cfg.issuers, c.Issuer()) {
+	now := v.now()
+	if len(v.issuers) > 0 && !slices.Contains(v.issuers, c.Issuer()) {
 		var zero T
 		return zero, ErrInvalidIssuer
 	}
-	if len(v.cfg.audiences) > 0 {
+	if len(v.audiences) > 0 {
 		found := false
-		for _, aud := range v.cfg.audiences {
+		for _, aud := range v.audiences {
 			if slices.Contains(c.Audience(), aud) {
 				found = true
 				break
@@ -553,19 +565,19 @@ func (v *verifier[T]) Verify(in []byte) (T, error) {
 		}
 	}
 	if nbf := c.NotBefore(); !nbf.IsZero() {
-		if now.Add(v.cfg.leeway).Before(nbf) {
+		if now.Add(v.leeway).Before(nbf) {
 			var zero T
 			return zero, ErrTokenNotYetActive
 		}
 	}
 	if exp := c.ExpiresAt(); !exp.IsZero() {
-		if now.Add(-v.cfg.leeway).After(exp) {
+		if now.Add(-v.leeway).After(exp) {
 			var zero T
 			return zero, ErrTokenExpired
 		}
 	}
-	if iat := c.IssuedAt(); v.cfg.age > 0 && !iat.IsZero() {
-		if iat.Add(v.cfg.age).Before(now.Add(-v.cfg.leeway)) {
+	if iat := c.IssuedAt(); v.age > 0 && !iat.IsZero() {
+		if iat.Add(v.age).Before(now.Add(-v.leeway)) {
 			var zero T
 			return zero, ErrTokenTooOld
 		}
@@ -581,7 +593,7 @@ func (v *verifier[T]) Verify(in []byte) (T, error) {
 func Sign(k jwk.KeyPair, claims any) ([]byte, error) {
 	// Prepare and marshal the header.
 	header := &header{
-		Typ: "JWT",
+		Typ: Type,
 		Alg: k.Algorithm(),
 		Kid: k.KeyID(),
 	}

@@ -249,6 +249,11 @@ func (b *KeyBuilder[T]) build(mat T) *key[T] {
 // parameters.
 var ErrIneligibleKey = errors.New("ineligible for signature verification")
 
+var (
+	errUndefinedKeyType     = errors.New("undefined key type")
+	errUnspecifiedAlgorithm = errors.New("unspecified algorithm")
+)
+
 // Parse parses a single [Key] from the provided JSON input.
 //
 // It first checks if the key is eligible for signature verification. If not,
@@ -267,10 +272,10 @@ func Parse(in []byte) (Key, error) {
 		return nil, ErrIneligibleKey
 	}
 	if raw.Kty == "" {
-		return nil, errors.New("undefined key type")
+		return nil, errUndefinedKeyType
 	}
 	if raw.Alg == "" {
-		return nil, errors.New("algorithm not specified")
+		return nil, errUnspecifiedAlgorithm
 	}
 	read := readers[raw.Alg]
 	if read == nil {
@@ -283,17 +288,24 @@ func Parse(in []byte) (Key, error) {
 	return key, nil
 }
 
-// Set stores an immutable collection of [Key] instances, typically parsed from
-// a JWKS. It provides efficient lookups of keys for signature verification.
-type Set interface {
-	// Keys returns an iterator over all keys in this set.
-	Keys() iter.Seq[Key]
-	// Len returns the number of keys in this set.
-	Len() int
+// Resolver provides lookups of keys for signature verification.
+type Resolver interface {
 	// Find looks up a key using the specified hint. A key is returned only
 	// if both its key id and algorithm match the hint exactly.
 	// Otherwise, it returns nil.
 	Find(hint Hint) Key
+}
+
+// Set stores an immutable collection of [Key] instances, typically parsed from
+// a JWKS. It extends [Resolver] with the ability to iterate over all keys in
+// the set and to get the number of keys.
+type Set interface {
+	Resolver
+	// Len returns the number of keys in this set.
+	Len() int
+
+	// Keys returns an iterator over all keys in this set.
+	Keys() iter.Seq[Key]
 }
 
 // newSet creates a new, empty [set] with the specified initial capacity.
@@ -360,9 +372,7 @@ func NewSet(keys ...Key) Set {
 	for _, k := range sorted {
 		i := len(s.keys)
 		s.keys = append(s.keys, k)
-		if kid := k.KeyID(); kid != "" {
-			s.kidx[kid] = i
-		}
+		s.kidx[k.KeyID()] = i
 	}
 	return s
 }
