@@ -129,16 +129,16 @@ func TestRules(t *testing.T) {
 	}{
 		{"HasRole success", auth.HasRole[*auth.Claims]("a"), false},
 		{"HasRole failure", auth.HasRole[*auth.Claims]("c"), true},
-		{"AnyRole success", auth.AnyRole[*auth.Claims]("c", "a"), false},
-		{"AnyRole failure", auth.AnyRole[*auth.Claims]("c", "d"), true},
-		{"AllRoles success", auth.AllRoles[*auth.Claims]("a", "b"), false},
-		{"AllRoles failure", auth.AllRoles[*auth.Claims]("a", "c"), true},
+		{"HasRole multi success", auth.HasRole[*auth.Claims]("a", "b"), false},
+		{"HasRole multi failure", auth.HasRole[*auth.Claims]("a", "c"), true},
 		{"HasScope success", auth.HasScope[*auth.Claims]("read"), false},
 		{"HasScope failure", auth.HasScope[*auth.Claims]("delete"), true},
-		{"AnyScope success", auth.AnyScope[*auth.Claims]("delete", "read"), false},
-		{"AnyScope failure", auth.AnyScope[*auth.Claims]("delete", "update"), true},
-		{"AllScopes success", auth.AllScopes[*auth.Claims]("read", "write"), false},
-		{"AllScopes failure", auth.AllScopes[*auth.Claims]("read", "delete"), true},
+		{"HasScope multi success", auth.HasScope[*auth.Claims]("read", "write"), false},
+		{"HasScope multi failure", auth.HasScope[*auth.Claims]("read", "delete"), true},
+		{"Any success", auth.Any(auth.HasRole[*auth.Claims]("c"), auth.HasRole[*auth.Claims]("a")), false},
+		{"Any failure", auth.Any(auth.HasRole[*auth.Claims]("c"), auth.HasRole[*auth.Claims]("d")), true},
+		{"All success", auth.All(auth.HasRole[*auth.Claims]("a"), auth.HasScope[*auth.Claims]("read")), false},
+		{"All failure", auth.All(auth.HasRole[*auth.Claims]("a"), auth.HasScope[*auth.Claims]("delete")), true},
 	}
 
 	for _, tt := range tests {

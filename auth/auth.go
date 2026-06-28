@@ -205,68 +205,55 @@ func (f RuleFunc[T]) Eval(ctx context.Context, claims T) error {
 	return f(ctx, claims)
 }
 
-// HasRole creates a [Rule] that enforces the presence of a specific single
-// role.
-func HasRole[T AccessClaims](role string) Rule[T] {
+// All creates a [Rule] that passes only if all the provided rules pass.
+func All[T jwt.Claims](rules ...Rule[T]) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
-		if !claims.HasRole(role) {
-			return fmt.Errorf("requires role %q", role)
-		}
-		return nil
-	})
-}
-
-// AnyRole creates a [Rule] that passes if the user possesses at least one of
-// the specified roles.
-func AnyRole[T AccessClaims](roles ...string) Rule[T] {
-	return RuleFunc[T](func(ctx context.Context, claims T) error {
-		if slices.ContainsFunc(roles, claims.HasRole) {
-			return nil
-		}
-		return fmt.Errorf("requires at least one of the roles: %v", roles)
-	})
-}
-
-// AllRoles creates a [Rule] that mandates the presence of all specified roles.
-func AllRoles[T AccessClaims](roles ...string) Rule[T] {
-	return RuleFunc[T](func(ctx context.Context, claims T) error {
-		for _, role := range roles {
-			if !claims.HasRole(role) {
-				return fmt.Errorf("missing required role %q", role)
+		for _, r := range rules {
+			if err := r.Eval(ctx, claims); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
 }
 
-// HasScope creates a [Rule] that enforces the presence of a specific single
-// scope.
-func HasScope[T AccessClaims](scope string) Rule[T] {
+// Any creates a [Rule] that passes if at least one of the provided rules passes.
+// If all rules fail, it returns an error combining the reasons.
+func Any[T jwt.Claims](rules ...Rule[T]) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
-		if !claims.HasScope(scope) {
-			return fmt.Errorf("requires scope %q", scope)
+		var errs []error
+		for _, r := range rules {
+			if err := r.Eval(ctx, claims); err == nil {
+				return nil
+			} else {
+				errs = append(errs, err)
+			}
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("all rules failed: %v", errs)
 		}
 		return nil
 	})
 }
 
-// AnyScope creates a [Rule] that passes if the user possesses at least one of
-// the specified scopes.
-func AnyScope[T AccessClaims](scopes ...string) Rule[T] {
+// HasRole creates a [Rule] that mandates the presence of all specified roles.
+func HasRole[T AccessClaims](roles ...string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
-		if slices.ContainsFunc(scopes, claims.HasScope) {
-			return nil
+		for _, role := range roles {
+			if !claims.HasRole(role) {
+				return fmt.Errorf("requires role %q", role)
+			}
 		}
-		return fmt.Errorf("requires at least one of the scopes: %v", scopes)
+		return nil
 	})
 }
 
-// AllScopes creates a [Rule] that mandates the presence of all specified scopes.
-func AllScopes[T AccessClaims](scopes ...string) Rule[T] {
+// HasScope creates a [Rule] that mandates the presence of all specified scopes.
+func HasScope[T AccessClaims](scopes ...string) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		for _, scope := range scopes {
 			if !claims.HasScope(scope) {
-				return fmt.Errorf("missing required scope %q", scope)
+				return fmt.Errorf("requires scope %q", scope)
 			}
 		}
 		return nil
