@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/rotor"
+	"github.com/deep-rent/nexus/rotor"
 )
 
 func TestNew(t *testing.T) {
