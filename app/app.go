@@ -200,19 +200,12 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 
 	cfg.logger.Info("Application started", slog.Int("components", len(runnables)))
 
-	failureCh := make(chan struct{}, 1)
 	for _, fn := range runnables {
 		g.Go(func() (err error) {
 			defer func() {
 				if r := recover(); r != nil {
 					cfg.logger.Error("Component panicked", "panic", r, "stack", string(debug.Stack()))
 					err = fmt.Errorf("application panic: %v", r)
-				}
-				if err != nil {
-					select {
-					case failureCh <- struct{}{}:
-					default:
-					}
 				}
 			}()
 			return fn(gCtx)
@@ -233,13 +226,13 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 		cfg.logger.Info("Application stopped")
 		return nil
 
-	case <-ctx.Done():
-		// A signal was received (or parent context canceled).
-		cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
-
-	case <-failureCh:
-		// A component failed, triggering a shutdown of the others.
-		cfg.logger.Info("Component failure detected, initiating graceful shutdown")
+	case <-gCtx.Done():
+		// A signal was received OR a component failed.
+		if ctx.Err() != nil {
+			cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
+		} else {
+			cfg.logger.Info("Component failure detected, initiating graceful shutdown")
+		}
 	}
 
 	timer := time.NewTimer(cfg.timeout)
