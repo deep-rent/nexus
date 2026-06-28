@@ -227,6 +227,9 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 		return nil
 
 	case <-gCtx.Done():
+		// Restore default signal handling so a second Ctrl-C force-quits
+		cancel()
+
 		// A signal was received OR a component failed.
 		if ctx.Err() != nil {
 			cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
