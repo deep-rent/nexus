@@ -177,8 +177,8 @@ func (c *check) run(ctx context.Context) (res Result) {
 	msg := ""
 	if err != nil {
 		msg = err.Error()
-		// Default to sick if an error occurs but the status wasn't explicitly set
-		// to degraded.
+		// Default to sick if an error occurs but the status wasn't explicitly
+		// set to degraded.
 		if status != StatusDegraded {
 			status = StatusSick
 		}
