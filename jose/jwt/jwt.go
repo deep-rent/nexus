@@ -167,7 +167,6 @@ func (t *token[T]) Verify(resolver jwk.Resolver) error {
 	return nil
 }
 
-// Ensure token implements the Token interface.
 var _ Token[Claims] = (*token[Claims])(nil)
 
 // audience represents the "aud" (Audience) claim of a JWT as defined in
@@ -290,7 +289,6 @@ func (r *Reserved) NotBefore() time.Time { return r.Nbf }
 // SetNotBefore implements [MutableClaims].
 func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
 
-// Ensure Reserved implements the MutableClaims interface.
 var _ MutableClaims = (*Reserved)(nil)
 
 // DynamicClaims represents a standard JWT payload extended with arbitrary
@@ -514,7 +512,6 @@ type verifier[T Claims] struct {
 	now       func() time.Time
 }
 
-// Ensure verifier implements the Verifier interface.
 var _ Verifier[Claims] = (*verifier[Claims])(nil)
 
 // NewVerifier creates a new [Verifier] bound to a specific JWK resolver.

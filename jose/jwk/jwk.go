@@ -601,7 +601,6 @@ func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
 }
 
-// Ensure cacheSet implements CacheSet.
 var _ CacheSet = (*cacheSet)(nil)
 
 // mapper adapts the [ParseSet] function to the [cache.Mapper] interface.

@@ -62,7 +62,8 @@ const (
 
 // strategy defines how the next element index is selected.
 type strategy interface {
-	// Pick returns the next element index given the total number of elements n.
+	// Pick returns the next element index given the total number of elements
+	// available.
 	Pick(n int) int
 }
 
@@ -112,7 +113,8 @@ func (s *singleton[E]) Next() E {
 	return s.item
 }
 
-// rotor is a generic implementation of the [Rotor] interface for multiple items.
+// rotor is a generic implementation of the [Rotor] interface for multiple
+// items.
 type rotor[E any] struct {
 	// items is the immutable slice of elements to rotate through.
 	items []E
@@ -120,11 +122,12 @@ type rotor[E any] struct {
 	strategy strategy
 }
 
-// New creates a new [Rotor].
+// New creates a new [Rotor] with the given strategy and items to rotate
+// through.
 //
 // It makes a defensive copy of the provided items slice to ensure immutability.
-// This function panics if the items slice is empty. If the slice contains exactly
-// one item, an optimized [Rotor] implementation is returned.
+// This function panics if the items slice is empty. If the slice contains
+// exactly one item, an optimized [Rotor] implementation will be created.
 func New[E any](t Strategy, items []E) Rotor[E] {
 	if len(items) == 0 {
 		panic("rotor: items slice must not be empty")
@@ -154,3 +157,5 @@ func New[E any](t Strategy, items []E) Rotor[E] {
 func (r *rotor[E]) Next() E {
 	return r.items[r.strategy.Pick(len(r.items))]
 }
+
+var _ Rotor[int] = (*rotor[int])(nil)

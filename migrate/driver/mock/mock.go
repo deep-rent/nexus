@@ -276,5 +276,4 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-// Ensure Driver satisfies the migrate.Driver interface.
 var _ migrate.Driver = (*Driver)(nil)

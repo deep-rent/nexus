@@ -185,7 +185,6 @@ func (c *Claims) Delegated() bool {
 	return c.Azp != "" && c.Azp != c.Sub
 }
 
-// Ensure Claims implements RoleClaims.
 var _ AccessClaims = (*Claims)(nil)
 
 // Rule defines an authorization condition that must be met for a request to

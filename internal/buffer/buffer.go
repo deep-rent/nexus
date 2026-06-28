@@ -94,5 +94,4 @@ func (b *Pool) Put(buf []byte) {
 	}
 }
 
-// Ensure Pool satisfies the [httputil.BufferPool] interface.
 var _ httputil.BufferPool = (*Pool)(nil)

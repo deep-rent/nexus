@@ -70,5 +70,4 @@ func (s *Source) List() ([]migrate.SourceScript, error) {
 	return out, nil
 }
 
-// Ensure Source satisfies the migrate.Source interface.
 var _ migrate.Source = (*Source)(nil)

@@ -276,7 +276,6 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-// Ensure transport satisfies the http.RoundTripper interface.
 var _ http.RoundTripper = (*transport)(nil)
 
 // NewTransport creates and returns a new retrying [http.RoundTripper].

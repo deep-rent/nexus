@@ -376,7 +376,6 @@ type HandlerFunc func(e *Exchange) error
 // ServeHTTP satisfies the [Handler] interface.
 func (f HandlerFunc) ServeHTTP(e *Exchange) error { return f(e) }
 
-// Ensure HandlerFunc implements Handler.
 var _ Handler = HandlerFunc(nil)
 
 // ErrorHandler defines a function that handles errors returned by routes.
