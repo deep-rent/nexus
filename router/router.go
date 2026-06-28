@@ -248,7 +248,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 			Description: "content-type must be " + MediaTypeJSON,
 		}
 	}
-	if e.R.Body == nil || e.R.Body == http.NoBody {
+	if e.R.ContentLength == 0 || e.R.Body == nil || e.R.Body == http.NoBody {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonEmptyBody,
