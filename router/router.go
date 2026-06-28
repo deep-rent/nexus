@@ -175,9 +175,14 @@ type Error struct {
 	Cause error `json:"-"`
 }
 
-// Error implements the standard [error] interface.
+// Error satisfies the standard [error] interface.
 func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
+}
+
+// Unwrap returns the wrapped error if applicable.
+func (e *Error) Unwrap() error {
+	return e.Cause
 }
 
 // ErrorID generates a unique, string-based identifier intended for use
