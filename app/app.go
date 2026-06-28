@@ -205,8 +205,8 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 		g.Go(func() (err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					stack := string(debug.Stack())
-					err = fmt.Errorf("application panic: %v\nstack: %s", r, stack)
+					cfg.logger.Error("Component panicked", "panic", r, "stack", string(debug.Stack()))
+					err = fmt.Errorf("application panic: %v", r)
 				}
 				if err != nil {
 					select {
