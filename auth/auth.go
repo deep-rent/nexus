@@ -86,7 +86,8 @@ const (
 )
 
 const (
-	// RoleAdmin represents an elevated user role with full administrative access.
+	// RoleAdmin represents an elevated user role with full administrative
+	// access.
 	RoleAdmin = "admin"
 )
 
@@ -205,7 +206,8 @@ func (f RuleFunc[T]) Eval(ctx context.Context, claims T) error {
 	return f(ctx, claims)
 }
 
-// All creates a [Rule] that passes only if all the provided rules pass.
+// All creates a [Rule] that passes only if all the provided rules pass (AND).
+// It returns the error from the first rule that fails.
 func All[T jwt.Claims](rules ...Rule[T]) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		for _, r := range rules {
@@ -217,8 +219,8 @@ func All[T jwt.Claims](rules ...Rule[T]) Rule[T] {
 	})
 }
 
-// Any creates a [Rule] that passes if at least one of the provided rules passes.
-// If all rules fail, it returns an error combining the reasons.
+// Any creates a [Rule] that passes if at least one of the provided rules
+// passes (OR). If all rules fail, it returns an error combining the reasons.
 func Any[T jwt.Claims](rules ...Rule[T]) Rule[T] {
 	return RuleFunc[T](func(ctx context.Context, claims T) error {
 		var errs []error
@@ -260,8 +262,9 @@ func HasScope[T AccessClaims](scopes ...string) Rule[T] {
 	})
 }
 
-// Extractor defines a function signature for extracting a token from an HTTP request.
-// It returns the extracted token string, or an empty string if no token was found.
+// Extractor defines a function signature for extracting a token from an HTTP
+// request. It returns the extracted token string, or an empty string if no
+// token was found.
 type Extractor func(r *http.Request) string
 
 // BearerExtractor is the default [Extractor] that attempts to retrieve a token
@@ -273,15 +276,17 @@ func BearerExtractor(r *http.Request) string {
 // Guard is responsible for intercepting HTTP requests, validating their JWT
 // authentication, and enforcing defined authorization rules.
 type Guard[T jwt.Claims] struct {
-	// verifier is the internal [jwt.Verifier] used to process tokens.
-	verifier jwt.Verifier[T]
-	// extractors defines the sequence of [Extractor] functions used to retrieve the token.
+	verifier   jwt.Verifier[T]
 	extractors []Extractor
 }
 
-// NewGuard creates a new [Guard] using the provided JWT verifier and optional extractors.
-// If no extractors are provided, it defaults to using [BearerExtractor].
-func NewGuard[T jwt.Claims](v jwt.Verifier[T], extractors ...Extractor) *Guard[T] {
+// NewGuard creates a new [Guard] using the provided JWT verifier and optional
+// extractors. If no extractors are provided, it defaults to using
+// [BearerExtractor].
+func NewGuard[T jwt.Claims](
+	v jwt.Verifier[T],
+	extractors ...Extractor,
+) *Guard[T] {
 	if len(extractors) == 0 {
 		extractors = []Extractor{BearerExtractor}
 	}
@@ -331,8 +336,8 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 
 			for _, rule := range rules {
 				if err := rule.Eval(e.Context(), claims); err != nil {
-					// If a rule explicitly returns a router.Error, pass it
-					// through to allow custom API error responses.
+					// If a rule explicitly returns an API error, pass it
+					// through to allow custom error responses.
 					if re, ok := errors.AsType[*router.Error](err); ok {
 						return re
 					}
