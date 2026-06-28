@@ -293,10 +293,13 @@ func NewGuard[T jwt.Claims](v jwt.Verifier[T], extractors ...Extractor) *Guard[T
 
 // Secure produces a [router.Middleware] that protects routes.
 //
-// It extracts a Bearer token from the Authorization header, verifies its
-// signature and validity, and ensures all provided rules pass. If any step
-// fails, it returns a structured [*router.Error] and halts the middleware
-// chain.
+// It extracts a token using the configured extractors, verifies its signature
+// and validity, and ensures all provided rules pass. If any step fails, it
+// returns a structured [*router.Error] and halts the middleware chain.
+//
+// If no rules are provided, Secure acts strictly as an authentication check,
+// verifying the token's validity without enforcing any specific authorization
+// constraints.
 func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
