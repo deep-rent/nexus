@@ -95,6 +95,10 @@ import (
 // gracefully shut down after receiving a termination signal.
 const DefaultTimeout = 10 * time.Second
 
+// ErrCleanExit is an internal error used to trigger a graceful shutdown
+// when a component exits without error.
+var ErrCleanExit = errors.New("component exited cleanly")
+
 // Runnable defines a function that can be executed by the application runner.
 // It receives a [context.Context] that is canceled when a shutdown signal is
 // received, or if another concurrently running [Runnable] returns an error.
@@ -204,13 +208,17 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 		g.Go(func() (err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					cfg.logger.Error("Component panicked", "panic", r, "stack", string(debug.Stack()))
+					cfg.logger.Error(
+						"Component panicked",
+						"panic", r,
+						"stack", string(debug.Stack()),
+					)
 					err = fmt.Errorf("application panic: %v", r)
 				}
 			}()
 			err = fn(gCtx)
 			if err == nil {
-				err = errors.New("component exited cleanly")
+				err = ErrCleanExit
 			}
 			return err
 		})
@@ -223,22 +231,22 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 
 	select {
 	case err := <-errCh:
-		// The application exited naturally.
-		if err != nil {
+		// All components exited.
+		if err != nil && !errors.Is(err, ErrCleanExit) {
 			return fmt.Errorf("application exited with error: %w", err)
 		}
 		cfg.logger.Info("Application stopped")
 		return nil
 
 	case <-gCtx.Done():
-		// Restore default signal handling so a second Ctrl-C force-quits
+		isSignal := ctx.Err() != nil
+		// Restore default signal handling! A second Ctrl+C will now force quit.
 		cancel()
 
-		// A signal was received OR a component failed.
-		if ctx.Err() != nil {
+		if isSignal {
 			cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
 		} else {
-			cfg.logger.Info("Component failure detected, initiating graceful shutdown")
+			cfg.logger.Info("Component shutdown triggered, initiating graceful shutdown")
 		}
 	}
 
@@ -248,7 +256,7 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	select {
 	case err := <-errCh:
 		// We consider context.Canceled as a natural byproduct of the shutdown.
-		if err != nil && !errors.Is(err, context.Canceled) {
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrCleanExit) {
 			return fmt.Errorf("application exited with error: %w", err)
 		}
 		cfg.logger.Info("Shutdown completed successfully")

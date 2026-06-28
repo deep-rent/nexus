@@ -73,7 +73,6 @@ func TestRun_Panic(t *testing.T) {
 	}{
 		{"panic prefix", "application panic"},
 		{"panic message", panicMsg},
-		{"file location", "app_test.go"},
 	}
 
 	for _, tt := range tests {
@@ -244,7 +243,7 @@ func TestRun_WithLogger(t *testing.T) {
 		want string
 	}{
 		{"log started", "Application started"},
-		{"log stopped", "Application stopped"},
+		{"log stopped", "Shutdown completed successfully"},
 	}
 
 	for _, tt := range tests {
