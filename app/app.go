@@ -208,7 +208,11 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 					err = fmt.Errorf("application panic: %v", r)
 				}
 			}()
-			return fn(gCtx)
+			err = fn(gCtx)
+			if err == nil {
+				err = errors.New("component exited cleanly")
+			}
+			return err
 		})
 	}
 
