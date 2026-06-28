@@ -69,11 +69,11 @@ var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
 	ErrNilMessage = errors.New("mail: message cannot be nil")
 	// ErrMissingRecipients is returned when an email has no recipients.
-	ErrMissingRecipients = errors.New("mail: at least one recipient is required")
+	ErrMissingRecipients = errors.New("mail: at least one recipient is needed")
 	// ErrMissingTemplateID is returned when an email has no template ID.
-	ErrMissingTemplateID = errors.New("mail: template ID is required")
+	ErrMissingTemplateID = errors.New("mail: template ID is needed")
 	// ErrMissingFrom is returned when an email has no sender address.
-	ErrMissingFrom = errors.New("mail: from address is required")
+	ErrMissingFrom = errors.New("mail: from address is needed")
 	// ErrDispatchFailed is returned when the underlying provider rejects the
 	// payload.
 	ErrDispatchFailed = errors.New("mail: dispatching failed")
@@ -171,7 +171,8 @@ func (r *Recipient) SetTemplateData(data map[string]any) *Recipient {
 	return r
 }
 
-// Validate checks if the [Recipient] group has at least one primary destination.
+// Validate checks if the [Recipient] group has at least one primary
+// destination.
 func (r *Recipient) Validate() error {
 	if r == nil || len(r.To) == 0 {
 		return ErrMissingRecipients
@@ -246,9 +247,9 @@ func (m *Message) Validate() error {
 // use by multiple goroutines. They should respect the provided context for
 // timeouts and cancellation.
 type Sender interface {
-	// Send dispatches the provided [Message] payload to the underlying provider.
-	// It returns an error if the email is invalid, if the network request
-	// fails, or if the provider rejects the payload.
+	// Send dispatches the provided [Message] payload to the underlying
+	// rovider. It returns an error if the email is invalid, if the network
+	// request fails, or if the provider rejects the payload.
 	Send(ctx context.Context, msg *Message) error
 }
 
@@ -405,7 +406,9 @@ func NewSender(apiKey string, opts ...Option) Sender {
 		}
 	} else {
 		if len(cfg.retry) > 0 {
-			cfg.logger.Warn("Custom client provided; retry options will be ignored")
+			s.logger.Warn(
+				"Custom client provided; retry options will be ignored",
+			)
 		}
 		s.client = cfg.client
 	}
