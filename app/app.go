@@ -15,11 +15,12 @@
 // Package app provides a managed lifecycle for command-line applications,
 // ensuring graceful shutdown on OS signals.
 //
-// The [Run] function is the main entry point. It wraps your application
-// components ([Runnable]), executing them concurrently. It listens for
-// interrupt signals (like SIGINT/SIGTERM) and propagates a cancellation signal
-// via a [context.Context]. This allows your application to perform cleanup
-// tasks before exiting.
+// The [Run] and [RunAll] functions are the main entry points. They wrap your
+// application components ([Runnable]), executing them and managing their
+// lifecycle. It listens for interrupt signals (like SIGINT/SIGTERM) or
+// component completions and propagates a cancellation signal via a
+// [context.Context]. This allows your application to perform cleanup tasks
+// before exiting.
 //
 // # Usage
 //
@@ -95,14 +96,15 @@ import (
 // gracefully shut down after receiving a termination signal.
 const DefaultTimeout = 10 * time.Second
 
-// ErrCleanExit is an internal error used to trigger a graceful shutdown
+// errCleanExit is an internal error used to trigger a graceful shutdown
 // when a component exits without error.
-var ErrCleanExit = errors.New("component exited cleanly")
+var errCleanExit = errors.New("component exited cleanly")
 
 // Runnable defines a function that can be executed by the application runner.
 // It receives a [context.Context] that is canceled when a shutdown signal is
-// received, or if another concurrently running [Runnable] returns an error.
-// The function should perform its cleanup and return when the context is done.
+// received, or if another concurrently running [Runnable] completes or returns
+// an error. The function should perform its cleanup and return when the
+// context is done.
 type Runnable func(ctx context.Context) error
 
 // config holds the internal settings for the application runner, including
@@ -171,17 +173,17 @@ func Run(runnable Runnable, opts ...Option) error {
 }
 
 // RunAll provides a managed execution environment for multiple [Runnable]
-// functions. It launches each [Runnable] in a separate goroutine and blocks
-// until they all complete on their own, an OS interrupt signal is caught, the
-// parent context (if specified via [WithContext]) is canceled, or any single
-// [Runnable] returns an error.
+// functions. It launches each runnable in a separate goroutine and blocks
+// until an OS interrupt signal is caught, the parent context (if specified via
+// [WithContext]) is canceled, or any single runnable completes or returns an
+// error.
 //
-// Upon receiving a signal or encountering an error in any [Runnable], it
-// cancels the context passed to all Runnables and waits for the specified
-// shutdown timeout. The Runnables are expected to honor the context
-// cancellation and perform any necessary cleanup before returning. [RunAll]
-// returns any error from the Runnables themselves, or an error if the shutdown
-// process times out.
+// Upon receiving a signal or when any runnable completes or encounters an
+// error, it cancels the context passed to all runnables and waits for the
+// specified shutdown timeout. The runnables are expected to honor the context
+// cancellation and perform any necessary cleanup before returning. This
+// function returns any error from the runnables themselves, or an error if the
+// shutdown process times out.
 func RunAll(runnables []Runnable, opts ...Option) error {
 	cfg := config{
 		logger:  slog.Default(),
@@ -202,7 +204,10 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	// error.
 	g, gCtx := errgroup.WithContext(ctx)
 
-	cfg.logger.Info("Application started", slog.Int("components", len(runnables)))
+	cfg.logger.Info(
+		"Application started",
+		slog.Int("components", len(runnables)),
+	)
 
 	for _, fn := range runnables {
 		g.Go(func() (err error) {
@@ -218,7 +223,7 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 			}()
 			err = fn(gCtx)
 			if err == nil {
-				err = ErrCleanExit
+				err = errCleanExit
 			}
 			return err
 		})
@@ -232,7 +237,7 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	select {
 	case err := <-errCh:
 		// All components exited.
-		if err != nil && !errors.Is(err, ErrCleanExit) {
+		if err != nil && !errors.Is(err, errCleanExit) {
 			return fmt.Errorf("application exited with error: %w", err)
 		}
 		cfg.logger.Info("Application stopped")
@@ -244,9 +249,9 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 		cancel()
 
 		if isSignal {
-			cfg.logger.Info("Shutdown signal received, initiating graceful shutdown")
+			cfg.logger.Info("Shutdown signal received")
 		} else {
-			cfg.logger.Info("Component shutdown triggered, initiating graceful shutdown")
+			cfg.logger.Info("Component shutdown triggered, shutting down")
 		}
 	}
 
@@ -256,7 +261,9 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	select {
 	case err := <-errCh:
 		// We consider context.Canceled as a natural byproduct of the shutdown.
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrCleanExit) {
+		if err != nil &&
+			!errors.Is(err, context.Canceled) &&
+			!errors.Is(err, errCleanExit) {
 			return fmt.Errorf("application exited with error: %w", err)
 		}
 		cfg.logger.Info("Shutdown completed successfully")
