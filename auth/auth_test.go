@@ -340,3 +340,37 @@ func TestContextExtraction(t *testing.T) {
 		t.Errorf("handler.ServeHTTP() = %v; want nil", err)
 	}
 }
+
+func TestGuard_CustomExtractor(t *testing.T) {
+	t.Parallel()
+
+	v := &mockVerifier[*auth.Claims]{
+		verify: func(in []byte) (*auth.Claims, error) {
+			if string(in) == "custom-token" {
+				return &auth.Claims{Roles: []string{"tester"}}, nil
+			}
+			return nil, errors.New("invalid token")
+		},
+	}
+
+	customExt := func(r *http.Request) string {
+		return r.URL.Query().Get("token")
+	}
+
+	guard := auth.NewGuard(v, customExt)
+	handler := guard.Secure()(router.HandlerFunc(func(e *router.Exchange) error {
+		e.Status(http.StatusOK)
+		return nil
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/?token=custom-token", nil)
+	rec := httptest.NewRecorder()
+	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
+
+	if err := handler.ServeHTTP(e); err != nil {
+		t.Errorf("handler.ServeHTTP() = %v; want nil", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("recorder.Code = %d; want %d", rec.Code, http.StatusOK)
+	}
+}

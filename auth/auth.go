@@ -273,17 +273,34 @@ func AllScopes[T AccessClaims](scopes ...string) Rule[T] {
 	})
 }
 
+// Extractor defines a function signature for extracting a token from an HTTP request.
+// It returns the extracted token string, or an empty string if no token was found.
+type Extractor func(r *http.Request) string
+
+// BearerExtractor is the default [Extractor] that attempts to retrieve a token
+// from the Authorization header using the Bearer scheme.
+func BearerExtractor(r *http.Request) string {
+	return header.Credentials(r.Header, Scheme)
+}
+
 // Guard is responsible for intercepting HTTP requests, validating their JWT
 // authentication, and enforcing defined authorization rules.
 type Guard[T jwt.Claims] struct {
 	// verifier is the internal [jwt.Verifier] used to process tokens.
 	verifier jwt.Verifier[T]
+	// extractors defines the sequence of [Extractor] functions used to retrieve the token.
+	extractors []Extractor
 }
 
-// NewGuard creates a new [Guard] using the provided JWT verifier.
-func NewGuard[T jwt.Claims](v jwt.Verifier[T]) *Guard[T] {
+// NewGuard creates a new [Guard] using the provided JWT verifier and optional extractors.
+// If no extractors are provided, it defaults to using [BearerExtractor].
+func NewGuard[T jwt.Claims](v jwt.Verifier[T], extractors ...Extractor) *Guard[T] {
+	if len(extractors) == 0 {
+		extractors = []Extractor{BearerExtractor}
+	}
 	return &Guard[T]{
-		verifier: v,
+		verifier:   v,
+		extractors: extractors,
 	}
 }
 
@@ -296,7 +313,14 @@ func NewGuard[T jwt.Claims](v jwt.Verifier[T]) *Guard[T] {
 func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
-			token := header.Credentials(e.R.Header, Scheme)
+			var token string
+			for _, ext := range g.extractors {
+				if t := ext(e.R); t != "" {
+					token = t
+					break
+				}
+			}
+
 			if token == "" {
 				return &router.Error{
 					Status:      http.StatusUnauthorized,
@@ -335,7 +359,9 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 
 			// Embed the verified claims into the request context and update
 			// the Exchange so downstream handlers have access.
-			e.R = e.R.WithContext(context.WithValue(e.Context(), claimsKey, claims))
+			e.R = e.R.WithContext(
+				context.WithValue(e.Context(), claimsKey, claims),
+			)
 
 			return next.ServeHTTP(e)
 		})
