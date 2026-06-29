@@ -69,17 +69,10 @@ import (
 	"github.com/deep-rent/nexus/valid"
 )
 
-var (
-	queryBinder = bind.New(
-		"query",
-		bind.WithCache(true),
-		bind.WithTransformer(snake.ToLower),
-	)
-	formBinder = bind.New(
-		"form",
-		bind.WithCache(true),
-		bind.WithTransformer(snake.ToLower),
-	)
+var formBinder = bind.New(
+	"form",
+	bind.WithCache(true),
+	bind.WithTransformer(snake.ToLower),
 )
 
 type urlSource url.Values
@@ -312,7 +305,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 // BindQuery decodes URL query parameters into v.
 func (e *Exchange) BindQuery(v any) *Error {
 	q := e.R.URL.Query()
-	if err := queryBinder.Bind(v, "", urlSource(q)); err != nil {
+	if err := formBinder.Bind(v, "", urlSource(q)); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseQuery,

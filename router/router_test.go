@@ -157,8 +157,8 @@ func TestExchange_BindQuery(t *testing.T) {
 	t.Parallel()
 
 	type input struct {
-		Name string   `query:"name"`
-		IDs  []string `query:"ids"`
+		Name string   `form:"name"`
+		IDs  []string `form:"ids"`
 	}
 
 	tests := []struct {
@@ -179,7 +179,7 @@ func TestExchange_BindQuery(t *testing.T) {
 			name: "failure parse",
 			url:  "/?age=invalid",
 			target: &struct {
-				Age int `query:"age"`
+				Age int `form:"age"`
 			}{},
 			wantErr:    true,
 			wantReason: router.ReasonParseQuery,
