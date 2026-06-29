@@ -82,12 +82,14 @@ var (
 	)
 )
 
-type urlValuesSource url.Values
+type urlSource url.Values
 
-func (s urlValuesSource) Lookup(key string) ([]string, bool) {
+func (s urlSource) Lookup(key string) ([]string, bool) {
 	v, ok := s[key]
 	return v, ok
 }
+
+var _ bind.Source = (*urlSource)(nil)
 
 // Standard error reasons used for machine-readable error codes.
 const (
@@ -310,7 +312,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 // BindQuery decodes URL query parameters into v.
 func (e *Exchange) BindQuery(v any) *Error {
 	q := e.R.URL.Query()
-	if err := queryBinder.Bind(v, "", urlValuesSource(q)); err != nil {
+	if err := queryBinder.Bind(v, "", urlSource(q)); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseQuery,
@@ -336,7 +338,7 @@ func (e *Exchange) BindForm(v any) *Error {
 	if err != nil {
 		return err
 	}
-	if err := formBinder.Bind(v, "", urlValuesSource(form)); err != nil {
+	if err := formBinder.Bind(v, "", urlSource(form)); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseForm,
