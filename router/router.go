@@ -69,11 +69,25 @@ import (
 	"github.com/deep-rent/nexus/valid"
 )
 
-var formBinder = bind.New(
-	"form",
-	bind.WithCache(true),
-	bind.WithTransformer(snake.ToLower),
+var (
+	queryBinder = bind.New(
+		"query",
+		bind.WithCache(true),
+		bind.WithTransformer(snake.ToLower),
+	)
+	formBinder = bind.New(
+		"form",
+		bind.WithCache(true),
+		bind.WithTransformer(snake.ToLower),
+	)
 )
+
+type urlValuesSource url.Values
+
+func (s urlValuesSource) Lookup(key string) ([]string, bool) {
+	v, ok := s[key]
+	return v, ok
+}
 
 // Standard error reasons used for machine-readable error codes.
 const (
@@ -296,13 +310,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 // BindQuery decodes URL query parameters into v.
 func (e *Exchange) BindQuery(v any) *Error {
 	q := e.R.URL.Query()
-	lookup := func(key string) (string, bool) {
-		if !q.Has(key) {
-			return "", false
-		}
-		return q.Get(key), true
-	}
-	if err := formBinder.Bind(v, "", lookup); err != nil {
+	if err := queryBinder.Bind(v, "", urlValuesSource(q)); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseQuery,
@@ -328,13 +336,7 @@ func (e *Exchange) BindForm(v any) *Error {
 	if err != nil {
 		return err
 	}
-	lookup := func(key string) (string, bool) {
-		if !form.Has(key) {
-			return "", false
-		}
-		return form.Get(key), true
-	}
-	if err := formBinder.Bind(v, "", lookup); err != nil {
+	if err := formBinder.Bind(v, "", urlValuesSource(form)); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseForm,

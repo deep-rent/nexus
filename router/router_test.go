@@ -157,7 +157,8 @@ func TestExchange_BindQuery(t *testing.T) {
 	t.Parallel()
 
 	type input struct {
-		Name string `query:"name"`
+		Name string   `query:"name"`
+		IDs  []string `query:"ids"`
 	}
 
 	tests := []struct {
@@ -170,7 +171,7 @@ func TestExchange_BindQuery(t *testing.T) {
 	}{
 		{
 			name:    "success",
-			url:     "/?name=test",
+			url:     "/?name=test&ids=1&ids=2",
 			target:  &input{},
 			wantErr: false,
 		},
@@ -218,6 +219,15 @@ func TestExchange_BindQuery(t *testing.T) {
 
 			if err != nil {
 				t.Errorf("BindQuery() err = %v; want nil", err)
+			}
+			
+			if in, ok := tt.target.(*input); ok && !tt.wantErr {
+				if in.Name != "test" {
+					t.Errorf("in.Name = %q; want %q", in.Name, "test")
+				}
+				if len(in.IDs) != 2 || in.IDs[0] != "1" || in.IDs[1] != "2" {
+					t.Errorf("in.IDs = %v; want [1 2]", in.IDs)
+				}
 			}
 		})
 	}
