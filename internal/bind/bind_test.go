@@ -11,12 +11,14 @@ import (
 	"github.com/deep-rent/nexus/internal/snake"
 )
 
-type mapSource map[string][]string
+type mockSource map[string][]string
 
-func (m mapSource) Lookup(key string) ([]string, bool) {
+func (m mockSource) Lookup(key string) ([]string, bool) {
 	v, ok := m[key]
 	return v, ok
 }
+
+var _ bind.Source = (*mockSource)(nil)
 
 func TestBinder_Bind(t *testing.T) {
 	t.Parallel()
@@ -32,7 +34,7 @@ func TestBinder_Bind(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		var cfg Config
-		src := mapSource{
+		src := mockSource{
 			"host":    {"localhost"},
 			"tags":    {"a,b"},
 			"missing": {"foo"},
@@ -56,7 +58,7 @@ func TestBinder_Bind(t *testing.T) {
 
 	t.Run("missing required", func(t *testing.T) {
 		var cfg Config
-		src := mapSource{
+		src := mockSource{
 			"host": {"localhost"},
 		}
 
@@ -71,7 +73,7 @@ func TestBinder_Bind(t *testing.T) {
 			IDs []int `bind:"ids"`
 		}
 		var cfg ArrayConfig
-		src := mapSource{
+		src := mockSource{
 			"ids": {"1", "2", "3"},
 		}
 
@@ -102,9 +104,8 @@ func TestBinder_PanicOnInvalidTag(t *testing.T) {
 
 	b := bind.New("bind")
 	var cfg InvalidConfig
-	_ = b.Bind(&cfg, "", mapSource{})
+	_ = b.Bind(&cfg, "", mockSource{})
 }
-
 
 type mockTextUnmarshaler string
 
@@ -355,8 +356,6 @@ type mockTTimeFormatUnixUnitInvalid struct {
 	V time.Time `bind:",format:unix,unit:invalid"`
 }
 
-
-
 type mockTTrimOptions struct {
 	V string `bind:", default:foo"`
 }
@@ -377,7 +376,6 @@ type mockTLocationPtr struct {
 	V *time.Location
 }
 
-
 func TestBinder_TypeTests(t *testing.T) {
 	t.Parallel()
 
@@ -385,7 +383,7 @@ func TestBinder_TypeTests(t *testing.T) {
 
 	b := bind.New("bind", bind.WithTransformer(snake.ToUpper))
 
-tests := []struct {
+	tests := []struct {
 		name    string
 		vars    map[string]string
 		give    any
@@ -858,14 +856,13 @@ tests := []struct {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			
-			// Some tests might use opts, we ignore them or handle manually
+
 			prefix := ""
 			if tt.name == "global prefix" {
 				prefix = "APP_"
 			}
 
-			src := mapSource{}
+			src := mockSource{}
 			for k, v := range tt.vars {
 				src[k] = []string{v}
 			}
