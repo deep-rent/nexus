@@ -30,7 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-var crc32cTable = crc32.MakeTable(crc32.Castagnoli)
+var table = crc32.MakeTable(crc32.Castagnoli)
 
 // Signer is a context-aware cryptographic signer backed by Google Cloud KMS.
 type Signer struct {
@@ -86,15 +86,15 @@ func (s *Signer) Sign(
 	digest []byte,
 	opts crypto.SignerOpts,
 ) (signature []byte, err error) {
-	checksum := crc32.Checksum(digest, crc32cTable)
+	checksum := crc32.Checksum(digest, table)
 
-	hashFunc := crypto.Hash(0)
+	hash := crypto.Hash(0)
 	if opts != nil {
-		hashFunc = opts.HashFunc()
+		hash = opts.HashFunc()
 	}
 
 	var d kmspb.Digest
-	switch hashFunc {
+	switch hash {
 	case crypto.SHA256:
 		d.Digest = &kmspb.Digest_Sha256{Sha256: digest}
 	case crypto.SHA384:
@@ -131,8 +131,8 @@ func (s *Signer) Sign(
 		return nil, fmt.Errorf("KMS did not verify the digest CRC32C")
 	}
 
-	sigChecksum := int64(crc32.Checksum(res.Signature, crc32cTable))
-	if sigChecksum != res.SignatureCrc32C.GetValue() {
+	if int64(crc32.Checksum(res.Signature, table)) !=
+		res.SignatureCrc32C.GetValue() {
 		return nil, fmt.Errorf("KMS signature corrupted in transit")
 	}
 
