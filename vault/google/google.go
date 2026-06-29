@@ -19,9 +19,6 @@ package google
 import (
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -131,13 +128,6 @@ func WithContext(ctx context.Context) Option {
 	}
 }
 
-// WithClient sets the KMS client.
-func WithClient(client *kms.KeyManagementClient) Option {
-	return func(f *Factory) {
-		f.client = client
-	}
-}
-
 // WithLogger sets the logger.
 func WithLogger(logger *slog.Logger) Option {
 	return func(f *Factory) {
@@ -161,10 +151,12 @@ type Factory struct {
 }
 
 // NewFactory creates a new Factory initialized with the given options.
-func NewFactory(opts ...Option) *Factory {
+func NewFactory(client *kms.KeyManagementClient, opts ...Option) *Factory {
 	f := &Factory{
-		ctx:    context.Background(),
-		logger: slog.Default(),
+		ctx:      context.Background(),
+		client:   client,
+		logger:   slog.Default(),
+		strategy: rotor.Random,
 	}
 	for _, opt := range opts {
 		opt(f)
@@ -269,9 +261,9 @@ func (f *Factory) new(name string) (sign.Signer, error) {
 	}, nil
 }
 
-type keyBuilder func(kid string, s sign.Signer) jwk.KeyPair
+type builder func(kid string, s sign.Signer) jwk.KeyPair
 
-var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]keyBuilder{
+var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]builder{
 	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256: build(jwa.RS256),
 	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256: build(jwa.RS256),
 	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256: build(jwa.RS256),
@@ -285,7 +277,7 @@ var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]keyBuilder{
 	kmspb.CryptoKeyVersion_EC_SIGN_ED25519:            build(jwa.EdDSA),
 }
 
-func build[T crypto.PublicKey](alg jwa.Algorithm[T]) keyBuilder {
+func build[T crypto.PublicKey](alg jwa.Algorithm[T]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
 		return jwk.NewKeyPair(alg, kid, s)
 	}
