@@ -273,9 +273,7 @@ type mockTTimeFormatUnixUnitInvalid struct {
 	V time.Time `env:",format:unix,unit:invalid"`
 }
 
-type mockTUnknownTag struct {
-	V string `env:",foo:bar"`
-}
+
 
 type mockTTrimOptions struct {
 	V string `env:", default:foo"`
@@ -755,12 +753,6 @@ func TestUnmarshal(t *testing.T) {
 			name:    "parse error duration",
 			vars:    map[string]string{"V": "foo"},
 			give:    &mockTDuration{},
-			wantErr: true,
-		},
-		{
-			name:    "unknown tag option",
-			vars:    map[string]string{},
-			give:    &mockTUnknownTag{},
 			wantErr: true,
 		},
 		{

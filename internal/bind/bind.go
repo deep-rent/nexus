@@ -62,12 +62,9 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []field {
 
 		flags, err := parse(val)
 		if err != nil {
-			fields = append(fields, field{
-				Err: fmt.Errorf(
-					"failed to parse tag for field %q: %w", ft.Name, err,
-				),
-			})
-			continue
+			panic(fmt.Errorf(
+				"bind: failed to parse tag for field %q: %w", ft.Name, err,
+			))
 		}
 
 		f := field{
@@ -179,10 +176,6 @@ func (b *Binder) Bind(v any, prefix string, source Source) error {
 func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
 	fields := b.resolver.Resolve(rv.Type())
 	for _, f := range fields {
-		if f.Err != nil {
-			return f.Err
-		}
-
 		fv := rv.Field(f.Index)
 
 		// Inline struct
@@ -214,7 +207,7 @@ func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
 		// Regular field
 		key = prefix + key
 		vals, ok := source.Lookup(key)
-		if !ok || len(vals) == 0 || (len(vals) == 1 && vals[0] == "") {
+		if !ok {
 			switch {
 			case f.Flags.Default != "":
 				vals = []string{f.Flags.Default}
@@ -242,7 +235,6 @@ type field struct {
 	Flags    *Flags
 	Inline   bool
 	Embedded bool
-	Err      error
 }
 
 // Flags encapsulates the options parsed from a tag.
