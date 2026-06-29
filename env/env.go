@@ -107,6 +107,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/internal/bind"
 	"github.com/deep-rent/nexus/internal/snake"
 )
@@ -149,7 +150,10 @@ type config struct {
 	Lookup Lookup
 }
 
-var binder = bind.New("env", bind.WithTransformer(snake.ToUpper))
+var binder = bind.New(
+	"env",
+	bind.WithTransformer(snake.ToUpper),
+)
 
 // Unmarshal populates the fields of a struct with values from environment
 // variables. The given value v must be a non-nil pointer to a struct.
@@ -235,13 +239,13 @@ func Expand(s string, opts ...Option) (string, error) {
 			}
 		} else {
 			// Handle the `$VAR` syntax.
-			// Find the end of the variable name. The first character of a variable
-			// must be a letter or underscore; subsequent characters can include
-			// digits.
+			// Find the end of the variable name. The first character of a
+			// variable must be a letter or underscore; subsequent characters
+			// an include digits.
 			n := 0
 			for j := i + 1; j < len(s); j++ {
-				c := s[j]
-				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (n > 0 && c >= '0' && c <= '9') {
+				c := rune(s[j])
+				if ascii.IsAlpha(c) || c == '_' || (n > 0 && ascii.IsDigit(c)) {
 					n++
 				} else {
 					break
