@@ -1,0 +1,161 @@
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package jwk
+
+import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"errors"
+	"fmt"
+
+	"github.com/deep-rent/nexus/jose/jwa"
+)
+
+// writers maps a JWA algorithm name to the function responsible for encoding
+// its key material.
+var writers map[string]writer
+
+// writer defines a function that encodes the key material into a marshallable
+// JWT struct.
+type writer func(mat any, r *raw) error
+
+// addWriter helps populate the writers map in a type-safe manner.
+func addWriter[T crypto.PublicKey](alg jwa.Algorithm[T], enc encoder[T]) {
+	writers[alg.String()] = func(mat any, r *raw) error {
+		pub, ok := mat.(T)
+		if !ok {
+			return fmt.Errorf("invalid key for algorithm %q", alg.String())
+		}
+		return enc(pub, r)
+	}
+}
+
+// encoder defines a function that populates the [raw] JWK parameters from the
+// algorithm-specific key material.
+type encoder[T crypto.PublicKey] func(mat T, r *raw) error
+
+// encodeRSA populates the RSA-specific fields ("n", "e") in the [raw] JWK.
+func encodeRSA(key *rsa.PublicKey, r *raw) error {
+	r.Kty = "RSA"
+	r.N = base64.RawURLEncoding.EncodeToString(key.N.Bytes())
+	e := key.E
+	if e == 0 {
+		return errors.New("RSA public exponent is zero")
+	}
+	var eBytes []byte
+	if e < 0xFFFFFF {
+		eBytes = make([]byte, 0, 3)
+	} else {
+		eBytes = make([]byte, 0, 4)
+	}
+
+	for e > 0 {
+		eBytes = append([]byte{byte(e)}, eBytes...)
+		e >>= 8
+	}
+	r.E = base64.RawURLEncoding.EncodeToString(eBytes)
+	return nil
+}
+
+// encodeECDSA populates the ECDSA-specific fields ("crv", "x", "y").
+// It enforces fixed-width padding for coordinates as required by RFC 7518.
+func encodeECDSA(key *ecdsa.PublicKey, r *raw) error {
+	r.Kty = "EC"
+	params := key.Params()
+	r.Crv = params.Name
+
+	// Obtain the SEC 1 uncompressed format: 0x04 || X || Y.
+	b, err := key.Bytes()
+	if err != nil {
+		return fmt.Errorf("encode ecdsa key: %w", err)
+	}
+
+	if len(b) < 1 || b[0] != 4 {
+		return errors.New("invalid public key format")
+	}
+
+	// Calculate coordinate size dynamically based on the returned slice.
+	size := (len(b) - 1) / 2
+	x := b[1 : 1+size]
+	y := b[1+size : 1+(2*size)]
+
+	r.X = base64.RawURLEncoding.EncodeToString(x)
+	r.Y = base64.RawURLEncoding.EncodeToString(y)
+	return nil
+}
+
+// encodeEdDSA populates the EdDSA-specific fields ("crv", "x").
+// It determines the curve name based on the key length.
+func encodeEdDSA(key ed25519.PublicKey, r *raw) error {
+	r.Kty = "OKP"
+
+	if len(key) == ed25519.PublicKeySize {
+		r.Crv = "Ed25519"
+	} else {
+		return fmt.Errorf("invalid EdDSA key length: %d", len(key))
+	}
+
+	r.X = base64.RawURLEncoding.EncodeToString(key)
+	return nil
+}
+
+// init initializes the readers and writers maps with supported algorithms.
+func init() {
+	const size = 10
+
+	readers = make(map[string]reader, size)
+	addReader(jwa.RS256, decodeRSA)
+	addReader(jwa.RS384, decodeRSA)
+	addReader(jwa.RS512, decodeRSA)
+	addReader(jwa.PS256, decodeRSA)
+	addReader(jwa.PS384, decodeRSA)
+	addReader(jwa.PS512, decodeRSA)
+	addReader(jwa.ES256, decodeECDSA(elliptic.P256()))
+	addReader(jwa.ES384, decodeECDSA(elliptic.P384()))
+	addReader(jwa.ES512, decodeECDSA(elliptic.P521()))
+	addReader(jwa.EdDSA, decodeEdDSA)
+
+	writers = make(map[string]writer, size)
+	addWriter(jwa.RS256, encodeRSA)
+	addWriter(jwa.RS384, encodeRSA)
+	addWriter(jwa.RS512, encodeRSA)
+	addWriter(jwa.PS256, encodeRSA)
+	addWriter(jwa.PS384, encodeRSA)
+	addWriter(jwa.PS512, encodeRSA)
+	addWriter(jwa.ES256, encodeECDSA)
+	addWriter(jwa.ES384, encodeECDSA)
+	addWriter(jwa.ES512, encodeECDSA)
+	addWriter(jwa.EdDSA, encodeEdDSA)
+}
+
+// Thumbprint generates a deterministic, unique fingerprint from any standard
+// public key. This value is meant to be used as the [Hint.KeyID].
+//
+// More formally, the thumbprint is calculated as the SHA-256 hash of the PKIX
+// DER-encoded key material in base64-URL encoding.
+func Thumbprint(pub crypto.PublicKey) (string, error) {
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal public key: %w", err)
+	}
+	hash := sha256.Sum256(der)
+	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
+}
