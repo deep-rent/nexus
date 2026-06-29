@@ -12,6 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package bind provides a reflective struct binding engine for populating
+// struct fields from arbitrary key-value data sources.
+//
+// It serves as the core binding mechanism for configuration packages like env
+// and HTTP routing layers. It parses struct tags, supports configurable field
+// name transformations, handles primitive and standard library type conversions
+// (such as [time.Duration] and [url.URL]), and supports optional reflection
+// metadata caching for optimal performance.
+//
+// # Usage
+//
+// Create a Binder targeting a specific struct tag namespace and populate target
+// structs using a custom or built-in Source implementation.
+//
+// Example:
+//
+//	binder := bind.New("form", bind.WithCache(true))
+//	err := binder.Bind(&myStruct, "", mySource)
 package bind
 
 import (
@@ -27,8 +45,8 @@ import (
 	"github.com/deep-rent/nexus/internal/tag"
 )
 
-// Source provides values for a given key. It natively supports returning multiple
-// values (e.g. for HTTP arrays) to correctly parse slices.
+// Source provides values for a given key. It natively supports returning
+// multiple values (e.g. for HTTP arrays) to correctly parse slices.
 type Source interface {
 	Lookup(key string) ([]string, bool)
 }
