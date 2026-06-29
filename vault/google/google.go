@@ -170,7 +170,7 @@ func (f *Factory) New(ctx context.Context, parent string, strategy rotor.Strateg
 		}
 
 		var p jwk.KeyPair
-		switch pub := key.(type) {
+		switch key.(type) {
 		case *rsa.PublicKey:
 			switch version.Algorithm {
 			case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
