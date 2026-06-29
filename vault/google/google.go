@@ -230,6 +230,10 @@ func (f *Factory) New(parent string) (vault.Vault, error) {
 		pairs = append(pairs, p)
 	}
 
+	if len(pairs) == 0 {
+		return nil, fmt.Errorf("no applicable keys found in %s", parent)
+	}
+
 	return vault.New(pairs, f.strategy), nil
 }
 
