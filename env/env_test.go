@@ -24,8 +24,6 @@ import (
 	"github.com/deep-rent/nexus/env"
 )
 
-
-
 type mockTextUnmarshaler string
 
 func (t *mockTextUnmarshaler) UnmarshalText(text []byte) error {
@@ -110,8 +108,6 @@ type mockTURL struct {
 type mockTURLPtr struct {
 	V *url.URL
 }
-
-
 
 type mockTDefault struct {
 	V string `env:",default:foo"`

@@ -175,9 +175,11 @@ func TestExchange_BindQuery(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:       "failure parse",
-			url:        "/?age=invalid",
-			target:     &struct{ Age int `query:"age"` }{},
+			name: "failure parse",
+			url:  "/?age=invalid",
+			target: &struct {
+				Age int `query:"age"`
+			}{},
 			wantErr:    true,
 			wantReason: router.ReasonParseQuery,
 			wantStatus: http.StatusBadRequest,
@@ -254,10 +256,12 @@ func TestExchange_BindForm(t *testing.T) {
 			wantStatus: http.StatusUnsupportedMediaType,
 		},
 		{
-			name:       "failure parse",
-			ctype:      "application/x-www-form-urlencoded",
-			body:       "age=invalid",
-			target:     &struct{ Age int `form:"age"` }{},
+			name:  "failure parse",
+			ctype: "application/x-www-form-urlencoded",
+			body:  "age=invalid",
+			target: &struct {
+				Age int `form:"age"`
+			}{},
 			wantErr:    true,
 			wantReason: router.ReasonParseForm,
 			wantStatus: http.StatusBadRequest,

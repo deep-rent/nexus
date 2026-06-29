@@ -255,7 +255,7 @@ func Expand(s string, opts ...Option) (string, error) {
 				i++
 			} else {
 				// Extract the unbracketed variable name.
-				key := cfg.Prefix + s[i+1 : i+1+n]
+				key := cfg.Prefix + s[i+1:i+1+n]
 				val, ok := cfg.Lookup(key)
 				if !ok {
 					return "", fmt.Errorf("env: variable %q is not set", key)
