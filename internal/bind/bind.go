@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/internal/pointer"
-	"github.com/deep-rent/nexus/internal/snake"
 	"github.com/deep-rent/nexus/internal/tag"
 )
 
@@ -40,11 +39,52 @@ type resolver interface {
 }
 
 type defaultResolver struct {
-	binder *Binder
+	name      string
+	transform Transformer
 }
 
 func (r *defaultResolver) Resolve(rt reflect.Type) []meta {
-	return r.binder.buildMeta(rt)
+	var fields []meta
+	for i := 0; i < rt.NumField(); i++ {
+		ft := rt.Field(i)
+
+		if !ft.IsExported() {
+			continue
+		}
+
+		val := ft.Tag.Get(r.name)
+		if val == "-" {
+			continue
+		}
+
+		flags, err := parse(val)
+		if err != nil {
+			fields = append(fields, meta{
+				Err: fmt.Errorf(
+					"failed to parse tag for field %q: %w", ft.Name, err,
+				),
+			})
+			continue
+		}
+
+		m := meta{
+			Index:  i,
+			Field:  ft.Name,
+			Name:   flags.Name,
+			Flags:  flags,
+			Inline: ft.Anonymous && flags.Inline,
+		}
+
+		if m.Name == "" {
+			m.Name = r.transform(ft.Name)
+		}
+
+		m.Embedded = isEmbedded(ft)
+
+		fields = append(fields, m)
+	}
+
+	return fields
 }
 
 type cachingResolver struct {
@@ -61,50 +101,58 @@ func (r *cachingResolver) Resolve(rt reflect.Type) []meta {
 	return fields
 }
 
+type config struct {
+	transform Transformer
+	cache     bool
+}
+
 // Option configures a Binder.
-type Option func(*Binder)
+type Option func(*config)
 
 // WithTransformer sets the name transformation function.
 func WithTransformer(t Transformer) Option {
-	return func(b *Binder) {
+	return func(c *config) {
 		if t != nil {
-			b.transform = t
+			c.transform = t
 		}
 	}
 }
 
 // WithCache enables or disables metadata caching.
 func WithCache(enable bool) Option {
-	return func(b *Binder) {
-		b.useCache = enable
+	return func(c *config) {
+		c.cache = enable
 	}
 }
 
 // Binder extracts values from a generic key-value source into a struct.
 type Binder struct {
-	name      string
-	transform Transformer
-	useCache  bool
-	resolver  resolver
+	resolver resolver
 }
 
 // New creates a new Binder using the specified struct tag for metadata parsing.
 func New(name string, opts ...Option) *Binder {
-	b := &Binder{
-		name:      name,
-		transform: snake.ToLower,
-		useCache:  true,
+	cfg := &config{
+		transform: func(s string) string { return s },
+		cache:     false,
 	}
 	for _, opt := range opts {
-		opt(b)
+		opt(cfg)
 	}
 
-	b.resolver = &defaultResolver{binder: b}
-	if b.useCache {
-		b.resolver = &cachingResolver{resolver: b.resolver}
+	var resolver resolver = &defaultResolver{
+		name:      name,
+		transform: cfg.transform,
+	}
+	if cfg.cache {
+		resolver = &cachingResolver{
+			resolver: resolver,
+		}
 	}
 
-	return b
+	return &Binder{
+		resolver: resolver,
+	}
 }
 
 // Bind populates the fields of a struct using the provided lookup function.
@@ -177,7 +225,7 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 		if err := setValue(fv, val, f.Flags); err != nil {
 			return fmt.Errorf(
 				"error setting field %q from key %q: %w",
-				f.StructFieldName, key, err,
+				f.Field, key, err,
 			)
 		}
 	}
@@ -185,57 +233,13 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 }
 
 type meta struct {
-	Index           int
-	StructFieldName string
-	Name            string
-	Flags           *Flags
-	Inline          bool
-	Embedded        bool
-	Err             error
-}
-
-func (b *Binder) buildMeta(rt reflect.Type) []meta {
-	var fields []meta
-	for i := 0; i < rt.NumField(); i++ {
-		ft := rt.Field(i)
-
-		if !ft.IsExported() {
-			continue
-		}
-
-		val := ft.Tag.Get(b.name)
-		if val == "-" {
-			continue
-		}
-
-		flags, err := parse(val)
-		if err != nil {
-			fields = append(fields, meta{
-				Err: fmt.Errorf(
-					"failed to parse tag for field %q: %w", ft.Name, err,
-				),
-			})
-			continue
-		}
-
-		m := meta{
-			Index:           i,
-			StructFieldName: ft.Name,
-			Name:            flags.Name,
-			Flags:           flags,
-			Inline:          ft.Anonymous && flags.Inline,
-		}
-
-		if m.Name == "" {
-			m.Name = b.transform(ft.Name)
-		}
-
-		m.Embedded = isEmbedded(ft)
-
-		fields = append(fields, m)
-	}
-
-	return fields
+	Index    int
+	Field    string
+	Name     string
+	Flags    *Flags
+	Inline   bool
+	Embedded bool
+	Err      error
 }
 
 // Flags encapsulates the options parsed from a tag.
