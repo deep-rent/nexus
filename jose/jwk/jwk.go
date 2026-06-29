@@ -93,8 +93,6 @@ import (
 
 	"github.com/deep-rent/nexus/sign"
 
-	"github.com/cloudflare/circl/sign/ed448"
-
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/scheduler"
@@ -752,15 +750,10 @@ func decodeEdDSA(raw *raw) ([]byte, error) {
 	if raw.Kty != "OKP" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
-	var n int
-	switch raw.Crv {
-	case "Ed448":
-		n = ed448.PublicKeySize
-	case "Ed25519":
-		n = ed25519.PublicKeySize
-	default:
+	if raw.Crv != "Ed25519" {
 		return nil, fmt.Errorf("unsupported curve %q", raw.Crv)
 	}
+	n := ed25519.PublicKeySize
 	x, err := base64.RawURLEncoding.DecodeString(raw.X)
 	if err != nil {
 		return nil, fmt.Errorf("decode x coordinate: %w", err)
@@ -851,12 +844,9 @@ func encodeECDSA(key *ecdsa.PublicKey, r *raw) error {
 func encodeEdDSA(key []byte, r *raw) error {
 	r.Kty = "OKP"
 
-	switch len(key) {
-	case ed25519.PublicKeySize:
+	if len(key) == ed25519.PublicKeySize {
 		r.Crv = "Ed25519"
-	case ed448.PublicKeySize:
-		r.Crv = "Ed448"
-	default:
+	} else {
 		return fmt.Errorf("invalid EdDSA key length: %d", len(key))
 	}
 

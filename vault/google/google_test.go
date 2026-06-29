@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/deep-rent/nexus/signer/google"
+	"github.com/deep-rent/nexus/vault/google"
 )
 
 type mockServer struct {

@@ -27,8 +27,6 @@ import (
 
 	"github.com/deep-rent/nexus/sign"
 
-	"github.com/cloudflare/circl/sign/ed448"
-
 	"github.com/deep-rent/nexus/jose/jwa"
 )
 
@@ -119,21 +117,6 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 		}
 	})
 
-	t.Run("ed448", func(t *testing.T) {
-		t.Parallel()
-		pub, prv, err := ed448.GenerateKey(rand.Reader)
-		if err != nil {
-			t.Fatalf("ed448.GenerateKey() error = %v", err)
-		}
-
-		sig, err := jwa.EdDSA.Sign(t.Context(), sign.From(prv), mockMsg)
-		if err != nil {
-			t.Fatalf("EdDSA.Sign(Ed448) error = %v", err)
-		}
-		if !jwa.EdDSA.Verify(pub, mockMsg, sig) {
-			t.Errorf("EdDSA.Verify(Ed448) = false; want true")
-		}
-	})
 }
 
 type mockSigner struct {

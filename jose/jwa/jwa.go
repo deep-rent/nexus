@@ -48,8 +48,6 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/cloudflare/circl/sign/ed448"
-
 	sign "github.com/deep-rent/nexus/sign"
 )
 
@@ -272,20 +270,13 @@ var ES512 = newES("ES512", crypto.SHA512)
 // ed implements the EdDSA family of algorithms.
 type ed struct{}
 
-// Verify checks an EdDSA signature, supporting both Ed25519 and Ed448.
+// Verify checks an EdDSA signature, supporting Ed25519.
 func (a *ed) Verify(key, msg, sig []byte) bool {
-	switch len(key) {
-	case ed448.PublicKeySize:
-		// Per RFC 8037, the JWS "EdDSA" algorithm corresponds to the "pure"
-		// EdDSA variant, which uses an empty string for the context parameter.
-		pub := ed448.PublicKey(key)
-		return ed448.Verify(pub, msg, sig, "")
-	case ed25519.PublicKeySize:
+	if len(key) == ed25519.PublicKeySize {
 		pub := ed25519.PublicKey(key)
 		return ed25519.Verify(pub, msg, sig)
-	default:
-		return false
 	}
+	return false
 }
 
 // Sign creates an EdDSA signature using the provided signer.
@@ -302,8 +293,7 @@ func (a *ed) String() string {
 	return "EdDSA"
 }
 
-// EdDSA represents the EdDSA signature algorithm. It supports both Ed25519
-// and Ed448 curves. The curve is determined by the size of the public key.
+// EdDSA represents the EdDSA signature algorithm. It supports the Ed25519 curve.
 var EdDSA Algorithm[[]byte] = &ed{}
 
 // hashPool manages a pool of [hash.Hash] objects to reduce allocations.
