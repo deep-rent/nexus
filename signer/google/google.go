@@ -32,26 +32,33 @@ import (
 
 // Signer is a context-aware cryptographic signer backed by Google Cloud KMS.
 type Signer struct {
-	client  *kms.KeyManagementClient
-	keyName string
-	pubKey  crypto.PublicKey
+	client *kms.KeyManagementClient
+	name   string
+	pub    crypto.PublicKey
 }
 
 // New creates a new Signer instance for the specified Google Cloud KMS key version.
 // The keyName should be in the format:
 // "projects/*/locations/*/keyRings/*/cryptoKeys/*/cryptoKeyVersions/*"
-func New(ctx context.Context, client *kms.KeyManagementClient, keyName string) (*Signer, error) {
-	pkReq := &kmspb.GetPublicKeyRequest{
-		Name: keyName,
+func New(
+	ctx context.Context,
+	client *kms.KeyManagementClient,
+	name string,
+) (*Signer, error) {
+	req := &kmspb.GetPublicKeyRequest{
+		Name: name,
 	}
-	pkResp, err := client.GetPublicKey(ctx, pkReq)
+	res, err := client.GetPublicKey(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key from KMS: %w", err)
 	}
 
-	block, _ := pem.Decode([]byte(pkResp.Pem))
+	block, _ := pem.Decode([]byte(res.Pem))
 	if block == nil {
 		return nil, fmt.Errorf("failed to decode PEM block from KMS public key")
+	}
+	if block.Type != "PUBLIC KEY" {
+		return nil, fmt.Errorf("unexpected PEM block type: %s", block.Type)
 	}
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
@@ -59,21 +66,25 @@ func New(ctx context.Context, client *kms.KeyManagementClient, keyName string) (
 	}
 
 	return &Signer{
-		client:  client,
-		keyName: keyName,
-		pubKey:  pub,
+		client: client,
+		name:   name,
+		pub:    pub,
 	}, nil
 }
 
 // Public returns the public key associated with the KMS key.
 func (s *Signer) Public() crypto.PublicKey {
-	return s.pubKey
+	return s.pub
 }
 
 // Sign performs the cryptographic signing operation using Cloud KMS.
-func (s *Signer) Sign(ctx context.Context, rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	crc32cTable := crc32.MakeTable(crc32.Castagnoli)
-	digestCrc32c := crc32.Checksum(digest, crc32cTable)
+func (s *Signer) Sign(
+	ctx context.Context,
+	rand io.Reader,
+	digest []byte,
+	opts crypto.SignerOpts,
+) (signature []byte, err error) {
+	checksum := crc32.Checksum(digest, crc32.MakeTable(crc32.Castagnoli))
 
 	var d kmspb.Digest
 	switch opts.HashFunc() {
@@ -92,29 +103,32 @@ func (s *Signer) Sign(ctx context.Context, rand io.Reader, digest []byte, opts c
 		case 64:
 			d.Digest = &kmspb.Digest_Sha512{Sha512: digest}
 		default:
-			return nil, fmt.Errorf("unsupported digest type and length: %d", len(digest))
+			return nil, fmt.Errorf(
+				"unsupported digest type and length: %d", len(digest),
+			)
 		}
 	}
 
 	req := &kmspb.AsymmetricSignRequest{
-		Name:         s.keyName,
+		Name:         s.name,
 		Digest:       &d,
-		DigestCrc32C: wrapperspb.Int64(int64(digestCrc32c)),
+		DigestCrc32C: wrapperspb.Int64(int64(checksum)),
 	}
 
-	resp, err := s.client.AsymmetricSign(ctx, req)
+	res, err := s.client.AsymmetricSign(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign digest with KMS: %w", err)
 	}
 
-	if !resp.VerifiedDigestCrc32C {
+	if !res.VerifiedDigestCrc32C {
 		return nil, fmt.Errorf("KMS did not verify the digest CRC32C")
 	}
-	if resp.Name != s.keyName {
-		return nil, fmt.Errorf("KMS signed with unexpected key version: %q", resp.Name)
+
+	if res.Name != s.name {
+		return nil, fmt.Errorf("KMS used unexpected key version %q", res.Name)
 	}
 
-	return resp.Signature, nil
+	return res.Signature, nil
 }
 
 var _ signer.Signer = (*Signer)(nil)
