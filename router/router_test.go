@@ -220,7 +220,7 @@ func TestExchange_BindQuery(t *testing.T) {
 			if err != nil {
 				t.Errorf("BindQuery() err = %v; want nil", err)
 			}
-			
+
 			if in, ok := tt.target.(*input); ok && !tt.wantErr {
 				if in.Name != "test" {
 					t.Errorf("in.Name = %q; want %q", in.Name, "test")

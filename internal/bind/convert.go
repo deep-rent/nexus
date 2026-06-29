@@ -35,9 +35,9 @@ func setValues(rv reflect.Value, vals []string, f *Flags) error {
 	if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() != reflect.Uint8 {
 		return setSlice(rv, vals, f)
 	}
-	
+
 	v := vals[0] // Primitive types only take the first value
-	
+
 	switch rv.Type() {
 	case typeTime:
 		return setTime(rv, v, f)
@@ -243,7 +243,7 @@ func setSlice(rv reflect.Value, vals []string, f *Flags) error {
 	if len(vals) == 1 && f.Split != "" {
 		vals = strings.Split(vals[0], f.Split)
 	}
-	
+
 	if len(vals) == 1 && vals[0] == "" {
 		rv.Set(reflect.MakeSlice(rv.Type(), 0, 0))
 		return nil
