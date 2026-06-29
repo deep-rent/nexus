@@ -16,43 +16,15 @@ package env_test
 
 import (
 	"encoding"
-	"errors"
 	"net/url"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/deep-rent/nexus/env"
 )
 
-type mockUpperUnmarshaller string
 
-func (u *mockUpperUnmarshaller) UnmarshalEnv(v string) error {
-	*u = mockUpperUnmarshaller(strings.ToUpper(v))
-	return nil
-}
-
-var _ env.Unmarshaler = (*mockUpperUnmarshaller)(nil)
-
-type mockErrorUnmarshaler struct{}
-
-func (e *mockErrorUnmarshaler) UnmarshalEnv(_ string) error {
-	return errors.New("unmarshal error")
-}
-
-var _ env.Unmarshaler = (*mockErrorUnmarshaler)(nil)
-
-type mockCheckUnmarshaler string
-
-func (c mockCheckUnmarshaler) UnmarshalEnv(v string) error {
-	if v == "invalid" {
-		return errors.New("invalid value")
-	}
-	return nil
-}
-
-var _ env.Unmarshaler = (*mockCheckUnmarshaler)(nil)
 
 type mockTextUnmarshaler string
 
@@ -139,13 +111,7 @@ type mockTURLPtr struct {
 	V *url.URL
 }
 
-type mockTUpper struct {
-	V mockUpperUnmarshaller
-}
 
-type mockTUpperPtr struct {
-	V *mockUpperUnmarshaller
-}
 
 type mockTDefault struct {
 	V string `env:",default:foo"`
@@ -465,39 +431,14 @@ func TestUnmarshal(t *testing.T) {
 			give:    &mockTURL{},
 			wantErr: true,
 		},
-		{
-			name: "unmarshaler",
-			vars: map[string]string{"V": "foo"},
-			give: &mockTUpper{},
-			want: &mockTUpper{"FOO"},
-		},
+
 		{
 			name: "text unmarshaler",
 			vars: map[string]string{"V": "foo"},
 			give: &mockTTextUnmarshaler{},
 			want: &mockTTextUnmarshaler{"text:foo"},
 		},
-		{
-			name: "unmarshaler pointer",
-			vars: map[string]string{"V": "foo"},
-			give: &mockTUpperPtr{},
-			want: &mockTUpperPtr{V: func() *mockUpperUnmarshaller {
-				p := mockUpperUnmarshaller("FOO")
-				return &p
-			}()},
-		},
-		{
-			name:    "value-receiver unmarshaler error",
-			vars:    map[string]string{"V": "invalid"},
-			give:    &struct{ V mockCheckUnmarshaler }{},
-			wantErr: true,
-		},
-		{
-			name:    "unmarshaler error",
-			vars:    map[string]string{"V": "foo"},
-			give:    &struct{ V mockErrorUnmarshaler }{},
-			wantErr: true,
-		},
+
 		{
 			name: "default",
 			vars: map[string]string{},

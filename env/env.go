@@ -102,23 +102,12 @@
 package env
 
 import (
-	"encoding"
-	"encoding/base32"
-	"encoding/base64"
-	"encoding/hex"
+	"bytes"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"reflect"
-	"strconv"
-	"strings"
-	"time"
 
-	"github.com/deep-rent/nexus/internal/ascii"
-	"github.com/deep-rent/nexus/internal/pointer"
-	"github.com/deep-rent/nexus/internal/snake"
-	"github.com/deep-rent/nexus/internal/tag"
+	"github.com/deep-rent/nexus/internal/bind"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -126,42 +115,40 @@ import (
 // indicating whether the variable was present. This type allows for custom
 // lookup mechanisms, such as reading from sources other than the actual
 // environment, which is especially useful for testing.
-type Lookup func(key string) (string, bool)
+type Lookup = bind.Lookup
 
-// Unmarshaler is an interface that can be implemented by types to provide their
-// own custom logic for parsing an environment variable string.
-type Unmarshaler interface {
-	// UnmarshalEnv unmarshals the string value of an environment variable.
-	// The value is the raw string from the environment or a default value.
-	// It returns an error if the value cannot be parsed.
-	UnmarshalEnv(value string) error
-}
-
-// Option is a function that configures the behavior of the [Unmarshal] and
-// [Expand] functions. It follows the functional options pattern.
+// Option is a functional option for configuring the [Unmarshal] behavior.
 type Option func(*config)
 
-// WithPrefix returns an [Option] that adds a common prefix to all environment
-// variable keys looked up during unmarshaling. For example, WithPrefix("APP_")
-// would cause a field with the env tag "PORT" to look for the "APP_PORT"
-// variable.
+// WithPrefix sets a prefix that will be prepended to all environment variable
+// keys before looking them up. If not provided, no prefix is used.
 func WithPrefix(prefix string) Option {
-	return func(o *config) {
-		o.Prefix = prefix
+	return func(c *config) {
+		c.Prefix = prefix
 	}
 }
 
-// WithLookup returns an [Option] that sets a custom [Lookup] function for
-// retrieving environment variable values. If not customized, [os.LookupEnv]
-// will be used by default. This is useful for testing or if you need to load
-// environment variables from alternative sources.
+// WithLookup overrides the default mechanism for retrieving environment
+// variables. By default, [Unmarshal] uses [os.LookupEnv]. This option is
+// particularly useful for unit tests, allowing you to inject a mock environment
+// or an alternative configuration source.
 func WithLookup(lookup Lookup) Option {
-	return func(o *config) {
+	return func(c *config) {
 		if lookup != nil {
-			o.Lookup = lookup
+			c.Lookup = lookup
 		}
 	}
 }
+
+// config holds configuration options for environment variable processing.
+type config struct {
+	// Prefix is a common prefix for all environment variable keys.
+	Prefix string
+	// Lookup is the injectable callback for variable lookup.
+	Lookup Lookup
+}
+
+var binder = bind.New("env")
 
 // Unmarshal populates the fields of a struct with values from environment
 // variables. The given value v must be a non-nil pointer to a struct.
@@ -172,7 +159,14 @@ func WithLookup(lookup Lookup) Option {
 // excluded. If a variable is not set, the field remains unchanged unless a
 // default value is specified in the struct tag, or it is marked as required.
 func Unmarshal(v any, opts ...Option) error {
-	if err := unmarshal(v, opts...); err != nil {
+	cfg := config{
+		Lookup: os.LookupEnv,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	if err := binder.Bind(v, cfg.Prefix, cfg.Lookup); err != nil {
 		return fmt.Errorf("env: %w", err)
 	}
 	return nil
@@ -193,60 +187,60 @@ func Expand(s string, opts ...Option) (string, error) {
 		opt(&cfg)
 	}
 
-	var b strings.Builder
-	b.Grow(len(s) * 2)
+	var b bytes.Buffer
+	b.Grow(len(s))
 
 	i := 0
 	for i < len(s) {
 		// Find the next dollar sign.
-		start := strings.IndexByte(s[i:], '$')
-		if start == -1 {
-			b.WriteString(s[i:])
+		j := i
+		for j < len(s) && s[j] != '$' {
+			j++
+		}
+
+		// Append the literal part before the dollar sign.
+		b.WriteString(s[i:j])
+		i = j
+
+		// If there is no dollar sign left, we are done.
+		if i >= len(s) {
 			break
 		}
 
-		// Append the text before the dollar sign.
-		b.WriteString(s[i : i+start])
-
-		// Move our main index to the location of the dollar sign.
-		i += start
-
-		// Check what follows the dollar sign.
-		switch {
-		case i+1 < len(s) && s[i+1] == '$':
-			// Case 1: Escaped dollar sign ($$).
+		// Look at the character after the dollar sign.
+		if i+1 < len(s) && s[i+1] == '$' {
+			// Handle the `$$` escape sequence.
 			b.WriteByte('$')
-			i += 2 // Skip both signs.
-
-		case i+1 < len(s) && s[i+1] == '{':
-			// Case 2: Bracketed variable expansion (${KEY}).
-			end := strings.IndexByte(s[i+2:], '}')
-			if end == -1 {
+			i += 2
+		} else if i+1 < len(s) && s[i+1] == '{' {
+			// Handle the `${VAR}` syntax.
+			// Find the closing brace.
+			end := 2
+			for i+end < len(s) && s[i+end] != '}' {
+				end++
+			}
+			if i+end == len(s) {
 				return "", errors.New("env: variable bracket not closed")
+			} else {
+				// Extract the bracketed variable name.
+				key := cfg.Prefix + s[i+2:i+end]
+				val, ok := cfg.Lookup(key)
+				if !ok {
+					return "", fmt.Errorf("env: variable %q is not set", key)
+				}
+				b.WriteString(val)
+				// Move the index past the processed variable `${KEY}`.
+				i += end + 1
 			}
-			// Extract the variable name.
-			key := cfg.Prefix + s[i+2:i+2+end]
-			val, ok := cfg.Lookup(key)
-			if !ok {
-				return "", fmt.Errorf("env: variable %q is not set", key)
-			}
-			b.WriteString(val)
-			// Move the index past the processed variable `${KEY}`.
-			i += 2 + end + 1
-
-		default:
-			// Case 3: Standard variable expansion ($KEY) or lone dollar sign.
-			// Scan ahead for valid identifier characters. The first character
+		} else {
+			// Handle the `$VAR` syntax.
+			// Find the end of the variable name. The first character of a variable
 			// must be a letter or underscore; subsequent characters can include
 			// digits.
 			n := 0
 			for j := i + 1; j < len(s); j++ {
-				c := rune(s[j])
-				// Allow if it's a letter/underscore, OR if it's a digit but NOT
-				// the first character.
-				if (c == '_' ||
-					ascii.IsAlpha(c)) ||
-					(n > 0 && ascii.IsDigit(c)) {
+				c := s[j]
+				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (n > 0 && c >= '0' && c <= '9') {
 					n++
 				} else {
 					break
@@ -260,7 +254,7 @@ func Expand(s string, opts ...Option) (string, error) {
 				i++
 			} else {
 				// Extract the unbracketed variable name.
-				key := cfg.Prefix + s[i+1:i+1+n]
+				key := cfg.Prefix + s[i+1 : i+1+n]
 				val, ok := cfg.Lookup(key)
 				if !ok {
 					return "", fmt.Errorf("env: variable %q is not set", key)
@@ -273,473 +267,4 @@ func Expand(s string, opts ...Option) (string, error) {
 	}
 
 	return b.String(), nil
-}
-
-// flags encapsulates the options parsed from an `env` struct tag.
-type flags struct {
-	// Name is the name of the environment variable.
-	Name string
-	// Prefix is an optional prefix for nested structs.
-	Prefix *string
-	// Split is the delimiter for slice types.
-	Split string
-	// Unit is the unit for time.Time or time.Duration.
-	Unit string
-	// Format is the format specifier for special types.
-	Format string
-	// Default is the fallback value if the variable is not found.
-	Default string
-	// Inline indicates whether to inline an anonymous struct field.
-	Inline bool
-	// Required indicates whether the variable is required.
-	Required bool
-}
-
-// config holds configuration options for environment variable processing.
-type config struct {
-	// Prefix is a common prefix for all environment variable keys.
-	Prefix string
-	// Lookup is the injectable callback for variable lookup.
-	Lookup Lookup
-}
-
-// Cache types with special unmarshaling logic.
-var (
-	typeTime            = reflect.TypeFor[time.Time]()
-	typeDuration        = reflect.TypeFor[time.Duration]()
-	typeLocation        = reflect.TypeFor[time.Location]()
-	typeURL             = reflect.TypeFor[url.URL]()
-	typeUnmarshaler     = reflect.TypeFor[Unmarshaler]()
-	typeTextUnmarshaler = reflect.TypeFor[encoding.TextUnmarshaler]()
-)
-
-// unmarshal is the internal implementation that orchestrates the unmarshaling.
-func unmarshal(v any, opts ...Option) error {
-	ptr := reflect.ValueOf(v)
-	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
-		return errors.New(
-			"expected a non-nil pointer to a struct",
-		)
-	}
-	val := ptr.Elem()
-	if kind := val.Kind(); kind != reflect.Struct {
-		return fmt.Errorf(
-			"expected a pointer to a struct, but got pointer to %v", kind,
-		)
-	}
-	cfg := config{
-		Lookup: os.LookupEnv,
-	}
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-	return process(val, cfg.Prefix, cfg.Lookup)
-}
-
-// process recursively walks through the struct fields.
-func process(rv reflect.Value, prefix string, lookup Lookup) error {
-	rt := rv.Type()
-	for i := 0; i < rt.NumField(); i++ {
-		ft := rt.Field(i)
-		fv := rv.Field(i)
-
-		if !ft.IsExported() || !fv.CanSet() {
-			continue
-		}
-
-		tagValue := ft.Tag.Get("env")
-		if tagValue == "-" {
-			continue
-		}
-		opts, err := parse(tagValue)
-		if err != nil {
-			return fmt.Errorf("failed to parse tag for field %q: %w", ft.Name, err)
-		}
-
-		if ft.Anonymous && opts.Inline {
-			// Dereference and allocate in case the inline field is a pointer.
-			embedded := pointer.Deref(fv)
-			if err := process(embedded, prefix, lookup); err != nil {
-				return err
-			}
-			continue
-		}
-
-		key := opts.Name
-		if key == "" {
-			key = snake.ToUpper(ft.Name)
-		}
-
-		// Check for true embedded structs.
-		if isEmbedded(ft, fv) {
-			nested := prefix
-			if opts.Prefix != nil {
-				nested += *opts.Prefix
-			} else {
-				nested += key + "_"
-			}
-
-			// Dereference and allocate in case the field is a pointer.
-			embedded := pointer.Deref(fv)
-			if err := process(embedded, nested, lookup); err != nil {
-				return err
-			}
-			continue
-		}
-
-		key = prefix + key
-		val, ok := lookup(key)
-		// A variable is "set" even if it is empty. We only trigger the strictly
-		// missing variable logic if 'ok' is false.
-		if !ok {
-			switch {
-			case opts.Default != "":
-				val = opts.Default
-			case opts.Required:
-				return fmt.Errorf("required variable %q is not set", key)
-			default:
-				continue
-			}
-		}
-
-		// If a field is required and set to "", it bypasses the errors above.
-		// For strings, setValue will correctly assign the empty string. For
-		// types like int or bool, setValue will return a natural parsing error.
-		if err := setValue(fv, val, opts); err != nil {
-			return fmt.Errorf(
-				"error setting field %q from variable %q: %w",
-				ft.Name, key, err,
-			)
-		}
-	}
-	return nil
-}
-
-// setValue assigns a string value to a reflect.Value based on its type.
-func setValue(rv reflect.Value, v string, f *flags) error {
-	if u, ok := asUnmarshaler(rv); ok {
-		// Use the custom unmarshaler if available.
-		return u.UnmarshalEnv(v)
-	}
-	rv = pointer.Deref(rv)
-	switch rv.Type() {
-	case typeTime:
-		return setTime(rv, v, f)
-	case typeDuration:
-		return setDuration(rv, v, f)
-	case typeLocation:
-		return setLocation(rv, v)
-	case typeURL:
-		return setURL(rv, v)
-	}
-
-	if u, ok := asTextUnmarshaler(rv); ok {
-		// Use the standard encoding.TextUnmarshaler if available.
-		return u.UnmarshalText([]byte(v))
-	}
-
-	return setOther(rv, v, f)
-}
-
-// setOther handles all "regular" (primitive and slice) types by delegating to
-// the appropriate parsing logic based on the reflective kind. If rv is a slice,
-// it calls setSlice, otherwise it attempts to convert v into the type expected
-// by rv and sets it.
-func setOther(rv reflect.Value, v string, f *flags) error {
-	switch kind := rv.Kind(); kind {
-	case reflect.Slice:
-		return setSlice(rv, v, f)
-	case reflect.Bool:
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("%q is not a bool", v)
-		}
-		rv.SetBool(b)
-	case reflect.String:
-		rv.SetString(v)
-	case
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		b := rv.Type().Bits()
-		i, err := strconv.ParseInt(v, 10, b)
-		if err != nil {
-			return fmt.Errorf("%q is not an int%d", v, b)
-		}
-		rv.SetInt(i)
-	case
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64:
-		b := rv.Type().Bits()
-		u, err := strconv.ParseUint(v, 10, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a uint%d", v, b)
-		}
-		rv.SetUint(u)
-	case reflect.Float32, reflect.Float64:
-		b := rv.Type().Bits()
-		fval, err := strconv.ParseFloat(v, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a float%d", v, b)
-		}
-		rv.SetFloat(fval)
-	case reflect.Complex64, reflect.Complex128:
-		b := rv.Type().Bits()
-		c, err := strconv.ParseComplex(v, b)
-		if err != nil {
-			return fmt.Errorf("%q is not a complex%d", v, b)
-		}
-		rv.SetComplex(c)
-	default:
-		return fmt.Errorf("unsupported type: %s", kind)
-	}
-	return nil
-}
-
-// setTime parses and sets a [time.Time] value based on the provided format and
-// unit options.
-func setTime(rv reflect.Value, v string, f *flags) error {
-	var t time.Time
-	var err error
-	switch format := f.Format; format {
-	case "unix":
-		var i int64
-		i, err = strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			switch unit := f.Unit; unit {
-			case "s", "":
-				t = time.Unix(i, 0)
-			case "ms":
-				t = time.UnixMilli(i)
-			case "us", "μs":
-				t = time.UnixMicro(i)
-			default:
-				err = fmt.Errorf("invalid time unit: %q", unit)
-			}
-		}
-	case "dateTime":
-		t, err = time.Parse(time.DateTime, v)
-	case "date":
-		t, err = time.Parse(time.DateOnly, v)
-	case "time":
-		t, err = time.Parse(time.TimeOnly, v)
-	case "":
-		format = time.RFC3339
-		fallthrough
-	default:
-		t, err = time.Parse(format, v)
-	}
-	if err != nil {
-		return err
-	}
-	rv.Set(reflect.ValueOf(t))
-	return nil
-}
-
-// setDuration parses and sets a [time.Duration] value based on the provided
-// unit option.
-func setDuration(rv reflect.Value, v string, f *flags) error {
-	var d time.Duration
-	var err error
-	if unit := f.Unit; unit == "" {
-		d, err = time.ParseDuration(v)
-	} else {
-		var i int64
-		i, err = strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			switch unit {
-			case "ns":
-				d = time.Duration(i)
-			case "us", "μs":
-				d = time.Duration(i) * time.Microsecond
-			case "ms":
-				d = time.Duration(i) * time.Millisecond
-			case "s":
-				d = time.Duration(i) * time.Second
-			case "m":
-				d = time.Duration(i) * time.Minute
-			case "h":
-				d = time.Duration(i) * time.Hour
-			default:
-				err = fmt.Errorf("invalid duration unit: %q", unit)
-			}
-		}
-	}
-	if err != nil {
-		return err
-	}
-	rv.SetInt(int64(d))
-	return nil
-}
-
-// setLocation parses and sets a [time.Location] value.
-func setLocation(rv reflect.Value, v string) error {
-	loc, err := time.LoadLocation(v)
-	if err != nil {
-		return err
-	}
-	rv.Set(reflect.ValueOf(*loc))
-	return nil
-}
-
-// setURL parses and sets a [url.URL] value.
-func setURL(rv reflect.Value, v string) error {
-	u, err := url.Parse(v)
-	if err != nil {
-		return err
-	}
-	rv.Set(reflect.ValueOf(*u))
-	return nil
-}
-
-// setSlice parses and sets a slice value. It supports []byte with special
-// encoding formats, as well as other slice types by splitting the input string.
-func setSlice(rv reflect.Value, v string, f *flags) error {
-	if rv.Type().Elem().Kind() == reflect.Uint8 {
-		var b []byte
-		var err error
-		switch f.Format {
-		case "":
-			b = []byte(v)
-		case "hex":
-			b, err = hex.DecodeString(v)
-		case "base32":
-			b, err = base32.StdEncoding.DecodeString(v)
-		case "base64":
-			b, err = base64.StdEncoding.DecodeString(v)
-		default:
-			return fmt.Errorf("unsupported format for []byte: %q", f.Format)
-		}
-		if err != nil {
-			return err
-		}
-		rv.SetBytes(b)
-		return nil
-	}
-
-	parts := strings.Split(v, f.Split)
-	if len(parts) == 1 && parts[0] == "" {
-		rv.Set(reflect.MakeSlice(rv.Type(), 0, 0))
-		return nil
-	}
-
-	slice := reflect.MakeSlice(rv.Type(), len(parts), len(parts))
-	for i, part := range parts {
-		if err := setValue(slice.Index(i), part, f); err != nil {
-			return fmt.Errorf(
-				"failed to parse slice element at index %d: %w", i, err,
-			)
-		}
-	}
-
-	rv.Set(slice)
-	return nil
-}
-
-// parse parses the `env` tag string. It supports quoted values for options
-// to allow commas within them, e.g., `default:'a,b,c'`.
-func parse(s string) (*flags, error) {
-	t := tag.Parse(s)
-	f := &flags{Name: t.Name, Split: ","}
-
-	seen := make(map[string]bool)
-	for k, v := range t.Opts() {
-		if seen[k] {
-			return nil, fmt.Errorf("duplicate option: %q", k)
-		}
-		switch k {
-		case "format":
-			f.Format = v
-		case "prefix":
-			f.Prefix = &v
-		case "split":
-			f.Split = v
-		case "unit":
-			f.Unit = v
-		case "default":
-			f.Default = v
-		case "inline":
-			f.Inline = true
-		case "required":
-			f.Required = true
-		default:
-			return nil, fmt.Errorf("unknown option: %q", k)
-		}
-		seen[k] = true
-	}
-	return f, nil
-}
-
-// isEmbedded checks if a struct field is a true embedded struct that should
-// be processed recursively.
-func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
-	t := f.Type
-
-	// Unwrap pointer(s) to check the underlying type.
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	// 1. It must resolve to a struct.
-	if t.Kind() != reflect.Struct {
-		return false
-	}
-	// 2. It is not one of the special struct types we handle directly.
-	if t == typeTime || t == typeURL || t == typeLocation {
-		return false
-	}
-	// 3. It does NOT implement the Unmarshaler interface.
-	if _, ok := asUnmarshaler(rv); ok {
-		return false
-	}
-	// 4. It does NOT implement the encoding.TextUnmarshaler interface.
-	if _, ok := asTextUnmarshaler(rv); ok {
-		return false
-	}
-	// If all checks pass, it's a struct we should recurse into.
-	return true
-}
-
-// asUnmarshaler checks if the given [reflect.Value] implements the
-// [Unmarshaler] interface, either directly or via a pointer receiver. If it
-// does, the function returns the type-casted [Unmarshaler] and true.
-// Otherwise, it returns nil and false.
-func asUnmarshaler(rv reflect.Value) (Unmarshaler, bool) {
-	// Case 1: The field's type directly implements Unmarshaler.
-	// This works for pointer types (e.g., *reverse) or value types with
-	// value receivers.
-	if rv.Type().Implements(typeUnmarshaler) {
-		if rv.Kind() == reflect.Pointer && rv.IsNil() {
-			// If it's a nil pointer, we must allocate it to prevent a panic
-			// when calling the interface method on the nil receiver.
-			pointer.Alloc(rv)
-		}
-		return rv.Interface().(Unmarshaler), true
-	}
-	// Case 2: A pointer to the field's type implements Unmarshaler.
-	// This works for value types with pointer receivers (e.g., reverse).
-	if rv.CanAddr() && rv.Addr().Type().Implements(typeUnmarshaler) {
-		return rv.Addr().Interface().(Unmarshaler), true
-	}
-	return nil, false
-}
-
-// asTextUnmarshaler checks if the given [reflect.Value] implements the
-// [encoding.TextUnmarshaler] interface.
-func asTextUnmarshaler(rv reflect.Value) (encoding.TextUnmarshaler, bool) {
-	if rv.Type().Implements(typeTextUnmarshaler) {
-		if rv.Kind() == reflect.Pointer && rv.IsNil() {
-			pointer.Alloc(rv)
-		}
-		return rv.Interface().(encoding.TextUnmarshaler), true
-	}
-	if rv.CanAddr() && rv.Addr().Type().Implements(typeTextUnmarshaler) {
-		return rv.Addr().Interface().(encoding.TextUnmarshaler), true
-	}
-	return nil, false
 }
