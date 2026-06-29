@@ -287,27 +287,18 @@ var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]builder{
 
 func buildRSA(alg jwa.Algorithm[*rsa.PublicKey]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
-		if _, ok := s.Public().(*rsa.PublicKey); !ok {
-			return nil
-		}
 		return jwk.NewKeyBuilder(alg).WithKeyID(kid).BuildPair(s)
 	}
 }
 
 func buildECDSA(alg jwa.Algorithm[*ecdsa.PublicKey]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
-		if _, ok := s.Public().(*ecdsa.PublicKey); !ok {
-			return nil
-		}
 		return jwk.NewKeyBuilder(alg).WithKeyID(kid).BuildPair(s)
 	}
 }
 
 func buildEdDSA(alg jwa.Algorithm[ed25519.PublicKey]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
-		if _, ok := s.Public().(ed25519.PublicKey); !ok {
-			return nil
-		}
 		return jwk.NewKeyBuilder(alg).WithKeyID(kid).BuildPair(s)
 	}
 }
