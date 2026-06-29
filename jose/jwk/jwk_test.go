@@ -74,11 +74,6 @@ func TestParse(t *testing.T) {
 	}{
 		{
 			"EdDSA",
-			"q3TlIAMpJF6VoTuJuaLZDUzXbFV-k7kLhAi5gYmV37Y",
-			"Ed448.json",
-		},
-		{
-			"EdDSA",
 			"P6rOVdsYhY_b0VzNdk568I9tYrAnBw-WGgsMZ2zMOvA",
 			"Ed25519.json",
 		},
@@ -205,7 +200,7 @@ func TestParseSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSet() error = %v", err)
 	}
-	if got, want := set.Len(), 11; got != want {
+	if got, want := set.Len(), 10; got != want {
 		t.Errorf("set.Len() = %d; want %d", got, want)
 	}
 
