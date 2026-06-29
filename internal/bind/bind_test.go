@@ -122,8 +122,6 @@ func TestBinder_PanicOnInvalidTag(t *testing.T) {
 }
 
 func TestBinder_Caching(t *testing.T) {
-	t.Parallel()
-
 	b := bind.New("bind", bind.WithCache(true))
 
 	type Config struct {
