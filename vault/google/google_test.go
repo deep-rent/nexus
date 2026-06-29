@@ -186,9 +186,6 @@ func TestSigner_Sign(t *testing.T) {
 		t.Fatalf("unexpected error during sign: %v", err)
 	}
 
-	// We decode the JWT signature assuming jwk.KeyPair.Sign implements JWS Compact Serialization
-	// or returns just the raw signature bytes. Let's see.
-	// Ah, jwk.KeyPair.Sign returns the raw signature for the payload!
 	if string(sig) != "foo" {
 		t.Errorf("expected %q signature, got %q", "foo", string(sig))
 	}
