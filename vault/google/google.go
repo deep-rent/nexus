@@ -127,7 +127,11 @@ type Factory struct {
 	logger *slog.Logger
 }
 
-func (f *Factory) New(ctx context.Context, parent string, strategy rotor.Strategy) (vault.Vault, error) {
+func (f *Factory) New(
+	ctx context.Context,
+	parent string,
+	strategy rotor.Strategy,
+) (vault.Vault, error) {
 	req := &kmspb.ListCryptoKeyVersionsRequest{
 		Parent: parent,
 		Filter: "state=ENABLED",
@@ -222,7 +226,7 @@ func (f *Factory) New(ctx context.Context, parent string, strategy rotor.Strateg
 				continue
 			}
 		default:
-			f.logger.WarnContext(ctx, "unsupported key type")
+			f.logger.WarnContext(ctx, "unsupported key type: %T", key)
 			continue
 		}
 
