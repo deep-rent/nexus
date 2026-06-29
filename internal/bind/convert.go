@@ -29,9 +29,15 @@ import (
 	"github.com/deep-rent/nexus/internal/pointer"
 )
 
-// setValue assigns a string value to a reflect.Value based on its type.
-func setValue(rv reflect.Value, v string, f *Flags) error {
+// setValues assigns values to a reflect.Value based on its type.
+func setValues(rv reflect.Value, vals []string, f *Flags) error {
 	rv = pointer.Deref(rv)
+	if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() != reflect.Uint8 {
+		return setSlice(rv, vals, f)
+	}
+	
+	v := vals[0] // Primitive types only take the first value
+	
 	switch rv.Type() {
 	case typeTime:
 		return setTime(rv, v, f)
@@ -51,14 +57,12 @@ func setValue(rv reflect.Value, v string, f *Flags) error {
 	return setOther(rv, v, f)
 }
 
-// setOther handles all "regular" (primitive and slice) types by delegating to
-// the appropriate parsing logic based on the reflective kind. If rv is a slice,
-// it calls setSlice, otherwise it attempts to convert v into the type expected
-// by rv and sets it.
+// setOther handles all "regular" (primitive and []byte) types by delegating to
+// the appropriate parsing logic based on the reflective kind.
 func setOther(rv reflect.Value, v string, f *Flags) error {
 	switch kind := rv.Kind(); kind {
 	case reflect.Slice:
-		return setSlice(rv, v, f)
+		return setBytes(rv, v, f)
 	case reflect.Bool:
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -207,40 +211,47 @@ func setURL(rv reflect.Value, v string) error {
 	return nil
 }
 
-// setSlice parses and sets a slice value. It supports []byte with special
-// encoding formats, as well as other slice types by splitting the input string.
-func setSlice(rv reflect.Value, v string, f *Flags) error {
-	if rv.Type().Elem().Kind() == reflect.Uint8 {
-		var b []byte
-		var err error
-		switch f.Format {
-		case "":
-			b = []byte(v)
-		case "hex":
-			b, err = hex.DecodeString(v)
-		case "base32":
-			b, err = base32.StdEncoding.DecodeString(v)
-		case "base64":
-			b, err = base64.StdEncoding.DecodeString(v)
-		default:
-			return fmt.Errorf("unsupported format for []byte: %q", f.Format)
-		}
-		if err != nil {
-			return err
-		}
-		rv.SetBytes(b)
-		return nil
+// setBytes parses and sets a []byte slice value, supporting special
+// encoding formats like hex, base32, and base64.
+func setBytes(rv reflect.Value, v string, f *Flags) error {
+	var b []byte
+	var err error
+	switch f.Format {
+	case "":
+		b = []byte(v)
+	case "hex":
+		b, err = hex.DecodeString(v)
+	case "base32":
+		b, err = base32.StdEncoding.DecodeString(v)
+	case "base64":
+		b, err = base64.StdEncoding.DecodeString(v)
+	default:
+		return fmt.Errorf("unsupported format for []byte: %q", f.Format)
 	}
+	if err != nil {
+		return err
+	}
+	rv.SetBytes(b)
+	return nil
+}
 
-	parts := strings.Split(v, f.Split)
-	if len(parts) == 1 && parts[0] == "" {
+// setSlice parses and sets a slice value by parsing each element.
+// If exactly one value is provided and a f.Split delimiter is present,
+// it will optionally split that single string to maintain backwards compatibility
+// with environment variable formats.
+func setSlice(rv reflect.Value, vals []string, f *Flags) error {
+	if len(vals) == 1 && f.Split != "" {
+		vals = strings.Split(vals[0], f.Split)
+	}
+	
+	if len(vals) == 1 && vals[0] == "" {
 		rv.Set(reflect.MakeSlice(rv.Type(), 0, 0))
 		return nil
 	}
 
-	slice := reflect.MakeSlice(rv.Type(), len(parts), len(parts))
-	for i, part := range parts {
-		if err := setValue(slice.Index(i), part, f); err != nil {
+	slice := reflect.MakeSlice(rv.Type(), len(vals), len(vals))
+	for i, part := range vals {
+		if err := setValues(slice.Index(i), []string{part}, f); err != nil {
 			return fmt.Errorf(
 				"failed to parse slice element at index %d: %w", i, err,
 			)

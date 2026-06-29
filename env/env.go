@@ -155,6 +155,17 @@ var binder = bind.New(
 	bind.WithTransformer(snake.ToUpper),
 )
 
+type envSource struct {
+	lookup Lookup
+}
+
+func (s envSource) Lookup(key string) ([]string, bool) {
+	if val, ok := s.lookup(key); ok {
+		return []string{val}, true
+	}
+	return nil, false
+}
+
 // Unmarshal populates the fields of a struct with values from environment
 // variables. The given value v must be a non-nil pointer to a struct.
 //
@@ -171,7 +182,7 @@ func Unmarshal(v any, opts ...Option) error {
 		opt(&cfg)
 	}
 
-	if err := binder.Bind(v, cfg.Prefix, cfg.Lookup); err != nil {
+	if err := binder.Bind(v, cfg.Prefix, envSource{cfg.Lookup}); err != nil {
 		return fmt.Errorf("env: %w", err)
 	}
 	return nil

@@ -27,8 +27,11 @@ import (
 	"github.com/deep-rent/nexus/internal/tag"
 )
 
-// Lookup is a function that retrieves a value by its key.
-type Lookup func(key string) (string, bool)
+// Source provides values for a given key. It natively supports returning multiple
+// values (e.g. for HTTP arrays) to correctly parse slices.
+type Source interface {
+	Lookup(key string) ([]string, bool)
+}
 
 // Transformer is a function that transforms a struct field name into a key.
 type Transformer func(string) string
@@ -69,14 +72,14 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []field {
 
 		f := field{
 			Index:  i,
-			Field:  ft.Name,
-			Name:   flags.Name,
+			Name:   ft.Name,
+			Key:    flags.Key,
 			Flags:  flags,
 			Inline: ft.Anonymous && flags.Inline,
 		}
 
-		if f.Name == "" {
-			f.Name = r.transform(ft.Name)
+		if f.Key == "" {
+			f.Key = r.transform(ft.Name)
 		}
 
 		f.Embedded = isEmbedded(ft)
@@ -155,9 +158,9 @@ func New(name string, opts ...Option) *Binder {
 	}
 }
 
-// Bind populates the fields of a struct using the provided lookup function.
+// Bind populates the fields of a struct using the provided source.
 // The given value v must be a non-nil pointer to a struct.
-func (b *Binder) Bind(v any, prefix string, lookup Lookup) error {
+func (b *Binder) Bind(v any, prefix string, source Source) error {
 	ptr := reflect.ValueOf(v)
 	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
 		return errors.New(
@@ -170,10 +173,10 @@ func (b *Binder) Bind(v any, prefix string, lookup Lookup) error {
 			"expected a pointer to a struct, but got pointer to %v", kind,
 		)
 	}
-	return b.process(val, prefix, lookup)
+	return b.process(val, prefix, source)
 }
 
-func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
+func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
 	fields := b.resolver.Resolve(rv.Type())
 	for _, f := range fields {
 		if f.Err != nil {
@@ -185,13 +188,13 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 		// Inline struct
 		if f.Inline {
 			embedded := pointer.Deref(fv)
-			if err := b.process(embedded, prefix, lookup); err != nil {
+			if err := b.process(embedded, prefix, source); err != nil {
 				return err
 			}
 			continue
 		}
 
-		key := f.Name
+		key := f.Key
 
 		// Embedded structured prefix
 		if f.Embedded {
@@ -202,7 +205,7 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 				nested += key + "_"
 			}
 			embedded := pointer.Deref(fv)
-			if err := b.process(embedded, nested, lookup); err != nil {
+			if err := b.process(embedded, nested, source); err != nil {
 				return err
 			}
 			continue
@@ -210,11 +213,11 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		// Regular field
 		key = prefix + key
-		val, ok := lookup(key)
-		if !ok {
+		vals, ok := source.Lookup(key)
+		if !ok || len(vals) == 0 || (len(vals) == 1 && vals[0] == "") {
 			switch {
 			case f.Flags.Default != "":
-				val = f.Flags.Default
+				vals = []string{f.Flags.Default}
 			case f.Flags.Required:
 				return fmt.Errorf("required key %q is missing", key)
 			default:
@@ -222,10 +225,10 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 			}
 		}
 
-		if err := setValue(fv, val, f.Flags); err != nil {
+		if err := setValues(fv, vals, f.Flags); err != nil {
 			return fmt.Errorf(
 				"could not set field %q from key %q: %w",
-				f.Field, key, err,
+				f.Name, key, err,
 			)
 		}
 	}
@@ -234,8 +237,8 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 type field struct {
 	Index    int
-	Field    string
 	Name     string
+	Key      string
 	Flags    *Flags
 	Inline   bool
 	Embedded bool
@@ -244,7 +247,7 @@ type field struct {
 
 // Flags encapsulates the options parsed from a tag.
 type Flags struct {
-	Name     string
+	Key      string
 	Prefix   *string
 	Split    string
 	Unit     string
@@ -256,7 +259,7 @@ type Flags struct {
 
 func parse(s string) (*Flags, error) {
 	t := tag.Parse(s)
-	f := &Flags{Name: t.Name, Split: ","}
+	f := &Flags{Key: t.Name, Split: ","}
 
 	seen := make(map[string]bool)
 	for k, v := range t.Opts() {
