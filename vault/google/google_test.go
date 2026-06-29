@@ -14,129 +14,182 @@
 
 package google_test
 
-// import (
-// 	"context"
-// 	"crypto"
-// 	"net"
-// 	"strings"
-// 	"testing"
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"net"
+	"strings"
+	"testing"
 
-// 	kms "cloud.google.com/go/kms/apiv1"
-// 	"cloud.google.com/go/kms/apiv1/kmspb"
-// 	"google.golang.org/api/option"
-// 	"google.golang.org/grpc"
-// 	"google.golang.org/grpc/credentials/insecure"
-// 	"google.golang.org/protobuf/types/known/wrapperspb"
+	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/kms/apiv1/kmspb"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
-// 	"github.com/deep-rent/nexus/vault/google"
-// )
+	"github.com/deep-rent/nexus/vault/google"
+)
 
-// type mockServer struct {
-// 	kmspb.UnimplementedKeyManagementServiceServer
-// }
+type mockServer struct {
+	kmspb.UnimplementedKeyManagementServiceServer
+}
 
-// func (s *mockServer) GetPublicKey(
-// 	ctx context.Context,
-// 	req *kmspb.GetPublicKeyRequest,
-// ) (*kmspb.PublicKey, error) {
-// 	const pem = `-----BEGIN PUBLIC KEY-----
-// MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnG0D6EYAzGp75rvEFrBM
-// SdhSzHmuPPmfH+s6x0gcHvePj84WyjZp+0XbOvmqLK9AIw7KM7yf23/bsjRVZaR9
-// SCQGNqtVxo5JgXlJAq9Tvpwdq+iwBFrORMI1Aonx2WqDJtmT+RraSkDiX0ESUELR
-// QYVTaGne/0yArGgDMiO1NaQAvm8IIOgY4efxIbruNd5omb0gabuJdr/rc9lY5x6k
-// qcES2WVMiE4Ot/GDI1KiHSw2eqVgQStmA2TOCfKJHw0/9FFT4GfBMvxsPYT0ePCJ
-// dGONSwA5mlhSGqYVQDlVfvnLabchYiItXDqe+WxFbFKYzSgM4GwQy8PKojwGKvIt
-// owIDAQAB
-// -----END PUBLIC KEY-----`
-// 	return &kmspb.PublicKey{
-// 		Pem: pem,
-// 	}, nil
-// }
+func (s *mockServer) ListCryptoKeyVersions(
+	ctx context.Context,
+	req *kmspb.ListCryptoKeyVersionsRequest,
+) (*kmspb.ListCryptoKeyVersionsResponse, error) {
+	versions := []*kmspb.CryptoKeyVersion{
+		{
+			Name:      req.Parent + "/cryptoKeyVersions/1",
+			Algorithm: kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
+		},
+	}
+	if !strings.HasSuffix(req.Parent, "ck-rsa-only") {
+		versions = append(versions, &kmspb.CryptoKeyVersion{
+			Name:      req.Parent + "/cryptoKeyVersions/2",
+			Algorithm: kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256,
+		}, &kmspb.CryptoKeyVersion{
+			Name:      req.Parent + "/cryptoKeyVersions/unsupported",
+			Algorithm: kmspb.CryptoKeyVersion_HMAC_SHA256,
+		})
+	}
 
-// func (s *mockServer) AsymmetricSign(
-// 	ctx context.Context,
-// 	req *kmspb.AsymmetricSignRequest,
-// ) (*kmspb.AsymmetricSignResponse, error) {
-// 	return &kmspb.AsymmetricSignResponse{
-// 		Signature:            []byte("foo"),
-// 		SignatureCrc32C:      wrapperspb.Int64(3485773341),
-// 		VerifiedDigestCrc32C: true,
-// 		Name:                 req.Name,
-// 	}, nil
-// }
+	return &kmspb.ListCryptoKeyVersionsResponse{
+		CryptoKeyVersions: versions,
+	}, nil
+}
 
-// var _ kmspb.KeyManagementServiceServer = (*mockServer)(nil)
+func (s *mockServer) GetPublicKey(
+	ctx context.Context,
+	req *kmspb.GetPublicKeyRequest,
+) (*kmspb.PublicKey, error) {
+	var pemStr string
+	if strings.HasSuffix(req.Name, "cryptoKeyVersions/1") {
+		pemStr = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnG0D6EYAzGp75rvEFrBM
+SdhSzHmuPPmfH+s6x0gcHvePj84WyjZp+0XbOvmqLK9AIw7KM7yf23/bsjRVZaR9
+SCQGNqtVxo5JgXlJAq9Tvpwdq+iwBFrORMI1Aonx2WqDJtmT+RraSkDiX0ESUELR
+QYVTaGne/0yArGgDMiO1NaQAvm8IIOgY4efxIbruNd5omb0gabuJdr/rc9lY5x6k
+qcES2WVMiE4Ot/GDI1KiHSw2eqVgQStmA2TOCfKJHw0/9FFT4GfBMvxsPYT0ePCJ
+dGONSwA5mlhSGqYVQDlVfvnLabchYiItXDqe+WxFbFKYzSgM4GwQy8PKojwGKvIt
+owIDAQAB
+-----END PUBLIC KEY-----`
+	} else if strings.HasSuffix(req.Name, "cryptoKeyVersions/2") {
+		pk, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		der, _ := x509.MarshalPKIXPublicKey(&pk.PublicKey)
+		pemStr = string(pem.EncodeToMemory(&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: der,
+		}))
+	} else {
+		return nil, errors.New("not found")
+	}
+	return &kmspb.PublicKey{
+		Pem: pemStr,
+	}, nil
+}
 
-// func TestSigner(t *testing.T) {
-// 	t.Parallel()
+func (s *mockServer) AsymmetricSign(
+	ctx context.Context,
+	req *kmspb.AsymmetricSignRequest,
+) (*kmspb.AsymmetricSignResponse, error) {
+	return &kmspb.AsymmetricSignResponse{
+		Signature:            []byte("foo"),
+		SignatureCrc32C:      wrapperspb.Int64(3485773341),
+		VerifiedDigestCrc32C: true,
+		Name:                 req.Name,
+	}, nil
+}
 
-// 	listener, err := net.Listen("tcp", "localhost:0")
-// 	if err != nil {
-// 		t.Fatalf("failed to listen: %v", err)
-// 	}
+var _ kmspb.KeyManagementServiceServer = (*mockServer)(nil)
 
-// 	srv := grpc.NewServer()
-// 	kmspb.RegisterKeyManagementServiceServer(srv, &mockServer{})
-// 	go func() {
-// 		if err := srv.Serve(listener); err != nil {
-// 			t.Logf("server stopped: %v", err)
-// 		}
-// 	}()
-// 	defer srv.Stop()
+func setupTest(t *testing.T) (*kms.KeyManagementClient, func()) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
 
-// 	ctx := t.Context()
-// 	conn, err := grpc.NewClient(
-// 		listener.Addr().String(),
-// 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-// 	)
-// 	if err != nil {
-// 		t.Fatalf("failed to dial: %v", err)
-// 	}
-// 	defer func() {
-// 		if err := conn.Close(); err != nil {
-// 			t.Logf("failed to close connection: %v", err)
-// 		}
-// 	}()
+	srv := grpc.NewServer()
+	kmspb.RegisterKeyManagementServiceServer(srv, &mockServer{})
+	go func() {
+		if err := srv.Serve(listener); err != nil {
+			t.Logf("server stopped: %v", err)
+		}
+	}()
 
-// 	client, err := kms.NewKeyManagementClient(ctx, option.WithGRPCConn(conn))
-// 	if err != nil {
-// 		t.Fatalf("failed to create client: %v", err)
-// 	}
-// 	defer func() {
-// 		if err := client.Close(); err != nil {
-// 			t.Logf("failed to close client: %v", err)
-// 		}
-// 	}()
+	ctx := t.Context()
+	conn, err := grpc.NewClient(
+		listener.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
 
-// 	name := strings.Join([]string{
-// 		"projects",
-// 		"test",
-// 		"locations",
-// 		"global",
-// 		"keyRings",
-// 		"kr",
-// 		"cryptoKeys",
-// 		"ck",
-// 		"cryptoKeyVersions",
-// 		"1",
-// 	}, "/")
+	client, err := kms.NewKeyManagementClient(ctx, option.WithGRPCConn(conn))
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
-// 	signer, err := google.New(ctx, client, name)
-// 	if err != nil {
-// 		t.Fatalf("failed to create signer: %v", err)
-// 	}
+	cleanup := func() {
+		client.Close()
+		conn.Close()
+		srv.Stop()
+	}
+	return client, cleanup
+}
 
-// 	if signer.Public() == nil {
-// 		t.Error("expected non-nil public key")
-// 	}
+func TestFactory_New(t *testing.T) {
+	t.Parallel()
 
-// 	digest := make([]byte, 32)
-// 	sig, err := signer.Sign(ctx, nil, digest, crypto.SHA256)
-// 	if err != nil {
-// 		t.Fatalf("unexpected error during sign: %v", err)
-// 	}
+	client, cleanup := setupTest(t)
+	defer cleanup()
 
-// 	if exp, act := "foo", string(sig); exp != act {
-// 		t.Errorf("expected %q signature, got %q", exp, act)
-// 	}
-// }
+	f := google.NewFactory(client, google.WithContext(t.Context()))
+
+	parent := "projects/test/locations/global/keyRings/kr/cryptoKeys/ck"
+	v, err := f.New(parent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got, want := v.Keys().Len(), 2; got != want {
+		t.Errorf("Keys().Len() = %d; want %d", got, want)
+	}
+}
+
+func TestSigner_Sign(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := setupTest(t)
+	defer cleanup()
+
+	f := google.NewFactory(client)
+
+	parent := "projects/test/locations/global/keyRings/kr/cryptoKeys/ck-rsa-only"
+	v, err := f.New(parent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	signer := v.Next()
+	msg := []byte("payload")
+	sig, err := signer.Sign(t.Context(), msg)
+	if err != nil {
+		t.Fatalf("unexpected error during sign: %v", err)
+	}
+
+	// We decode the JWT signature assuming jwk.KeyPair.Sign implements JWS Compact Serialization
+	// or returns just the raw signature bytes. Let's see.
+	// Ah, jwk.KeyPair.Sign returns the raw signature for the payload!
+	if string(sig) != "foo" {
+		t.Errorf("expected %q signature, got %q", "foo", string(sig))
+	}
+}
