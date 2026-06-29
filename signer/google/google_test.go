@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto"
 	"net"
+	"strings"
 	"testing"
 
 	kms "cloud.google.com/go/kms/apiv1"
@@ -58,7 +59,7 @@ func (s *mockServer) AsymmetricSign(
 ) (*kmspb.AsymmetricSignResponse, error) {
 	return &kmspb.AsymmetricSignResponse{
 		Signature:            []byte("foo"),
-		SignatureCrc32C:      wrapperspb.Int64(2339757342),
+		SignatureCrc32C:      wrapperspb.Int64(3485773341),
 		VerifiedDigestCrc32C: true,
 		Name:                 req.Name,
 	}, nil
@@ -107,13 +108,20 @@ func TestSigner(t *testing.T) {
 		}
 	}()
 
-	signer, err := google.New(ctx, client, google.Resource{
-		Project:    "test",
-		Location:   "global",
-		KeyRing:    "kr",
-		Key:        "ck",
-		KeyVersion: "1",
-	})
+	name := strings.Join([]string{
+		"projects",
+		"test",
+		"locations",
+		"global",
+		"keyRings",
+		"kr",
+		"cryptoKeys",
+		"ck",
+		"cryptoKeyVersions",
+		"1",
+	}, "/")
+
+	signer, err := google.New(ctx, client, name)
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}
