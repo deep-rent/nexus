@@ -543,53 +543,27 @@ func TestBuilder(t *testing.T) {
 			t.Errorf("p.Verify() = false; want true")
 		}
 	})
-}
+	t.Run("empty kid", func(t *testing.T) {
+		t.Parallel()
+		v := jwk.NewKey(jwa.ES256, "", &k.PublicKey)
+		if got, want := v.KeyID(), ""; got != want {
+			t.Errorf("v.KeyID() = %q; want %q", got, want)
+		}
 
-func TestBuilder_Panic(t *testing.T) {
-	t.Parallel()
+		p := jwk.NewKeyPair(jwa.ES256, "", sign.From(k))
+		if got, want := p.KeyID(), ""; got != want {
+			t.Errorf("p.KeyID() = %q; want %q", got, want)
+		}
+	})
 
-	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	rs, _ := rsa.GenerateKey(rand.Reader, 2048)
-
-	tests := []struct {
-		name string
-		call func()
-	}{
-		{
-			name: "unidentified key",
-			call: func() {
-				jwk.NewKey(jwa.ES256, "", &ec.PublicKey)
-			},
-		},
-		{
-			name: "unidentified key pair",
-			call: func() {
-				jwk.NewKeyPair(jwa.ES256, "", sign.From(ec))
-			},
-		},
-		{
-			name: "incompatible key type 1",
-			call: func() {
-				jwk.NewKeyPair(jwa.ES256, "x", sign.From(rs))
-			},
-		},
-		{
-			name: "incompatible key type 2",
-			call: func() {
-				jwk.NewKeyPair(jwa.RS256, "x", sign.From(ec))
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			defer func() {
-				if r := recover(); r == nil {
-					t.Errorf("Expected panic for %q", tt.name)
-				}
-			}()
-			tt.call()
-		})
-	}
+	t.Run("type mismatch returns nil", func(t *testing.T) {
+		t.Parallel()
+		rs, _ := rsa.GenerateKey(rand.Reader, 2048)
+		if p := jwk.NewKeyPair(jwa.ES256, "x", sign.From(rs)); p != nil {
+			t.Errorf("expected nil when passing RS signer to ES256 algorithm")
+		}
+		if p := jwk.NewKeyPair(jwa.RS256, "x", sign.From(k)); p != nil {
+			t.Errorf("expected nil when passing EC signer to RS256 algorithm")
+		}
+	})
 }

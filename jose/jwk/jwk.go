@@ -190,26 +190,16 @@ func (p *keyPair[T]) Sign(ctx context.Context, msg []byte) ([]byte, error) {
 }
 
 // NewKey creates a verification-only [Key] using the provided public key material.
-// It panics if a Key ID is empty.
 func NewKey[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, mat T) Key {
-	if kid == "" {
-		panic("key id must be set")
-	}
-	return newKey(alg, kid, mat)
+	return &key[T]{alg: alg, kid: kid, mat: mat}
 }
 
 // NewKeyPair creates a signing-capable [KeyPair] using the provided signer.
-//
-// It panics if:
-//  1. The signer's public key cannot be cast to type T.
-//  2. A Key ID is empty.
+// It returns nil if the signer's public key cannot be cast to type T.
 func NewKeyPair[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, s sign.Signer) KeyPair {
 	mat, ok := s.Public().(T)
 	if !ok {
-		panic("signer public key type does not match key builder type")
-	}
-	if kid == "" {
-		panic("key id must be set")
+		return nil
 	}
 	return &keyPair[T]{
 		key:    key[T]{alg: alg, kid: kid, mat: mat},
@@ -624,7 +614,7 @@ func addReader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
 		if err != nil {
 			return nil, err
 		}
-		return newKey(alg, r.Kid, mat), nil
+		return NewKey(alg, r.Kid, mat), nil
 	}
 }
 
