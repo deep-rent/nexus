@@ -114,6 +114,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/internal/pointer"
 	"github.com/deep-rent/nexus/internal/snake"
 	"github.com/deep-rent/nexus/internal/tag"
@@ -239,11 +240,12 @@ func Expand(s string, opts ...Option) (string, error) {
 			// digits.
 			n := 0
 			for j := i + 1; j < len(s); j++ {
-				c := s[j]
+				c := rune(s[j])
 				// Allow if it's a letter/underscore, OR if it's a digit but NOT
 				// the first character.
-				if (c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')) ||
-					(n > 0 && ('0' <= c && c <= '9')) {
+				if (c == '_' ||
+					ascii.IsAlpha(c)) ||
+					(n > 0 && ascii.IsDigit(c)) {
 					n++
 				} else {
 					break
