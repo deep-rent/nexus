@@ -43,9 +43,7 @@ func mockKeyPair(t *testing.T, id string) jwk.KeyPair {
 	if err != nil {
 		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
 	}
-	return jwk.NewKeyBuilder(jwa.ES256).
-		WithKeyID(id).
-		BuildPair(sign.From(raw))
+	return jwk.NewKeyPair(jwa.ES256, id, sign.From(raw))
 }
 
 func TestSignVerify(t *testing.T) {

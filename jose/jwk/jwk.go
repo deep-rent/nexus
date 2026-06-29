@@ -23,7 +23,7 @@
 // # Signing
 //
 // While JWKS parsing focuses on public keys, this package also supports the
-// creation of signing keys via the [KeyBuilder]. These keys wrap a
+// creation of signing keys via [NewKeyPair]. These keys wrap a
 // [crypto.Signer] (e.g., hardware modules, KMS, or standard library keys) to
 // support token issuance operations.
 //
@@ -189,66 +189,31 @@ func (p *keyPair[T]) Sign(ctx context.Context, msg []byte) ([]byte, error) {
 	return p.alg.Sign(ctx, p.signer, msg)
 }
 
-// KeyBuilder assists in the programmatic construction of [Key] and [KeyPair]
-// instances. It ensures that the resulting keys possess the required metadata
-// and that the cryptographic material matches the intended algorithm.
-type KeyBuilder[T crypto.PublicKey] struct {
-	// alg is the algorithm for the resulting key.
-	alg jwa.Algorithm[T]
-	// kid is the key identifier to assign.
-	kid string
+// NewKey creates a verification-only [Key] using the provided public key material.
+// It panics if a Key ID is empty.
+func NewKey[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, mat T) Key {
+	if kid == "" {
+		panic("key id must be set")
+	}
+	return newKey(alg, kid, mat)
 }
 
-// NewKeyBuilder starts the construction of a key for the specified algorithm.
-// The generic type T determines the expected public key material (e.g.,
-// [*rsa.PublicKey]).
-func NewKeyBuilder[T crypto.PublicKey](alg jwa.Algorithm[T]) *KeyBuilder[T] {
-	return &KeyBuilder[T]{alg: alg}
-}
-
-// Algorithm returns the JWA associated with this builder.
-func (b *KeyBuilder[T]) Algorithm() jwa.Algorithm[T] { return b.alg }
-
-// KeyID returns the currently configured key identifier, or an empty string.
-func (b *KeyBuilder[T]) KeyID() string { return b.kid }
-
-// WithKeyID sets the "kid" (Key ID) parameter.
-func (b *KeyBuilder[T]) WithKeyID(kid string) *KeyBuilder[T] {
-	b.kid = kid
-	return b
-}
-
-// Build creates a verification-only [Key] using the provided public key
-// material. It panics if a Key ID has not been configured.
-func (b *KeyBuilder[T]) Build(mat T) Key {
-	return b.build(mat)
-}
-
-// BuildPair creates a signing-capable [KeyPair] using the provided signer.
+// NewKeyPair creates a signing-capable [KeyPair] using the provided signer.
 //
 // It panics if:
 //  1. The signer's public key cannot be cast to type T.
-//  2. A Key ID has not been configured.
-func (b *KeyBuilder[T]) BuildPair(s sign.Signer) KeyPair {
+//  2. A Key ID is empty.
+func NewKeyPair[T crypto.PublicKey](alg jwa.Algorithm[T], kid string, s sign.Signer) KeyPair {
 	mat, ok := s.Public().(T)
 	if !ok {
 		panic("signer public key type does not match key builder type")
 	}
-	return &keyPair[T]{
-		key:    *b.build(mat),
-		signer: s,
-	}
-}
-
-// build is an internal helper to construct the public key part.
-func (b *KeyBuilder[T]) build(mat T) *key[T] {
-	if b.kid == "" {
+	if kid == "" {
 		panic("key id must be set")
 	}
-	return &key[T]{
-		alg: b.alg,
-		kid: b.kid,
-		mat: mat,
+	return &keyPair[T]{
+		key:    key[T]{alg: alg, kid: kid, mat: mat},
+		signer: s,
 	}
 }
 

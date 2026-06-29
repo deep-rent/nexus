@@ -518,7 +518,7 @@ func TestBuilder(t *testing.T) {
 
 	t.Run("build", func(t *testing.T) {
 		t.Parallel()
-		v := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).Build(&k.PublicKey)
+		v := jwk.NewKey(jwa.ES256, id, &k.PublicKey)
 		if got, want := v.KeyID(), id; got != want {
 			t.Errorf("v.KeyID() = %q; want %q", got, want)
 		}
@@ -529,7 +529,7 @@ func TestBuilder(t *testing.T) {
 
 	t.Run("build pair", func(t *testing.T) {
 		t.Parallel()
-		p := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(sign.From(k))
+		p := jwk.NewKeyPair(jwa.ES256, id, sign.From(k))
 		if got, want := p.KeyID(), id; got != want {
 			t.Errorf("p.KeyID() = %q; want %q", got, want)
 		}
@@ -558,25 +558,25 @@ func TestBuilder_Panic(t *testing.T) {
 		{
 			name: "unidentified key",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.ES256).Build(&ec.PublicKey)
+				jwk.NewKey(jwa.ES256, "", &ec.PublicKey)
 			},
 		},
 		{
 			name: "unidentified key pair",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.ES256).BuildPair(sign.From(ec))
+				jwk.NewKeyPair(jwa.ES256, "", sign.From(ec))
 			},
 		},
 		{
 			name: "incompatible key type 1",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.ES256).WithKeyID("x").BuildPair(sign.From(rs))
+				jwk.NewKeyPair(jwa.ES256, "x", sign.From(rs))
 			},
 		},
 		{
 			name: "incompatible key type 2",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.RS256).WithKeyID("x").BuildPair(sign.From(ec))
+				jwk.NewKeyPair(jwa.RS256, "x", sign.From(ec))
 			},
 		},
 	}
