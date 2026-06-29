@@ -122,23 +122,65 @@ func (s *signer) Sign(
 
 var _ sign.Signer = (*signer)(nil)
 
-type Factory struct {
-	client *kms.KeyManagementClient
-	logger *slog.Logger
+type Option func(*Factory)
+
+// WithContext sets the context used for KMS operations.
+func WithContext(ctx context.Context) Option {
+	return func(f *Factory) {
+		f.ctx = ctx
+	}
 }
 
-func (f *Factory) New(
-	ctx context.Context,
-	parent string,
-	strategy rotor.Strategy,
-) (vault.Vault, error) {
+// WithClient sets the KMS client.
+func WithClient(client *kms.KeyManagementClient) Option {
+	return func(f *Factory) {
+		f.client = client
+	}
+}
+
+// WithLogger sets the logger.
+func WithLogger(logger *slog.Logger) Option {
+	return func(f *Factory) {
+		f.logger = logger
+	}
+}
+
+// WithStrategy sets the rotor strategy.
+func WithStrategy(strategy rotor.Strategy) Option {
+	return func(f *Factory) {
+		f.strategy = strategy
+	}
+}
+
+// Factory builds a vault by querying Google Cloud KMS.
+type Factory struct {
+	ctx      context.Context
+	client   *kms.KeyManagementClient
+	logger   *slog.Logger
+	strategy rotor.Strategy
+}
+
+// NewFactory creates a new Factory initialized with the given options.
+func NewFactory(opts ...Option) *Factory {
+	f := &Factory{
+		ctx:    context.Background(),
+		logger: slog.Default(),
+	}
+	for _, opt := range opts {
+		opt(f)
+	}
+	return f
+}
+
+// New creates a new vault instance using the keys found in the given KMS parent.
+func (f *Factory) New(parent string) (vault.Vault, error) {
 	req := &kmspb.ListCryptoKeyVersionsRequest{
 		Parent: parent,
 		Filter: "state=ENABLED",
 	}
 
 	var pairs []jwk.KeyPair
-	it := f.client.ListCryptoKeyVersions(ctx, req)
+	it := f.client.ListCryptoKeyVersions(f.ctx, req)
 	for {
 		version, err := it.Next()
 		if errors.Is(err, iterator.Done) {
@@ -150,10 +192,10 @@ func (f *Factory) New(
 
 		name := version.Name
 
-		s, err := f.new(ctx, name)
+		s, err := f.new(name)
 		if err != nil {
 			f.logger.WarnContext(
-				ctx,
+				f.ctx,
 				"failed to get public key for version",
 				slog.String("name", name),
 				slog.Any("error", err),
@@ -165,7 +207,7 @@ func (f *Factory) New(
 		kid, err := jwk.Thumbprint(key)
 		if err != nil {
 			f.logger.WarnContext(
-				ctx,
+				f.ctx,
 				"failed to compute key thumbprint",
 				slog.String("name", name),
 				slog.Any("error", err),
@@ -198,7 +240,7 @@ func (f *Factory) New(
 					WithKeyID(kid).
 					BuildPair(s)
 			default:
-				f.logger.WarnContext(ctx, "unsupported RSA algorithm")
+				f.logger.WarnContext(f.ctx, "unsupported RSA algorithm")
 				continue
 			}
 		case *ecdsa.PublicKey:
@@ -212,7 +254,7 @@ func (f *Factory) New(
 					WithKeyID(kid).
 					BuildPair(s)
 			default:
-				f.logger.WarnContext(ctx, "unsupported ECDSA algorithm")
+				f.logger.WarnContext(f.ctx, "unsupported ECDSA algorithm")
 				continue
 			}
 		case ed25519.PublicKey:
@@ -222,25 +264,25 @@ func (f *Factory) New(
 					WithKeyID(kid).
 					BuildPair(s)
 			default:
-				f.logger.WarnContext(ctx, "unsupported Ed25519 algorithm")
+				f.logger.WarnContext(f.ctx, "unsupported Ed25519 algorithm")
 				continue
 			}
 		default:
-			f.logger.WarnContext(ctx, "unsupported key type: %T", key)
+			f.logger.WarnContext(f.ctx, "unsupported key type: %T", key)
 			continue
 		}
 
 		pairs = append(pairs, p)
 	}
 
-	return vault.New(pairs, strategy), nil
+	return vault.New(pairs, f.strategy), nil
 }
 
-func (f *Factory) new(ctx context.Context, name string) (sign.Signer, error) {
+func (f *Factory) new(name string) (sign.Signer, error) {
 	req := &kmspb.GetPublicKeyRequest{
 		Name: name,
 	}
-	res, err := f.client.GetPublicKey(ctx, req)
+	res, err := f.client.GetPublicKey(f.ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key from KMS: %w", err)
 	}
