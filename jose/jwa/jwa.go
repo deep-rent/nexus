@@ -271,12 +271,8 @@ var ES512 = newES("ES512", crypto.SHA512)
 type ed struct{}
 
 // Verify checks an EdDSA signature, supporting Ed25519.
-func (a *ed) Verify(key, msg, sig []byte) bool {
-	if len(key) == ed25519.PublicKeySize {
-		pub := ed25519.PublicKey(key)
-		return ed25519.Verify(pub, msg, sig)
-	}
-	return false
+func (a *ed) Verify(key ed25519.PublicKey, msg, sig []byte) bool {
+	return ed25519.Verify(key, msg, sig)
 }
 
 // Sign creates an EdDSA signature using the provided signer.
@@ -294,7 +290,7 @@ func (a *ed) String() string {
 }
 
 // EdDSA represents the EdDSA signature algorithm. It supports the Ed25519 curve.
-var EdDSA Algorithm[[]byte] = &ed{}
+var EdDSA Algorithm[ed25519.PublicKey] = &ed{}
 
 // hashPool manages a pool of [hash.Hash] objects to reduce allocations.
 type hashPool struct {

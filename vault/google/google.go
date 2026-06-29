@@ -206,13 +206,9 @@ func (f *Factory) New(ctx context.Context, parent string, strategy rotor.Strateg
 		case ed25519.PublicKey:
 			switch version.Algorithm {
 			case kmspb.CryptoKeyVersion_EC_SIGN_ED25519:
-				edSigner := &ed25519Signer{
-					Signer: s,
-					pub:    []byte(pub),
-				}
 				p = jwk.NewKeyBuilder(jwa.EdDSA).
 					WithKeyID(kid).
-					BuildPair(edSigner)
+					BuildPair(s)
 			default:
 				f.logger.WarnContext(ctx, "unsupported Ed25519 algorithm")
 				continue
@@ -254,13 +250,4 @@ func (f *Factory) new(ctx context.Context, name string) (sign.Signer, error) {
 		name:   name,
 		key:    key,
 	}, nil
-}
-
-type ed25519Signer struct {
-	sign.Signer
-	pub []byte
-}
-
-func (s *ed25519Signer) Public() crypto.PublicKey {
-	return s.pub
 }

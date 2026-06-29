@@ -746,7 +746,7 @@ func decodeECDSA(crv elliptic.Curve) decoder[*ecdsa.PublicKey] {
 }
 
 // decodeEdDSA parses the material for an EdDSA public key.
-func decodeEdDSA(raw *raw) ([]byte, error) {
+func decodeEdDSA(raw *raw) (ed25519.PublicKey, error) {
 	if raw.Kty != "OKP" {
 		return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
 	}
@@ -841,7 +841,7 @@ func encodeECDSA(key *ecdsa.PublicKey, r *raw) error {
 
 // encodeEdDSA populates the EdDSA-specific fields ("crv", "x").
 // It determines the curve name based on the key length.
-func encodeEdDSA(key []byte, r *raw) error {
+func encodeEdDSA(key ed25519.PublicKey, r *raw) error {
 	r.Kty = "OKP"
 
 	if len(key) == ed25519.PublicKeySize {
