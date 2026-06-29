@@ -20,8 +20,6 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -144,18 +142,4 @@ func init() {
 	addWriter(jwa.ES384, encodeECDSA)
 	addWriter(jwa.ES512, encodeECDSA)
 	addWriter(jwa.EdDSA, encodeEdDSA)
-}
-
-// Thumbprint generates a deterministic, unique fingerprint from any standard
-// public key. This value is meant to be used as the [Hint.KeyID].
-//
-// More formally, the thumbprint is calculated as the SHA-256 hash of the PKIX
-// DER-encoded key material in base64-URL encoding.
-func Thumbprint(pub crypto.PublicKey) (string, error) {
-	der, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %w", err)
-	}
-	hash := sha256.Sum256(der)
-	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
 }
