@@ -269,45 +269,24 @@ func (f *Factory) new(name string) (sign.Signer, error) {
 	}, nil
 }
 
-type builder func(kid string, s sign.Signer) jwk.KeyPair
+type keyBuilder func(kid string, s sign.Signer) jwk.KeyPair
 
-var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]builder{
-	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256: buildRSA(jwa.RS256),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256: buildRSA(jwa.RS256),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256: buildRSA(jwa.RS256),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512: buildRSA(jwa.RS512),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256:   buildRSA(jwa.PS256),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256:   buildRSA(jwa.PS256),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:   buildRSA(jwa.PS256),
-	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:   buildRSA(jwa.PS512),
-	kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:        buildECDSA(jwa.ES256),
-	kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:        buildECDSA(jwa.ES384),
-	kmspb.CryptoKeyVersion_EC_SIGN_ED25519:            buildEdDSA(jwa.EdDSA),
+var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]keyBuilder{
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256: build(jwa.RS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256: build(jwa.RS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256: build(jwa.RS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512: build(jwa.RS512),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256:   build(jwa.PS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256:   build(jwa.PS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:   build(jwa.PS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:   build(jwa.PS512),
+	kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:        build(jwa.ES256),
+	kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:        build(jwa.ES384),
+	kmspb.CryptoKeyVersion_EC_SIGN_ED25519:            build(jwa.EdDSA),
 }
 
-func buildRSA(alg jwa.Algorithm[*rsa.PublicKey]) builder {
+func build[T crypto.PublicKey](alg jwa.Algorithm[T]) keyBuilder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
-		if _, ok := s.Public().(*rsa.PublicKey); !ok {
-			return nil
-		}
-		return jwk.NewKeyPair(alg, kid, s)
-	}
-}
-
-func buildECDSA(alg jwa.Algorithm[*ecdsa.PublicKey]) builder {
-	return func(kid string, s sign.Signer) jwk.KeyPair {
-		if _, ok := s.Public().(*ecdsa.PublicKey); !ok {
-			return nil
-		}
-		return jwk.NewKeyPair(alg, kid, s)
-	}
-}
-
-func buildEdDSA(alg jwa.Algorithm[ed25519.PublicKey]) builder {
-	return func(kid string, s sign.Signer) jwk.KeyPair {
-		if _, ok := s.Public().(ed25519.PublicKey); !ok {
-			return nil
-		}
 		return jwk.NewKeyPair(alg, kid, s)
 	}
 }
