@@ -179,10 +179,18 @@ func (f *Factory) New(ctx context.Context, parent string, strategy rotor.Strateg
 				p = jwk.NewKeyBuilder(jwa.RS256).
 					WithKeyID(kid).
 					BuildPair(s)
+			case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512:
+				p = jwk.NewKeyBuilder(jwa.RS512).
+					WithKeyID(kid).
+					BuildPair(s)
 			case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256,
 				kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256,
 				kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:
 				p = jwk.NewKeyBuilder(jwa.PS256).
+					WithKeyID(kid).
+					BuildPair(s)
+			case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:
+				p = jwk.NewKeyBuilder(jwa.PS512).
 					WithKeyID(kid).
 					BuildPair(s)
 			default:
