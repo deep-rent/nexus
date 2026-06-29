@@ -320,7 +320,7 @@ func (e *Exchange) BindQuery(v any) *Error {
 func (e *Exchange) BindForm(v any) *Error {
 	form, err := e.ReadForm()
 	if err != nil {
-		if re, ok := err.(*Error); ok {
+		if re, ok := errors.AsType[*Error](err); ok {
 			return re
 		}
 		return &Error{
