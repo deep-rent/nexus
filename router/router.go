@@ -61,6 +61,7 @@ import (
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/internal/bind"
+	"github.com/deep-rent/nexus/internal/snake"
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
@@ -68,9 +69,10 @@ import (
 	"github.com/deep-rent/nexus/valid"
 )
 
-var (
-	queryBinder = bind.New("query")
-	formBinder  = bind.New("form")
+var formBinder = bind.New(
+	"form",
+	bind.WithCache(true),
+	bind.WithTransformer(snake.ToLower),
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -278,10 +280,12 @@ func (e *Exchange) BindJSON(v any) *Error {
 	}
 
 	if err := valid.Test(v); err != nil {
+		desc := fmt.Sprintf("json body violates %d constraints", len(err))
+
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonValidationFailed,
-			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Description: desc,
 			Context:     err,
 		}
 	}
@@ -298,7 +302,7 @@ func (e *Exchange) BindQuery(v any) *Error {
 		}
 		return q.Get(key), true
 	}
-	if err := queryBinder.Bind(v, "", lookup); err != nil {
+	if err := formBinder.Bind(v, "", lookup); err != nil {
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonParseQuery,
@@ -306,10 +310,12 @@ func (e *Exchange) BindQuery(v any) *Error {
 		}
 	}
 	if err := valid.Test(v); err != nil {
+		desc := fmt.Sprintf("query string violates %d constraints", len(err))
+
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonValidationFailed,
-			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Description: desc,
 			Context:     err,
 		}
 	}
@@ -323,11 +329,10 @@ func (e *Exchange) BindForm(v any) *Error {
 		return err
 	}
 	lookup := func(key string) (string, bool) {
-		val := form.Get(key)
-		if val != "" {
-			return val, true
+		if !form.Has(key) {
+			return "", false
 		}
-		return "", form.Has(key)
+		return form.Get(key), true
 	}
 	if err := formBinder.Bind(v, "", lookup); err != nil {
 		return &Error{
@@ -337,10 +342,12 @@ func (e *Exchange) BindForm(v any) *Error {
 		}
 	}
 	if err := valid.Test(v); err != nil {
+		desc := fmt.Sprintf("body violates %d constraints", len(err))
+
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonValidationFailed,
-			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Description: desc,
 			Context:     err,
 		}
 	}
