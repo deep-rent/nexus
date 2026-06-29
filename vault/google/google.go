@@ -285,7 +285,7 @@ var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]builder{
 	kmspb.CryptoKeyVersion_EC_SIGN_ED25519:            buildEdDSA(jwa.EdDSA),
 }
 
-func buildRSA(alg jwa.Algorithm[*rsa.PublicKey]) keyBuilder {
+func buildRSA(alg jwa.Algorithm[*rsa.PublicKey]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
 		if _, ok := s.Public().(*rsa.PublicKey); !ok {
 			return nil
@@ -294,7 +294,7 @@ func buildRSA(alg jwa.Algorithm[*rsa.PublicKey]) keyBuilder {
 	}
 }
 
-func buildECDSA(alg jwa.Algorithm[*ecdsa.PublicKey]) keyBuilder {
+func buildECDSA(alg jwa.Algorithm[*ecdsa.PublicKey]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
 		if _, ok := s.Public().(*ecdsa.PublicKey); !ok {
 			return nil
@@ -303,7 +303,7 @@ func buildECDSA(alg jwa.Algorithm[*ecdsa.PublicKey]) keyBuilder {
 	}
 }
 
-func buildEdDSA(alg jwa.Algorithm[ed25519.PublicKey]) keyBuilder {
+func buildEdDSA(alg jwa.Algorithm[ed25519.PublicKey]) builder {
 	return func(kid string, s sign.Signer) jwk.KeyPair {
 		if _, ok := s.Public().(ed25519.PublicKey); !ok {
 			return nil
