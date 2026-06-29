@@ -116,7 +116,6 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 			t.Errorf("EdDSA.Verify(Ed25519) = false; want true")
 		}
 	})
-
 }
 
 type mockSigner struct {
