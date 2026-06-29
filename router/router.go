@@ -323,10 +323,11 @@ func (e *Exchange) BindForm(v any) *Error {
 		return err
 	}
 	lookup := func(key string) (string, bool) {
-		if !form.Has(key) {
-			return "", false
+		val := form.Get(key)
+		if val != "" {
+			return val, true
 		}
-		return form.Get(key), true
+		return "", form.Has(key)
 	}
 	if err := formBinder.Bind(v, "", lookup); err != nil {
 		return &Error{
