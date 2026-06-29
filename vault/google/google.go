@@ -215,60 +215,23 @@ func (f *Factory) New(parent string) (vault.Vault, error) {
 			continue
 		}
 
-		var p jwk.KeyPair
-		switch key.(type) {
-		case *rsa.PublicKey:
-			switch version.Algorithm {
-			case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
-				kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256,
-				kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256:
-				p = jwk.NewKeyBuilder(jwa.RS256).
-					WithKeyID(kid).
-					BuildPair(s)
-			case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512:
-				p = jwk.NewKeyBuilder(jwa.RS512).
-					WithKeyID(kid).
-					BuildPair(s)
-			case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256,
-				kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256,
-				kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:
-				p = jwk.NewKeyBuilder(jwa.PS256).
-					WithKeyID(kid).
-					BuildPair(s)
-			case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:
-				p = jwk.NewKeyBuilder(jwa.PS512).
-					WithKeyID(kid).
-					BuildPair(s)
-			default:
-				f.logger.WarnContext(f.ctx, "unsupported RSA algorithm")
-				continue
-			}
-		case *ecdsa.PublicKey:
-			switch version.Algorithm {
-			case kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:
-				p = jwk.NewKeyBuilder(jwa.ES256).
-					WithKeyID(kid).
-					BuildPair(s)
-			case kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:
-				p = jwk.NewKeyBuilder(jwa.ES384).
-					WithKeyID(kid).
-					BuildPair(s)
-			default:
-				f.logger.WarnContext(f.ctx, "unsupported ECDSA algorithm")
-				continue
-			}
-		case ed25519.PublicKey:
-			switch version.Algorithm {
-			case kmspb.CryptoKeyVersion_EC_SIGN_ED25519:
-				p = jwk.NewKeyBuilder(jwa.EdDSA).
-					WithKeyID(kid).
-					BuildPair(s)
-			default:
-				f.logger.WarnContext(f.ctx, "unsupported Ed25519 algorithm")
-				continue
-			}
-		default:
-			f.logger.WarnContext(f.ctx, "unsupported key type: %T", key)
+		build, ok := builders[version.Algorithm]
+		if !ok {
+			f.logger.WarnContext(
+				f.ctx,
+				"unsupported algorithm",
+				slog.Any("algorithm", version.Algorithm),
+			)
+			continue
+		}
+
+		p := build(kid, s)
+		if p == nil {
+			f.logger.WarnContext(
+				f.ctx,
+				"key material mismatch",
+				slog.Any("algorithm", version.Algorithm),
+			)
 			continue
 		}
 
@@ -304,4 +267,47 @@ func (f *Factory) new(name string) (sign.Signer, error) {
 		name:   name,
 		key:    key,
 	}, nil
+}
+
+type keyBuilder func(kid string, s sign.Signer) jwk.KeyPair
+
+var builders = map[kmspb.CryptoKeyVersion_CryptoKeyVersionAlgorithm]keyBuilder{
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256: buildRSA(jwa.RS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256: buildRSA(jwa.RS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256: buildRSA(jwa.RS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512: buildRSA(jwa.RS512),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256:   buildRSA(jwa.PS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256:   buildRSA(jwa.PS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:   buildRSA(jwa.PS256),
+	kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:   buildRSA(jwa.PS512),
+	kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:        buildECDSA(jwa.ES256),
+	kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:        buildECDSA(jwa.ES384),
+	kmspb.CryptoKeyVersion_EC_SIGN_ED25519:            buildEdDSA(jwa.EdDSA),
+}
+
+func buildRSA(alg jwa.Algorithm[*rsa.PublicKey]) keyBuilder {
+	return func(kid string, s sign.Signer) jwk.KeyPair {
+		if _, ok := s.Public().(*rsa.PublicKey); !ok {
+			return nil
+		}
+		return jwk.NewKeyBuilder(alg).WithKeyID(kid).BuildPair(s)
+	}
+}
+
+func buildECDSA(alg jwa.Algorithm[*ecdsa.PublicKey]) keyBuilder {
+	return func(kid string, s sign.Signer) jwk.KeyPair {
+		if _, ok := s.Public().(*ecdsa.PublicKey); !ok {
+			return nil
+		}
+		return jwk.NewKeyBuilder(alg).WithKeyID(kid).BuildPair(s)
+	}
+}
+
+func buildEdDSA(alg jwa.Algorithm[ed25519.PublicKey]) keyBuilder {
+	return func(kid string, s sign.Signer) jwk.KeyPair {
+		if _, ok := s.Public().(ed25519.PublicKey); !ok {
+			return nil
+		}
+		return jwk.NewKeyBuilder(alg).WithKeyID(kid).BuildPair(s)
+	}
 }
