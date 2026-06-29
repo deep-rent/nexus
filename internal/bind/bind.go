@@ -35,7 +35,7 @@ type Transformer func(string) string
 
 // resolver resolves reflection metadata for a given type.
 type resolver interface {
-	Resolve(rt reflect.Type) []meta
+	Resolve(rt reflect.Type) []field
 }
 
 type defaultResolver struct {
@@ -43,8 +43,8 @@ type defaultResolver struct {
 	transform Transformer
 }
 
-func (r *defaultResolver) Resolve(rt reflect.Type) []meta {
-	var fields []meta
+func (r *defaultResolver) Resolve(rt reflect.Type) []field {
+	var fields []field
 	for i := 0; i < rt.NumField(); i++ {
 		ft := rt.Field(i)
 
@@ -59,7 +59,7 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []meta {
 
 		flags, err := parse(val)
 		if err != nil {
-			fields = append(fields, meta{
+			fields = append(fields, field{
 				Err: fmt.Errorf(
 					"failed to parse tag for field %q: %w", ft.Name, err,
 				),
@@ -67,7 +67,7 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []meta {
 			continue
 		}
 
-		m := meta{
+		f := field{
 			Index:  i,
 			Field:  ft.Name,
 			Name:   flags.Name,
@@ -75,13 +75,13 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []meta {
 			Inline: ft.Anonymous && flags.Inline,
 		}
 
-		if m.Name == "" {
-			m.Name = r.transform(ft.Name)
+		if f.Name == "" {
+			f.Name = r.transform(ft.Name)
 		}
 
-		m.Embedded = isEmbedded(ft)
+		f.Embedded = isEmbedded(ft)
 
-		fields = append(fields, m)
+		fields = append(fields, f)
 	}
 
 	return fields
@@ -92,9 +92,9 @@ type cachingResolver struct {
 	resolver resolver
 }
 
-func (r *cachingResolver) Resolve(rt reflect.Type) []meta {
+func (r *cachingResolver) Resolve(rt reflect.Type) []field {
 	if cached, ok := r.cache.Load(rt); ok {
-		return cached.([]meta)
+		return cached.([]field)
 	}
 	fields := r.resolver.Resolve(rt)
 	r.cache.Store(rt, fields)
@@ -161,13 +161,13 @@ func (b *Binder) Bind(v any, prefix string, lookup Lookup) error {
 	ptr := reflect.ValueOf(v)
 	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
 		return errors.New(
-			"bind: expected a non-nil pointer to a struct",
+			"expected a non-nil pointer to a struct",
 		)
 	}
 	val := ptr.Elem()
 	if kind := val.Kind(); kind != reflect.Struct {
 		return fmt.Errorf(
-			"bind: expected a pointer to a struct, but got pointer to %v", kind,
+			"expected a pointer to a struct, but got pointer to %v", kind,
 		)
 	}
 	return b.process(val, prefix, lookup)
@@ -224,7 +224,7 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 
 		if err := setValue(fv, val, f.Flags); err != nil {
 			return fmt.Errorf(
-				"error setting field %q from key %q: %w",
+				"could not set field %q from key %q: %w",
 				f.Field, key, err,
 			)
 		}
@@ -232,7 +232,7 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 	return nil
 }
 
-type meta struct {
+type field struct {
 	Index    int
 	Field    string
 	Name     string
