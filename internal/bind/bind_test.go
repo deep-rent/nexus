@@ -121,6 +121,44 @@ func TestBinder_PanicOnInvalidTag(t *testing.T) {
 	_ = b.Bind(&cfg, "", mockSource{})
 }
 
+func TestBinder_Caching(t *testing.T) {
+	b := bind.New("bind", bind.WithCache(true))
+
+	type Config struct {
+		Host string `bind:"host"`
+		Port int    `bind:"port,default:8080"`
+	}
+
+	src := mockSource{
+		"host": {"localhost"},
+	}
+
+	var cfg1 Config
+	err := b.Bind(&cfg1, "", src)
+	if err != nil {
+		t.Fatalf("First Bind() failed: %v", err)
+	}
+
+	var cfg2 Config
+	err = b.Bind(&cfg2, "", src)
+	if err != nil {
+		t.Fatalf("Second Bind() failed: %v", err)
+	}
+
+	if cfg2.Host != "localhost" || cfg2.Port != 8080 {
+		t.Errorf("Unexpected result from cached Bind(): %+v", cfg2)
+	}
+
+	allocs := testing.AllocsPerRun(10, func() {
+		var c Config
+		_ = b.Bind(&c, "", src)
+	})
+
+	if allocs > 5 {
+		t.Errorf("Expected low allocations, got %v allocs/run", allocs)
+	}
+}
+
 type mockTextUnmarshaler string
 
 func (t *mockTextUnmarshaler) UnmarshalText(text []byte) error {
