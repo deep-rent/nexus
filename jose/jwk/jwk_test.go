@@ -15,6 +15,7 @@
 package jwk_test
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -532,7 +533,7 @@ func TestBuilder(t *testing.T) {
 		}
 
 		msg := []byte("payload")
-		sig, err := p.Sign(msg)
+		sig, err := p.Sign(context.Background(), msg)
 		if err != nil {
 			t.Fatalf("p.Sign() error = %v", err)
 		}

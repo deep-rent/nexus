@@ -16,6 +16,7 @@ package jwt_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -54,9 +55,9 @@ func TestSignVerify(t *testing.T) {
 		"rol": "admin",
 	}
 
-	raw, err := jwt.Sign(k, claims)
+	raw, err := jwt.Sign(context.Background(), k, claims)
 	if err != nil {
-		t.Fatalf("jwt.Sign() error = %v", err)
+		t.Fatalf("jwt.Sign(context.Background(), ) error = %v", err)
 	}
 
 	out, err := jwt.Verify[*testClaims](set, raw)
@@ -85,7 +86,7 @@ func TestVerifier_Validation(t *testing.T) {
 			Exp: now.Add(time.Hour),
 		},
 	}
-	token, err := jwt.Sign(k, c)
+	token, err := jwt.Sign(context.Background(), k, c)
 	if err != nil {
 		t.Fatalf("failed to sign token: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 	t.Run("token not yet active", func(t *testing.T) {
 		t.Parallel()
 		c := &testClaims{Reserved: jwt.Reserved{Nbf: now.Add(time.Hour)}}
-		raw, _ := jwt.Sign(k, c)
+		raw, _ := jwt.Sign(context.Background(), k, c)
 
 		v := jwt.NewVerifier[*testClaims](
 			set,
@@ -184,7 +185,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 	t.Run("token too old", func(t *testing.T) {
 		t.Parallel()
 		c := &testClaims{Reserved: jwt.Reserved{Iat: now.Add(-2 * time.Hour)}}
-		raw, _ := jwt.Sign(k, c)
+		raw, _ := jwt.Sign(context.Background(), k, c)
 
 		v := jwt.NewVerifier[*testClaims](
 			set,
@@ -200,7 +201,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 func TestOmitEmpty(t *testing.T) {
 	t.Parallel()
 	k := mockKeyPair(t, "k1")
-	raw, err := jwt.Sign(k, &jwt.Reserved{})
+	raw, err := jwt.Sign(context.Background(), k, &jwt.Reserved{})
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -232,7 +233,7 @@ func TestDynamicClaims(t *testing.T) {
 		"nested": map[string]string{"foo": "bar"},
 	}
 
-	raw, err := jwt.Sign(k, input)
+	raw, err := jwt.Sign(context.Background(), k, input)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -328,7 +329,7 @@ func TestVerify_Errors(t *testing.T) {
 	k1 := mockKeyPair(t, "k1")
 	k2 := mockKeyPair(t, "k2")
 
-	raw, _ := jwt.Sign(k1, &testClaims{Role: "user"})
+	raw, _ := jwt.Sign(context.Background(), k1, &testClaims{Role: "user"})
 
 	t.Run("key not found", func(t *testing.T) {
 		t.Parallel()

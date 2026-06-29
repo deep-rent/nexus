@@ -72,6 +72,7 @@ package jwt
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -586,9 +587,8 @@ func (v *verifier[T]) Verify(in []byte) (T, error) {
 // Sign creates a new signed JWT using the provided [jwk.KeyPair] and claims.
 //
 // It marshals the claims using encoding/json/v2, creates a header based on
-// the key's properties, and signs the payload. The claims argument can be
 // any type that serializes to a JSON object.
-func Sign(k jwk.KeyPair, claims any) ([]byte, error) {
+func Sign(ctx context.Context, k jwk.KeyPair, claims any) ([]byte, error) {
 	// Prepare and marshal the header.
 	header := &header{
 		Typ: Type,
@@ -612,11 +612,10 @@ func Sign(k jwk.KeyPair, claims any) ([]byte, error) {
 	// Construct the signing input (message).
 	msg := make([]byte, 0, len(h)+1+len(c))
 	msg = append(msg, h...)
-	msg = append(msg, dot)
+	msg = append(msg, '.')
 	msg = append(msg, c...)
 
-	// Sign the message.
-	sig, err := k.Sign(msg)
+	sig, err := k.Sign(ctx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign token: %w", err)
 	}

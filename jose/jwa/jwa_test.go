@@ -15,11 +15,14 @@
 package jwa_test
 
 import (
+	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"io"
 	"testing"
 
 	"github.com/cloudflare/circl/sign/ed448"
@@ -52,7 +55,7 @@ func TestAlgorithm_RSASignVerify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sig, err := tt.a.Sign(k, mockMsg)
+			sig, err := tt.a.Sign(context.Background(), k, mockMsg)
 			if err != nil {
 				t.Fatalf("%s.Sign() error = %v", tt.name, err)
 			}
@@ -84,7 +87,7 @@ func TestAlgorithm_ECDSASignVerify(t *testing.T) {
 				t.Fatalf("ecdsa.GenerateKey() error = %v", err)
 			}
 
-			sig, err := tt.a.Sign(k, mockMsg)
+			sig, err := tt.a.Sign(context.Background(), k, mockMsg)
 			if err != nil {
 				t.Fatalf("%s.Sign() error = %v", tt.name, err)
 			}
@@ -105,7 +108,7 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 			t.Fatalf("ed25519.GenerateKey() error = %v", err)
 		}
 
-		sig, err := jwa.EdDSA.Sign(prv, mockMsg)
+		sig, err := jwa.EdDSA.Sign(context.Background(), prv, mockMsg)
 		if err != nil {
 			t.Fatalf("EdDSA.Sign(Ed25519) error = %v", err)
 		}
@@ -121,7 +124,7 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 			t.Fatalf("ed448.GenerateKey() error = %v", err)
 		}
 
-		sig, err := jwa.EdDSA.Sign(prv, mockMsg)
+		sig, err := jwa.EdDSA.Sign(context.Background(), prv, mockMsg)
 		if err != nil {
 			t.Fatalf("EdDSA.Sign(Ed448) error = %v", err)
 		}
@@ -129,4 +132,55 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 			t.Errorf("EdDSA.Verify(Ed448) = false; want true")
 		}
 	})
+}
+
+type mockContextSigner struct {
+	crypto.Signer
+	passed bool
+}
+
+func (m *mockContextSigner) SignContext(
+	ctx context.Context,
+	rand io.Reader,
+	digest []byte,
+	opts crypto.SignerOpts,
+) (signature []byte, err error) {
+	if ctx != nil {
+		m.passed = true
+	}
+	return m.Sign(rand, digest, opts)
+}
+
+func TestAlgorithm_ContextSigner(t *testing.T) {
+	t.Parallel()
+
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey() error = %v", err)
+	}
+
+	mock := &mockContextSigner{Signer: k}
+	ctx := context.Background()
+
+	_, err = jwa.RS256.Sign(ctx, mock, mockMsg)
+	if err != nil {
+		t.Fatalf("RS256.Sign() error = %v", err)
+	}
+	if !mock.passed {
+		t.Errorf("RS256 did not propagate context")
+	}
+
+	esKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	mockES := &mockContextSigner{Signer: esKey}
+	_, _ = jwa.ES256.Sign(ctx, mockES, mockMsg)
+	if !mockES.passed {
+		t.Errorf("ES256 did not propagate context")
+	}
+
+	_, edKey, _ := ed25519.GenerateKey(rand.Reader)
+	mockEd := &mockContextSigner{Signer: edKey}
+	_, _ = jwa.EdDSA.Sign(ctx, mockEd, mockMsg)
+	if !mockEd.passed {
+		t.Errorf("EdDSA did not propagate context")
+	}
 }

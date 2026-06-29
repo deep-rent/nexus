@@ -171,7 +171,7 @@ type KeyPair interface {
 	Key
 
 	// Sign generates a signature for the given message.
-	Sign(msg []byte) ([]byte, error)
+	Sign(ctx context.Context, msg []byte) ([]byte, error)
 }
 
 // keyPair is the concrete implementation of [KeyPair].
@@ -183,8 +183,8 @@ type keyPair[T crypto.PublicKey] struct {
 }
 
 // Sign implements [KeyPair].
-func (s *keyPair[T]) Sign(msg []byte) ([]byte, error) {
-	return s.alg.Sign(s.signer, msg)
+func (s *keyPair[T]) Sign(ctx context.Context, msg []byte) ([]byte, error) {
+	return s.alg.Sign(ctx, s.signer, msg)
 }
 
 // KeyBuilder assists in the programmatic construction of [Key] and [KeyPair]
