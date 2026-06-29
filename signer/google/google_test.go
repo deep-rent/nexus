@@ -38,7 +38,7 @@ func (s *mockServer) GetPublicKey(
 	ctx context.Context,
 	req *kmspb.GetPublicKeyRequest,
 ) (*kmspb.PublicKey, error) {
-	const dummyPEM = `-----BEGIN PUBLIC KEY-----
+	const pem = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnG0D6EYAzGp75rvEFrBM
 SdhSzHmuPPmfH+s6x0gcHvePj84WyjZp+0XbOvmqLK9AIw7KM7yf23/bsjRVZaR9
 SCQGNqtVxo5JgXlJAq9Tvpwdq+iwBFrORMI1Aonx2WqDJtmT+RraSkDiX0ESUELR
@@ -48,7 +48,7 @@ dGONSwA5mlhSGqYVQDlVfvnLabchYiItXDqe+WxFbFKYzSgM4GwQy8PKojwGKvIt
 owIDAQAB
 -----END PUBLIC KEY-----`
 	return &kmspb.PublicKey{
-		Pem: dummyPEM,
+		Pem: pem,
 	}, nil
 }
 
@@ -57,7 +57,7 @@ func (s *mockServer) AsymmetricSign(
 	req *kmspb.AsymmetricSignRequest,
 ) (*kmspb.AsymmetricSignResponse, error) {
 	return &kmspb.AsymmetricSignResponse{
-		Signature:            []byte("mock-signature"),
+		Signature:            []byte("foo"),
 		SignatureCrc32C:      wrapperspb.Int64(2339757342),
 		VerifiedDigestCrc32C: true,
 		Name:                 req.Name,
@@ -130,7 +130,7 @@ func TestSigner(t *testing.T) {
 		t.Fatalf("unexpected error during sign: %v", err)
 	}
 
-	if string(sig) != "mock-signature" {
-		t.Errorf("expected mock signature, got %s", sig)
+	if exp, act := "foo", string(sig); exp != act {
+		t.Errorf("expected %q signature, got %q", exp, act)
 	}
 }
