@@ -17,17 +17,80 @@ import (
 // Lookup is a function that retrieves a value by its key.
 type Lookup func(key string) (string, bool)
 
+// Transformer is a function that transforms a struct field name into a key.
+type Transformer func(string) string
+
+// resolver resolves reflection metadata for a given type.
+type resolver interface {
+	Resolve(rt reflect.Type) []meta
+}
+
+type defaultResolver struct {
+	binder *Binder
+}
+
+func (r *defaultResolver) Resolve(rt reflect.Type) []meta {
+	return r.binder.buildMeta(rt)
+}
+
+type cachingResolver struct {
+	cache    sync.Map
+	resolver resolver
+}
+
+func (r *cachingResolver) Resolve(rt reflect.Type) []meta {
+	if cached, ok := r.cache.Load(rt); ok {
+		return cached.([]meta)
+	}
+	fields := r.resolver.Resolve(rt)
+	r.cache.Store(rt, fields)
+	return fields
+}
+
+// Option configures a Binder.
+type Option func(*Binder)
+
+// WithTransformer sets the name transformation function.
+func WithTransformer(t Transformer) Option {
+	return func(b *Binder) {
+		if t != nil {
+			b.transform = t
+		}
+	}
+}
+
+// WithCache enables or disables metadata caching.
+func WithCache(enable bool) Option {
+	return func(b *Binder) {
+		b.useCache = enable
+	}
+}
+
 // Binder extracts values from a generic key-value source into a struct.
 type Binder struct {
-	tagName string
-	cache   sync.Map
+	name      string
+	transform Transformer
+	useCache  bool
+	resolver  resolver
 }
 
 // New creates a new Binder using the specified struct tag for metadata parsing.
-func New(tagName string) *Binder {
-	return &Binder{
-		tagName: tagName,
+func New(name string, opts ...Option) *Binder {
+	b := &Binder{
+		name:      name,
+		transform: snake.ToLower,
+		useCache:  true,
 	}
+	for _, opt := range opts {
+		opt(b)
+	}
+
+	b.resolver = &defaultResolver{binder: b}
+	if b.useCache {
+		b.resolver = &cachingResolver{resolver: b.resolver}
+	}
+
+	return b
 }
 
 // Bind populates the fields of a struct using the provided lookup function.
@@ -35,17 +98,21 @@ func New(tagName string) *Binder {
 func (b *Binder) Bind(v any, prefix string, lookup Lookup) error {
 	ptr := reflect.ValueOf(v)
 	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
-		return errors.New("bind: expected a non-nil pointer to a struct")
+		return errors.New(
+			"bind: expected a non-nil pointer to a struct",
+		)
 	}
 	val := ptr.Elem()
 	if kind := val.Kind(); kind != reflect.Struct {
-		return fmt.Errorf("bind: expected a pointer to a struct, but got pointer to %v", kind)
+		return fmt.Errorf(
+			"bind: expected a pointer to a struct, but got pointer to %v", kind,
+		)
 	}
 	return b.process(val, prefix, lookup)
 }
 
 func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
-	fields := b.getMetadata(rv.Type())
+	fields := b.resolver.Resolve(rv.Type())
 	for _, f := range fields {
 		if f.Err != nil {
 			return f.Err
@@ -94,13 +161,16 @@ func (b *Binder) process(rv reflect.Value, prefix string, lookup Lookup) error {
 		}
 
 		if err := setValue(fv, val, f.Flags); err != nil {
-			return fmt.Errorf("error setting field %q from key %q: %w", f.StructFieldName, key, err)
+			return fmt.Errorf(
+				"error setting field %q from key %q: %w",
+				f.StructFieldName, key, err,
+			)
 		}
 	}
 	return nil
 }
 
-type fieldMetadata struct {
+type meta struct {
 	Index           int
 	StructFieldName string
 	Name            string
@@ -110,12 +180,8 @@ type fieldMetadata struct {
 	Err             error
 }
 
-func (b *Binder) getMetadata(rt reflect.Type) []fieldMetadata {
-	if cached, ok := b.cache.Load(rt); ok {
-		return cached.([]fieldMetadata)
-	}
-
-	var fields []fieldMetadata
+func (b *Binder) buildMeta(rt reflect.Type) []meta {
+	var fields []meta
 	for i := 0; i < rt.NumField(); i++ {
 		ft := rt.Field(i)
 
@@ -123,20 +189,22 @@ func (b *Binder) getMetadata(rt reflect.Type) []fieldMetadata {
 			continue
 		}
 
-		tagValue := ft.Tag.Get(b.tagName)
-		if tagValue == "-" {
+		val := ft.Tag.Get(b.name)
+		if val == "-" {
 			continue
 		}
 
-		flags, err := parse(tagValue)
+		flags, err := parse(val)
 		if err != nil {
-			fields = append(fields, fieldMetadata{
-				Err: fmt.Errorf("failed to parse tag for field %q: %w", ft.Name, err),
+			fields = append(fields, meta{
+				Err: fmt.Errorf(
+					"failed to parse tag for field %q: %w", ft.Name, err,
+				),
 			})
 			continue
 		}
 
-		fm := fieldMetadata{
+		m := meta{
 			Index:           i,
 			StructFieldName: ft.Name,
 			Name:            flags.Name,
@@ -144,20 +212,15 @@ func (b *Binder) getMetadata(rt reflect.Type) []fieldMetadata {
 			Inline:          ft.Anonymous && flags.Inline,
 		}
 
-		if fm.Name == "" {
-			if b.tagName == "env" {
-				fm.Name = snake.ToUpper(ft.Name)
-			} else {
-				fm.Name = snake.ToLower(ft.Name)
-			}
+		if m.Name == "" {
+			m.Name = b.transform(ft.Name)
 		}
 
-		fm.Embedded = isEmbedded(ft)
+		m.Embedded = isEmbedded(ft)
 
-		fields = append(fields, fm)
+		fields = append(fields, m)
 	}
 
-	b.cache.Store(rt, fields)
 	return fields
 }
 
@@ -218,7 +281,8 @@ func isEmbedded(f reflect.StructField) bool {
 	if t == typeTime || t == typeURL || t == typeLocation {
 		return false
 	}
-	if t.Implements(typeTextUnmarshaler) || reflect.PointerTo(t).Implements(typeTextUnmarshaler) {
+	if t.Implements(typeTextUnmarshaler) ||
+		reflect.PointerTo(t).Implements(typeTextUnmarshaler) {
 		return false
 	}
 	return true

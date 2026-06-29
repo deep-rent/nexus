@@ -108,6 +108,7 @@ import (
 	"os"
 
 	"github.com/deep-rent/nexus/internal/bind"
+	"github.com/deep-rent/nexus/internal/snake"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.
@@ -148,7 +149,7 @@ type config struct {
 	Lookup Lookup
 }
 
-var binder = bind.New("env")
+var binder = bind.New("env", bind.WithTransformer(snake.ToUpper))
 
 // Unmarshal populates the fields of a struct with values from environment
 // variables. The given value v must be a non-nil pointer to a struct.
