@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package google provides a Google Cloud KMS implementation of the signer interface.
+// Package google provides a Google Cloud KMS implementation of the signer
+// interface.
 package google
 
 import (
@@ -38,17 +39,33 @@ var table = crc32.MakeTable(crc32.Castagnoli)
 type Signer struct {
 	client *kms.KeyManagementClient
 	name   string
-	pub    crypto.PublicKey
+	key    crypto.PublicKey
 }
 
-// New creates a new Signer instance for the specified Google Cloud KMS key version.
-// The keyName should be in the format:
-// "projects/*/locations/*/keyRings/*/cryptoKeys/*/cryptoKeyVersions/*"
+type Resource struct {
+	Project    string
+	Location   string
+	KeyRing    string
+	Key        string
+	KeyVersion string
+}
+
+// New creates a new Signer instance for the specified Google Cloud KMS key
+// version.
 func New(
 	ctx context.Context,
 	client *kms.KeyManagementClient,
-	name string,
+	resource Resource,
 ) (*Signer, error) {
+	name := fmt.Sprintf(
+		"projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s",
+		resource.Project,
+		resource.Location,
+		resource.KeyRing,
+		resource.Key,
+		resource.KeyVersion,
+	)
+
 	req := &kmspb.GetPublicKeyRequest{
 		Name: name,
 	}
@@ -64,7 +81,7 @@ func New(
 	if block.Type != "PUBLIC KEY" {
 		return nil, fmt.Errorf("unexpected PEM block type: %s", block.Type)
 	}
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
@@ -72,13 +89,13 @@ func New(
 	return &Signer{
 		client: client,
 		name:   name,
-		pub:    pub,
+		key:    key,
 	}, nil
 }
 
 // Public returns the public key associated with the KMS key.
 func (s *Signer) Public() crypto.PublicKey {
-	return s.pub
+	return s.key
 }
 
 // Sign performs the cryptographic signing operation using Cloud KMS.

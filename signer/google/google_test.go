@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto"
 	"net"
-	"strings"
 	"testing"
 
 	kms "cloud.google.com/go/kms/apiv1"
@@ -108,19 +107,13 @@ func TestSigner(t *testing.T) {
 		}
 	}()
 
-	name := strings.Join([]string{
-		"projects",
-		"test",
-		"locations",
-		"global",
-		"keyRings",
-		"kr",
-		"cryptoKeys",
-		"ck",
-		"cryptoKeyVersions",
-		"1",
-	}, "/")
-	signer, err := google.New(ctx, client, name)
+	signer, err := google.New(ctx, client, google.Resource{
+		Project:    "test",
+		Location:   "global",
+		KeyRing:    "kr",
+		Key:        "ck",
+		KeyVersion: "1",
+	})
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}
