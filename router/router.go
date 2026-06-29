@@ -320,14 +320,7 @@ func (e *Exchange) BindQuery(v any) *Error {
 func (e *Exchange) BindForm(v any) *Error {
 	form, err := e.ReadForm()
 	if err != nil {
-		if re, ok := errors.AsType[*Error](err); ok {
-			return re
-		}
-		return &Error{
-			Status:      http.StatusBadRequest,
-			Reason:      ReasonParseForm,
-			Description: err.Error(),
-		}
+		return err
 	}
 	lookup := func(key string) (string, bool) {
 		if !form.Has(key) {
@@ -357,7 +350,7 @@ func (e *Exchange) BindForm(v any) *Error {
 //
 // Unlike standard [http.Request.FormValue], this strictly accesses the request
 // body, ignoring URL query parameters.
-func (e *Exchange) ReadForm() (url.Values, error) {
+func (e *Exchange) ReadForm() (url.Values, *Error) {
 	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
 		return nil, &Error{
 			Status:      http.StatusUnsupportedMediaType,
