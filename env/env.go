@@ -102,6 +102,7 @@
 package env
 
 import (
+	"encoding"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
@@ -304,11 +305,12 @@ type config struct {
 
 // Cache types with special unmarshaling logic.
 var (
-	typeTime        = reflect.TypeFor[time.Time]()
-	typeDuration    = reflect.TypeFor[time.Duration]()
-	typeLocation    = reflect.TypeFor[time.Location]()
-	typeURL         = reflect.TypeFor[url.URL]()
-	typeUnmarshaler = reflect.TypeFor[Unmarshaler]()
+	typeTime            = reflect.TypeFor[time.Time]()
+	typeDuration        = reflect.TypeFor[time.Duration]()
+	typeLocation        = reflect.TypeFor[time.Location]()
+	typeURL             = reflect.TypeFor[url.URL]()
+	typeUnmarshaler     = reflect.TypeFor[Unmarshaler]()
+	typeTextUnmarshaler = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
 // unmarshal is the internal implementation that orchestrates the unmarshaling.
@@ -398,10 +400,6 @@ func process(rv reflect.Value, prefix string, lookup Lookup) error {
 			default:
 				continue
 			}
-		} else if val == "" && opts.Default != "" {
-			// If the variable is explicitly set to empty (""), but a default
-			// exists in the tags, fall back to the default value.
-			val = opts.Default
 		}
 
 		// If a field is required and set to "", it bypasses the errors above.
@@ -433,9 +431,14 @@ func setValue(rv reflect.Value, v string, f *flags) error {
 		return setLocation(rv, v)
 	case typeURL:
 		return setURL(rv, v)
-	default:
-		return setOther(rv, v, f)
 	}
+
+	if u, ok := asTextUnmarshaler(rv); ok {
+		// Use the standard encoding.TextUnmarshaler if available.
+		return u.UnmarshalText([]byte(v))
+	}
+
+	return setOther(rv, v, f)
 }
 
 // setOther handles all "regular" (primitive and slice) types by delegating to
@@ -628,7 +631,9 @@ func setSlice(rv reflect.Value, v string, f *flags) error {
 	slice := reflect.MakeSlice(rv.Type(), len(parts), len(parts))
 	for i, part := range parts {
 		if err := setValue(slice.Index(i), part, f); err != nil {
-			return fmt.Errorf("failed to parse slice element at index %d: %w", i, err)
+			return fmt.Errorf(
+				"failed to parse slice element at index %d: %w", i, err,
+			)
 		}
 	}
 
@@ -692,6 +697,10 @@ func isEmbedded(f reflect.StructField, rv reflect.Value) bool {
 	if _, ok := asUnmarshaler(rv); ok {
 		return false
 	}
+	// 4. It does NOT implement the encoding.TextUnmarshaler interface.
+	if _, ok := asTextUnmarshaler(rv); ok {
+		return false
+	}
 	// If all checks pass, it's a struct we should recurse into.
 	return true
 }
@@ -716,6 +725,21 @@ func asUnmarshaler(rv reflect.Value) (Unmarshaler, bool) {
 	// This works for value types with pointer receivers (e.g., reverse).
 	if rv.CanAddr() && rv.Addr().Type().Implements(typeUnmarshaler) {
 		return rv.Addr().Interface().(Unmarshaler), true
+	}
+	return nil, false
+}
+
+// asTextUnmarshaler checks if the given [reflect.Value] implements the
+// [encoding.TextUnmarshaler] interface.
+func asTextUnmarshaler(rv reflect.Value) (encoding.TextUnmarshaler, bool) {
+	if rv.Type().Implements(typeTextUnmarshaler) {
+		if rv.Kind() == reflect.Pointer && rv.IsNil() {
+			pointer.Alloc(rv)
+		}
+		return rv.Interface().(encoding.TextUnmarshaler), true
+	}
+	if rv.CanAddr() && rv.Addr().Type().Implements(typeTextUnmarshaler) {
+		return rv.Addr().Interface().(encoding.TextUnmarshaler), true
 	}
 	return nil, false
 }

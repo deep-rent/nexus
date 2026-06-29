@@ -15,6 +15,7 @@
 package env_test
 
 import (
+	"encoding"
 	"errors"
 	"net/url"
 	"reflect"
@@ -52,6 +53,19 @@ func (c mockCheckUnmarshaler) UnmarshalEnv(v string) error {
 }
 
 var _ env.Unmarshaler = (*mockCheckUnmarshaler)(nil)
+
+type mockTextUnmarshaler string
+
+func (t *mockTextUnmarshaler) UnmarshalText(text []byte) error {
+	*t = mockTextUnmarshaler("text:" + string(text))
+	return nil
+}
+
+var _ encoding.TextUnmarshaler = (*mockTextUnmarshaler)(nil)
+
+type mockTTextUnmarshaler struct {
+	V mockTextUnmarshaler
+}
 
 type mockTString struct {
 	V string
@@ -458,6 +472,12 @@ func TestUnmarshal(t *testing.T) {
 			want: &mockTUpper{"FOO"},
 		},
 		{
+			name: "text unmarshaler",
+			vars: map[string]string{"V": "foo"},
+			give: &mockTTextUnmarshaler{},
+			want: &mockTTextUnmarshaler{"text:foo"},
+		},
+		{
 			name: "unmarshaler pointer",
 			vars: map[string]string{"V": "foo"},
 			give: &mockTUpperPtr{},
@@ -485,10 +505,10 @@ func TestUnmarshal(t *testing.T) {
 			want: &mockTDefault{"foo"},
 		},
 		{
-			name: "explicitly empty string uses default",
+			name: "explicitly empty string overrides default",
 			vars: map[string]string{"V": ""},
 			give: &mockTDefault{},
-			want: &mockTDefault{"foo"},
+			want: &mockTDefault{""},
 		},
 		{
 			name: "default with quotes",
