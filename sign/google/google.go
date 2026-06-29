@@ -19,6 +19,9 @@ package google
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -32,6 +35,8 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/sign"
 )
 
@@ -115,49 +120,117 @@ func (s *signer) Sign(
 
 var _ sign.Signer = (*signer)(nil)
 
-type Factory struct {
+type KeyManager struct {
 	client *kms.KeyManagementClient
 	logger *slog.Logger
 }
 
-func (f *Factory) New(ctx context.Context, parent string) []sign.Signer {
+func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair, error) {
 	req := &kmspb.ListCryptoKeyVersionsRequest{
 		Parent: parent,
 		Filter: "state=ENABLED",
 	}
 
-	var signers []sign.Signer
-	it := f.client.ListCryptoKeyVersions(ctx, req)
+	var pairs []jwk.KeyPair
+	it := m.client.ListCryptoKeyVersions(ctx, req)
 	for {
 		version, err := it.Next()
 		if errors.Is(err, iterator.Done) {
 			break
 		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate key versions: %w", err)
+		}
 
 		name := version.Name
 
-		s, err := f.new(ctx, name)
+		s, err := m.new(ctx, name)
 		if err != nil {
-			f.logger.WarnContext(
+			m.logger.WarnContext(
 				ctx,
-				"",
+				"failed to get public key for version",
 				slog.String("name", name),
 				slog.Any("error", err),
 			)
 			continue
 		}
 
-		signers = append(signers, s)
+		key := s.Public()
+		kid, err := jwk.Thumbprint(key)
+		if err != nil {
+			m.logger.WarnContext(
+				ctx,
+				"failed to compute key thumbprint",
+				slog.String("name", name),
+				slog.Any("error", err),
+			)
+			continue
+		}
+
+		var p jwk.KeyPair
+		switch pub := key.(type) {
+		case *rsa.PublicKey:
+			switch version.Algorithm {
+			case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
+				kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256,
+				kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256:
+				p = jwk.NewKeyBuilder(jwa.RS256).
+					WithKeyID(kid).
+					BuildPair(s)
+			case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256,
+				kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256,
+				kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:
+				p = jwk.NewKeyBuilder(jwa.PS256).
+					WithKeyID(kid).
+					BuildPair(s)
+			default:
+				m.logger.WarnContext(ctx, "unsupported RSA algorithm")
+				continue
+			}
+		case *ecdsa.PublicKey:
+			switch version.Algorithm {
+			case kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:
+				p = jwk.NewKeyBuilder(jwa.ES256).
+					WithKeyID(kid).
+					BuildPair(s)
+			case kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:
+				p = jwk.NewKeyBuilder(jwa.ES384).
+					WithKeyID(kid).
+					BuildPair(s)
+			default:
+				m.logger.WarnContext(ctx, "unsupported ECDSA algorithm")
+				continue
+			}
+		case ed25519.PublicKey:
+			switch version.Algorithm {
+			case kmspb.CryptoKeyVersion_EC_SIGN_ED25519:
+				edSigner := &ed25519Signer{
+					Signer: s,
+					pub:    []byte(pub),
+				}
+				p = jwk.NewKeyBuilder(jwa.EdDSA).
+					WithKeyID(kid).
+					BuildPair(edSigner)
+			default:
+				m.logger.WarnContext(ctx, "unsupported Ed25519 algorithm")
+				continue
+			}
+		default:
+			m.logger.WarnContext(ctx, "unsupported key type")
+			continue
+		}
+
+		pairs = append(pairs, p)
 	}
 
-	return signers
+	return pairs, nil
 }
 
-func (f *Factory) new(ctx context.Context, name string) (sign.Signer, error) {
+func (m *KeyManager) new(ctx context.Context, name string) (sign.Signer, error) {
 	req := &kmspb.GetPublicKeyRequest{
 		Name: name,
 	}
-	res, err := f.client.GetPublicKey(ctx, req)
+	res, err := m.client.GetPublicKey(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key from KMS: %w", err)
 	}
@@ -175,8 +248,17 @@ func (f *Factory) new(ctx context.Context, name string) (sign.Signer, error) {
 	}
 
 	return &signer{
-		client: f.client,
+		client: m.client,
 		name:   name,
 		key:    key,
 	}, nil
+}
+
+type ed25519Signer struct {
+	sign.Signer
+	pub []byte
+}
+
+func (s *ed25519Signer) Public() crypto.PublicKey {
+	return s.pub
 }
