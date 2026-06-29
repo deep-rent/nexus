@@ -283,8 +283,8 @@ func (e *Exchange) BindJSON(v any) *Error {
 
 // ReadForm parses the request body as URL-encoded form data.
 //
-// Unlike standard [http.Request.FormValue], this strictly accesses PostForm
-// (the request body), ignoring URL query parameters.
+// Unlike standard [http.Request.FormValue], this strictly accesses the request
+// body, ignoring URL query parameters.
 func (e *Exchange) ReadForm() (url.Values, error) {
 	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
 		return nil, &Error{
