@@ -69,6 +69,27 @@ func (p *mockParent) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*mockParent)(nil)
 
+func TestErrors_Size(t *testing.T) {
+	t.Parallel()
+
+	var errors valid.Error
+
+	errors = valid.Error{}
+	if exp, act := 0, errors.Size(); exp != act {
+		t.Errorf("expected size %d, got %d", exp, act)
+	}
+
+	errors = valid.Error{"a": {"1"}}
+	if exp, act := 1, errors.Size(); exp != act {
+		t.Errorf("expected size %d, got %d", exp, act)
+	}
+
+	errors = valid.Error{"a": {"1", "2"}, "b": {"3", "4"}}
+	if exp, act := 4, errors.Size(); exp != act {
+		t.Errorf("expected size %d, got %d", exp, act)
+	}
+}
+
 func TestErrors_Error(t *testing.T) {
 	t.Parallel()
 
