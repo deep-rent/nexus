@@ -37,7 +37,9 @@ import (
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
+	"github.com/deep-rent/nexus/rotor"
 	"github.com/deep-rent/nexus/sign"
+	"github.com/deep-rent/nexus/vault"
 )
 
 var table = crc32.MakeTable(crc32.Castagnoli)
@@ -120,19 +122,19 @@ func (s *signer) Sign(
 
 var _ sign.Signer = (*signer)(nil)
 
-type KeyManager struct {
+type Factory struct {
 	client *kms.KeyManagementClient
 	logger *slog.Logger
 }
 
-func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair, error) {
+func (f *Factory) New(ctx context.Context, parent string, strategy rotor.Strategy) (vault.Vault, error) {
 	req := &kmspb.ListCryptoKeyVersionsRequest{
 		Parent: parent,
 		Filter: "state=ENABLED",
 	}
 
 	var pairs []jwk.KeyPair
-	it := m.client.ListCryptoKeyVersions(ctx, req)
+	it := f.client.ListCryptoKeyVersions(ctx, req)
 	for {
 		version, err := it.Next()
 		if errors.Is(err, iterator.Done) {
@@ -144,9 +146,9 @@ func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair
 
 		name := version.Name
 
-		s, err := m.new(ctx, name)
+		s, err := f.new(ctx, name)
 		if err != nil {
-			m.logger.WarnContext(
+			f.logger.WarnContext(
 				ctx,
 				"failed to get public key for version",
 				slog.String("name", name),
@@ -158,7 +160,7 @@ func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair
 		key := s.Public()
 		kid, err := jwk.Thumbprint(key)
 		if err != nil {
-			m.logger.WarnContext(
+			f.logger.WarnContext(
 				ctx,
 				"failed to compute key thumbprint",
 				slog.String("name", name),
@@ -184,7 +186,7 @@ func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair
 					WithKeyID(kid).
 					BuildPair(s)
 			default:
-				m.logger.WarnContext(ctx, "unsupported RSA algorithm")
+				f.logger.WarnContext(ctx, "unsupported RSA algorithm")
 				continue
 			}
 		case *ecdsa.PublicKey:
@@ -198,7 +200,7 @@ func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair
 					WithKeyID(kid).
 					BuildPair(s)
 			default:
-				m.logger.WarnContext(ctx, "unsupported ECDSA algorithm")
+				f.logger.WarnContext(ctx, "unsupported ECDSA algorithm")
 				continue
 			}
 		case ed25519.PublicKey:
@@ -212,25 +214,25 @@ func (m *KeyManager) LoadKeys(ctx context.Context, parent string) ([]jwk.KeyPair
 					WithKeyID(kid).
 					BuildPair(edSigner)
 			default:
-				m.logger.WarnContext(ctx, "unsupported Ed25519 algorithm")
+				f.logger.WarnContext(ctx, "unsupported Ed25519 algorithm")
 				continue
 			}
 		default:
-			m.logger.WarnContext(ctx, "unsupported key type")
+			f.logger.WarnContext(ctx, "unsupported key type")
 			continue
 		}
 
 		pairs = append(pairs, p)
 	}
 
-	return pairs, nil
+	return vault.New(pairs, strategy), nil
 }
 
-func (m *KeyManager) new(ctx context.Context, name string) (sign.Signer, error) {
+func (f *Factory) new(ctx context.Context, name string) (sign.Signer, error) {
 	req := &kmspb.GetPublicKeyRequest{
 		Name: name,
 	}
-	res, err := m.client.GetPublicKey(ctx, req)
+	res, err := f.client.GetPublicKey(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key from KMS: %w", err)
 	}
@@ -248,7 +250,7 @@ func (m *KeyManager) new(ctx context.Context, name string) (sign.Signer, error) 
 	}
 
 	return &signer{
-		client: m.client,
+		client: f.client,
 		name:   name,
 		key:    key,
 	}, nil
