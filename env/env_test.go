@@ -22,11 +22,8 @@ import (
 	"github.com/deep-rent/nexus/env"
 )
 
-
-
 func TestUnmarshal(t *testing.T) {
 	t.Parallel()
-
 
 	tests := []struct {
 		name    string
@@ -40,10 +37,9 @@ func TestUnmarshal(t *testing.T) {
 			name: "global prefix",
 			vars: map[string]string{"APP_V": "foo"},
 			opts: []env.Option{env.WithPrefix("APP_")},
-			give: &struct{V string}{},
-			want: &struct{V string}{"foo"},
+			give: &struct{ V string }{},
+			want: &struct{ V string }{"foo"},
 		},
-
 	}
 
 	for _, tt := range tests {
