@@ -153,6 +153,159 @@ func TestExchange_BindJSON(t *testing.T) {
 	}
 }
 
+func TestExchange_BindQuery(t *testing.T) {
+	t.Parallel()
+
+	type input struct {
+		Name string `query:"name"`
+	}
+
+	tests := []struct {
+		name       string
+		url        string
+		target     any
+		wantErr    bool
+		wantReason string
+		wantStatus int
+	}{
+		{
+			name:    "success",
+			url:     "/?name=test",
+			target:  &input{},
+			wantErr: false,
+		},
+		{
+			name:       "failure parse",
+			url:        "/?age=invalid",
+			target:     &struct{ Age int `query:"age"` }{},
+			wantErr:    true,
+			wantReason: router.ReasonParseQuery,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "failure validation",
+			url:        "/?name=",
+			target:     &mockValidatable{},
+			wantErr:    true,
+			wantReason: router.ReasonValidationFailed,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			e := &router.Exchange{R: r}
+
+			err := e.BindQuery(tt.target)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("BindQuery() err = nil; want non-nil")
+				}
+				if got, want := err.Reason, tt.wantReason; got != want {
+					t.Errorf("err.Reason = %q; want %q", got, want)
+				}
+				if got, want := err.Status, tt.wantStatus; got != want {
+					t.Errorf("err.Status = %d; want %d", got, want)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("BindQuery() err = %v; want nil", err)
+			}
+		})
+	}
+}
+
+func TestExchange_BindForm(t *testing.T) {
+	t.Parallel()
+
+	type input struct {
+		Name string `form:"name"`
+	}
+
+	tests := []struct {
+		name       string
+		ctype      string
+		body       string
+		target     any
+		wantErr    bool
+		wantReason string
+		wantStatus int
+	}{
+		{
+			name:    "success",
+			ctype:   "application/x-www-form-urlencoded",
+			body:    "name=test",
+			target:  &input{},
+			wantErr: false,
+		},
+		{
+			name:       "failure content type",
+			ctype:      "application/json",
+			body:       `{"name":"test"}`,
+			target:     &input{},
+			wantErr:    true,
+			wantReason: router.ReasonWrongType,
+			wantStatus: http.StatusUnsupportedMediaType,
+		},
+		{
+			name:       "failure parse",
+			ctype:      "application/x-www-form-urlencoded",
+			body:       "age=invalid",
+			target:     &struct{ Age int `form:"age"` }{},
+			wantErr:    true,
+			wantReason: router.ReasonParseForm,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "failure validation",
+			ctype:      "application/x-www-form-urlencoded",
+			body:       "name=",
+			target:     &mockValidatable{},
+			wantErr:    true,
+			wantReason: router.ReasonValidationFailed,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := strings.NewReader(tt.body)
+			r := httptest.NewRequest(http.MethodPost, "/", body)
+			if tt.ctype != "" {
+				r.Header.Set("Content-Type", tt.ctype)
+			}
+
+			e := &router.Exchange{R: r}
+			err := e.BindForm(tt.target)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("BindForm() err = nil; want non-nil")
+				}
+				if got, want := err.Reason, tt.wantReason; got != want {
+					t.Errorf("err.Reason = %q; want %q", got, want)
+				}
+				if got, want := err.Status, tt.wantStatus; got != want {
+					t.Errorf("err.Status = %d; want %d", got, want)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("BindForm() err = %v; want nil", err)
+			}
+		})
+	}
+}
+
 func TestExchange_ReadForm(t *testing.T) {
 	t.Parallel()
 

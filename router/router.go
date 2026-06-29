@@ -60,11 +60,17 @@ import (
 	"net/url"
 
 	"github.com/deep-rent/nexus/header"
+	"github.com/deep-rent/nexus/internal/bind"
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
 	"github.com/deep-rent/nexus/uuid"
 	"github.com/deep-rent/nexus/valid"
+)
+
+var (
+	queryBinder = bind.New("query")
+	formBinder  = bind.New("form")
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -77,6 +83,8 @@ const (
 	ReasonParseJSON = "parse_json"
 	// ReasonParseForm indicates that there was an error parsing form data.
 	ReasonParseForm = "parse_form"
+	// ReasonParseQuery indicates that there was an error parsing query parameters.
+	ReasonParseQuery = "parse_query"
 	// ReasonValidationFailed indicates that input validation failed.
 	ReasonValidationFailed = "validation_failed"
 	// ReasonServerError indicates that an unexpected internal error occurred.
@@ -278,6 +286,70 @@ func (e *Exchange) BindJSON(v any) *Error {
 		}
 	}
 
+	return nil
+}
+
+// BindQuery decodes URL query parameters into v.
+func (e *Exchange) BindQuery(v any) *Error {
+	q := e.R.URL.Query()
+	lookup := func(key string) (string, bool) {
+		if !q.Has(key) {
+			return "", false
+		}
+		return q.Get(key), true
+	}
+	if err := queryBinder.Bind(v, "", lookup); err != nil {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonParseQuery,
+			Description: err.Error(),
+		}
+	}
+	if err := valid.Test(v); err != nil {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonValidationFailed,
+			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Context:     err,
+		}
+	}
+	return nil
+}
+
+// BindForm decodes URL-encoded form data from the request body into v.
+func (e *Exchange) BindForm(v any) *Error {
+	form, err := e.ReadForm()
+	if err != nil {
+		if re, ok := err.(*Error); ok {
+			return re
+		}
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonParseForm,
+			Description: err.Error(),
+		}
+	}
+	lookup := func(key string) (string, bool) {
+		if !form.Has(key) {
+			return "", false
+		}
+		return form.Get(key), true
+	}
+	if err := formBinder.Bind(v, "", lookup); err != nil {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonParseForm,
+			Description: err.Error(),
+		}
+	}
+	if err := valid.Test(v); err != nil {
+		return &Error{
+			Status:      http.StatusBadRequest,
+			Reason:      ReasonValidationFailed,
+			Description: fmt.Sprintf("input violates %d constraints", len(err)),
+			Context:     err,
+		}
+	}
 	return nil
 }
 
