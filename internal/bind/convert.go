@@ -44,7 +44,7 @@ func setValue(rv reflect.Value, v string, f *Flags) error {
 	}
 
 	if u, ok := asTextUnmarshaler(rv); ok {
-		// Use the standard encoding.TextUnmarshaler if available.
+		// Use the standard unmarshaler if available.
 		return u.UnmarshalText([]byte(v))
 	}
 
