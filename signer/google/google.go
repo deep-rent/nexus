@@ -20,14 +20,16 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
-	"github.com/deep-rent/nexus/signer"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"github.com/deep-rent/nexus/signer"
 )
 
 var table = crc32.MakeTable(crc32.Castagnoli)
@@ -128,12 +130,12 @@ func (s *Signer) Sign(
 	}
 
 	if !res.VerifiedDigestCrc32C {
-		return nil, fmt.Errorf("KMS did not verify the digest CRC32C")
+		return nil, errors.New("KMS did not verify the digest CRC32C")
 	}
 
 	if int64(crc32.Checksum(res.Signature, table)) !=
 		res.SignatureCrc32C.GetValue() {
-		return nil, fmt.Errorf("KMS signature corrupted in transit")
+		return nil, errors.New("KMS signature corrupted in transit")
 	}
 
 	if res.Name != s.name {
