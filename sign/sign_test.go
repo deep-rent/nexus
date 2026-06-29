@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package signer_test
+package sign_test
 
 import (
 	"crypto"
 	"io"
 	"testing"
 
-	"github.com/deep-rent/nexus/signer"
+	"github.com/deep-rent/nexus/sign"
 )
 
 type mockSigner struct{}
@@ -36,7 +36,7 @@ func (d *mockSigner) Sign(
 func TestFrom(t *testing.T) {
 	t.Parallel()
 
-	s := signer.From(&mockSigner{})
+	s := sign.From(&mockSigner{})
 
 	key := s.Public()
 	if exp, act := "foo", key.(string); exp != act {

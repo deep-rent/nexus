@@ -50,7 +50,7 @@ import (
 
 	"github.com/cloudflare/circl/sign/ed448"
 
-	"github.com/deep-rent/nexus/signer"
+	sign "github.com/deep-rent/nexus/sign"
 )
 
 // Algorithm represents an asymmetric JSON Web Algorithm (JWA) used for
@@ -69,7 +69,7 @@ type Algorithm[T crypto.PublicKey] interface {
 	// The signer must be capable of using the algorithm's specific hash
 	// and padding scheme. If the signer implements signer.Signer, the
 	// context will be propagated.
-	Sign(ctx context.Context, s signer.Signer, msg []byte) ([]byte, error)
+	Sign(ctx context.Context, s sign.Signer, msg []byte) ([]byte, error)
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
@@ -101,7 +101,7 @@ func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 // Sign creates an RSASSA-PKCS1-v1_5 signature using the provided signer.
 func (a *rs) Sign(
 	ctx context.Context,
-	s signer.Signer,
+	s sign.Signer,
 	msg []byte,
 ) ([]byte, error) {
 	h := a.pool.Get()
@@ -156,7 +156,7 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 // Sign creates an RSASSA-PSS signature using the provided signer.
 func (a *ps) Sign(
 	ctx context.Context,
-	s signer.Signer,
+	s sign.Signer,
 	msg []byte,
 ) ([]byte, error) {
 	h := a.pool.Get()
@@ -225,7 +225,7 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 // format.
 func (a *es) Sign(
 	ctx context.Context,
-	s signer.Signer,
+	s sign.Signer,
 	msg []byte,
 ) ([]byte, error) {
 	h := a.pool.Get()
@@ -291,7 +291,7 @@ func (a *ed) Verify(key, msg, sig []byte) bool {
 // Sign creates an EdDSA signature using the provided signer.
 func (a *ed) Sign(
 	ctx context.Context,
-	s signer.Signer,
+	s sign.Signer,
 	msg []byte,
 ) ([]byte, error) {
 	return s.Sign(ctx, rand.Reader, msg, crypto.Hash(0))

@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/signer"
+	"github.com/deep-rent/nexus/sign"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -45,7 +45,7 @@ func mockKeyPair(t *testing.T, id string) jwk.KeyPair {
 	}
 	return jwk.NewKeyBuilder(jwa.ES256).
 		WithKeyID(id).
-		BuildPair(signer.From(raw))
+		BuildPair(sign.From(raw))
 }
 
 func TestSignVerify(t *testing.T) {

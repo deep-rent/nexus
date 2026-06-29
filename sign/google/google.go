@@ -25,81 +25,32 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
+	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/deep-rent/nexus/signer"
+	"github.com/deep-rent/nexus/sign"
 )
 
 var table = crc32.MakeTable(crc32.Castagnoli)
 
-// Signer is a context-aware cryptographic signer backed by Google Cloud KMS.
-type Signer struct {
+// signer is a context-aware cryptographic signer backed by Google Cloud KMS.
+type signer struct {
 	client *kms.KeyManagementClient
 	name   string
 	key    crypto.PublicKey
 }
 
-type Resource struct {
-	Project    string
-	Location   string
-	KeyRing    string
-	Key        string
-	KeyVersion string
-}
-
-// New creates a new Signer instance for the specified Google Cloud KMS key
-// version.
-func New(
-	ctx context.Context,
-	client *kms.KeyManagementClient,
-	resource Resource,
-) (*Signer, error) {
-	name := fmt.Sprintf(
-		"projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s",
-		resource.Project,
-		resource.Location,
-		resource.KeyRing,
-		resource.Key,
-		resource.KeyVersion,
-	)
-
-	req := &kmspb.GetPublicKeyRequest{
-		Name: name,
-	}
-	res, err := client.GetPublicKey(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get public key from KMS: %w", err)
-	}
-
-	block, _ := pem.Decode([]byte(res.Pem))
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block from KMS public key")
-	}
-	if block.Type != "PUBLIC KEY" {
-		return nil, fmt.Errorf("unexpected PEM block type: %s", block.Type)
-	}
-	key, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
-	}
-
-	return &Signer{
-		client: client,
-		name:   name,
-		key:    key,
-	}, nil
-}
-
 // Public returns the public key associated with the KMS key.
-func (s *Signer) Public() crypto.PublicKey {
+func (s *signer) Public() crypto.PublicKey {
 	return s.key
 }
 
 // Sign performs the cryptographic signing operation using Cloud KMS.
-func (s *Signer) Sign(
+func (s *signer) Sign(
 	ctx context.Context,
 	rand io.Reader,
 	digest []byte,
@@ -162,4 +113,70 @@ func (s *Signer) Sign(
 	return res.Signature, nil
 }
 
-var _ signer.Signer = (*Signer)(nil)
+var _ sign.Signer = (*signer)(nil)
+
+type Factory struct {
+	client *kms.KeyManagementClient
+	logger *slog.Logger
+}
+
+func (f *Factory) New(ctx context.Context, parent string) []sign.Signer {
+	req := &kmspb.ListCryptoKeyVersionsRequest{
+		Parent: parent,
+		Filter: "state=ENABLED",
+	}
+
+	var signers []sign.Signer
+	it := f.client.ListCryptoKeyVersions(ctx, req)
+	for {
+		version, err := it.Next()
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+
+		name := version.Name
+
+		s, err := f.new(ctx, name)
+		if err != nil {
+			f.logger.WarnContext(
+				ctx,
+				"",
+				slog.String("name", name),
+				slog.Any("error", err),
+			)
+			continue
+		}
+
+		signers = append(signers, s)
+	}
+
+	return signers
+}
+
+func (f *Factory) new(ctx context.Context, name string) (sign.Signer, error) {
+	req := &kmspb.GetPublicKeyRequest{
+		Name: name,
+	}
+	res, err := f.client.GetPublicKey(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public key from KMS: %w", err)
+	}
+
+	msg, _ := pem.Decode([]byte(res.Pem))
+	if msg == nil {
+		return nil, fmt.Errorf("failed to decode PEM block from KMS public key")
+	}
+	if msg.Type != "PUBLIC KEY" {
+		return nil, fmt.Errorf("unexpected PEM block type: %s", msg.Type)
+	}
+	key, err := x509.ParsePKIXPublicKey(msg.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	return &signer{
+		client: f.client,
+		name:   name,
+		key:    key,
+	}, nil
+}

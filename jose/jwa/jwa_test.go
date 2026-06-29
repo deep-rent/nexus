@@ -25,7 +25,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/deep-rent/nexus/signer"
+	"github.com/deep-rent/nexus/sign"
 
 	"github.com/cloudflare/circl/sign/ed448"
 
@@ -57,7 +57,7 @@ func TestAlgorithm_RSASignVerify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sig, err := tt.a.Sign(t.Context(), signer.From(k), mockMsg)
+			sig, err := tt.a.Sign(t.Context(), sign.From(k), mockMsg)
 			if err != nil {
 				t.Fatalf("%s.Sign() error = %v", tt.name, err)
 			}
@@ -89,7 +89,7 @@ func TestAlgorithm_ECDSASignVerify(t *testing.T) {
 				t.Fatalf("ecdsa.GenerateKey() error = %v", err)
 			}
 
-			sig, err := tt.a.Sign(t.Context(), signer.From(k), mockMsg)
+			sig, err := tt.a.Sign(t.Context(), sign.From(k), mockMsg)
 			if err != nil {
 				t.Fatalf("%s.Sign() error = %v", tt.name, err)
 			}
@@ -110,7 +110,7 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 			t.Fatalf("ed25519.GenerateKey() error = %v", err)
 		}
 
-		sig, err := jwa.EdDSA.Sign(t.Context(), signer.From(prv), mockMsg)
+		sig, err := jwa.EdDSA.Sign(t.Context(), sign.From(prv), mockMsg)
 		if err != nil {
 			t.Fatalf("EdDSA.Sign(Ed25519) error = %v", err)
 		}
@@ -126,7 +126,7 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 			t.Fatalf("ed448.GenerateKey() error = %v", err)
 		}
 
-		sig, err := jwa.EdDSA.Sign(t.Context(), signer.From(prv), mockMsg)
+		sig, err := jwa.EdDSA.Sign(t.Context(), sign.From(prv), mockMsg)
 		if err != nil {
 			t.Fatalf("EdDSA.Sign(Ed448) error = %v", err)
 		}
@@ -155,7 +155,7 @@ func (m *mockSigner) Sign(
 	return m.signer.Sign(rand, digest, opts)
 }
 
-var _ signer.Signer = (*mockSigner)(nil)
+var _ sign.Signer = (*mockSigner)(nil)
 
 func TestAlgorithm_Sign(t *testing.T) {
 	t.Parallel()

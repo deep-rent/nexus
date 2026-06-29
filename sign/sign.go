@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package signer provides context-aware cryptographic signing interfaces.
-package signer
+package sign
 
 import (
 	"context"

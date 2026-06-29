@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/signer"
+	"github.com/deep-rent/nexus/sign"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -529,7 +529,7 @@ func TestBuilder(t *testing.T) {
 
 	t.Run("build pair", func(t *testing.T) {
 		t.Parallel()
-		p := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(signer.From(k))
+		p := jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(sign.From(k))
 		if got, want := p.KeyID(), id; got != want {
 			t.Errorf("p.KeyID() = %q; want %q", got, want)
 		}
@@ -564,19 +564,19 @@ func TestBuilder_Panic(t *testing.T) {
 		{
 			name: "unidentified key pair",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.ES256).BuildPair(signer.From(ec))
+				jwk.NewKeyBuilder(jwa.ES256).BuildPair(sign.From(ec))
 			},
 		},
 		{
 			name: "incompatible key type 1",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.ES256).WithKeyID("x").BuildPair(signer.From(rs))
+				jwk.NewKeyBuilder(jwa.ES256).WithKeyID("x").BuildPair(sign.From(rs))
 			},
 		},
 		{
 			name: "incompatible key type 2",
 			call: func() {
-				jwk.NewKeyBuilder(jwa.RS256).WithKeyID("x").BuildPair(signer.From(ec))
+				jwk.NewKeyBuilder(jwa.RS256).WithKeyID("x").BuildPair(sign.From(ec))
 			},
 		},
 	}
