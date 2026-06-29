@@ -45,27 +45,12 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"io"
 	"math/big"
 	"sync"
 
 	"github.com/cloudflare/circl/sign/ed448"
+	"github.com/deep-rent/nexus/signer"
 )
-
-// ContextSigner is an optional interface extending crypto.Signer to support
-// context propagation for external signing services (e.g., Cloud KMS).
-type ContextSigner interface {
-	crypto.Signer
-
-	// SignContext creates a signature, honoring the provided context for
-	// cancellation and deadlines.
-	SignContext(
-		ctx context.Context,
-		rand io.Reader,
-		digest []byte,
-		opts crypto.SignerOpts,
-	) (signature []byte, err error)
-}
 
 // Algorithm represents an asymmetric JSON Web Algorithm (JWA) used for
 // verifying and calculating signatures. The type parameter T specifies the type
@@ -81,9 +66,9 @@ type Algorithm[T crypto.PublicKey] interface {
 
 	// Sign creates a signature for the message using the provided signer.
 	// The signer must be capable of using the algorithm's specific hash
-	// and padding scheme. If the signer implements ContextSigner, the
+	// and padding scheme. If the signer implements signer.Signer, the
 	// context will be propagated.
-	Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte, error)
+	Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error)
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
@@ -113,15 +98,12 @@ func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 }
 
 // Sign creates an RSASSA-PKCS1-v1_5 signature using the provided [crypto.Signer].
-func (a *rs) Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte, error) {
+func (a *rs) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
 	h.Write(msg)
 	digest := h.Sum(nil)
-	if cs, ok := signer.(ContextSigner); ok {
-		return cs.SignContext(ctx, rand.Reader, digest, a.pool.Hash)
-	}
-	return signer.Sign(rand.Reader, digest, a.pool.Hash)
+	return signer.From(s).SignContext(ctx, rand.Reader, digest, a.pool.Hash)
 }
 
 // String returns the JWA algorithm name.
@@ -167,7 +149,7 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 }
 
 // Sign creates an RSASSA-PSS signature using the provided [crypto.Signer].
-func (a *ps) Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte, error) {
+func (a *ps) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
 	h.Write(msg)
@@ -176,10 +158,7 @@ func (a *ps) Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte
 		SaltLength: rsa.PSSSaltLengthEqualsHash,
 		Hash:       a.pool.Hash,
 	}
-	if cs, ok := signer.(ContextSigner); ok {
-		return cs.SignContext(ctx, rand.Reader, digest, opts)
-	}
-	return signer.Sign(rand.Reader, digest, opts)
+	return signer.From(s).SignContext(ctx, rand.Reader, digest, opts)
 }
 
 // String returns the JWA algorithm name.
@@ -234,20 +213,13 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 }
 
 // Sign creates an ECDSA signature and transcodes it from ASN.1 DER to raw format.
-func (a *es) Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte, error) {
+func (a *es) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
 	h.Write(msg)
 	digest := h.Sum(nil)
 
-	var der []byte
-	var err error
-	if cs, ok := signer.(ContextSigner); ok {
-		der, err = cs.SignContext(ctx, rand.Reader, digest, nil)
-	} else {
-		der, err = signer.Sign(rand.Reader, digest, nil)
-	}
-
+	der, err := signer.From(s).SignContext(ctx, rand.Reader, digest, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +228,7 @@ func (a *es) Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte
 		return nil, fmt.Errorf("failed to parse ECDSA signature: %w", err)
 	}
 
-	pub, ok := signer.Public().(*ecdsa.PublicKey)
+	pub, ok := s.Public().(*ecdsa.PublicKey)
 	if !ok {
 		return nil, errors.New("signer public key is not ECDSA")
 	}
@@ -303,11 +275,8 @@ func (a *ed) Verify(key, msg, sig []byte) bool {
 }
 
 // Sign creates an EdDSA signature using the provided [crypto.Signer].
-func (a *ed) Sign(ctx context.Context, signer crypto.Signer, msg []byte) ([]byte, error) {
-	if cs, ok := signer.(ContextSigner); ok {
-		return cs.SignContext(ctx, rand.Reader, msg, crypto.Hash(0))
-	}
-	return signer.Sign(rand.Reader, msg, crypto.Hash(0))
+func (a *ed) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
+	return signer.From(s).SignContext(ctx, rand.Reader, msg, crypto.Hash(0))
 }
 
 // String returns the JWA algorithm name.
