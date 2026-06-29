@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package google provides a Google Cloud KMS implementation of the signer
+// Package gcpkms provides a Google Cloud KMS implementation of the signer
 // interface.
-package google
+package gcpkms
 
 import (
 	"context"
@@ -164,7 +164,8 @@ func NewFactory(client *kms.KeyManagementClient, opts ...Option) *Factory {
 	return f
 }
 
-// New creates a new vault instance using the keys found in the given KMS parent.
+// New creates a new vault instance using the keys found in the given KMS
+// parent.
 func (f *Factory) New(parent string) (vault.Vault, error) {
 	req := &kmspb.ListCryptoKeyVersionsRequest{
 		Parent: parent,

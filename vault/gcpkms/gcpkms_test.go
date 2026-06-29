@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package google_test
+package gcpkms_test
 
 import (
 	"context"
@@ -28,12 +28,11 @@ import (
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
+	"github.com/deep-rent/nexus/vault/gcpkms"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-
-	"github.com/deep-rent/nexus/vault/google"
 )
 
 type mockServer struct {
@@ -50,7 +49,7 @@ func (s *mockServer) ListCryptoKeyVersions(
 			Algorithm: kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
 		},
 	}
-	if !strings.HasSuffix(req.Parent, "ck-rsa-only") {
+	if !strings.HasSuffix(req.Parent, "ck-rsa") {
 		versions = append(versions, &kmspb.CryptoKeyVersion{
 			Name:      req.Parent + "/cryptoKeyVersions/2",
 			Algorithm: kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256,
@@ -152,7 +151,7 @@ func TestFactory_New(t *testing.T) {
 	client, cleanup := setupTest(t)
 	defer cleanup()
 
-	f := google.NewFactory(client, google.WithContext(t.Context()))
+	f := gcpkms.NewFactory(client, gcpkms.WithContext(t.Context()))
 
 	parent := "projects/test/locations/global/keyRings/kr/cryptoKeys/ck"
 	v, err := f.New(parent)
@@ -171,9 +170,9 @@ func TestSigner_Sign(t *testing.T) {
 	client, cleanup := setupTest(t)
 	defer cleanup()
 
-	f := google.NewFactory(client)
+	f := gcpkms.NewFactory(client)
 
-	parent := "projects/test/locations/global/keyRings/kr/cryptoKeys/ck-rsa-only"
+	parent := "projects/test/locations/global/keyRings/kr/cryptoKeys/ck-rsa"
 	v, err := f.New(parent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
