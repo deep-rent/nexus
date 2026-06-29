@@ -117,7 +117,7 @@ import (
 // indicating whether the variable was present. This type allows for custom
 // lookup mechanisms, such as reading from sources other than the actual
 // environment, which is especially useful for testing.
-type Lookup = bind.Lookup
+type Lookup func(key string) (string, bool)
 
 // Option is a functional option for configuring the [Unmarshal] behavior.
 type Option func(*config)
