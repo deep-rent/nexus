@@ -28,6 +28,15 @@ import (
 // making it ideal for API error responses.
 type Error map[string][]string
 
+// Size counts the total number of individual constraint violations.
+func (e Error) Size() int {
+	n := 0
+	for _, msgs := range e {
+		n += len(msgs)
+	}
+	return n
+}
+
 // Error implements the [error] interface, providing a consolidated string
 // representation of all validation failures.
 func (e Error) Error() string {
