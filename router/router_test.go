@@ -54,7 +54,7 @@ func TestExchange_BindJSON(t *testing.T) {
 	}{
 		{
 			name:    "success",
-			ctype:   "application/json",
+			ctype:   router.MediaTypeJSON,
 			body:    `{"name":"test"}`,
 			wantErr: false,
 		},
@@ -68,7 +68,7 @@ func TestExchange_BindJSON(t *testing.T) {
 		},
 		{
 			name:       "failure empty body",
-			ctype:      "application/json",
+			ctype:      router.MediaTypeJSON,
 			useNilBody: true,
 			wantErr:    true,
 			wantReason: router.ReasonEmptyBody,
@@ -76,7 +76,7 @@ func TestExchange_BindJSON(t *testing.T) {
 		},
 		{
 			name:       "failure malformed json",
-			ctype:      "application/json",
+			ctype:      router.MediaTypeJSON,
 			body:       `{"name":`,
 			wantErr:    true,
 			wantReason: router.ReasonParseJSON,
@@ -84,7 +84,7 @@ func TestExchange_BindJSON(t *testing.T) {
 		},
 		{
 			name:       "failure validation",
-			ctype:      "application/json",
+			ctype:      router.MediaTypeJSON,
 			body:       `{"name":""}`,
 			target:     &mockValidatable{},
 			wantErr:    true,
@@ -241,14 +241,14 @@ func TestExchange_BindForm(t *testing.T) {
 	}{
 		{
 			name:    "success",
-			ctype:   "application/x-www-form-urlencoded",
+			ctype:   router.MediaTypeForm,
 			body:    "name=test",
 			target:  &input{},
 			wantErr: false,
 		},
 		{
 			name:       "failure content type",
-			ctype:      "application/json",
+			ctype:      router.MediaTypeJSON,
 			body:       `{"name":"test"}`,
 			target:     &input{},
 			wantErr:    true,
@@ -257,7 +257,7 @@ func TestExchange_BindForm(t *testing.T) {
 		},
 		{
 			name:  "failure parse",
-			ctype: "application/x-www-form-urlencoded",
+			ctype: router.MediaTypeForm,
 			body:  "age=invalid",
 			target: &struct {
 				Age int `form:"age"`
@@ -268,7 +268,7 @@ func TestExchange_BindForm(t *testing.T) {
 		},
 		{
 			name:       "failure validation",
-			ctype:      "application/x-www-form-urlencoded",
+			ctype:      router.MediaTypeForm,
 			body:       "name=",
 			target:     &mockValidatable{},
 			wantErr:    true,
@@ -327,7 +327,7 @@ func TestExchange_ReadForm(t *testing.T) {
 	}{
 		{
 			name:    "success basic",
-			ctype:   "application/x-www-form-urlencoded",
+			ctype:   router.MediaTypeForm,
 			body:    "foo=bar&baz=qux",
 			wantErr: false,
 			wantKey: "foo",
@@ -335,7 +335,7 @@ func TestExchange_ReadForm(t *testing.T) {
 		},
 		{
 			name:        "success ignore query params",
-			ctype:       "application/x-www-form-urlencoded",
+			ctype:       router.MediaTypeForm,
 			body:        "foo=good",
 			queryParams: "?foo=bad&evil=true",
 			wantErr:     false,
@@ -345,7 +345,7 @@ func TestExchange_ReadForm(t *testing.T) {
 		},
 		{
 			name:       "failure wrong content type",
-			ctype:      "application/json",
+			ctype:      router.MediaTypeJSON,
 			body:       `{"foo":"bar"}`,
 			wantErr:    true,
 			wantReason: router.ReasonWrongType,
@@ -353,7 +353,7 @@ func TestExchange_ReadForm(t *testing.T) {
 		},
 		{
 			name:       "failure malformed encoding",
-			ctype:      "application/x-www-form-urlencoded",
+			ctype:      router.MediaTypeForm,
 			body:       "foo=%ZZ",
 			wantErr:    true,
 			wantReason: router.ReasonParseForm,
@@ -440,7 +440,7 @@ func TestExchange_JSON(t *testing.T) {
 		t.Errorf("rec.Code = %d; want %d", got, want)
 	}
 	if got, want := rec.Header().Get("Content-Type"),
-		"application/json"; got != want {
+		router.MediaTypeJSON; got != want {
 		t.Errorf("Content-Type = %q; want %q", got, want)
 	}
 
@@ -471,7 +471,7 @@ func TestExchange_Form(t *testing.T) {
 			t.Errorf("rec.Code = %d; want %d", got, want)
 		}
 		if got, want := rec.Header().Get("Content-Type"),
-			"application/x-www-form-urlencoded"; got != want {
+			router.MediaTypeForm; got != want {
 			t.Errorf("Content-Type = %q; want %q", got, want)
 		}
 
@@ -692,7 +692,7 @@ func TestRouter_StrictJSONDecoding(t *testing.T) {
 
 	body := strings.NewReader(`{"name": "Alice", "age": 30}`)
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/strict", body)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", router.MediaTypeJSON)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -717,7 +717,7 @@ func TestRouter_MaxBodyLimit(t *testing.T) {
 
 	body := strings.NewReader(`{"a":"large payload"}`)
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/limit", body)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", router.MediaTypeJSON)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
