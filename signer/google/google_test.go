@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto"
 	"net"
+	"strings"
 	"testing"
 
 	kms "cloud.google.com/go/kms/apiv1"
@@ -26,14 +27,17 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-type mockKMSServer struct {
+type mockServer struct {
 	kmspb.UnimplementedKeyManagementServiceServer
 }
 
-func (s *mockKMSServer) GetPublicKey(ctx context.Context, req *kmspb.GetPublicKeyRequest) (*kmspb.PublicKey, error) {
-	// A valid PEM block for a dummy public key (RSA 2048)
+func (s *mockServer) GetPublicKey(
+	ctx context.Context,
+	req *kmspb.GetPublicKeyRequest,
+) (*kmspb.PublicKey, error) {
 	const dummyPEM = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnG0D6EYAzGp75rvEFrBM
 SdhSzHmuPPmfH+s6x0gcHvePj84WyjZp+0XbOvmqLK9AIw7KM7yf23/bsjRVZaR9
@@ -48,40 +52,70 @@ owIDAQAB
 	}, nil
 }
 
-func (s *mockKMSServer) AsymmetricSign(ctx context.Context, req *kmspb.AsymmetricSignRequest) (*kmspb.AsymmetricSignResponse, error) {
+func (s *mockServer) AsymmetricSign(
+	ctx context.Context,
+	req *kmspb.AsymmetricSignRequest,
+) (*kmspb.AsymmetricSignResponse, error) {
 	return &kmspb.AsymmetricSignResponse{
 		Signature:            []byte("mock-signature"),
+		SignatureCrc32C:      wrapperspb.Int64(2339757342),
 		VerifiedDigestCrc32C: true,
 		Name:                 req.Name,
 	}, nil
 }
 
+var _ kmspb.KeyManagementServiceServer = (*mockServer)(nil)
+
 func TestSigner(t *testing.T) {
-	lis, err := net.Listen("tcp", "localhost:0")
+	t.Parallel()
+
+	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
-	kmspb.RegisterKeyManagementServiceServer(grpcServer, &mockKMSServer{})
-	go grpcServer.Serve(lis)
-	defer grpcServer.Stop()
+	srv := grpc.NewServer()
+	kmspb.RegisterKeyManagementServiceServer(srv, &mockServer{})
+	go srv.Serve(listener)
+	defer srv.Stop()
 
-	ctx := context.Background()
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	ctx := t.Context()
+	conn, err := grpc.NewClient(
+		listener.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("failed to close connection: %v", err)
+		}
+	}()
 
 	client, err := kms.NewKeyManagementClient(ctx, option.WithGRPCConn(conn))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			t.Logf("failed to close client: %v", err)
+		}
+	}()
 
-	keyName := "projects/test/locations/global/keyRings/kr/cryptoKeys/ck/cryptoKeyVersions/1"
-	signer, err := google.New(ctx, client, keyName)
+	name := strings.Join([]string{
+		"projects",
+		"test",
+		"locations",
+		"global",
+		"keyRings",
+		"kr",
+		"cryptoKeys",
+		"ck",
+		"cryptoKeyVersions",
+		"1",
+	}, "/")
+	signer, err := google.New(ctx, client, name)
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}

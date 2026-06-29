@@ -124,6 +124,11 @@ func (s *Signer) Sign(
 		return nil, fmt.Errorf("KMS did not verify the digest CRC32C")
 	}
 
+	sigChecksum := int64(crc32.Checksum(res.Signature, crc32.MakeTable(crc32.Castagnoli)))
+	if sigChecksum != res.SignatureCrc32C.GetValue() {
+		return nil, fmt.Errorf("KMS signature corrupted in transit")
+	}
+
 	if res.Name != s.name {
 		return nil, fmt.Errorf("KMS used unexpected key version %q", res.Name)
 	}
