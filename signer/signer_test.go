@@ -15,7 +15,6 @@
 package signer_test
 
 import (
-	"context"
 	"crypto"
 	"io"
 	"testing"
@@ -23,59 +22,32 @@ import (
 	"github.com/deep-rent/nexus/signer"
 )
 
-type mockNativeSigner struct{}
-
-func (d *mockNativeSigner) Public() crypto.PublicKey { return nil }
-func (d *mockNativeSigner) Sign(
-	rand io.Reader,
-	digest []byte,
-	opts crypto.SignerOpts,
-) (signature []byte, err error) {
-	return []byte("crypto"), nil
-}
-
 type mockSigner struct{}
 
-func (d *mockSigner) Public() crypto.PublicKey { return nil }
+func (d *mockSigner) Public() crypto.PublicKey { return "foo" }
 func (d *mockSigner) Sign(
 	rand io.Reader,
 	digest []byte,
 	opts crypto.SignerOpts,
 ) (signature []byte, err error) {
-	return []byte("crypto"), nil
+	return []byte("bar"), nil
 }
 
-func (d *mockSigner) SignContext(
-	ctx context.Context,
-	rand io.Reader,
-	digest []byte,
-	opts crypto.SignerOpts,
-) (signature []byte, err error) {
-	return []byte("context"), nil
-}
-
-func TestFrom_NativeSigner(t *testing.T) {
-	t.Parallel()
-
-	s := signer.From(&mockNativeSigner{})
-	sig, err := s.SignContext(t.Context(), nil, nil, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if exp, act := "crypto", string(sig); exp != act {
-		t.Errorf("From() expected %s, got %s", exp, act)
-	}
-}
-
-func TestFrom_Signer(t *testing.T) {
+func TestFrom(t *testing.T) {
 	t.Parallel()
 
 	s := signer.From(&mockSigner{})
-	sig, err := s.SignContext(t.Context(), nil, nil, nil)
+
+	key := s.Public()
+	if exp, act := "foo", key.(string); exp != act {
+		t.Errorf("expected %s, got %s", exp, act)
+	}
+
+	sig, err := s.Sign(t.Context(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if exp, act := "context", string(sig); exp != act {
-		t.Errorf("From() expected %s, got %s", exp, act)
+	if exp, act := "bar", string(sig); exp != act {
+		t.Errorf("expected %s, got %s", exp, act)
 	}
 }

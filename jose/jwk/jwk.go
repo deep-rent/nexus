@@ -89,6 +89,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/signer"
+
 	"github.com/cloudflare/circl/sign/ed448"
 
 	"github.com/deep-rent/nexus/cache"
@@ -165,7 +167,7 @@ func (k *key[T]) Verify(msg, sig []byte) bool {
 }
 
 // KeyPair represents a JSON Web Key that is capable of both verification and
-// signing. It embeds the public [Key] interface and wraps a [crypto.Signer] for
+// signing. It embeds the public [Key] interface and wraps a [signer.Signer] for
 // the private key operations.
 type KeyPair interface {
 	Key
@@ -178,13 +180,13 @@ type KeyPair interface {
 type keyPair[T crypto.PublicKey] struct {
 	// key is the underlying public key.
 	key[T]
-	// signer is the private key handle.
-	signer crypto.Signer
+	// s is the private key handle.
+	s signer.Signer
 }
 
 // Sign implements [KeyPair].
 func (s *keyPair[T]) Sign(ctx context.Context, msg []byte) ([]byte, error) {
-	return s.alg.Sign(ctx, s.signer, msg)
+	return s.alg.Sign(ctx, s.s, msg)
 }
 
 // KeyBuilder assists in the programmatic construction of [Key] and [KeyPair]
@@ -216,8 +218,8 @@ func (b *KeyBuilder[T]) WithKeyID(kid string) *KeyBuilder[T] {
 	return b
 }
 
-// Build creates a verification-only [Key] using the provided public key material.
-// It panics if a Key ID has not been configured.
+// Build creates a verification-only [Key] using the provided public key
+// material. It panics if a Key ID has not been configured.
 func (b *KeyBuilder[T]) Build(mat T) Key {
 	return b.build(mat)
 }
@@ -227,14 +229,14 @@ func (b *KeyBuilder[T]) Build(mat T) Key {
 // It panics if:
 //  1. The signer's public key cannot be cast to type T.
 //  2. A Key ID has not been configured.
-func (b *KeyBuilder[T]) BuildPair(signer crypto.Signer) KeyPair {
-	mat, ok := signer.Public().(T)
+func (b *KeyBuilder[T]) BuildPair(s signer.Signer) KeyPair {
+	mat, ok := s.Public().(T)
 	if !ok {
 		panic("signer public key type does not match key builder type")
 	}
 	return &keyPair[T]{
-		key:    *b.build(mat),
-		signer: signer,
+		key: *b.build(mat),
+		s:   s,
 	}
 }
 

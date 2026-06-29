@@ -16,7 +16,6 @@ package jwt_test
 
 import (
 	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -25,6 +24,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/deep-rent/nexus/signer"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -42,7 +43,9 @@ func mockKeyPair(t *testing.T, id string) jwk.KeyPair {
 	if err != nil {
 		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
 	}
-	return jwk.NewKeyBuilder(jwa.ES256).WithKeyID(id).BuildPair(raw)
+	return jwk.NewKeyBuilder(jwa.ES256).
+		WithKeyID(id).
+		BuildPair(signer.From(raw))
 }
 
 func TestSignVerify(t *testing.T) {
@@ -55,14 +58,14 @@ func TestSignVerify(t *testing.T) {
 		"rol": "admin",
 	}
 
-	raw, err := jwt.Sign(context.Background(), k, claims)
+	raw, err := jwt.Sign(t.Context(), k, claims)
 	if err != nil {
-		t.Fatalf("jwt.Sign(context.Background(), ) error = %v", err)
+		t.Fatalf("Sign() error = %v", err)
 	}
 
 	out, err := jwt.Verify[*testClaims](set, raw)
 	if err != nil {
-		t.Fatalf("jwt.Verify() error = %v", err)
+		t.Fatalf("Verify() error = %v", err)
 	}
 
 	if got, want := out.Subject(), "alice"; got != want {
@@ -86,7 +89,7 @@ func TestVerifier_Validation(t *testing.T) {
 			Exp: now.Add(time.Hour),
 		},
 	}
-	token, err := jwt.Sign(context.Background(), k, c)
+	token, err := jwt.Sign(t.Context(), k, c)
 	if err != nil {
 		t.Fatalf("failed to sign token: %v", err)
 	}
@@ -171,29 +174,33 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 	t.Run("token not yet active", func(t *testing.T) {
 		t.Parallel()
 		c := &testClaims{Reserved: jwt.Reserved{Nbf: now.Add(time.Hour)}}
-		raw, _ := jwt.Sign(context.Background(), k, c)
+		raw, _ := jwt.Sign(t.Context(), k, c)
 
 		v := jwt.NewVerifier[*testClaims](
 			set,
 			jwt.WithClock(func() time.Time { return now }),
 		)
-		if _, err := v.Verify(raw); !errors.Is(err, jwt.ErrTokenNotYetActive) {
-			t.Errorf("Verify() error = %v; want %v", err, jwt.ErrTokenNotYetActive)
+
+		wantErr := jwt.ErrTokenNotYetActive
+		if _, err := v.Verify(raw); !errors.Is(err, wantErr) {
+			t.Errorf("Verify() error = %v; want %v", err, wantErr)
 		}
 	})
 
 	t.Run("token too old", func(t *testing.T) {
 		t.Parallel()
 		c := &testClaims{Reserved: jwt.Reserved{Iat: now.Add(-2 * time.Hour)}}
-		raw, _ := jwt.Sign(context.Background(), k, c)
+		raw, _ := jwt.Sign(t.Context(), k, c)
 
 		v := jwt.NewVerifier[*testClaims](
 			set,
 			jwt.WithMaxAge(time.Hour),
 			jwt.WithClock(func() time.Time { return now }),
 		)
-		if _, err := v.Verify(raw); !errors.Is(err, jwt.ErrTokenTooOld) {
-			t.Errorf("Verify() error = %v; want %v", err, jwt.ErrTokenTooOld)
+
+		wantErr := jwt.ErrTokenTooOld
+		if _, err := v.Verify(raw); !errors.Is(err, wantErr) {
+			t.Errorf("Verify() error = %v; want %v", err, wantErr)
 		}
 	})
 }
@@ -201,7 +208,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 func TestOmitEmpty(t *testing.T) {
 	t.Parallel()
 	k := mockKeyPair(t, "k1")
-	raw, err := jwt.Sign(context.Background(), k, &jwt.Reserved{})
+	raw, err := jwt.Sign(t.Context(), k, &jwt.Reserved{})
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -233,7 +240,7 @@ func TestDynamicClaims(t *testing.T) {
 		"nested": map[string]string{"foo": "bar"},
 	}
 
-	raw, err := jwt.Sign(context.Background(), k, input)
+	raw, err := jwt.Sign(t.Context(), k, input)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -318,7 +325,7 @@ func TestParse_Errors(t *testing.T) {
 				t.Fatalf("Parse() expected error; got nil")
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Parse() error = %q; want it to contain %q", err, tt.wantErr)
+				t.Errorf("Parse() error = %q; must contain %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -329,7 +336,7 @@ func TestVerify_Errors(t *testing.T) {
 	k1 := mockKeyPair(t, "k1")
 	k2 := mockKeyPair(t, "k2")
 
-	raw, _ := jwt.Sign(context.Background(), k1, &testClaims{Role: "user"})
+	raw, _ := jwt.Sign(t.Context(), k1, &testClaims{Role: "user"})
 
 	t.Run("key not found", func(t *testing.T) {
 		t.Parallel()
@@ -356,10 +363,12 @@ func TestVerify_Errors(t *testing.T) {
 		}
 
 		set := jwk.Singleton(k1)
+		wantErr := jwt.ErrInvalidSignature
+
 		if _, err := jwt.Verify[*testClaims](set, tampered); !errors.Is(
-			err, jwt.ErrInvalidSignature,
+			err, wantErr,
 		) {
-			t.Errorf("Verify() error = %v; want %v", err, jwt.ErrInvalidSignature)
+			t.Errorf("Verify() error = %v; want %v", err, wantErr)
 		}
 	})
 }
@@ -405,12 +414,12 @@ func TestAudience_UnmarshalJSON(t *testing.T) {
 				t.Fatalf("UnmarshalJSON() error = %v", err)
 			}
 			got := c.Audience()
-			if len(got) != len(tt.want) {
-				t.Fatalf("Audience() length = %d; want %d", len(got), len(tt.want))
+			if act, exp := len(got), len(tt.want); act != exp {
+				t.Fatalf("Audience() length = %d; want %d", act, exp)
 			}
 			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("Audience()[%d] = %q; want %q", i, got[i], tt.want[i])
+				if act, exp := got[i], tt.want[i]; act != exp {
+					t.Errorf("Audience()[%d] = %q; want %q", i, act, exp)
 				}
 			}
 		})

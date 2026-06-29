@@ -16,7 +16,7 @@
 //
 // Package jwa provides implementations for asymmetric JSON Web Algorithms (JWA)
 // as defined in RFC 7518. It provides a unified interface for signature
-// verification using public keys and signature creation using [crypto.Signer].
+// verification using public keys and signature creation using [signer.Signer].
 // This abstraction handles algorithm-specific complexities such as hash
 // function selection, padding schemes (e.g., PSS vs PKCS1v15), and signature
 // format transcoding (e.g., converting ECDSA ASN.1 DER to raw concatenation).
@@ -49,6 +49,7 @@ import (
 	"sync"
 
 	"github.com/cloudflare/circl/sign/ed448"
+
 	"github.com/deep-rent/nexus/signer"
 )
 
@@ -59,7 +60,7 @@ type Algorithm[T crypto.PublicKey] interface {
 	// String provides the standard JWA name for the algorithm.
 	fmt.Stringer
 
-	// Verify checks a signature against a message using the provided public key.
+	// Verify checks a signature against a message with the provided public key.
 	// It returns true if the signature is valid, and false otherwise.
 	// None of the parameters may be nil.
 	Verify(key T, msg, sig []byte) bool
@@ -68,7 +69,7 @@ type Algorithm[T crypto.PublicKey] interface {
 	// The signer must be capable of using the algorithm's specific hash
 	// and padding scheme. If the signer implements signer.Signer, the
 	// context will be propagated.
-	Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error)
+	Sign(ctx context.Context, s signer.Signer, msg []byte) ([]byte, error)
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
@@ -97,13 +98,17 @@ func (a *rs) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	return rsa.VerifyPKCS1v15(key, a.pool.Hash, digest, sig) == nil
 }
 
-// Sign creates an RSASSA-PKCS1-v1_5 signature using the provided [crypto.Signer].
-func (a *rs) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
+// Sign creates an RSASSA-PKCS1-v1_5 signature using the provided signer.
+func (a *rs) Sign(
+	ctx context.Context,
+	s signer.Signer,
+	msg []byte,
+) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
 	h.Write(msg)
 	digest := h.Sum(nil)
-	return signer.From(s).SignContext(ctx, rand.Reader, digest, a.pool.Hash)
+	return s.Sign(ctx, rand.Reader, digest, a.pool.Hash)
 }
 
 // String returns the JWA algorithm name.
@@ -148,8 +153,12 @@ func (a *ps) Verify(key *rsa.PublicKey, msg, sig []byte) bool {
 	return rsa.VerifyPSS(key, a.pool.Hash, digest, sig, opts) == nil
 }
 
-// Sign creates an RSASSA-PSS signature using the provided [crypto.Signer].
-func (a *ps) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
+// Sign creates an RSASSA-PSS signature using the provided signer.
+func (a *ps) Sign(
+	ctx context.Context,
+	s signer.Signer,
+	msg []byte,
+) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
 	h.Write(msg)
@@ -158,7 +167,7 @@ func (a *ps) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, err
 		SaltLength: rsa.PSSSaltLengthEqualsHash,
 		Hash:       a.pool.Hash,
 	}
-	return signer.From(s).SignContext(ctx, rand.Reader, digest, opts)
+	return s.Sign(ctx, rand.Reader, digest, opts)
 }
 
 // String returns the JWA algorithm name.
@@ -212,14 +221,19 @@ func (a *es) Verify(key *ecdsa.PublicKey, msg, sig []byte) bool {
 	return ecdsa.Verify(key, digest, r, s)
 }
 
-// Sign creates an ECDSA signature and transcodes it from ASN.1 DER to raw format.
-func (a *es) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
+// Sign creates an ECDSA signature and transcodes it from ASN.1 DER to raw
+// format.
+func (a *es) Sign(
+	ctx context.Context,
+	s signer.Signer,
+	msg []byte,
+) ([]byte, error) {
 	h := a.pool.Get()
 	defer a.pool.Put(h)
 	h.Write(msg)
 	digest := h.Sum(nil)
 
-	der, err := signer.From(s).SignContext(ctx, rand.Reader, digest, nil)
+	der, err := s.Sign(ctx, rand.Reader, digest, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -262,8 +276,8 @@ type ed struct{}
 func (a *ed) Verify(key, msg, sig []byte) bool {
 	switch len(key) {
 	case ed448.PublicKeySize:
-		// Per RFC 8037, the JWS "EdDSA" algorithm corresponds to the "pure" EdDSA
-		// variant, which uses an empty string for the context parameter.
+		// Per RFC 8037, the JWS "EdDSA" algorithm corresponds to the "pure"
+		// EdDSA variant, which uses an empty string for the context parameter.
 		pub := ed448.PublicKey(key)
 		return ed448.Verify(pub, msg, sig, "")
 	case ed25519.PublicKeySize:
@@ -274,9 +288,13 @@ func (a *ed) Verify(key, msg, sig []byte) bool {
 	}
 }
 
-// Sign creates an EdDSA signature using the provided [crypto.Signer].
-func (a *ed) Sign(ctx context.Context, s crypto.Signer, msg []byte) ([]byte, error) {
-	return signer.From(s).SignContext(ctx, rand.Reader, msg, crypto.Hash(0))
+// Sign creates an EdDSA signature using the provided signer.
+func (a *ed) Sign(
+	ctx context.Context,
+	s signer.Signer,
+	msg []byte,
+) ([]byte, error) {
+	return s.Sign(ctx, rand.Reader, msg, crypto.Hash(0))
 }
 
 // String returns the JWA algorithm name.

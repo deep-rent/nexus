@@ -21,14 +21,15 @@ import (
 	"io"
 )
 
-// Signer is an interface extending crypto.Signer to support context propagation
-// for external signing services (e.g., Cloud KMS).
+// Signer is an interface similar to [crypto.Signer] but with context
+// propagation.
 type Signer interface {
-	crypto.Signer
+	// Public returns the public key corresponding to the opaque, private key.
+	Public() crypto.PublicKey
 
-	// SignContext creates a signature, honoring the provided context for
-	// cancellation and deadlines.
-	SignContext(
+	// Sign creates a signature, honoring the provided context for cancellation
+	// and deadlines.
+	Sign(
 		ctx context.Context,
 		rand io.Reader,
 		digest []byte,
@@ -36,27 +37,26 @@ type Signer interface {
 	) (signature []byte, err error)
 }
 
-// From adapts a standard crypto.Signer into a context-aware Signer.
-// If the underlying signer already implements Signer, it is returned directly.
-// Otherwise, a wrapper is returned that ignores the context and calls the
-// standard Sign method.
+// From adapts a standard [crypto.Signer] into a context-aware [Signer].
 func From(s crypto.Signer) Signer {
-	if cast, ok := s.(Signer); ok {
-		return cast
-	}
-	return &wrapper{s}
+	return &wrapper{signer: s}
 }
 
 type wrapper struct {
-	crypto.Signer
+	signer crypto.Signer
 }
 
-// SignContext implements Signer.
-func (w *wrapper) SignContext(
+// Public implements [Signer].
+func (w *wrapper) Public() crypto.PublicKey { return w.signer.Public() }
+
+// Sign implements [Signer].
+func (w *wrapper) Sign(
 	ctx context.Context,
 	rand io.Reader,
 	digest []byte,
 	opts crypto.SignerOpts,
 ) (signature []byte, err error) {
-	return w.Sign(rand, digest, opts)
+	return w.signer.Sign(rand, digest, opts)
 }
+
+var _ Signer = (*wrapper)(nil)
