@@ -23,11 +23,12 @@ import (
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
-	"github.com/deep-rent/nexus/signer/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"github.com/deep-rent/nexus/signer/google"
 )
 
 type mockServer struct {
@@ -76,7 +77,11 @@ func TestSigner(t *testing.T) {
 
 	srv := grpc.NewServer()
 	kmspb.RegisterKeyManagementServiceServer(srv, &mockServer{})
-	go srv.Serve(listener)
+	go func() {
+		if err := srv.Serve(listener); err != nil {
+			t.Logf("server stopped: %v", err)
+		}
+	}()
 	defer srv.Stop()
 
 	ctx := t.Context()
