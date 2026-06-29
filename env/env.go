@@ -209,7 +209,7 @@ func Expand(s string, opts ...Option) (string, error) {
 		}
 
 		// Look at the character after the dollar sign.
-		if i+1 < len(s) && s[i+1] == '$' {
+		if i+1 < len(s) && s[i+1] == '$' { //nolint:gocritic
 			// Handle the `$$` escape sequence.
 			b.WriteByte('$')
 			i += 2
