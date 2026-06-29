@@ -69,24 +69,10 @@ import (
 	"github.com/deep-rent/nexus/valid"
 )
 
-var formBinder = bind.New(
-	"form",
-	bind.WithCache(true),
-	bind.WithTransformer(snake.ToLower),
-)
-
-type urlSource url.Values
-
-func (s urlSource) Lookup(key string) ([]string, bool) {
-	v, ok := s[key]
-	return v, ok
-}
-
-var _ bind.Source = (*urlSource)(nil)
-
 // Standard error reasons used for machine-readable error codes.
 const (
-	// ReasonWrongType indicates that the request had an unsupported content type.
+	// ReasonWrongType indicates that the request had an unsupported content
+	// type.
 	ReasonWrongType = "wrong_type"
 	// ReasonEmptyBody indicates that the request body was empty.
 	ReasonEmptyBody = "empty_body"
@@ -94,7 +80,8 @@ const (
 	ReasonParseJSON = "parse_json"
 	// ReasonParseForm indicates that there was an error parsing form data.
 	ReasonParseForm = "parse_form"
-	// ReasonParseQuery indicates that there was an error parsing query parameters.
+	// ReasonParseQuery indicates that there was an error parsing query
+	// parameters.
 	ReasonParseQuery = "parse_query"
 	// ReasonValidationFailed indicates that input validation failed.
 	ReasonValidationFailed = "validation_failed"
@@ -109,6 +96,21 @@ const (
 	// MediaTypeForm is the media type for URL-encoded form data.
 	MediaTypeForm = "application/x-www-form-urlencoded"
 )
+
+var formBinder = bind.New(
+	"form",
+	bind.WithCache(true),
+	bind.WithTransformer(snake.ToLower),
+)
+
+type urlSource url.Values
+
+func (s urlSource) Lookup(key string) ([]string, bool) {
+	v, ok := s[key]
+	return v, ok
+}
+
+var _ bind.Source = (*urlSource)(nil)
 
 // ResponseWriter extends [http.ResponseWriter] with introspection capabilities.
 //
@@ -289,12 +291,12 @@ func (e *Exchange) BindJSON(v any) *Error {
 	}
 
 	if err := valid.Test(v); err != nil {
-		desc := fmt.Sprintf("json body violates %d constraints", len(err))
+		count := err.Size()
 
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonValidationFailed,
-			Description: desc,
+			Description: fmt.Sprintf("input violates %d constraints", count),
 			Context:     err,
 		}
 	}
@@ -313,12 +315,12 @@ func (e *Exchange) BindQuery(v any) *Error {
 		}
 	}
 	if err := valid.Test(v); err != nil {
-		desc := fmt.Sprintf("query string violates %d constraints", len(err))
+		count := err.Size()
 
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonValidationFailed,
-			Description: desc,
+			Description: fmt.Sprintf("input violates %d constraints", count),
 			Context:     err,
 		}
 	}
@@ -339,12 +341,12 @@ func (e *Exchange) BindForm(v any) *Error {
 		}
 	}
 	if err := valid.Test(v); err != nil {
-		desc := fmt.Sprintf("body violates %d constraints", len(err))
+		count := err.Size()
 
 		return &Error{
 			Status:      http.StatusBadRequest,
 			Reason:      ReasonValidationFailed,
-			Description: desc,
+			Description: fmt.Sprintf("input violates %d constraints", count),
 			Context:     err,
 		}
 	}
