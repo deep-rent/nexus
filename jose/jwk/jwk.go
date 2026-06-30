@@ -613,3 +613,19 @@ func Thumbprint(pub crypto.PublicKey) (string, error) {
 	hash := sha256.Sum256(der)
 	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
 }
+
+func Generate[T crypto.PublicKey](alg jwa.Algorithm[T]) (KeyPair, error) {
+	key, err := alg.Generate()
+	if err != nil {
+		return nil, err
+	}
+	kid, err := Thumbprint(key.Public())
+	if err != nil {
+		return nil, err
+	}
+	kp := NewKeyPair(alg, kid, sign.From(key))
+	if kp == nil {
+		return nil, fmt.Errorf("generated key type %T does not match expected algorithm key type", key.Public())
+	}
+	return kp, nil
+}
