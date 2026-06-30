@@ -601,10 +601,12 @@ type raw struct {
 }
 
 // Thumbprint generates a deterministic, unique fingerprint from any standard
-// public key. This value is meant to be used as the [Hint.KeyID].
+// public key (e.g., RSA, ECDSA, Ed25519). This fingerprint is designed to be
+// used as a Key ID ("kid") for identifying keys.
 //
-// More formally, the thumbprint is calculated as the SHA-256 hash of the PKIX
-// DER-encoded key material in base64-URL encoding.
+// Note: This calculates the SHA-256 hash of the PKIX DER-encoded public key
+// and returns it as a raw base64url-encoded string. It does not implement
+// the JWK Thumbprint specification (RFC 7638).
 func Thumbprint(pub crypto.PublicKey) (string, error) {
 	der, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
@@ -614,6 +616,14 @@ func Thumbprint(pub crypto.PublicKey) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
 }
 
+// Generate randomly generates a new signing-capable [KeyPair] for the given
+// JSON Web Algorithm. The generated private key is wrapped as a [sign.Signer],
+// and the Key ID ("kid") is automatically computed as the SHA-256 [Thumbprint]
+// of the corresponding public key.
+//
+// It returns an error if the key pair generation fails, if computing the
+// thumbprint fails, or if the generated key type cannot be typed to the public
+// key material type T of the specified algorithm.
 func Generate[T crypto.PublicKey](alg jwa.Algorithm[T]) (KeyPair, error) {
 	key, err := alg.Generate()
 	if err != nil {
@@ -625,7 +635,10 @@ func Generate[T crypto.PublicKey](alg jwa.Algorithm[T]) (KeyPair, error) {
 	}
 	kp := NewKeyPair(alg, kid, sign.From(key))
 	if kp == nil {
-		return nil, fmt.Errorf("generated key type %T does not match expected algorithm key type", key.Public())
+		return nil, fmt.Errorf(
+			"key type %T does not match expected algorithm key type",
+			key.Public(),
+		)
 	}
 	return kp, nil
 }
