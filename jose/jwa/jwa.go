@@ -71,7 +71,8 @@ type Algorithm[T crypto.PublicKey] interface {
 	Sign(ctx context.Context, s sign.Signer, msg []byte) ([]byte, error)
 
 	// Generate randomly generates a new public/private key pair with
-	// recommended parameters for the algorithm.
+	// recommended parameters for the algorithm. It returns an error if the
+	// generation fails.
 	Generate() (crypto.Signer, error)
 }
 
