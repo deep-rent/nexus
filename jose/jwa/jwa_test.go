@@ -172,3 +172,39 @@ func TestAlgorithm_Sign(t *testing.T) {
 		t.Errorf("EdDSA did not propagate context")
 	}
 }
+
+func TestAlgorithm_Generate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		gen  func() (crypto.Signer, error)
+	}{
+		{"RS256", jwa.RS256.Generate},
+		{"RS384", jwa.RS384.Generate},
+		{"RS512", jwa.RS512.Generate},
+		{"PS256", jwa.PS256.Generate},
+		{"PS384", jwa.PS384.Generate},
+		{"PS512", jwa.PS512.Generate},
+		{"ES256", jwa.ES256.Generate},
+		{"ES384", jwa.ES384.Generate},
+		{"ES512", jwa.ES512.Generate},
+		{"EdDSA", jwa.EdDSA.Generate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s, err := tt.gen()
+			if err != nil {
+				t.Fatalf("%s.Generate() error = %v", tt.name, err)
+			}
+			if s == nil {
+				t.Fatalf("%s.Generate() returned nil signer", tt.name)
+			}
+			if s.Public() == nil {
+				t.Errorf("%s.Generate() returned signer with nil Public()", tt.name)
+			}
+		})
+	}
+}

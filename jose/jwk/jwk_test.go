@@ -562,3 +562,57 @@ func TestBuilder(t *testing.T) {
 		}
 	})
 }
+
+func TestThumbprint(t *testing.T) {
+	t.Parallel()
+
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey() error = %v", err)
+	}
+
+	kid, err := jwk.Thumbprint(&k.PublicKey)
+	if err != nil {
+		t.Fatalf("Thumbprint() error = %v", err)
+	}
+	if kid == "" {
+		t.Errorf("Thumbprint() returned empty string")
+	}
+
+	kid2, err := jwk.Thumbprint(&k.PublicKey)
+	if err != nil {
+		t.Fatalf("Thumbprint() second call error = %v", err)
+	}
+	if kid != kid2 {
+		t.Errorf("Thumbprint() is not deterministic: %q != %q", kid, kid2)
+	}
+}
+
+func TestGenerate(t *testing.T) {
+	t.Parallel()
+
+	kp, err := jwk.Generate(jwa.ES256)
+	if err != nil {
+		t.Fatalf("Generate(ES256) error = %v", err)
+	}
+	if kp == nil {
+		t.Fatalf("Generate(ES256) returned nil")
+	}
+
+	if kp.Algorithm() != "ES256" {
+		t.Errorf("kp.Algorithm() = %q; want %q", kp.Algorithm(), "ES256")
+	}
+
+	if kp.KeyID() == "" {
+		t.Errorf("kp.KeyID() is empty")
+	}
+
+	msg := []byte("payload")
+	sig, err := kp.Sign(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("kp.Sign() error = %v", err)
+	}
+	if !kp.Verify(msg, sig) {
+		t.Errorf("kp.Verify() = false; want true")
+	}
+}
