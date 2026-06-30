@@ -39,6 +39,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/asn1"
@@ -68,6 +69,10 @@ type Algorithm[T crypto.PublicKey] interface {
 	// and padding scheme. If the signer implements signer.Signer, the
 	// context will be propagated.
 	Sign(ctx context.Context, s sign.Signer, msg []byte) ([]byte, error)
+
+	// Generate randomly generates a new public/private key pair with
+	// recommended parameters for the algorithm.
+	Generate() (crypto.Signer, error)
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
@@ -76,14 +81,17 @@ type rs struct {
 	name string
 	// pool is the internal hash pool for thread-safe operations.
 	pool *hashPool
+	// size is the generated key size in bits.
+	size int
 }
 
 // newRS creates a new [Algorithm] for RSASSA-PKCS1-v1_5 signatures
 // with the given JWA name and hash function.
-func newRS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
+func newRS(name string, hash crypto.Hash, size int) Algorithm[*rsa.PublicKey] {
 	return &rs{
 		name: name,
 		pool: newHashPool(hash),
+		size: size,
 	}
 }
 
@@ -109,19 +117,23 @@ func (a *rs) Sign(
 	return s.Sign(ctx, rand.Reader, digest, a.pool.Hash)
 }
 
+func (a *rs) Generate() (crypto.Signer, error) {
+	return rsa.GenerateKey(rand.Reader, a.size)
+}
+
 // String returns the JWA algorithm name.
 func (a *rs) String() string {
 	return a.name
 }
 
 // RS256 represents the RSASSA-PKCS1-v1_5 signature algorithm using SHA-256.
-var RS256 = newRS("RS256", crypto.SHA256)
+var RS256 = newRS("RS256", crypto.SHA256, 3072)
 
 // RS384 represents the RSASSA-PKCS1-v1_5 signature algorithm using SHA-384.
-var RS384 = newRS("RS384", crypto.SHA384)
+var RS384 = newRS("RS384", crypto.SHA384, 3072)
 
 // RS512 represents the RSASSA-PKCS1-v1_5 signature algorithm using SHA-512.
-var RS512 = newRS("RS512", crypto.SHA512)
+var RS512 = newRS("RS512", crypto.SHA512, 4096)
 
 // ps implements the RSASSA-PSS family of algorithms (PSxxx).
 type ps struct {
@@ -129,14 +141,17 @@ type ps struct {
 	name string
 	// pool is the internal hash pool for thread-safe operations.
 	pool *hashPool
+	// size is the generated key size in bits.
+	size int
 }
 
 // newPS creates a new [Algorithm] for RSASSA-PSS signatures
 // with the given JWA name and hash function.
-func newPS(name string, hash crypto.Hash) Algorithm[*rsa.PublicKey] {
+func newPS(name string, hash crypto.Hash, size int) Algorithm[*rsa.PublicKey] {
 	return &ps{
 		name: name,
 		pool: newHashPool(hash),
+		size: size,
 	}
 }
 
@@ -168,19 +183,24 @@ func (a *ps) Sign(
 	return s.Sign(ctx, rand.Reader, digest, opts)
 }
 
+// Generate creates a new RSA key pair.
+func (a *ps) Generate() (crypto.Signer, error) {
+	return rsa.GenerateKey(rand.Reader, a.size)
+}
+
 // String returns the JWA algorithm name.
 func (a *ps) String() string {
 	return a.name
 }
 
 // PS256 represents the RSASSA-PSS signature algorithm using SHA-256.
-var PS256 = newPS("PS256", crypto.SHA256)
+var PS256 = newPS("PS256", crypto.SHA256, 3072)
 
 // PS384 represents the RSASSA-PSS signature algorithm using SHA-384.
-var PS384 = newPS("PS384", crypto.SHA384)
+var PS384 = newPS("PS384", crypto.SHA384, 3072)
 
 // PS512 represents the RSASSA-PSS signature algorithm using SHA-512.
-var PS512 = newPS("PS512", crypto.SHA512)
+var PS512 = newPS("PS512", crypto.SHA512, 4096)
 
 // es implements the ECDSA family of algorithms (ESxxx).
 type es struct {
@@ -188,14 +208,21 @@ type es struct {
 	name string
 	// pool is the internal hash pool for thread-safe operations.
 	pool *hashPool
+	// ecrv is the elliptic curve.
+	ecrv elliptic.Curve
 }
 
 // newES creates a new [Algorithm] for ECDSA signatures
 // with the given JWA name and hash function.
-func newES(name string, hash crypto.Hash) Algorithm[*ecdsa.PublicKey] {
+func newES(
+	name string,
+	hash crypto.Hash,
+	ecrv elliptic.Curve,
+) Algorithm[*ecdsa.PublicKey] {
 	return &es{
 		name: name,
 		pool: newHashPool(hash),
+		ecrv: ecrv,
 	}
 }
 
@@ -253,19 +280,24 @@ func (a *es) Sign(
 	return out, nil
 }
 
+// Generate creates a new ECDSA key pair.
+func (a *es) Generate() (crypto.Signer, error) {
+	return ecdsa.GenerateKey(a.ecrv, rand.Reader)
+}
+
 // String returns the JWA algorithm name.
 func (a *es) String() string {
 	return a.name
 }
 
 // ES256 represents the ECDSA signature algorithm using P-256 and SHA-256.
-var ES256 = newES("ES256", crypto.SHA256)
+var ES256 = newES("ES256", crypto.SHA256, elliptic.P256())
 
 // ES384 represents the ECDSA signature algorithm using P-384 and SHA-384.
-var ES384 = newES("ES384", crypto.SHA384)
+var ES384 = newES("ES384", crypto.SHA384, elliptic.P384())
 
 // ES512 represents the ECDSA signature algorithm using P-521 and SHA-512.
-var ES512 = newES("ES512", crypto.SHA512)
+var ES512 = newES("ES512", crypto.SHA512, elliptic.P521())
 
 // ed implements the EdDSA family of algorithms.
 type ed struct{}
@@ -282,6 +314,15 @@ func (a *ed) Sign(
 	msg []byte,
 ) ([]byte, error) {
 	return s.Sign(ctx, rand.Reader, msg, crypto.Hash(0))
+}
+
+// Generate creates a new Ed25519 key pair.
+func (a *ed) Generate() (crypto.Signer, error) {
+	_, prv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return prv, nil
 }
 
 // String returns the JWA algorithm name.
