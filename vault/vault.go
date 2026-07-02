@@ -37,8 +37,8 @@ type vault struct {
 
 func New(keys []jwk.KeyPair, strategy rotor.Strategy) Vault {
 	pub := make([]jwk.Key, 0, len(keys))
-	for _, p := range keys {
-		pub = append(pub, p)
+	for i, k := range keys {
+		pub[i] = k
 	}
 	prv := rotor.New(strategy, keys)
 	return &vault{
