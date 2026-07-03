@@ -14,6 +14,10 @@
 
 // Package uuid provides an implementation of Version 7 UUIDs.
 //
+// # Warning
+//
+// This package will be removed after migrating to Go 1.27.
+//
 // Package uuid provides an implementation of Version 7 (Time-ordered)
 // Universally Unique Identifiers (UUID) as defined in RFC 4122 and RFC 9562.
 //
