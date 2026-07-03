@@ -133,7 +133,7 @@ func TestTo_Unwraps(t *testing.T) {
 	}
 }
 
-func TestParse(t *testing.T) {
+func TestDecode(t *testing.T) {
 	t.Parallel()
 
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -150,9 +150,9 @@ func TestParse(t *testing.T) {
 		Type:  "PRIVATE KEY",
 		Bytes: der,
 	}
-	pemData := pem.EncodeToMemory(block)
+	data := pem.EncodeToMemory(block)
 
-	s, err := sign.Parse(pemData)
+	s, err := sign.Decode(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,12 +170,12 @@ func TestParse(t *testing.T) {
 	}
 }
 
-func TestParse_Error(t *testing.T) {
+func TestDecode_Error(t *testing.T) {
 	t.Parallel()
 
 	t.Run("invalid block", func(t *testing.T) {
 		t.Parallel()
-		if _, err := sign.Parse([]byte("invalid")); err == nil {
+		if _, err := sign.Decode([]byte("invalid")); err == nil {
 			t.Error("expected error for invalid block, got nil")
 		}
 	})
@@ -187,7 +187,7 @@ func TestParse_Error(t *testing.T) {
 			Bytes: []byte("invalid-key-data"),
 		}
 		pemData := pem.EncodeToMemory(block)
-		_, err := sign.Parse(pemData)
+		_, err := sign.Decode(pemData)
 		if err == nil {
 			t.Fatal("expected error for invalid key material, got nil")
 		}
@@ -195,4 +195,50 @@ func TestParse_Error(t *testing.T) {
 			t.Errorf("expected wrapped error, got: %v", err)
 		}
 	})
+}
+
+func TestEncode(t *testing.T) {
+	t.Parallel()
+
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	// Test raw key
+	pem1, err := sign.Encode(k)
+	if err != nil {
+		t.Fatalf("unexpected error serializing raw key: %v", err)
+	}
+	if len(pem1) == 0 {
+		t.Error("expected non-empty PEM string")
+	}
+
+	// Test wrapped key
+	wrapped := sign.From(k)
+	pem2, err := sign.Encode(wrapped)
+	if err != nil {
+		t.Fatalf("unexpected error serializing wrapped key: %v", err)
+	}
+	if string(pem1) != string(pem2) {
+		t.Error("expected serialized output to match for raw and wrapped key")
+	}
+
+	// Verify it can be parsed back
+	parsed, err := sign.Decode(pem1)
+	if err != nil {
+		t.Fatalf("failed to parse generated PEM: %v", err)
+	}
+	if parsed == nil {
+		t.Fatal("expected non-nil signer")
+	}
+}
+
+func TestEncode_Error(t *testing.T) {
+	t.Parallel()
+
+	_, err := sign.Encode("not-a-key")
+	if err == nil {
+		t.Error("expected error for invalid key type, got nil")
+	}
 }
