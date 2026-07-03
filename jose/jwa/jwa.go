@@ -274,6 +274,12 @@ func (a *es) Sign(
 	}
 
 	n := (pub.Curve.Params().BitSize + 7) / 8
+	if (concat.R.BitLen()+7)/8 > n || (concat.S.BitLen()+7)/8 > n {
+		return nil, errors.New(
+			"ECDSA signature values R or S are too large for the curve size",
+		)
+	}
+
 	out := make([]byte, 2*n)
 	concat.R.FillBytes(out[:n])
 	concat.S.FillBytes(out[n:])
@@ -331,7 +337,8 @@ func (a *ed) String() string {
 	return "EdDSA"
 }
 
-// EdDSA represents the EdDSA signature algorithm. It supports the Ed25519 curve.
+// EdDSA represents the EdDSA signature algorithm. It supports the Ed25519
+// curve.
 var EdDSA Algorithm[ed25519.PublicKey] = &ed{}
 
 // hashPool manages a pool of [hash.Hash] objects to reduce allocations.

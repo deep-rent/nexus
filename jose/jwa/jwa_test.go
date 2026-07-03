@@ -22,7 +22,9 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/asn1"
 	"io"
+	"math/big"
 	"testing"
 
 	"github.com/deep-rent/nexus/sign"
@@ -193,18 +195,57 @@ func TestAlgorithm_Generate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		name := tt.name
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			s, err := tt.gen()
 			if err != nil {
-				t.Fatalf("%s.Generate() error = %v", tt.name, err)
+				t.Fatalf("%s generation failed: %v", name, err)
 			}
 			if s == nil {
-				t.Fatalf("%s.Generate() returned nil signer", tt.name)
+				t.Fatalf("%s generation returned nil signer", name)
 			}
 			if s.Public() == nil {
-				t.Errorf("%s.Generate() returned signer with nil Public()", tt.name)
+				t.Errorf("%s generation returned nil public key", name)
 			}
 		})
+	}
+}
+
+type mockECDSASigner struct {
+	pub *ecdsa.PublicKey
+	sig []byte
+}
+
+func (m *mockECDSASigner) Public() crypto.PublicKey { return m.pub }
+func (m *mockECDSASigner) Sign(
+	ctx context.Context,
+	rand io.Reader,
+	digest []byte,
+	opts crypto.SignerOpts,
+) ([]byte, error) {
+	return m.sig, nil
+}
+
+func TestAlgorithm_ECDSAPaddingPanic(t *testing.T) {
+	t.Parallel()
+
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+	}
+
+	// 261 bits, P-256 is 256 bits max
+	exceed := new(big.Int).Lsh(big.NewInt(1), 260)
+	concat := struct{ R, S *big.Int }{R: exceed, S: exceed}
+	der, err := asn1.Marshal(concat)
+	if err != nil {
+		t.Fatalf("asn1.Marshal() error = %v", err)
+	}
+
+	mock := &mockECDSASigner{pub: &k.PublicKey, sig: der}
+	_, err = jwa.ES256.Sign(t.Context(), mock, mockMsg)
+	if err == nil {
+		t.Error("expected error when R/S are too large, got nil")
 	}
 }
