@@ -25,8 +25,8 @@
 // PEM-encoded keys, and can seamlessly integrate with HTTP routers to serve
 // JWKS endpoints:
 //
-//   - [Load]: Parses a JSON configuration array and initializes a [Vault].
-//   - [LoadFile]: A convenience wrapper to load configuration from the filesystem.
+//   - [Load]: Parses a JSON configuration array to initialize a [Vault].
+//   - [LoadFile]: Shortcut for loading data configuration from the filesystem.
 //   - [Handler]: Creates an HTTP handler to serve the public keys as a JWK Set.
 //
 // Example:
@@ -58,8 +58,9 @@ import (
 
 // Vault represents a secure retrieval mechanism for cryptographic signing keys.
 // It abstracts away the underlying implementation details of external sources
-// like KMS, HSM, or HashiCorp Vault.
+// like cluster-injected keys, KMS, HSM, or HashiCorp Vault.
 type Vault interface {
+	// Keys returns the set of all public keys for verification purposes.
 	Keys() jwk.Set
 
 	// Next retrieves the currently active [jwk.KeyPair] intended for signing
@@ -67,17 +68,20 @@ type Vault interface {
 	Next() jwk.KeyPair
 }
 
+// vault is the default implementation of [Vault].
 type vault struct {
 	pub jwk.Set
 	prv rotor.Rotor[jwk.KeyPair]
 }
 
+// New constructs a [Vault] using the provided set of cryptographic key pairs
+// and rotation strategy. It panics if no keys are provided.
 func New(keys []jwk.KeyPair, strategy rotor.Strategy) Vault {
+	prv := rotor.New(strategy, keys)
 	pub := make([]jwk.Key, 0, len(keys))
 	for _, k := range keys {
 		pub = append(pub, k)
 	}
-	prv := rotor.New(strategy, keys)
 	return &vault{
 		pub: jwk.NewSet(pub...),
 		prv: prv,
@@ -89,17 +93,21 @@ func (v *vault) Next() jwk.KeyPair { return v.prv.Next() }
 
 var _ Vault = (*vault)(nil)
 
+// Item represents a single cryptographic key configuration containing the key
+// and algorithm identifiers, and PEM-encoded private key material.
 type Item struct {
 	Kid string `json:"kid"`
 	Pem string `json:"pem"`
 	Alg string `json:"alg"`
 }
 
+// Items represents a collection of key configurations.
 type Items []Item
 
-// Load parses a JSON array of configuration items, where each item contains
-// a Key ID (kid), Algorithm (alg), and Private Key (pem) encoded in PEM format.
-// It constructs a Vault instance with the specified rotation strategy.
+// Load parses a JSON array of key configurations, where each item contains
+// the key identifier, algorithm, and PEM-encoded private key material. It then
+// uses these to construct a [Vault] instance with the specified rotation
+// strategy.
 func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
 	var items Items
 	if err := json.Unmarshal(config, &items); err != nil {
@@ -153,6 +161,8 @@ func LoadFile(path string, strategy rotor.Strategy) (Vault, error) {
 	return Load(data, strategy)
 }
 
+// newKeyPair creates a new [jwk.KeyPair] from the given algorithm, key
+// identifier, and signer. It returns an error if the algorithm is unsupported.
 func newKeyPair(alg, kid string, signer sign.Signer) (jwk.KeyPair, error) {
 	switch alg {
 	case "RS256":
@@ -180,6 +190,8 @@ func newKeyPair(alg, kid string, signer sign.Signer) (jwk.KeyPair, error) {
 	}
 }
 
+// Handler creates a [router.Handler] that exposes the public keys of the
+// [Vault] as a JSON Web Key Set (JWKS).
 func Handler(v Vault) router.Handler {
 	return jwk.Handler(v.Keys())
 }
