@@ -56,9 +56,6 @@ import (
 // verifying and calculating signatures. The type parameter T specifies the type
 // of public key that the algorithm works with.
 type Algorithm[T crypto.PublicKey] interface {
-	// String provides the standard JWA name for the algorithm.
-	fmt.Stringer
-
 	// Verify checks a signature against a message with the provided public key.
 	// It returns true if the signature is valid, and false otherwise.
 	// None of the parameters may be nil.
@@ -74,6 +71,9 @@ type Algorithm[T crypto.PublicKey] interface {
 	// recommended parameters for the algorithm. It returns an error if the
 	// generation fails.
 	Generate() (crypto.Signer, error)
+
+	// String provides the standard JWA name for the algorithm.
+	String() string
 }
 
 // rs implements the RSASSA-PKCS1-v1_5 family of algorithms (RSxxx).
