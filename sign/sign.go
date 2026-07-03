@@ -39,18 +39,18 @@ type Signer interface {
 
 // From adapts a standard [crypto.Signer] into a context-aware [Signer].
 func From(s crypto.Signer) Signer {
-	return &wrapper{signer: s}
+	return &ctxWrapper{signer: s}
 }
 
-type wrapper struct {
+type ctxWrapper struct {
 	signer crypto.Signer
 }
 
 // Public implements [Signer].
-func (w *wrapper) Public() crypto.PublicKey { return w.signer.Public() }
+func (w *ctxWrapper) Public() crypto.PublicKey { return w.signer.Public() }
 
 // Sign implements [Signer].
-func (w *wrapper) Sign(
+func (w *ctxWrapper) Sign(
 	ctx context.Context,
 	rand io.Reader,
 	digest []byte,
@@ -62,4 +62,39 @@ func (w *wrapper) Sign(
 	return w.signer.Sign(rand, digest, opts)
 }
 
-var _ Signer = (*wrapper)(nil)
+var _ Signer = (*ctxWrapper)(nil)
+
+// To adapts a context-aware [Signer] into a standard [crypto.Signer].
+//
+// The provided context is baked into the resulting signer and will be used
+// for all subsequent signature operations. This is useful when you need to pass
+// a context-aware signer to a standard library function that only accepts a
+// standard [crypto.Signer].
+//
+// If the provided [Signer] was originally created by [From], this function
+// returns the original underlying [crypto.Signer] to prevent double-wrapping.
+func To(ctx context.Context, s Signer) crypto.Signer {
+	if w, ok := s.(*ctxWrapper); ok {
+		return w.signer
+	}
+	return &stdWrapper{ctx: ctx, signer: s}
+}
+
+type stdWrapper struct {
+	ctx    context.Context
+	signer Signer
+}
+
+// Public implements [crypto.Signer].
+func (w *stdWrapper) Public() crypto.PublicKey { return w.signer.Public() }
+
+// Sign implements [crypto.Signer].
+func (w *stdWrapper) Sign(
+	rand io.Reader,
+	digest []byte,
+	opts crypto.SignerOpts,
+) ([]byte, error) {
+	return w.signer.Sign(w.ctx, rand, digest, opts)
+}
+
+var _ crypto.Signer = (*stdWrapper)(nil)

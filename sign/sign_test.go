@@ -24,10 +24,10 @@ import (
 	"github.com/deep-rent/nexus/sign"
 )
 
-type mockSigner struct{}
+type mockStdSigner struct{}
 
-func (d *mockSigner) Public() crypto.PublicKey { return "foo" }
-func (d *mockSigner) Sign(
+func (d *mockStdSigner) Public() crypto.PublicKey { return "foo" }
+func (d *mockStdSigner) Sign(
 	rand io.Reader,
 	digest []byte,
 	opts crypto.SignerOpts,
@@ -35,10 +35,12 @@ func (d *mockSigner) Sign(
 	return []byte("bar"), nil
 }
 
+var _ crypto.Signer = (*mockStdSigner)(nil)
+
 func TestFrom(t *testing.T) {
 	t.Parallel()
 
-	s := sign.From(&mockSigner{})
+	s := sign.From(&mockStdSigner{})
 
 	key := s.Public()
 	if exp, act := "foo", key.(string); exp != act {
@@ -57,7 +59,7 @@ func TestFrom(t *testing.T) {
 func TestFrom_CancelledContext(t *testing.T) {
 	t.Parallel()
 
-	s := sign.From(&mockSigner{})
+	s := sign.From(&mockStdSigner{})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel context early
@@ -68,5 +70,60 @@ func TestFrom_CancelledContext(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+type mockCtxSigner struct {
+	passedCtx context.Context
+}
+
+func (m *mockCtxSigner) Public() crypto.PublicKey { return "ctx-foo" }
+
+func (m *mockCtxSigner) Sign(
+	ctx context.Context,
+	rand io.Reader,
+	digest []byte,
+	opts crypto.SignerOpts,
+) ([]byte, error) {
+	m.passedCtx = ctx
+	return []byte("ctx-bar"), nil
+}
+
+var _ sign.Signer = (*mockCtxSigner)(nil)
+
+func TestTo(t *testing.T) {
+	t.Parallel()
+
+	m := &mockCtxSigner{}
+	ctx := t.Context()
+
+	s := sign.To(ctx, m)
+
+	key := s.Public()
+	if exp, act := "ctx-foo", key.(string); exp != act {
+		t.Errorf("expected %s, got %s", exp, act)
+	}
+
+	sig, err := s.Sign(nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exp, act := "ctx-bar", string(sig); exp != act {
+		t.Errorf("expected %s, got %s", exp, act)
+	}
+	if m.passedCtx != ctx {
+		t.Error("context was not propagated to underlying Signer")
+	}
+}
+
+func TestTo_Unwraps(t *testing.T) {
+	t.Parallel()
+
+	orig := &mockStdSigner{}
+	wrapped := sign.From(orig)
+	unwrapped := sign.To(t.Context(), wrapped)
+
+	if orig != unwrapped {
+		t.Error("expected To() to unwrap From() wrapper to original signer")
 	}
 }
