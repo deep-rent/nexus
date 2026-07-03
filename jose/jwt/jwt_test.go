@@ -16,16 +16,11 @@ package jwt_test
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"encoding/json/v2"
 	"errors"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/deep-rent/nexus/sign"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -37,18 +32,18 @@ type testClaims struct {
 	Role string `json:"rol"`
 }
 
-func mockKeyPair(t *testing.T, id string) jwk.KeyPair {
+func mockKeyPair(t *testing.T) jwk.KeyPair {
 	t.Helper()
-	raw, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := jwk.Generate(jwa.ES256)
 	if err != nil {
-		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+		t.Fatalf("failed to generate key: %v", err)
 	}
-	return jwk.NewKeyPair(jwa.ES256, id, sign.From(raw))
+	return key
 }
 
 func TestSignVerify(t *testing.T) {
 	t.Parallel()
-	k := mockKeyPair(t, "k1")
+	k := mockKeyPair(t)
 	set := jwk.Singleton(k)
 
 	claims := map[string]any{
@@ -76,7 +71,7 @@ func TestSignVerify(t *testing.T) {
 
 func TestVerifier_Validation(t *testing.T) {
 	t.Parallel()
-	k := mockKeyPair(t, "k1")
+	k := mockKeyPair(t)
 	set := jwk.Singleton(k)
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
@@ -165,7 +160,7 @@ func TestVerifier_Validation(t *testing.T) {
 
 func TestVerifier_TimeConstraints(t *testing.T) {
 	t.Parallel()
-	k := mockKeyPair(t, "k1")
+	k := mockKeyPair(t)
 	set := jwk.Singleton(k)
 	now := time.Now()
 
@@ -205,7 +200,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 func TestOmitEmpty(t *testing.T) {
 	t.Parallel()
-	k := mockKeyPair(t, "k1")
+	k := mockKeyPair(t)
 	raw, err := jwt.Sign(t.Context(), k, &jwt.Reserved{})
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
@@ -227,7 +222,7 @@ func TestOmitEmpty(t *testing.T) {
 
 func TestDynamicClaims(t *testing.T) {
 	t.Parallel()
-	k := mockKeyPair(t, "k1")
+	k := mockKeyPair(t)
 	set := jwk.Singleton(k)
 
 	input := map[string]any{
@@ -331,8 +326,8 @@ func TestParse_Errors(t *testing.T) {
 
 func TestVerify_Errors(t *testing.T) {
 	t.Parallel()
-	k1 := mockKeyPair(t, "k1")
-	k2 := mockKeyPair(t, "k2")
+	k1 := mockKeyPair(t)
+	k2 := mockKeyPair(t)
 
 	raw, _ := jwt.Sign(t.Context(), k1, &testClaims{Role: "user"})
 
