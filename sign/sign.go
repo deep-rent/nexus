@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package signer provides context-aware cryptographic signing interfaces.
+// Package sign provides context-aware cryptographic signing interfaces.
 package sign
 
 import (
@@ -103,9 +103,9 @@ func (w *stdWrapper) Sign(
 
 var _ crypto.Signer = (*stdWrapper)(nil)
 
-// Parse decodes a PEM block and parses the contained private key into a
+// Decode decodes a PEM block and parses the contained private key into a
 // [Signer]. It supports standard PKCS8, EC, and PKCS1 private keys.
-func Parse(data []byte) (Signer, error) {
+func Decode(data []byte) (Signer, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return nil, errors.New("failed to decode PEM block")
@@ -139,4 +139,26 @@ func Parse(data []byte) (Signer, error) {
 	}
 
 	return From(signer), nil
+}
+
+// Encode encodes a cryptographic private key into a standard PKCS8 PEM
+// formatted byte sequence. It accepts standard library private keys (e.g.,
+// [*rsa.PrivateKey], [*ecdsa.PrivateKey], [ed25519.PrivateKey]) or
+// context-aware [Signer] wrappers returned by this package.
+func Encode(key any) ([]byte, error) {
+	if w, ok := key.(*ctxWrapper); ok {
+		key = w.signer
+	}
+
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal private key: %w", err)
+	}
+
+	block := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: der,
+	}
+
+	return pem.EncodeToMemory(block), nil
 }
