@@ -52,10 +52,8 @@
 //  1. The "alg" (Algorithm) parameter, optional in the standard, is treated as
 //     mandatory for all eligible keys. Enforcing this is a best practice that
 //     mitigates algorithm confusion attacks.
-//  2. For key selection, either "kid" (Key ID) or "x5t#S256" (SHA-256
-//     Thumbprint) must be defined. The "x5t" (SHA-1 Thumbprint) parameter is
-//     explicitly ignored as it is considered outdated. No other lookup
-//     mechanism is supported.
+//  2. For key selection, the "kid" (Key ID) must be defined. Other lookup
+//     mechanisms or thumbprint identifiers are not supported.
 //
 // # Usage
 //
@@ -449,7 +447,7 @@ func ParseSet(in []byte) (Set, error) {
 
 // Write marshals a single [Key] into its JSON Web Key representation.
 //
-// It populates the standard JWK fields ("kty", "alg", "use", "kid", "x5t#S256")
+// It populates the standard JWK fields ("kty", "alg", "use", "kid")
 // and the algorithm-specific public key parameters (e.g., "n" and "e" for RSA).
 // The output is strictly compliant with RFC 7517 and RFC 7518, ensuring that
 // elliptic curve coordinates are padded to the correct fixed width.
