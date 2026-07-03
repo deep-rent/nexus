@@ -17,6 +17,11 @@ package sign_test
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"io"
 	"testing"
@@ -126,4 +131,68 @@ func TestTo_Unwraps(t *testing.T) {
 	if orig != unwrapped {
 		t.Error("expected To() to unwrap From() wrapper to original signer")
 	}
+}
+
+func TestParsePEM(t *testing.T) {
+	t.Parallel()
+
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	der, err := x509.MarshalPKCS8PrivateKey(k)
+	if err != nil {
+		t.Fatalf("failed to marshal key: %v", err)
+	}
+
+	block := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: der,
+	}
+	pemData := pem.EncodeToMemory(block)
+
+	s, err := sign.ParsePEM(pemData)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if s == nil {
+		t.Fatal("expected Signer, got nil")
+	}
+
+	pub, ok := s.Public().(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatalf("expected *ecdsa.PublicKey, got %T", s.Public())
+	}
+	if pub.X.Cmp(k.X) != 0 || pub.Y.Cmp(k.Y) != 0 {
+		t.Error("public key mismatch")
+	}
+}
+
+func TestParsePEM_Error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid block", func(t *testing.T) {
+		t.Parallel()
+		if _, err := sign.ParsePEM([]byte("invalid")); err == nil {
+			t.Error("expected error for invalid block, got nil")
+		}
+	})
+
+	t.Run("invalid key material", func(t *testing.T) {
+		t.Parallel()
+		block := &pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: []byte("invalid-key-data"),
+		}
+		pemData := pem.EncodeToMemory(block)
+		_, err := sign.ParsePEM(pemData)
+		if err == nil {
+			t.Fatal("expected error for invalid key material, got nil")
+		}
+		if err.Error() == "failed to parse private key" {
+			t.Errorf("expected wrapped error, got: %v", err)
+		}
+	})
 }
