@@ -103,9 +103,9 @@ func (w *stdWrapper) Sign(
 
 var _ crypto.Signer = (*stdWrapper)(nil)
 
-// ParsePEM decodes a PEM block and parses the contained private key into a
+// Parse decodes a PEM block and parses the contained private key into a
 // [Signer]. It supports standard PKCS8, EC, and PKCS1 private keys.
-func ParsePEM(data []byte) (Signer, error) {
+func Parse(data []byte) (Signer, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return nil, errors.New("failed to decode PEM block")

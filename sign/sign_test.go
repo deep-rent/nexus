@@ -133,7 +133,7 @@ func TestTo_Unwraps(t *testing.T) {
 	}
 }
 
-func TestParsePEM(t *testing.T) {
+func TestParse(t *testing.T) {
 	t.Parallel()
 
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -152,7 +152,7 @@ func TestParsePEM(t *testing.T) {
 	}
 	pemData := pem.EncodeToMemory(block)
 
-	s, err := sign.ParsePEM(pemData)
+	s, err := sign.Parse(pemData)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,12 +170,12 @@ func TestParsePEM(t *testing.T) {
 	}
 }
 
-func TestParsePEM_Error(t *testing.T) {
+func TestParse_Error(t *testing.T) {
 	t.Parallel()
 
 	t.Run("invalid block", func(t *testing.T) {
 		t.Parallel()
-		if _, err := sign.ParsePEM([]byte("invalid")); err == nil {
+		if _, err := sign.Parse([]byte("invalid")); err == nil {
 			t.Error("expected error for invalid block, got nil")
 		}
 	})
@@ -187,7 +187,7 @@ func TestParsePEM_Error(t *testing.T) {
 			Bytes: []byte("invalid-key-data"),
 		}
 		pemData := pem.EncodeToMemory(block)
-		_, err := sign.ParsePEM(pemData)
+		_, err := sign.Parse(pemData)
 		if err == nil {
 			t.Fatal("expected error for invalid key material, got nil")
 		}
