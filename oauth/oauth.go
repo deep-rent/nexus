@@ -193,23 +193,23 @@ type SubjectStore interface {
 // must be deleted immediately after a single use to prevent replay attacks.
 type AuthCode struct {
 	// Code is the unique, high-entropy string sent to the client.
-	Code string
+	Code string `json:"code"`
 	// ClientID is the ID of the client that requested the code.
-	ClientID string
+	ClientID string `json:"client_id"`
 	// RedirectURI is the URI provided during the initial authorization
 	// request. It must be stored to ensure the token exchange request
 	// uses the exact same URI.
-	RedirectURI string
+	RedirectURI string `json:"redirect_uri"`
 	// Scope is the list of permissions approved by the resource owner.
-	Scope string
+	Scope string `json:"scope"`
 	// SubjectID is the unique identifier of the authenticated resource owner.
-	SubjectID string
+	SubjectID string `json:"subject_id"`
 	// CodeChallenge is the challenge string used for PKCE validation.
-	CodeChallenge string
+	CodeChallenge string `json:"code_challenge"`
 	// CodeChallengeMethod is the hashing algorithm used for PKCE validation.
-	CodeChallengeMethod string
+	CodeChallengeMethod string `json:"code_challenge_method"`
 	// ExpiresAt defines when this code expires.
-	ExpiresAt time.Time
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // RefreshToken holds the state bound to a refresh token.
@@ -219,17 +219,17 @@ type AuthCode struct {
 // lifespan than authorization codes.
 type RefreshToken struct {
 	// Token is the unique, high-entropy string representing the refresh token.
-	Token string
+	Token string `json:"token"`
 	// ClientID is the identifier of the client authorized to use this token.
-	ClientID string
+	ClientID string `json:"client_id"`
 	// SubjectID identifies the subject who authorized the initial request.
 	// This remains empty for Client Credentials grants.
-	SubjectID string
+	SubjectID string `json:"subject_id"`
 	// Scope represents the permissions granted for the duration of
 	// this session.
-	Scope string
+	Scope string `json:"scope"`
 	// ExpiresAt defines when this specific token expires.
-	ExpiresAt time.Time
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // DeviceCodeStatus represents the state of a device authorization request
@@ -259,21 +259,21 @@ const (
 // separate device.
 type DeviceCode struct {
 	// DeviceCode is the unique, high-entropy string polled by the client.
-	DeviceCode string
+	DeviceCode string `json:"device_code"`
 	// UserCode is the short, user-friendly string entered by the resource
 	// owner.
-	UserCode string
+	UserCode string `json:"user_code"`
 	// ClientID is the ID of the client that requested the code.
-	ClientID string
+	ClientID string `json:"client_id"`
 	// SubjectID is the unique identifier of the authenticated resource owner.
 	// It remains empty until the user authorizes the request.
-	SubjectID string
+	SubjectID string `json:"subject_id"`
 	// Scope is the list of permissions approved by the resource owner.
-	Scope string
+	Scope string `json:"scope"`
 	// Status indicates the current state: "pending", "authorized", or "denied".
-	Status DeviceCodeStatus
+	Status DeviceCodeStatus `json:"status"`
 	// ExpiresAt defines when this code is no longer valid.
-	ExpiresAt time.Time
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // SessionStore abstracts the persistence layer for ephemeral authorization
@@ -401,14 +401,10 @@ type Proposal struct {
 
 // Get retrieves a grant-specific field from the HTTP request body.
 // If no such field exists, an empty string is returned.
-func (p *Proposal) Get(key string) string {
-	return p.data.Get(key)
-}
+func (p *Proposal) Get(key string) string { return p.data.Get(key) }
 
 // Has checks if a grant-specific field is present in the HTTP request body.
-func (p *Proposal) Has(key string) bool {
-	return p.data.Has(key)
-}
+func (p *Proposal) Has(key string) bool { return p.data.Has(key) }
 
 // Issuance defines the parameters for issuing tokens after a successful grant
 // authorization.
