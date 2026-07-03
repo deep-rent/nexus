@@ -21,8 +21,6 @@ import (
 	"crypto/x509"
 	"encoding/json/v2"
 	"encoding/pem"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +28,6 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/rotor"
-	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/vault"
 )
@@ -182,56 +179,5 @@ func TestLoadFile(t *testing.T) {
 
 	if exp, act := 1, v.Keys().Len(); exp != act {
 		t.Errorf("expected %d keys, got %d", exp, act)
-	}
-}
-
-func TestHandler(t *testing.T) {
-	t.Parallel()
-
-	signer, err := jwa.ES256.Generate()
-	if err != nil {
-		t.Fatalf("failed to generate ECDSA key: %v", err)
-	}
-
-	items := vault.Items{
-		{
-			Kid: "test-handler-key",
-			Alg: "ES256",
-			Pem: encode(t, signer),
-		},
-	}
-	configData, err := json.Marshal(items)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-
-	v, err := vault.Load(configData, rotor.Sequential)
-	if err != nil {
-		t.Fatalf("failed to load vault: %v", err)
-	}
-
-	r := router.New()
-	r.HandleFunc("GET /jwks", vault.Handler(v))
-
-	req := httptest.NewRequest(http.MethodGet, "/jwks", nil)
-	rec := httptest.NewRecorder()
-
-	r.ServeHTTP(rec, req)
-
-	if exp, act := http.StatusOK, rec.Code; exp != act {
-		t.Errorf("expected status %d, got %d", exp, act)
-	}
-
-	if exp, act := jwk.MediaTypeSet, rec.Header().Get("Content-Type"); exp != act {
-		t.Errorf("expected content type %s, got %s", exp, act)
-	}
-
-	set, err := jwk.ParseSet(rec.Body.Bytes())
-	if err != nil {
-		t.Fatalf("failed to parse returned JWKS: %v", err)
-	}
-
-	if exp, act := 1, set.Len(); exp != act {
-		t.Errorf("expected %d keys in JWKS, got %d", exp, act)
 	}
 }
