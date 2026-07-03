@@ -18,6 +18,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
+	"encoding/json/v2"
+	"encoding/pem"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/deep-rent/nexus/jose/jwa"
@@ -75,4 +80,110 @@ func TestVault(t *testing.T) {
 			t.Errorf("Next() = %q; want %q", got, want)
 		}
 	})
+}
+
+type configItem struct {
+	Kid string `json:"kid"`
+	Pem string `json:"pem"`
+	Alg string `json:"alg"`
+}
+
+func encodePEM(t *testing.T, key any) string {
+	t.Helper()
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal key: %v", err)
+	}
+	block := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: der,
+	}
+	return string(pem.EncodeToMemory(block))
+}
+
+func TestLoad(t *testing.T) {
+	t.Parallel()
+
+	rsaSigner, err := jwa.RS256.Generate()
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	ecdsaSigner, err := jwa.ES256.Generate()
+	if err != nil {
+		t.Fatalf("failed to generate ECDSA key: %v", err)
+	}
+
+	items := []configItem{
+		{
+			Kid: "rsa-key-1",
+			Alg: "RS256",
+			Pem: encodePEM(t, rsaSigner),
+		},
+		{
+			Kid: "ecdsa-key-1",
+			Alg: "ES256",
+			Pem: encodePEM(t, ecdsaSigner),
+		},
+	}
+
+	configData, err := json.Marshal(items)
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
+	}
+
+	v, err := vault.Load(configData, rotor.Sequential)
+	if err != nil {
+		t.Fatalf("unexpected error loading vault: %v", err)
+	}
+
+	keys := v.Keys()
+	if exp, act := 2, keys.Len(); exp != act {
+		t.Errorf("expected %d keys, got %d", exp, act)
+	}
+
+	nextKey := v.Next()
+	if nextKey == nil {
+		t.Fatal("v.Next() returned nil")
+	}
+
+	if act := nextKey.KeyID(); act != "rsa-key-1" && act != "ecdsa-key-1" {
+		t.Errorf("unexpected next key ID: %s", act)
+	}
+}
+
+func TestLoadFile(t *testing.T) {
+	t.Parallel()
+
+	ecdsaSigner, err := jwa.ES256.Generate()
+	if err != nil {
+		t.Fatalf("failed to generate ECDSA key: %v", err)
+	}
+
+	items := []configItem{
+		{
+			Kid: "ecdsa-file-1",
+			Alg: "ES256",
+			Pem: encodePEM(t, ecdsaSigner),
+		},
+	}
+
+	configData, err := json.Marshal(items)
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "keys.json")
+	if err := os.WriteFile(path, configData, 0600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	v, err := vault.LoadFile(path, rotor.Sequential)
+	if err != nil {
+		t.Fatalf("unexpected error loading from file: %v", err)
+	}
+
+	if exp, act := 1, v.Keys().Len(); exp != act {
+		t.Errorf("expected %d keys, got %d", exp, act)
+	}
 }
