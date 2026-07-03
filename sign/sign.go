@@ -13,6 +13,33 @@
 // limitations under the License.
 
 // Package sign provides context-aware cryptographic signing interfaces.
+//
+// Package sign bridges the gap between Go's standard [crypto.Signer] and
+// context-aware operations. It provides a [Signer] interface that respects
+// context cancellation and deadlines during cryptographic operations.
+//
+// # Usage
+//
+// The package offers utilities for adapting standard signers and parsing keys:
+//
+//   - [From]: Wraps a standard [crypto.Signer] into a context-aware [Signer].
+//   - [To]: Unwraps or adapts a [Signer] back to a standard [crypto.Signer]
+//     with a baked-in context.
+//   - [Decode]: Parses PEM-encoded private keys (PKCS8, EC, PKCS1) into a
+//     ready-to-use [Signer].
+//   - [Encode]: Serializes private keys back into PKCS8 PEM format.
+//
+// Example:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+//	defer cancel()
+//
+//	signer, err := sign.Decode(pemData)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	sig, err := signer.Sign(ctx, rand.Reader, digest, nil)
 package sign
 
 import (
