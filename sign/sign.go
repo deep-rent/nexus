@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -112,13 +113,22 @@ func ParsePEM(data []byte) (Signer, error) {
 
 	bytes := block.Bytes
 	// Try standard PKCS8 first
-	key, err := x509.ParsePKCS8PrivateKey(bytes)
+	var (
+		key any
+		err error
+	)
+	key, err = x509.ParsePKCS8PrivateKey(bytes)
 	if err != nil {
+		err1 := err
 		// Fallback for EC private keys
 		if key, err = x509.ParseECPrivateKey(bytes); err != nil {
+			err2 := err
 			// Fallback for RSA PKCS1
 			if key, err = x509.ParsePKCS1PrivateKey(bytes); err != nil {
-				return nil, errors.New("failed to parse private key")
+				return nil, fmt.Errorf(
+					"failed to parse private key: %w",
+					errors.Join(err1, err2, err),
+				)
 			}
 		}
 	}
