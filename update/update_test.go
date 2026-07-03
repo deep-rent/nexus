@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package updater_test
+package update_test
 
 import (
 	"net/http"
@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/updater"
+	"github.com/deep-rent/nexus/update"
 )
 
 func TestNew(t *testing.T) {
@@ -32,23 +32,23 @@ func TestNew(t *testing.T) {
 
 		tests := []struct {
 			name string
-			give *updater.Config
+			give *update.Config
 			want string
 		}{
 			{
 				name: "owner is required",
-				give: &updater.Config{Repository: "r", Current: "v1.0.0"},
-				want: "updater: owner is required",
+				give: &update.Config{Repository: "r", Current: "v1.0.0"},
+				want: "update: owner is required",
 			},
 			{
 				name: "repository is required",
-				give: &updater.Config{Owner: "o", Current: "v1.0.0"},
-				want: "updater: repository is required",
+				give: &update.Config{Owner: "o", Current: "v1.0.0"},
+				want: "update: repository is required",
 			},
 			{
 				name: "current version is required",
-				give: &updater.Config{Owner: "o", Repository: "r"},
-				want: "updater: current version is required",
+				give: &update.Config{Owner: "o", Repository: "r"},
+				want: "update: current version is required",
 			},
 		}
 
@@ -63,7 +63,7 @@ func TestNew(t *testing.T) {
 						t.Errorf("panic = %v; want %q", r, tt.want)
 					}
 				}()
-				updater.New(tt.give)
+				update.New(tt.give)
 			})
 		}
 
@@ -73,7 +73,7 @@ func TestNew(t *testing.T) {
 					t.Error("New() with invalid semver did not panic")
 				}
 			}()
-			updater.New(&updater.Config{
+			update.New(&update.Config{
 				Owner:      "o",
 				Repository: "r",
 				Current:    "invalid",
@@ -84,7 +84,7 @@ func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 
-		u := updater.New(&updater.Config{
+		u := update.New(&update.Config{
 			Owner:      "o",
 			Repository: "r",
 			Current:    "1.0.0",
@@ -176,14 +176,14 @@ func TestCheck(t *testing.T) {
 				}))
 			defer server.Close()
 
-			cfg := &updater.Config{
+			cfg := &update.Config{
 				BaseURL:    server.URL,
 				Owner:      "owner",
 				Repository: "repo",
 				Current:    tt.current,
 			}
 
-			got, err := updater.Check(t.Context(), cfg)
+			got, err := update.Check(t.Context(), cfg)
 
 			if tt.wantErr != "" {
 				if err == nil {
@@ -221,7 +221,7 @@ func TestCheck_NetworkError(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	server.Close()
 
-	cfg := &updater.Config{
+	cfg := &update.Config{
 		BaseURL:    server.URL,
 		Owner:      "o",
 		Repository: "r",
@@ -229,7 +229,7 @@ func TestCheck_NetworkError(t *testing.T) {
 		Timeout:    100 * time.Millisecond,
 	}
 
-	_, err := updater.Check(t.Context(), cfg)
+	_, err := update.Check(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Check() err = nil; want network error")
 	}
@@ -252,7 +252,7 @@ func TestCheck_UserAgent(t *testing.T) {
 		}))
 	defer server.Close()
 
-	cfg := &updater.Config{
+	cfg := &update.Config{
 		BaseURL:    server.URL,
 		Owner:      "o",
 		Repository: "r",
@@ -260,7 +260,7 @@ func TestCheck_UserAgent(t *testing.T) {
 		UserAgent:  want,
 	}
 
-	if _, err := updater.Check(t.Context(), cfg); err != nil {
+	if _, err := update.Check(t.Context(), cfg); err != nil {
 		t.Errorf("Check() err = %v; want nil", err)
 	}
 }

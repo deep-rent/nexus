@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package updater provides functionality to check for newer GitHub releases.
+// Package update provides functionality to check for newer GitHub releases.
 //
-// Package updater queries the GitHub Releases API to retrieve the latest
+// This package queries the GitHub Releases API to retrieve the latest
 // release and compares its tag against the current application version using
 // semantic versioning.
 //
@@ -24,7 +24,7 @@
 //
 // Example:
 //
-//	cfg := &updater.Config{
+//	cfg := &update.Config{
 //	  Owner:      "deep-rent",
 //	  Repository: "vouch",
 //	  Current:    "v1.0.0",
@@ -32,13 +32,13 @@
 //	}
 //
 //	// Check for updates.
-//	rel, err := updater.Check(context.Background(), cfg)
+//	rel, err := update.Check(context.Background(), cfg)
 //	if err != nil {
 //	  log.Printf("Failed to check for updates: %v", err)
 //	} else if rel != nil {
 //	  log.Printf("New version available: %s (see %s)", rel.Version, rel.URL)
 //	}
-package updater
+package update
 
 import (
 	"context"
@@ -52,7 +52,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// Default configuration values for the updater.
+// Default configuration values for the [Updater].
 const (
 	// DefaultBaseURL is the default GitHub API base URL.
 	DefaultBaseURL = "https://api.github.com"
@@ -113,18 +113,18 @@ type Updater struct {
 // not a valid semantic version.
 func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
-		panic("updater: owner is required")
+		panic("update: owner is required")
 	}
 	if cfg.Repository == "" {
-		panic("updater: repository is required")
+		panic("update: repository is required")
 	}
 	if cfg.Current == "" {
-		panic("updater: current version is required")
+		panic("update: current version is required")
 	}
 	current := normalize(cfg.Current)
 	if !semver.IsValid(current) {
 		panic(fmt.Sprintf(
-			"updater: current version %q is not a valid semver",
+			"update: current version %q is not a valid semver",
 			cfg.Current,
 		))
 	}
@@ -185,8 +185,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		_ = res.Body.Close()
 	}()
 
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status from github api: %s", res.Status)
+	if code := res.StatusCode; code != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status from github api: %d", code)
 	}
 
 	var r Release
@@ -194,9 +194,11 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("failed to decode response body: %w", err)
 	}
 
-	latest := normalize(r.Version)
+	v := r.Version
+	latest := normalize(v)
+
 	if !semver.IsValid(latest) {
-		return nil, fmt.Errorf("latest version %q is not a valid semver", r.Version)
+		return nil, fmt.Errorf("latest version %q is not a valid semver", v)
 	}
 
 	if semver.Compare(latest, u.current) > 0 {
@@ -208,8 +210,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 
 // Check is a convenience function to check for updates in a single call.
 //
-// It creates a temporary [Updater] with the provided config and calls its
-// [Updater.Check] method.
+// It creates a temporary [update] with the provided config and calls its
+// [update.Check] method.
 func Check(ctx context.Context, cfg *Config) (*Release, error) {
 	return New(cfg).Check(ctx)
 }
