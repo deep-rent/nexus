@@ -302,13 +302,17 @@ func TestExchange_BindForm(t *testing.T) {
 
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("BindForm() err = nil; want non-nil")
+					t.Fatal("expected non-nil error, got nil")
 				}
-				if got, want := err.Reason, tt.wantReason; got != want {
-					t.Errorf("err.Reason = %q; want %q", got, want)
+				act, ok := errors.AsType[*router.Error](err)
+				if !ok {
+					t.Fatalf("error is %T; want *router.Error", err)
 				}
-				if got, want := err.Status, tt.wantStatus; got != want {
-					t.Errorf("err.Status = %d; want %d", got, want)
+				if got, want := act.Reason, tt.wantReason; got != want {
+					t.Errorf("got reason %q; want %q", got, want)
+				}
+				if got, want := act.Status, tt.wantStatus; got != want {
+					t.Errorf("got status %d; want %d", got, want)
 				}
 				return
 			}

@@ -328,7 +328,7 @@ func (e *Exchange) BindQuery(v any) *Error {
 }
 
 // BindForm decodes URL-encoded form data from the request body into v.
-func (e *Exchange) BindForm(v any) *Error {
+func (e *Exchange) BindForm(v any) error {
 	form, err := e.ReadForm()
 	if err != nil {
 		return err
@@ -357,7 +357,7 @@ func (e *Exchange) BindForm(v any) *Error {
 //
 // Unlike standard [http.Request.FormValue], this strictly accesses the request
 // body, ignoring URL query parameters.
-func (e *Exchange) ReadForm() (url.Values, *Error) {
+func (e *Exchange) ReadForm() (url.Values, error) {
 	if t := header.MediaType(e.R.Header); t != MediaTypeForm {
 		return nil, &Error{
 			Status:      http.StatusUnsupportedMediaType,
