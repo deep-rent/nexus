@@ -77,16 +77,25 @@ func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
 
 	keys := make([]jwk.KeyPair, 0, len(items))
 	for _, it := range items {
-		signer, err := parsePEM(it.Pem)
+		signer, err := parse(it.Pem)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse PEM for key %q: %w", it.Kid, err)
+			return nil, fmt.Errorf(
+				"failed to parse PEM for key %q: %w",
+				it.Kid, err,
+			)
 		}
-		kp, err := buildKeyPair(it.Alg, it.Kid, sign.From(signer))
+		kp, err := newKeyPair(it.Alg, it.Kid, sign.From(signer))
 		if err != nil {
-			return nil, fmt.Errorf("failed to build key pair for key %q: %w", it.Kid, err)
+			return nil, fmt.Errorf(
+				"failed to build key pair for key %q: %w",
+				it.Kid, err,
+			)
 		}
 		if kp == nil {
-			return nil, fmt.Errorf("public key type mismatch for key %q and algorithm %s", it.Kid, it.Alg)
+			return nil, fmt.Errorf(
+				"public key type mismatch for key %q and algorithm %s",
+				it.Kid, it.Alg,
+			)
 		}
 		keys = append(keys, kp)
 	}
@@ -102,26 +111,27 @@ func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
 // from the specified file path. This is particularly useful for loading keys
 // mounted from Kubernetes Secrets or ConfigMaps.
 func LoadFile(path string, strategy rotor.Strategy) (Vault, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return nil, err
 	}
 	return Load(data, strategy)
 }
 
-func parsePEM(pemData string) (crypto.Signer, error) {
-	block, _ := pem.Decode([]byte(pemData))
+func parse(data string) (crypto.Signer, error) {
+	block, _ := pem.Decode([]byte(data))
 	if block == nil {
 		return nil, errors.New("failed to decode PEM block")
 	}
 
+	bytes := block.Bytes
 	// Try standard PKCS8 first
-	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	key, err := x509.ParsePKCS8PrivateKey(bytes)
 	if err != nil {
 		// Fallback for EC private keys
-		if key, err = x509.ParseECPrivateKey(block.Bytes); err != nil {
+		if key, err = x509.ParseECPrivateKey(bytes); err != nil {
 			// Fallback for RSA PKCS1
-			if key, err = x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
+			if key, err = x509.ParsePKCS1PrivateKey(bytes); err != nil {
 				return nil, errors.New("failed to parse private key")
 			}
 		}
@@ -129,13 +139,13 @@ func parsePEM(pemData string) (crypto.Signer, error) {
 
 	signer, ok := key.(crypto.Signer)
 	if !ok {
-		return nil, errors.New("key is not a crypto.Signer")
+		return nil, errors.New("key is not a signer")
 	}
 	return signer, nil
 }
 
-func buildKeyPair(algName, kid string, signer sign.Signer) (jwk.KeyPair, error) {
-	switch algName {
+func newKeyPair(alg, kid string, signer sign.Signer) (jwk.KeyPair, error) {
+	switch alg {
 	case "RS256":
 		return jwk.NewKeyPair(jwa.RS256, kid, signer), nil
 	case "RS384":
@@ -157,6 +167,6 @@ func buildKeyPair(algName, kid string, signer sign.Signer) (jwk.KeyPair, error) 
 	case "EdDSA":
 		return jwk.NewKeyPair(jwa.EdDSA, kid, signer), nil
 	default:
-		return nil, fmt.Errorf("unsupported algorithm: %s", algName)
+		return nil, fmt.Errorf("unsupported algorithm: %s", alg)
 	}
 }

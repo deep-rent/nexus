@@ -141,12 +141,12 @@ func TestLoad(t *testing.T) {
 		t.Errorf("expected %d keys, got %d", exp, act)
 	}
 
-	nextKey := v.Next()
-	if nextKey == nil {
+	next := v.Next()
+	if next == nil {
 		t.Fatal("v.Next() returned nil")
 	}
 
-	if act := nextKey.KeyID(); act != "rsa-key-1" && act != "ecdsa-key-1" {
+	if act := next.KeyID(); act != "rsa-key-1" && act != "ecdsa-key-1" {
 		t.Errorf("unexpected next key ID: %s", act)
 	}
 }
@@ -154,7 +154,7 @@ func TestLoad(t *testing.T) {
 func TestLoadFile(t *testing.T) {
 	t.Parallel()
 
-	ecdsaSigner, err := jwa.ES256.Generate()
+	signer, err := jwa.ES256.Generate()
 	if err != nil {
 		t.Fatalf("failed to generate ECDSA key: %v", err)
 	}
@@ -163,18 +163,18 @@ func TestLoadFile(t *testing.T) {
 		{
 			Kid: "ecdsa-file-1",
 			Alg: "ES256",
-			Pem: encodePEM(t, ecdsaSigner),
+			Pem: encodePEM(t, signer),
 		},
 	}
 
-	configData, err := json.Marshal(items)
+	config, err := json.Marshal(items)
 	if err != nil {
 		t.Fatalf("failed to marshal config: %v", err)
 	}
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "keys.json")
-	if err := os.WriteFile(path, configData, 0600); err != nil {
+	if err := os.WriteFile(path, config, 0o600); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 
