@@ -18,6 +18,9 @@ package sign
 import (
 	"context"
 	"crypto"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"io"
 )
 
@@ -98,3 +101,32 @@ func (w *stdWrapper) Sign(
 }
 
 var _ crypto.Signer = (*stdWrapper)(nil)
+
+// ParsePEM decodes a PEM block and parses the contained private key into a
+// [Signer]. It supports standard PKCS8, EC, and PKCS1 private keys.
+func ParsePEM(data []byte) (Signer, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	bytes := block.Bytes
+	// Try standard PKCS8 first
+	key, err := x509.ParsePKCS8PrivateKey(bytes)
+	if err != nil {
+		// Fallback for EC private keys
+		if key, err = x509.ParseECPrivateKey(bytes); err != nil {
+			// Fallback for RSA PKCS1
+			if key, err = x509.ParsePKCS1PrivateKey(bytes); err != nil {
+				return nil, errors.New("failed to parse private key")
+			}
+		}
+	}
+
+	signer, ok := key.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("key is not a signer")
+	}
+
+	return From(signer), nil
+}
