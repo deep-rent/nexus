@@ -49,3 +49,9 @@ func New(keys []jwk.KeyPair, strategy rotor.Strategy) Vault {
 
 func (v *vault) Keys() jwk.Set     { return v.pub }
 func (v *vault) Next() jwk.KeyPair { return v.prv.Next() }
+
+type item struct {
+	Kid string `json:"kid"`
+	Pem string `json:"pem"`
+	Alg string `json:"alg"`
+}
