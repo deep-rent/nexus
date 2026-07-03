@@ -204,7 +204,7 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal config: %v", err)
 	}
-	
+
 	v, err := vault.Load(configData, rotor.Sequential)
 	if err != nil {
 		t.Fatalf("failed to load vault: %v", err)
