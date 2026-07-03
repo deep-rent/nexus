@@ -60,17 +60,19 @@ func New(keys []jwk.KeyPair, strategy rotor.Strategy) Vault {
 func (v *vault) Keys() jwk.Set     { return v.pub }
 func (v *vault) Next() jwk.KeyPair { return v.prv.Next() }
 
-type item struct {
+type Item struct {
 	Kid string `json:"kid"`
 	Pem string `json:"pem"`
 	Alg string `json:"alg"`
 }
 
+type Items []Item
+
 // Load parses a JSON array of configuration items, where each item contains
 // a Key ID (kid), Algorithm (alg), and Private Key (pem) encoded in PEM format.
 // It constructs a Vault instance with the specified rotation strategy.
 func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
-	var items []item
+	var items Items
 	if err := json.Unmarshal(config, &items); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}

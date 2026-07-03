@@ -82,13 +82,7 @@ func TestVault(t *testing.T) {
 	})
 }
 
-type configItem struct {
-	Kid string `json:"kid"`
-	Pem string `json:"pem"`
-	Alg string `json:"alg"`
-}
-
-func encodePEM(t *testing.T, key any) string {
+func encode(t *testing.T, key any) string {
 	t.Helper()
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
@@ -113,16 +107,16 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("failed to generate ECDSA key: %v", err)
 	}
 
-	items := []configItem{
+	items := vault.Items{
 		{
 			Kid: "rsa-key-1",
 			Alg: "RS256",
-			Pem: encodePEM(t, rsaSigner),
+			Pem: encode(t, rsaSigner),
 		},
 		{
 			Kid: "ecdsa-key-1",
 			Alg: "ES256",
-			Pem: encodePEM(t, ecdsaSigner),
+			Pem: encode(t, ecdsaSigner),
 		},
 	}
 
@@ -159,11 +153,11 @@ func TestLoadFile(t *testing.T) {
 		t.Fatalf("failed to generate ECDSA key: %v", err)
 	}
 
-	items := []configItem{
+	items := vault.Items{
 		{
 			Kid: "ecdsa-file-1",
 			Alg: "ES256",
-			Pem: encodePEM(t, signer),
+			Pem: encode(t, signer),
 		},
 	}
 
