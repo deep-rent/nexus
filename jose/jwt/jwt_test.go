@@ -16,6 +16,7 @@ package jwt_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
 	"strings"
@@ -414,6 +415,37 @@ func TestAudience_UnmarshalJSON(t *testing.T) {
 				if act, exp := got[i], tt.want[i]; act != exp {
 					t.Errorf("Audience()[%d] = %q; want %q", i, act, exp)
 				}
+			}
+		})
+	}
+}
+
+func TestParse_ValidTypes(t *testing.T) {
+	t.Parallel()
+
+	validTypes := []string{
+		"jwt",
+		"JWT",
+		"application/jwt",
+		"at+jwt",
+		"application/at+jwt",
+	}
+
+	for _, typ := range validTypes {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			// Header JSON: {"typ":"<typ>"}
+			headerJSON, err := json.Marshal(map[string]string{"typ": typ})
+			if err != nil {
+				t.Fatalf("failed to marshal header: %v", err)
+			}
+			hEncoded := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+			// Build token: <header>.<payload>.<signature>
+			tokenStr := hEncoded + ".e30.c2lnbmF0dXJl" // e30 is Base64Url for {}
+			_, err = jwt.Parse[*testClaims]([]byte(tokenStr))
+			if err != nil {
+				t.Fatalf("Parse() failed for typ %q: %v", typ, err)
 			}
 		})
 	}

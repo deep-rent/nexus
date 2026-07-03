@@ -79,6 +79,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -355,7 +356,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 	if err := json.Unmarshal(h, header); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal header: %w", err)
 	}
-	if typ := header.Typ; typ != "" && typ != Type {
+	if typ := header.Typ; typ != "" && !isJWT(typ) {
 		return nil, fmt.Errorf("unexpected token type %q", typ)
 	}
 	c, err := decode(in[i+1 : j])
@@ -377,6 +378,11 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 		msg:    msg,
 		sig:    sig,
 	}, nil
+}
+
+func isJWT(typ string) bool {
+	typ = strings.TrimPrefix(strings.ToLower(typ), "application/")
+	return typ == "jwt" || strings.HasSuffix(typ, "+jwt")
 }
 
 // decode is a helper for Base64URL decoding without padding.
