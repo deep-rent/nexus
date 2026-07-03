@@ -58,6 +58,8 @@ func New(keys []jwk.KeyPair, strategy rotor.Strategy) Vault {
 func (v *vault) Keys() jwk.Set     { return v.pub }
 func (v *vault) Next() jwk.KeyPair { return v.prv.Next() }
 
+var _ Vault = (*vault)(nil)
+
 type Item struct {
 	Kid string `json:"kid"`
 	Pem string `json:"pem"`
@@ -77,6 +79,10 @@ func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
 
 	keys := make([]jwk.KeyPair, 0, len(items))
 	for _, item := range items {
+		if item.Alg == "" || item.Kid == "" || item.Pem == "" {
+			return nil, fmt.Errorf("invalid key item: %v", item)
+		}
+
 		signer, err := sign.ParsePEM([]byte(item.Pem))
 		if err != nil {
 			return nil, fmt.Errorf(
