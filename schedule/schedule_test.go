@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package scheduler_test
+package schedule_test
 
 import (
 	"context"
@@ -22,19 +22,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/scheduler"
+	"github.com/deep-rent/nexus/schedule"
 )
 
 func TestAfter(t *testing.T) {
 	t.Parallel()
 
 	var seen atomic.Bool
-	task := scheduler.TaskFn(func(context.Context) {
+	task := schedule.TaskFn(func(context.Context) {
 		seen.Store(true)
 	})
 
 	const delay = 50 * time.Millisecond
-	tick := scheduler.After(delay, task)
+	tick := schedule.After(delay, task)
 	actual := tick.Run(t.Context())
 
 	if !seen.Load() {
@@ -90,12 +90,12 @@ func TestEvery(t *testing.T) {
 			t.Parallel()
 
 			var seen atomic.Bool
-			task := scheduler.TaskFn(func(context.Context) {
+			task := schedule.TaskFn(func(context.Context) {
 				time.Sleep(tt.duration)
 				seen.Store(true)
 			})
 
-			tick := scheduler.Every(tt.interval, task)
+			tick := schedule.Every(tt.interval, task)
 			wait := tick.Run(t.Context())
 
 			if !seen.Load() {
@@ -117,7 +117,7 @@ func TestEvery(t *testing.T) {
 func TestScheduler_New(t *testing.T) {
 	t.Parallel()
 
-	s := scheduler.New(t.Context())
+	s := schedule.New(t.Context())
 	if s == nil {
 		t.Fatal("scheduler.New() = nil; want non-nil")
 	}
@@ -130,7 +130,7 @@ func TestScheduler_Context_Cancellation(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	s := scheduler.New(ctx)
+	s := schedule.New(ctx)
 
 	if err := s.Context().Err(); err != nil {
 		t.Fatalf("s.Context().Err() = %v; want nil before cancellation", err)
@@ -152,12 +152,12 @@ func TestScheduler_Context_Cancellation(t *testing.T) {
 func TestScheduler_Dispatch_Shutdown(t *testing.T) {
 	t.Parallel()
 
-	s := scheduler.New(t.Context())
+	s := schedule.New(t.Context())
 	var count atomic.Int32
 
-	tick := scheduler.Every(
+	tick := schedule.Every(
 		10*time.Millisecond,
-		scheduler.TaskFn(func(context.Context) {
+		schedule.TaskFn(func(context.Context) {
 			count.Add(1)
 		}),
 	)
@@ -180,13 +180,13 @@ func TestScheduler_Dispatch_Shutdown(t *testing.T) {
 func TestScheduler_Shutdown_Blocking(t *testing.T) {
 	t.Parallel()
 
-	s := scheduler.New(t.Context())
+	s := schedule.New(t.Context())
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	started := make(chan struct{})
 	stopped := make(chan struct{})
-	tick := scheduler.After(time.Hour, scheduler.TaskFn(func(context.Context) {
+	tick := schedule.After(time.Hour, schedule.TaskFn(func(context.Context) {
 		close(started)
 		<-stopped
 	}))
@@ -221,16 +221,16 @@ func TestScheduler_Shutdown_Blocking(t *testing.T) {
 func TestScheduler_Dispatch_Concurrent(t *testing.T) {
 	t.Parallel()
 
-	s := scheduler.New(t.Context())
+	s := schedule.New(t.Context())
 	var count1, count2 atomic.Int32
 
-	tick1 := scheduler.Every(
+	tick1 := schedule.Every(
 		10*time.Millisecond,
-		scheduler.TaskFn(func(context.Context) { count1.Add(1) }),
+		schedule.TaskFn(func(context.Context) { count1.Add(1) }),
 	)
-	tick2 := scheduler.Every(
+	tick2 := schedule.Every(
 		15*time.Millisecond,
-		scheduler.TaskFn(func(context.Context) { count2.Add(1) }),
+		schedule.TaskFn(func(context.Context) { count2.Add(1) }),
 	)
 
 	s.Dispatch(tick1)
@@ -254,7 +254,7 @@ func TestOnceScheduler_Context(t *testing.T) {
 	var testKey contextKey
 
 	ctx := context.WithValue(t.Context(), testKey, "value")
-	s := scheduler.Once(ctx)
+	s := schedule.Once(ctx)
 
 	if got, want := s.Context(), ctx; got != want {
 		t.Errorf("s.Context() = %v; want %v", got, want)
@@ -264,10 +264,10 @@ func TestOnceScheduler_Context(t *testing.T) {
 func TestOnceScheduler_Dispatch_Synchronous(t *testing.T) {
 	t.Parallel()
 
-	s := scheduler.Once(t.Context())
+	s := schedule.Once(t.Context())
 	var count atomic.Int32
 
-	tick := scheduler.TickFn(func(context.Context) time.Duration {
+	tick := schedule.TickFn(func(context.Context) time.Duration {
 		time.Sleep(10 * time.Millisecond)
 		count.Add(1)
 		return 0
@@ -287,7 +287,7 @@ func TestOnceScheduler_Dispatch_Synchronous(t *testing.T) {
 func TestOnceScheduler_Shutdown_Noop(t *testing.T) {
 	t.Parallel()
 
-	s := scheduler.Once(t.Context())
+	s := schedule.Once(t.Context())
 	done := make(chan struct{})
 
 	go func() {

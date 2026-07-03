@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package scheduler provides a flexible framework for running recurring tasks.
+// Package schedule provides a flexible framework for running recurring tasks.
 //
-// Package scheduler manages the lifecycle of concurrent, scheduled jobs. The
+// This package manages the lifecycle of concurrent, scheduled jobs. The
 // basic unit of work is a [Task], which can be adapted into a schedulable
 // [Tick]. A [Tick] is a self-repeating job that determines its own next run
 // time by returning a duration after each execution.
@@ -31,19 +31,19 @@
 //
 // Example:
 //
-//	s := scheduler.New(context.Background())
+//	s := schedule.New(context.Background())
 //	defer s.Shutdown()
 //
-//	task := scheduler.TaskFn(func(context.Context) {
+//	task := schedule.TaskFn(func(context.Context) {
 //	  slog.Info("Tick!")
 //	})
 //
-//	tick := scheduler.Every(2*time.Second, task)
+//	tick := schedule.Every(2*time.Second, task)
 //	s.Dispatch(tick)
 //
 //	// Let the scheduler run for a while.
 //	time.Sleep(5 * time.Second)
-package scheduler
+package schedule
 
 import (
 	"context"

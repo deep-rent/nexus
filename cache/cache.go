@@ -15,7 +15,7 @@
 // Package cache provides a generic, auto-refreshing in-memory cache for a
 // resource fetched from a URL.
 //
-// The core of the package is the [Controller], a [scheduler.Tick] that
+// The core of the package is the [Controller], a [schedule.Tick] that
 // periodically fetches a remote resource, parses it, and caches it in memory.
 // It is designed to be resilient, with a built-in, configurable retry
 // mechanism for handling transient network failures.
@@ -27,9 +27,9 @@
 //
 // # Usage
 //
-// A typical use case involves creating a scheduler, defining a [Mapper]
-// function to parse the HTTP response, creating and configuring a [Controller],
-// and then dispatching it to run in the background.
+// A typical use case involves creating a [schedule.Scheduler], defining a
+// [Mapper] function to parse the HTTP response, creating and configuring
+// a [Controller], and then dispatching it to run in the background.
 //
 // Example:
 //
@@ -38,7 +38,7 @@
 //	}
 //
 //	// 1. Create a scheduler to manage the refresh ticks.
-//	sched := scheduler.New(context.Background())
+//	sched := schedule.New(context.Background())
 //	defer sched.Shutdown()
 //
 //	// 2. Define a mapper to parse the response body into your target type.
@@ -81,7 +81,7 @@ import (
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/retry"
-	"github.com/deep-rent/nexus/scheduler"
+	schedule "github.com/deep-rent/nexus/schedule"
 )
 
 const (
@@ -113,10 +113,10 @@ type Response struct {
 }
 
 // Controller manages the lifecycle of a cached resource. It implements
-// [scheduler.Tick], allowing it to be run by a scheduler to periodically
+// [schedule.Tick], allowing it to be run by a scheduler to periodically
 // refresh the resource from a URL.
 type Controller[T any] interface {
-	scheduler.Tick
+	schedule.Tick
 	// Get retrieves the currently cached resource. The boolean return value is
 	// true if the cache has been successfully populated at least once.
 	Get() (T, bool)
@@ -231,7 +231,7 @@ func (c *controller[T]) ready() {
 }
 
 // Run executes a single fetch-and-cache cycle. It implements the
-// [scheduler.Tick] interface. It handles conditional requests, response
+// [schedule.Tick] interface. It handles conditional requests, response
 // parsing, and caching, and returns the duration to wait before the next run.
 func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	c.logger.Debug("Fetching resource")

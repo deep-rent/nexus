@@ -32,7 +32,7 @@ import (
 
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/retry"
-	"github.com/deep-rent/nexus/scheduler"
+	"github.com/deep-rent/nexus/schedule"
 )
 
 type mockRoundTripper struct {
@@ -392,7 +392,7 @@ func TestController_Get_WithScheduler(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	sched := scheduler.New(t.Context())
+	sched := schedule.New(t.Context())
 	defer sched.Shutdown()
 
 	c := cache.NewController(s.URL, mockMapper)

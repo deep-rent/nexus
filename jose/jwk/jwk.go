@@ -90,7 +90,7 @@ import (
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/router"
-	"github.com/deep-rent/nexus/scheduler"
+	"github.com/deep-rent/nexus/schedule"
 )
 
 // Media types as registered in RFC 7517.
@@ -519,13 +519,13 @@ func Singleton(key Key) Set {
 	return &singletonSet{key: key}
 }
 
-// CacheSet extends the [Set] interface with [scheduler.Tick], creating a
+// CacheSet extends the [Set] interface with [schedule.Tick], creating a
 // component that can be deployed to a scheduler for automatic refreshing of a
 // remote JWKS view in the background. The default implementation is backed by
 // a [cache.Controller].
 type CacheSet interface {
 	Set
-	scheduler.Tick
+	schedule.Tick
 }
 
 // cacheSet is the concrete implementation of the [CacheSet] interface.
@@ -554,7 +554,7 @@ func (s *cacheSet) Len() int { return s.get().Len() }
 // Find implements [Set].
 func (s *cacheSet) Find(hint Hint) Key { return s.get().Find(hint) }
 
-// Run implements [scheduler.Tick].
+// Run implements [schedule.Tick].
 func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
 }
@@ -575,7 +575,7 @@ var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 }
 
 // NewCacheSet creates a new [CacheSet] that stays in sync with a remote JWKS
-// endpoint. It must be deployed to a [scheduler.Scheduler] to begin the
+// endpoint. It must be deployed to a [schedule.] to begin the
 // background fetching and refreshing process.
 //
 // The provided [cache.Option] can configure behaviors like refresh interval,
