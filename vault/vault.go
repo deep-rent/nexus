@@ -12,6 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package vault provides secure retrieval and rotation of cryptographic keys.
+//
+// Package vault manages a collection of JSON Web Keys (JWK) for signing and
+// verification. The primary abstraction is the [Vault] interface, which
+// abstracts away underlying key sources (like Kubernetes Secrets or KMS)
+// and handles key rotation through a [rotor.Strategy].
+//
+// # Usage
+//
+// The vault is typically initialized from a JSON configuration array containing
+// PEM-encoded keys, and can seamlessly integrate with HTTP routers to serve
+// JWKS endpoints:
+//
+//   - [Load]: Parses a JSON configuration array and initializes a [Vault].
+//   - [LoadFile]: A convenience wrapper to load configuration from the filesystem.
+//   - [Handler]: Creates an HTTP handler to serve the public keys as a JWK Set.
+//
+// Example:
+//
+//	v, err := vault.LoadFile("/etc/secrets/keys.json", rotor.Sequential)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	key := v.Next()
+//	sig, err := key.Sign(context.Background(), payload)
+//
+//	r := router.New()
+//	r.HandleFunc("GET /.well-known/jwks.json", vault.Handler(v))
 package vault
 
 import (
