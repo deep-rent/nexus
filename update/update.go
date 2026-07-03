@@ -85,6 +85,9 @@ type Config struct {
 	Current string
 	// UserAgent is the value for the User-Agent header sent with requests.
 	UserAgent string
+	// Token is the GitHub Personal Access Token used for authenticating requests,
+	// allowing access to private repositories.
+	Token string
 	// Timeout is the time limit for requests made by the updater. It defaults
 	// to [DefaultTimeout] if not set.
 	Timeout time.Duration
@@ -102,6 +105,8 @@ type Updater struct {
 	current string
 	// userAgent is the identifying string sent in the HTTP header.
 	userAgent string
+	// token is the GitHub PAT for authentication.
+	token string
 	// client is the HTTP client for making API requests.
 	client *http.Client
 }
@@ -143,6 +148,7 @@ func New(cfg *Config) *Updater {
 		repository: cfg.Repository,
 		current:    current,
 		userAgent:  cfg.UserAgent,
+		token:      cfg.Token,
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -175,6 +181,9 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	if u.userAgent != "" {
 		req.Header.Set("User-Agent", u.userAgent)
+	}
+	if u.token != "" {
+		req.Header.Set("Authorization", "Bearer "+u.token)
 	}
 
 	res, err := u.client.Do(req)

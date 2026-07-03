@@ -264,3 +264,30 @@ func TestCheck_UserAgent(t *testing.T) {
 		t.Errorf("Check() err = %v; want nil", err)
 	}
 }
+
+func TestCheck_Token(t *testing.T) {
+	t.Parallel()
+
+	want := "Bearer my-secret-token"
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q; want %q", got, want)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"tag_name": "v1.0.0"}`))
+		}))
+	defer server.Close()
+
+	cfg := &update.Config{
+		BaseURL:    server.URL,
+		Owner:      "o",
+		Repository: "r",
+		Current:    "v1.0.0",
+		Token:      "my-secret-token",
+	}
+
+	if _, err := update.Check(t.Context(), cfg); err != nil {
+		t.Errorf("Check() err = %v; want nil", err)
+	}
+}
