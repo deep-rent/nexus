@@ -165,8 +165,21 @@ func TestDecode(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *ecdsa.PublicKey, got %T", s.Public())
 	}
-	if pub.X.Cmp(k.X) != 0 || pub.Y.Cmp(k.Y) != 0 {
+	if !pub.Equal(&k.PublicKey) {
 		t.Error("public key mismatch")
+	}
+
+	msg := []byte("payload")
+	digest := crypto.SHA256.New()
+	digest.Write(msg)
+	hashed := digest.Sum(nil)
+
+	sig, err := s.Sign(t.Context(), rand.Reader, hashed, nil)
+	if err != nil {
+		t.Fatalf("failed to sign with decoded key: %v", err)
+	}
+	if !ecdsa.VerifyASN1(&k.PublicKey, hashed, sig) {
+		t.Error("signature verification failed")
 	}
 }
 
@@ -205,7 +218,6 @@ func TestEncode(t *testing.T) {
 		t.Fatalf("failed to generate key: %v", err)
 	}
 
-	// Test raw key
 	pem1, err := sign.Encode(k)
 	if err != nil {
 		t.Fatalf("unexpected error serializing raw key: %v", err)
@@ -214,7 +226,6 @@ func TestEncode(t *testing.T) {
 		t.Error("expected non-empty PEM string")
 	}
 
-	// Test wrapped key
 	wrapped := sign.From(k)
 	pem2, err := sign.Encode(wrapped)
 	if err != nil {
@@ -224,7 +235,6 @@ func TestEncode(t *testing.T) {
 		t.Error("expected serialized output to match for raw and wrapped key")
 	}
 
-	// Verify it can be parsed back
 	parsed, err := sign.Decode(pem1)
 	if err != nil {
 		t.Fatalf("failed to parse generated PEM: %v", err)
