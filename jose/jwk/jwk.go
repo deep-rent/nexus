@@ -633,12 +633,12 @@ func Generate[T crypto.PublicKey](alg jwa.Algorithm[T]) (KeyPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	kp := NewKeyPair(alg, kid, sign.From(key))
-	if kp == nil {
+	out := NewKeyPair(alg, kid, sign.From(key))
+	if out == nil {
 		return nil, fmt.Errorf(
 			"key type %T does not match expected algorithm key type",
 			key.Public(),
 		)
 	}
-	return kp, nil
+	return out, nil
 }
