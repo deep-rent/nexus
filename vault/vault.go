@@ -83,7 +83,7 @@ func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
 			return nil, fmt.Errorf("invalid key item: %v", item)
 		}
 
-		signer, err := sign.Parse([]byte(item.Pem))
+		signer, err := sign.Decode([]byte(item.Pem))
 		if err != nil {
 			return nil, fmt.Errorf(
 				"failed to parse PEM for key %q: %w",

@@ -18,9 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json/v2"
-	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +30,7 @@ import (
 	"github.com/deep-rent/nexus/vault"
 )
 
-func generateKeyPair(t *testing.T, kid string) jwk.KeyPair {
+func generate(t *testing.T, kid string) jwk.KeyPair {
 	t.Helper()
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -44,9 +42,9 @@ func generateKeyPair(t *testing.T, kid string) jwk.KeyPair {
 func TestVault(t *testing.T) {
 	t.Parallel()
 
-	k1 := generateKeyPair(t, "key-1")
-	k2 := generateKeyPair(t, "key-2")
-	k3 := generateKeyPair(t, "key-3")
+	k1 := generate(t, "key-1")
+	k2 := generate(t, "key-2")
+	k3 := generate(t, "key-3")
 
 	keys := []jwk.KeyPair{k1, k2, k3}
 
@@ -84,15 +82,11 @@ func TestVault(t *testing.T) {
 
 func encode(t *testing.T, key any) string {
 	t.Helper()
-	der, err := x509.MarshalPKCS8PrivateKey(key)
+	data, err := sign.Encode(key)
 	if err != nil {
-		t.Fatalf("failed to marshal key: %v", err)
+		t.Fatalf("failed to serialize key: %v", err)
 	}
-	block := &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: der,
-	}
-	return string(pem.EncodeToMemory(block))
+	return string(data)
 }
 
 func TestLoad(t *testing.T) {
