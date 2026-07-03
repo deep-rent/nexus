@@ -15,7 +15,9 @@
 package sign_test
 
 import (
+	"context"
 	"crypto"
+	"errors"
 	"io"
 	"testing"
 
@@ -49,5 +51,22 @@ func TestFrom(t *testing.T) {
 	}
 	if exp, act := "bar", string(sig); exp != act {
 		t.Errorf("expected %s, got %s", exp, act)
+	}
+}
+
+func TestFrom_CancelledContext(t *testing.T) {
+	t.Parallel()
+
+	s := sign.From(&mockSigner{})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel context early
+
+	_, err := s.Sign(ctx, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }

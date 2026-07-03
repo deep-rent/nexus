@@ -56,6 +56,9 @@ func (w *wrapper) Sign(
 	digest []byte,
 	opts crypto.SignerOpts,
 ) (signature []byte, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return w.signer.Sign(rand, digest, opts)
 }
 
