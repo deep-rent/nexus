@@ -21,11 +21,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/sign"
 
 	"github.com/deep-rent/nexus/jose/jwa"
@@ -614,5 +617,42 @@ func TestGenerate(t *testing.T) {
 	}
 	if !kp.Verify(msg, sig) {
 		t.Errorf("kp.Verify() = false; want true")
+	}
+}
+
+func TestHandler(t *testing.T) {
+	t.Parallel()
+
+	key := &mockKey{
+		alg: "RS256",
+		kid: "test-kid",
+		mat: &rsa.PublicKey{N: big.NewInt(123), E: 65537},
+	}
+	s := jwk.Singleton(key)
+
+	r := router.New()
+	r.HandleFunc("GET /jwks", jwk.Handler(s))
+
+	req := httptest.NewRequest(http.MethodGet, "/jwks", nil)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if exp, act := http.StatusOK, rec.Code; exp != act {
+		t.Errorf("expected status %d, got %d", exp, act)
+	}
+
+	if exp, act := jwk.MediaTypeSet,
+		rec.Header().Get("Content-Type"); exp != act {
+		t.Errorf("expected content type %s, got %s", exp, act)
+	}
+
+	set, err := jwk.ParseSet(rec.Body.Bytes())
+	if err != nil {
+		t.Fatalf("failed to parse returned JWKS: %v", err)
+	}
+
+	if exp, act := 1, set.Len(); exp != act {
+		t.Errorf("expected %d keys in JWKS, got %d", exp, act)
 	}
 }

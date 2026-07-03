@@ -80,6 +80,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -88,6 +89,7 @@ import (
 
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/scheduler"
 )
 
@@ -639,4 +641,24 @@ func Generate[T crypto.PublicKey](alg jwa.Algorithm[T]) (KeyPair, error) {
 		)
 	}
 	return out, nil
+}
+
+// Handler returns a [router.HandlerFunc] that serves the provided [Set]
+// as a standard JSON Web Key Set (JWKS) document.
+//
+// This allows other services to dynamically fetch the public keys required
+// to verify signatures. If the provided Set is a dynamically updating cache
+// (such as a [CacheSet]), the handler will automatically serve the latest keys.
+func Handler(s Set) router.HandlerFunc {
+	return func(e *router.Exchange) error {
+		data, err := WriteSet(s)
+		if err != nil {
+			return err
+		}
+
+		e.SetHeader("Content-Type", MediaTypeSet)
+		e.Status(http.StatusOK)
+		_, err = e.W.Write(data)
+		return err
+	}
 }
