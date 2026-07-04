@@ -12,6 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package graph provides a generic directed acyclic graph (DAG) implementation.
+//
+// It is used to determine topological orderings of elements, making it ideal
+// for resolving dependency treees.
+//
+// # Usage
+//
+// Create a new graph and populate it with nodes and dependency edges.
+//
+// Example:
+//
+//	g := graph.New[string]()
+//	g.AddEdge("foo", "bar") // foo depends on bar
+//	g.AddNode("baz")        // baz is a standalone node
+//
+//	sorted, err := g.Sort()
+//	if err != nil {
+//		// Handle cycle detection error
+//	}
+//	// sorted: []string{"foo", "bar", "baz"}
 package graph
 
 import (
