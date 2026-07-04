@@ -24,6 +24,12 @@ import (
 
 type Action string
 
+const (
+	Create Action = "create"
+	Update Action = "update"
+	Delete Action = "delete"
+)
+
 type Kind struct {
 	// Action specifies the type of change to apply (e.g., "create", "update",
 	// "delete", ...).
