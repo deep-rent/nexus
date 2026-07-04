@@ -29,7 +29,7 @@ type Graph[T comparable] struct {
 	degree map[T]int
 }
 
-// New initializes an empty graph.
+// New initializes an empty directed acyclic graph.
 func New[T comparable]() *Graph[T] {
 	return &Graph[T]{
 		nodes:  make(map[T]struct{}),
@@ -38,7 +38,9 @@ func New[T comparable]() *Graph[T] {
 	}
 }
 
-// AddNode registers a node in the graph.
+// AddNode registers a node in the graph. Nodes added without edges will be
+// returned in the sorted output, but their relative order to disconnected nodes
+// is undefined.
 func (g *Graph[T]) AddNode(v T) {
 	if _, exists := g.nodes[v]; !exists {
 		g.nodes[v] = struct{}{}
@@ -46,8 +48,10 @@ func (g *Graph[T]) AddNode(v T) {
 	}
 }
 
-// AddEdge registers a dependency: `child` depends on `parent`.
-// It implicitly adds the child and parent nodes if they do not exist.
+// AddEdge registers a dependency where `child` depends on `parent`.
+// This guarantees that in the topologically sorted output, `parent` will
+// strictly precede `child`. It implicitly adds both the child and parent nodes
+// if they do not already exist.
 func (g *Graph[T]) AddEdge(child, parent T) {
 	g.AddNode(child)
 	g.AddNode(parent)
@@ -56,8 +60,9 @@ func (g *Graph[T]) AddEdge(child, parent T) {
 	g.degree[parent]++
 }
 
-// Sort returns the topological order of entities (parents first, then
-// children). It returns an error if a cycle is detected.
+// Sort resolves the dependency graph and returns the nodes in topological
+// order (i.e., parents first, followed by their children). It returns
+// [ErrCycleDetected] if a cyclic dependency prevents a valid sorting.
 func (g *Graph[T]) Sort() ([]T, error) {
 	var zero []T
 
