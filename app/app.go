@@ -256,7 +256,9 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	}
 
 	timer := time.NewTimer(cfg.timeout)
-	defer timer.Stop()
+	defer func() {
+		_ = timer.Stop()
+	}()
 
 	select {
 	case err := <-errCh:
