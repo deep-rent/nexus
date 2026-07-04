@@ -18,9 +18,16 @@ import (
 	"context"
 )
 
-// Fetcher abstracts data retrieval for a specific entity type.
-type Fetcher[Tx any] interface {
+type Fetcher[Tx any, T any] func(
+	ctx context.Context,
+	tx Tx,
+	since uint64,
+) ([]T, []UUID, error)
+
+// Reader abstracts data retrieval for a specific entity type.
+type Reader[Tx any] interface {
 	Entity() Entity
+
 	Fetch(ctx context.Context, tx Tx, since uint64) (
 		updates any,
 		deletes []UUID,
@@ -28,15 +35,26 @@ type Fetcher[Tx any] interface {
 	)
 }
 
-// fetcher is a generic implementation of Fetcher.
-type fetcher[Tx any, T any] struct {
-	entity Entity
-	fetch  func(ctx context.Context, tx Tx, since uint64) ([]T, []UUID, error)
+// NewReader creates a new typed [Reader].
+func NewReader[Tx, T any](
+	entity Entity,
+	fetch Fetcher[Tx, T],
+) Reader[Tx] {
+	return &reader[Tx, T]{
+		entity: entity,
+		fetch:  fetch,
+	}
 }
 
-func (f *fetcher[Tx, T]) Entity() Entity { return f.entity }
+// reader is a generic implementation of [Reader].
+type reader[Tx any, T any] struct {
+	entity Entity
+	fetch  Fetcher[Tx, T]
+}
 
-func (f *fetcher[Tx, T]) Fetch(
+func (f *reader[Tx, T]) Entity() Entity { return f.entity }
+
+func (f *reader[Tx, T]) Fetch(
 	ctx context.Context,
 	tx Tx,
 	since uint64,
@@ -44,13 +62,4 @@ func (f *fetcher[Tx, T]) Fetch(
 	return f.fetch(ctx, tx, since)
 }
 
-// NewFetcher creates a new typed Fetcher.
-func NewFetcher[Tx, T any](
-	entity Entity,
-	fetch func(ctx context.Context, tx Tx, since uint64) ([]T, []UUID, error),
-) Fetcher[Tx] {
-	return &fetcher[Tx, T]{
-		entity: entity,
-		fetch:  fetch,
-	}
-}
+var _ Reader[any] = (*reader[any, any])(nil)

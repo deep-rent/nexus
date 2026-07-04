@@ -17,17 +17,12 @@ package repl
 import (
 	"context"
 	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
 )
 
-type UUID string
-
 type Action string
-
-type Entity string
 
 type Kind struct {
 	// Action specifies the type of change to apply (e.g., "create", "update",
@@ -79,46 +74,6 @@ type Store[Tx any] interface {
 	Exec(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
 }
 
-type Handler[Tx any, T any] func(
-	ctx context.Context,
-	tx Tx,
-	entityID UUID,
-	time uint64,
-	payload T,
-) error
-
-type Processor[Tx any] interface {
-	Action() Kind
-	Handle(ctx context.Context, tx Tx, c Change) error
-}
-
-type processor[Tx any, T any] struct {
-	kind Kind
-	exec Handler[Tx, T]
-}
-
-func (p *processor[Tx, T]) Action() Kind {
-	return p.kind
-}
-
-func (p *processor[Tx, T]) Handle(ctx context.Context, tx Tx, c Change) error {
-	var payload T
-	if err := json.Unmarshal(c.Payload, &payload); err != nil {
-		return err
-	}
-	return p.exec(ctx, tx, c.EntityID, c.Time, payload)
-}
-
-func NewProcessor[Tx, T any](
-	kind Kind,
-	exec Handler[Tx, T],
-) Processor[Tx] {
-	return &processor[Tx, T]{
-		kind: kind,
-		exec: exec,
-	}
-}
-
 // Deduplicator defines a two-phase commit contract for filtering duplicate
 // change events.
 type Deduplicator interface {
@@ -139,19 +94,19 @@ type Deduplicator interface {
 type Pipeline[Tx any] struct {
 	store Store[Tx]
 	dedup Deduplicator
-	procs map[Kind]Processor[Tx]
+	procs map[Kind]Writer[Tx]
 }
 
 func NewPipeline[Tx any](store Store[Tx], dedup Deduplicator) *Pipeline[Tx] {
 	return &Pipeline[Tx]{
 		store: store,
 		dedup: dedup,
-		procs: make(map[Kind]Processor[Tx]),
+		procs: make(map[Kind]Writer[Tx]),
 	}
 }
 
-func (p *Pipeline[Tx]) Register(processor Processor[Tx]) {
-	key := processor.Action()
+func (p *Pipeline[Tx]) Register(processor Writer[Tx]) {
+	key := processor.Kind()
 	if _, exists := p.procs[key]; exists {
 		panic("sync: processor already registered for action: " + key.String())
 	}
@@ -208,20 +163,4 @@ func (p *Pipeline[Tx]) Ingest(ctx context.Context, batch []Change) error {
 	}
 
 	return nil
-}
-
-type Diff struct {
-	// Entity is the type of entity affected.
-	Entity Entity `json:"entity"`
-	// Delete is the list of entity IDs that were deleted.
-	Delete []UUID `json:"delete"`
-	// Update is the list of complete entity states that were updated.
-	Update any `json:"update"`
-}
-
-type Feed struct {
-	// Time is the new HLC anchor after applying the diff.
-	Time uint64 `json:"time"`
-	// Diff is the set of changes in order of application.
-	Diff []Diff `json:"diff"`
 }
