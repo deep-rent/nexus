@@ -90,30 +90,30 @@ type Deduplicator interface {
 	Unlock(ctx context.Context, ids []UUID) error
 }
 
-// Pipeline manages the synchronization pipeline.
-type Pipeline[Tx any] struct {
-	store Store[Tx]
-	dedup Deduplicator
-	procs map[Kind]Writer[Tx]
+// Ingest manages the synchronization pipeline.
+type Ingest[Tx any] struct {
+	store   Store[Tx]
+	dedup   Deduplicator
+	writers map[Kind]Writer[Tx]
 }
 
-func NewPipeline[Tx any](store Store[Tx], dedup Deduplicator) *Pipeline[Tx] {
-	return &Pipeline[Tx]{
-		store: store,
-		dedup: dedup,
-		procs: make(map[Kind]Writer[Tx]),
+func NewIngest[Tx any](store Store[Tx], dedup Deduplicator) *Ingest[Tx] {
+	return &Ingest[Tx]{
+		store:   store,
+		dedup:   dedup,
+		writers: make(map[Kind]Writer[Tx]),
 	}
 }
 
-func (p *Pipeline[Tx]) Register(processor Writer[Tx]) {
-	key := processor.Kind()
-	if _, exists := p.procs[key]; exists {
+func (p *Ingest[Tx]) Register(w Writer[Tx]) {
+	key := w.Kind()
+	if _, exists := p.writers[key]; exists {
 		panic("sync: processor already registered for action: " + key.String())
 	}
-	p.procs[key] = processor
+	p.writers[key] = w
 }
 
-func (p *Pipeline[Tx]) Ingest(ctx context.Context, batch []Change) error {
+func (p *Ingest[Tx]) Ingest(ctx context.Context, batch []Change) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -142,12 +142,12 @@ func (p *Pipeline[Tx]) Ingest(ctx context.Context, batch []Change) error {
 				continue
 			}
 
-			proc, ok := p.procs[c.Kind]
+			w, ok := p.writers[c.Kind]
 			if !ok {
 				return fmt.Errorf("unknown change %s", c.Kind)
 			}
 
-			if err := proc.Handle(ctx, tx, c); err != nil {
+			if err := w.Handle(ctx, tx, c); err != nil {
 				// Allow ignoring changes (e.g., server-side compaction)
 				return fmt.Errorf("failed to apply change %q", c.ChangeID)
 			}

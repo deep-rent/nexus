@@ -39,34 +39,34 @@ type Feed struct {
 
 // Feeder coordinates the generation of the outbound synchronization Feed.
 type Feeder[Tx any] struct {
-	store    Store[Tx]
-	graph    *graph.Graph[Entity]
-	fetchers map[Entity]Reader[Tx]
-	hlc      func() uint64 // Function to get current HLC time
+	store   Store[Tx]
+	graph   *graph.Graph[Entity]
+	readers map[Entity]Reader[Tx]
+	hlc     func() uint64 // Function to get current HLC time
 }
 
 // NewFeeder initializes a new Feed generator.
 func NewFeeder[Tx any](store Store[Tx], hlc func() uint64) *Feeder[Tx] {
 	return &Feeder[Tx]{
-		store:    store,
-		graph:    graph.New[Entity](),
-		fetchers: make(map[Entity]Reader[Tx]),
-		hlc:      hlc,
+		store:   store,
+		graph:   graph.New[Entity](),
+		readers: make(map[Entity]Reader[Tx]),
+		hlc:     hlc,
 	}
 }
 
-// Register adds an entity fetcher to the Feeder. The dependencies must
+// Register adds an entity reader to the feeder. The dependencies must
 // represent parent entities that this entity depends on.
-func (f *Feeder[Tx]) Register(fetcher Reader[Tx], deps ...Entity) {
-	entity := fetcher.Entity()
-	if _, exists := f.fetchers[entity]; exists {
+func (f *Feeder[Tx]) Register(r Reader[Tx], deps ...Entity) {
+	entity := r.Entity()
+	if _, exists := f.readers[entity]; exists {
 		panic(fmt.Sprintf(
 			"sync: fetcher already registered for entity %q",
 			entity,
 		))
 	}
 
-	f.fetchers[entity] = fetcher
+	f.readers[entity] = r
 	f.graph.AddNode(entity)
 
 	for _, parent := range deps {
@@ -89,20 +89,20 @@ func (f *Feeder[Tx]) Build(ctx context.Context, since uint64) (*Feed, error) {
 	var diff []Delta
 
 	// 3. Open a read-only transaction (represented by store.Exec)
-	err = f.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
+	if err := f.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
 		// We collect the fetched data so we only query once per entity
 		delete := make(map[Entity][]UUID)
 		update := make(map[Entity]any)
 
 		for _, entity := range entities {
-			fetcher, exists := f.fetchers[entity]
+			r, exists := f.readers[entity]
 			if !exists {
 				// The entity might be purely a structural node in the DAG
-				// without a fetcher, though normally it should have one.
+				// without a reader, though normally it should have one.
 				continue
 			}
 
-			upd, del, err := fetcher.Fetch(ctx, tx, since)
+			upd, del, err := r.Fetch(ctx, tx, since)
 			if err != nil {
 				return fmt.Errorf("failed to fetch %q: %w", entity, err)
 			}
@@ -142,8 +142,7 @@ func (f *Feeder[Tx]) Build(ctx context.Context, since uint64) (*Feed, error) {
 		}
 
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
