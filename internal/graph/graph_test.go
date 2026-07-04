@@ -21,6 +21,15 @@ import (
 	"github.com/deep-rent/nexus/internal/graph"
 )
 
+func TestNew(t *testing.T) {
+	t.Parallel()
+
+	g := graph.New[int]()
+	if g == nil {
+		t.Fatalf("expected non-nil graph")
+	}
+}
+
 func TestGraph_Sort(t *testing.T) {
 	t.Parallel()
 	t.Run("Valid DAG", func(t *testing.T) {
