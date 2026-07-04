@@ -18,6 +18,8 @@ import (
 	"errors"
 )
 
+// ErrCycleDetected is returned when a cyclic dependency prevents a valid
+// sorting of a [Graph].
 var ErrCycleDetected = errors.New("cycle detected in dependency graph")
 
 // Graph represents a directed acyclic graph (DAG).
@@ -56,8 +58,8 @@ func (g *Graph[T]) AddEdge(child, parent T) {
 	g.AddNode(child)
 	g.AddNode(parent)
 
-	g.edges[child] = append(g.edges[child], parent)
-	g.degree[parent]++
+	g.edges[parent] = append(g.edges[parent], child)
+	g.degree[child]++
 }
 
 // Sort resolves the dependency graph and returns the nodes in topological
@@ -66,11 +68,11 @@ func (g *Graph[T]) AddEdge(child, parent T) {
 func (g *Graph[T]) Sort() ([]T, error) {
 	var zero []T
 
-	copy := make(map[T]int, len(g.degree))
-	for node, degree := range g.degree {
-		copy[node] = degree
-		if degree == 0 {
-			zero = append(zero, node)
+	deg := make(map[T]int, len(g.degree))
+	for v, d := range g.degree {
+		deg[v] = d
+		if d == 0 {
+			zero = append(zero, v)
 		}
 	}
 
@@ -80,16 +82,16 @@ func (g *Graph[T]) Sort() ([]T, error) {
 		curr := zero[0]
 		zero = zero[1:]
 
-		// We append it to the front of the sorted list because Kahn's algorithm
-		// on a "child -> parent" edge map naturally produces "children first".
-		// By prepending, we get "parents first".
-		sorted = append([]T{curr}, sorted...)
+		// Append the node to the sorted list. Since the graph maps parents
+		// to children, roots are processed first.
+		sorted = append(sorted, curr)
 
-		// For each parent that `curr` depends on, reduce its in-degree.
-		for _, parent := range g.edges[curr] {
-			copy[parent]--
-			if copy[parent] == 0 {
-				zero = append(zero, parent)
+		// For each child depending on the resolved parent, reduce its
+		// in-degree.
+		for _, child := range g.edges[curr] {
+			deg[child]--
+			if deg[child] == 0 {
+				zero = append(zero, child)
 			}
 		}
 	}
