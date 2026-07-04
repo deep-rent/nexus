@@ -54,17 +54,24 @@ func Unpack(packed uint64) (physical, logical uint64) {
 	return packed >> bits, packed & mask
 }
 
-// Clock is a thread-safe Hybrid Logical Clock.
+// Clock is a thread-safe HLC instance.
 type Clock struct {
-	mu sync.Mutex
-	l  uint64 // Highest physical millisecond observed
-	c  uint64 // Logical counter
+	mu  sync.Mutex
+	now func() time.Time
+	l   uint64 // Highest physical millisecond observed
+	c   uint64 // Logical counter
 }
 
 // New initializes a Clock to the current wall time.
-func New() *Clock {
+// You may inject a custom time provider for testing; if nil, [time.Now] will be
+// used instead.
+func New(now func() time.Time) *Clock {
+	if now == nil {
+		now = time.Now
+	}
 	return &Clock{
-		l: uint64(time.Now().UnixMilli()),
+		now: now,
+		l:   uint64(now().UnixMilli()),
 	}
 }
 
@@ -72,7 +79,7 @@ func New() *Clock {
 func (c *Clock) Now() uint64 {
 	for {
 		c.mu.Lock()
-		pt := uint64(time.Now().UnixMilli())
+		pt := uint64(c.now().UnixMilli())
 
 		// If wall clock is ahead, catch up and reset counter.
 		if pt > c.l {
@@ -91,11 +98,12 @@ func (c *Clock) Now() uint64 {
 			return res
 		}
 
-		// Overflow prevention: release lock and wait until physical clock advances.
+		// Overflow prevention: release lock and wait until physical clock.
+		// advances.
 		target := c.l
 		c.mu.Unlock()
 
-		for uint64(time.Now().UnixMilli()) <= target {
+		for uint64(c.now().UnixMilli()) <= target {
 			time.Sleep(time.Millisecond)
 		}
 	}
@@ -105,7 +113,7 @@ func (c *Clock) Now() uint64 {
 // It guarantees that the next generated local timestamp is greater than remote.
 func (c *Clock) Update(remote uint64) (uint64, error) {
 	rl, rc := Unpack(remote)
-	pt := uint64(time.Now().UnixMilli())
+	pt := uint64(c.now().UnixMilli())
 
 	// Prevent malicious/misconfigured clients from dragging the clock too far
 	// forward.
@@ -116,10 +124,10 @@ func (c *Clock) Update(remote uint64) (uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Calculate the new physical time component: max(L, PT, L_remote)
+	// Calculate the new physical time component.
 	ln := max(rl, max(pt, c.l))
 
-	// Calculate new logical counter
+	// Calculate new logical counter.
 	if ln == c.l && ln == rl { //nolint:gocritic
 		c.c = max(c.c, rc) + 1
 	} else if ln == c.l {
@@ -131,7 +139,7 @@ func (c *Clock) Update(remote uint64) (uint64, error) {
 	}
 	c.l = ln
 
-	// Handle counter overflow
+	// Handle counter overflow.
 	if c.c > mask {
 		return 0, ErrLogicalOverflow
 	}

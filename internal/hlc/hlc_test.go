@@ -42,7 +42,7 @@ func TestPackUnpack(t *testing.T) {
 func TestClock_Now(t *testing.T) {
 	t.Parallel()
 
-	clock := hlc.New()
+	clock := hlc.New(nil)
 
 	t1 := clock.Now()
 	t2 := clock.Now()
@@ -55,7 +55,7 @@ func TestClock_Now(t *testing.T) {
 func TestClock_Update(t *testing.T) {
 	t.Parallel()
 
-	clock := hlc.New()
+	clock := hlc.New(nil)
 
 	t1 := clock.Now()
 
@@ -85,7 +85,7 @@ func TestClock_Update(t *testing.T) {
 func TestClock_Update_Drift(t *testing.T) {
 	t.Parallel()
 
-	clock := hlc.New()
+	clock := hlc.New(nil)
 
 	pt := uint64(time.Now().UnixMilli())
 	future := hlc.Pack(pt+(2*60*60*1000), 0)
@@ -99,7 +99,7 @@ func TestClock_Update_Drift(t *testing.T) {
 func TestClock_Update_Overflow(t *testing.T) {
 	t.Parallel()
 
-	clock := hlc.New()
+	clock := hlc.New(nil)
 
 	pt := uint64(time.Now().UnixMilli())
 
