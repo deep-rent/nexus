@@ -44,14 +44,18 @@ var ErrClockDriftTooLarge = errors.New(
 // millisecond is exhausted while applying a remote timestamp.
 var ErrLogicalOverflow = errors.New("hlc: logical counter overflow")
 
-// Pack combines physical milliseconds and logical counter into a single uint64.
-func Pack(physical, logical uint64) uint64 {
-	return (physical << bits) | (logical & mask)
+// Time represents a causally ordered timestamp.
+// It combines physical milliseconds and logical counter into a single value.
+type Time uint64
+
+// Pack combines physical milliseconds and logical counter into a single Time.
+func Pack(physical, logical uint64) Time {
+	return Time((physical << bits) | (logical & mask))
 }
 
-// Unpack splits a packed uint64 into physical milliseconds and logical counter.
-func Unpack(packed uint64) (physical, logical uint64) {
-	return packed >> bits, packed & mask
+// Unpack splits a packed Time into physical milliseconds and logical counter.
+func Unpack(packed Time) (physical, logical uint64) {
+	return uint64(packed) >> bits, uint64(packed) & mask
 }
 
 // Clock is a thread-safe HLC instance.
@@ -76,7 +80,7 @@ func New(now func() time.Time) *Clock {
 }
 
 // Now generates a new local HLC timestamp.
-func (c *Clock) Now() uint64 {
+func (c *Clock) Now() Time {
 	for {
 		c.mu.Lock()
 		pt := uint64(c.now().UnixMilli())
@@ -111,7 +115,7 @@ func (c *Clock) Now() uint64 {
 
 // Update ticks the clock forward based on an incoming remote timestamp.
 // It guarantees that the next generated local timestamp is greater than remote.
-func (c *Clock) Update(remote uint64) (uint64, error) {
+func (c *Clock) Update(remote Time) (Time, error) {
 	rl, rc := Unpack(remote)
 	pt := uint64(c.now().UnixMilli())
 
