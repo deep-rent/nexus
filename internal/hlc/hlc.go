@@ -40,6 +40,10 @@ var ErrClockDriftTooLarge = errors.New(
 	"hlc: remote clock drift exceeds maximum offset",
 )
 
+// ErrLogicalOverflow is returned when the logical counter space for a single
+// millisecond is exhausted while applying a remote timestamp.
+var ErrLogicalOverflow = errors.New("hlc: logical counter overflow")
+
 // Pack combines physical milliseconds and logical counter into a single uint64.
 func Pack(physical, logical uint64) uint64 {
 	return (physical << bits) | (logical & mask)
@@ -66,30 +70,35 @@ func New() *Clock {
 
 // Now generates a new local HLC timestamp.
 func (c *Clock) Now() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	for {
+		c.mu.Lock()
+		pt := uint64(time.Now().UnixMilli())
 
-	pt := uint64(time.Now().UnixMilli())
-
-	// If wall clock is ahead, catch up and reset counter.
-	if pt > c.l {
-		c.l = pt
-		c.c = 0
-	} else {
-		// Wall clock is behind or equal, increment logical counter.
-		c.c++
-		if c.c > mask {
-			// Overflow prevention: busy-wait until the physical clock advances.
-			for pt <= c.l {
-				time.Sleep(100 * time.Microsecond)
-				pt = uint64(time.Now().UnixMilli())
-			}
+		// If wall clock is ahead, catch up and reset counter.
+		if pt > c.l {
 			c.l = pt
 			c.c = 0
+			res := Pack(c.l, c.c)
+			c.mu.Unlock()
+			return res
+		}
+
+		// Wall clock is behind or equal, increment logical counter.
+		c.c++
+		if c.c <= mask {
+			res := Pack(c.l, c.c)
+			c.mu.Unlock()
+			return res
+		}
+
+		// Overflow prevention: release lock and wait until physical clock advances.
+		target := c.l
+		c.mu.Unlock()
+
+		for uint64(time.Now().UnixMilli()) <= target {
+			time.Sleep(time.Millisecond)
 		}
 	}
-
-	return Pack(c.l, c.c)
 }
 
 // Update ticks the clock forward based on an incoming remote timestamp.
@@ -124,12 +133,7 @@ func (c *Clock) Update(remote uint64) (uint64, error) {
 
 	// Handle counter overflow
 	if c.c > mask {
-		for pt <= c.l {
-			time.Sleep(100 * time.Microsecond)
-			pt = uint64(time.Now().UnixMilli())
-		}
-		c.l = pt
-		c.c = 0
+		return 0, ErrLogicalOverflow
 	}
 
 	return Pack(c.l, c.c), nil
