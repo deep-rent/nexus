@@ -30,3 +30,6 @@ UserInterfaceState.xcuserstate
 /dist/
 /public/
 /vendor/
+
+# Nexus
+/sandbox/
