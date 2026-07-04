@@ -66,7 +66,7 @@ func TestMonotonicity(t *testing.T) {
 	t.Parallel()
 
 	const count = 10000
-	uuids := make([]uuid.UUIDv7, count)
+	uuids := make([]uuid.UUID, count)
 
 	for i := range count {
 		uuids[i] = uuid.New()
@@ -287,7 +287,7 @@ func TestNew_Concurrency_Unique(t *testing.T) {
 	const count = 100
 	const routines = 50
 
-	ids := make(chan uuid.UUIDv7, count*routines)
+	ids := make(chan uuid.UUID, count*routines)
 
 	wg.Add(routines)
 	for range routines {
@@ -302,7 +302,7 @@ func TestNew_Concurrency_Unique(t *testing.T) {
 	wg.Wait()
 	close(ids)
 
-	seen := make(map[uuid.UUIDv7]struct{})
+	seen := make(map[uuid.UUID]struct{})
 	for id := range ids {
 		if _, exists := seen[id]; exists {
 			t.Errorf("Duplicate UUID generated: %s", id)
@@ -333,7 +333,7 @@ func TestJSON(t *testing.T) {
 
 	t.Run("UnmarshalValid", func(t *testing.T) {
 		input := []byte(`"018f3a55-1234-7000-8abc-def012345678"`)
-		var u uuid.UUIDv7
+		var u uuid.UUID
 
 		if err := json.Unmarshal(input, &u); err != nil {
 			t.Fatalf("json.Unmarshal() err = %v", err)
@@ -357,7 +357,7 @@ func TestJSON(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				var u uuid.UUIDv7
+				var u uuid.UUID
 				err := json.Unmarshal([]byte(tt.input), &u)
 				if err == nil {
 					t.Errorf("Unmarshal(%s) expected error, got nil", tt.input)
@@ -371,8 +371,8 @@ func TestJSONInStruct(t *testing.T) {
 	t.Parallel()
 
 	type User struct {
-		ID   uuid.UUIDv7 `json:"id"`
-		Name string      `json:"name"`
+		ID   uuid.UUID `json:"id"`
+		Name string    `json:"name"`
 	}
 
 	u := uuid.New()

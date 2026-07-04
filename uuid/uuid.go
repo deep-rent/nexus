@@ -53,7 +53,7 @@ import (
 	"time"
 )
 
-// UUIDv7 is a 128-bit time-ordered identifier (16 bytes).
+// UUID is a 128-bit time-ordered identifier (16 bytes).
 //
 // Layout:
 //   - 48 bits: Unix Timestamp (milliseconds)
@@ -61,13 +61,13 @@ import (
 //   - 12 bits: Random Data A
 //   - 2 bits: Variant (10)
 //   - 62 bits: Random Data B
-type UUIDv7 [16]byte
+type UUID [16]byte
 
 // String returns the canonical hyphenated string representation of the
-// [UUIDv7].
+// [UUID].
 //
 // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-func (u UUIDv7) String() string {
+func (u UUID) String() string {
 	buf := make([]byte, 36)
 	hex.Encode(buf[0:8], u[0:4])
 	buf[8] = '-'
@@ -82,12 +82,12 @@ func (u UUIDv7) String() string {
 }
 
 // MarshalJSON transforms the UUIDv7 into a JSON string.
-func (u UUIDv7) MarshalJSON() ([]byte, error) {
+func (u UUID) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + u.String() + `"`), nil
 }
 
 // UnmarshalJSON parses a JSON string into a UUIDv7.
-func (u *UUIDv7) UnmarshalJSON(b []byte) error {
+func (u *UUID) UnmarshalJSON(b []byte) error {
 	// Remove quotes from the JSON string
 	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
 		return errors.New("uuid: invalid json string")
@@ -102,9 +102,9 @@ func (u *UUIDv7) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// EqualString checks if the [UUIDv7] matches the provided hyphenated string.
+// EqualString checks if the [UUID] matches the provided hyphenated string.
 // It is highly optimized to avoid allocations and exits early on a mismatch.
-func (u UUIDv7) EqualString(s string) bool {
+func (u UUID) EqualString(s string) bool {
 	if len(s) != 36 {
 		return false
 	}
@@ -142,16 +142,16 @@ func (u UUIDv7) EqualString(s string) bool {
 	return true
 }
 
-// New generates a strictly monotonic [UUIDv7] with sub-millisecond precision.
+// New generates a strictly monotonic [UUID] with sub-millisecond precision.
 //
 // It fills the timestamp and sequence fields using a global monotonic counter
 // derived from the system clock, ensuring that IDs generated within the same
 // millisecond are ordered. The remaining bits are filled with cryptographically
 // secure random data.
-func New() UUIDv7 {
+func New() UUID {
 	ms, seq := tick()
 
-	var u UUIDv7
+	var u UUID
 
 	// Fill the first 6 bytes with the timestamp (big endian style).
 	// Fill bytes 7 and 8 with the version and sequence.
@@ -175,11 +175,11 @@ func New() UUIDv7 {
 	return u
 }
 
-// Parse converts a 36-character hyphenated string into a [UUIDv7].
+// Parse converts a 36-character hyphenated string into a [UUID].
 //
 // It strictly validates that the UUID is Version 7 and Variant 1 (RFC 4122).
-func Parse(s string) (UUIDv7, error) {
-	var u UUIDv7
+func Parse(s string) (UUID, error) {
+	var u UUID
 	if len(s) != 36 {
 		return u, fmt.Errorf("uuid: invalid length (%d)", len(s))
 	}
@@ -191,30 +191,30 @@ func Parse(s string) (UUIDv7, error) {
 		return u, fmt.Errorf("uuid: invalid characters: %w", err)
 	}
 	if (u[6] & 0xf0) != 0x70 {
-		return UUIDv7{}, errors.New("uuid: invalid version: expected v7")
+		return UUID{}, errors.New("uuid: invalid version: expected v7")
 	}
 	if (u[8] & 0xc0) != 0x80 {
-		return UUIDv7{}, errors.New("uuid: invalid variant: expected RFC 4122")
+		return UUID{}, errors.New("uuid: invalid variant: expected RFC 4122")
 	}
 	return u, nil
 }
 
-// ParseBytes parses a 16-byte raw slice into a [UUIDv7].
+// ParseBytes parses a 16-byte raw slice into a [UUID].
 //
 // It strictly validates that the byte slice is exactly 16 bytes and conforms
 // to Version 7 and Variant 1. This function creates a complete copy of the
 // data.
-func ParseBytes(b []byte) (UUIDv7, error) {
-	var u UUIDv7
+func ParseBytes(b []byte) (UUID, error) {
+	var u UUID
 	if len(b) != 16 {
 		return u, fmt.Errorf("uuid: invalid length (%d)", len(b))
 	}
 	copy(u[:], b)
 	if (u[6] & 0xf0) != 0x70 {
-		return UUIDv7{}, errors.New("uuid: invalid version: expected v7")
+		return UUID{}, errors.New("uuid: invalid version: expected v7")
 	}
 	if (u[8] & 0xc0) != 0x80 {
-		return UUIDv7{}, errors.New("uuid: invalid variant: expected RFC 4122")
+		return UUID{}, errors.New("uuid: invalid variant: expected RFC 4122")
 	}
 	return u, nil
 }
