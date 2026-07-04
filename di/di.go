@@ -143,10 +143,10 @@ import (
 
 // Sentinel errors for standard DI failure modes.
 var (
-	// ErrCycle indicates that a circular dependency was found.
-	ErrCycle = errors.New("circular dependency")
-	// ErrUnbound indicates that a slot has no provider bound to it.
-	ErrUnbound = errors.New("unbound slot")
+	// ErrCycleDetected indicates that a circular dependency was found.
+	ErrCycleDetected = errors.New("cycle detected in dependency graph")
+	// ErrUnboundSlot indicates that a slot has no provider bound to it.
+	ErrUnboundSlot = errors.New("unbound slot")
 )
 
 // Slot is an abstract, typed symbol for an injectable service.
@@ -387,7 +387,7 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	if visiting[slot] {
 		return nil, fmt.Errorf(
 			"%w detected while resolving slot %s",
-			ErrCycle, Tag(slot),
+			ErrCycleDetected, Tag(slot),
 		)
 	}
 
@@ -399,7 +399,7 @@ func (in *Injector) resolve(slot any, visiting map[any]bool) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf(
 			"%w: no provider bound for slot %s",
-			ErrUnbound, Tag(slot),
+			ErrUnboundSlot, Tag(slot),
 		)
 	}
 

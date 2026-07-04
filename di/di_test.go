@@ -333,7 +333,7 @@ func TestInjection(t *testing.T) {
 		if err == nil {
 			t.Fatal("Use() expected error for unbound slot, got nil")
 		}
-		if !errors.Is(err, di.ErrUnbound) {
+		if !errors.Is(err, di.ErrUnboundSlot) {
 			t.Errorf("error expected to wrap ErrUnbound, got: %v", err)
 		}
 	})
@@ -455,7 +455,7 @@ func TestCircularDependency(t *testing.T) {
 	if err == nil {
 		t.Fatal("Use() expected error for circular dependency, got nil")
 	}
-	if !errors.Is(err, di.ErrCycle) {
+	if !errors.Is(err, di.ErrCycleDetected) {
 		t.Errorf("error expected to wrap ErrCycle, got: %v", err)
 	}
 	if got, want := err.Error(), di.Tag(mockSlotX); !strings.Contains(got, want) {
