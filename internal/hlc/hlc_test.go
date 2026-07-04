@@ -102,16 +102,11 @@ func TestClock_Update_Overflow(t *testing.T) {
 	clock := hlc.New()
 
 	pt := uint64(time.Now().UnixMilli())
-	
-	// Create a remote timestamp in the future (within maxOffset) with a fully
-	// saturated logical counter (65535).
+
 	futureP := pt + 1000
 	futureL := uint64((1 << 16) - 1)
 	remote := hlc.Pack(futureP, futureL)
 
-	// Updating the local clock will attempt to set the local counter to 
-	// rc + 1, resulting in 65536, which exceeds the 16-bit mask, returning
-	// ErrLogicalOverflow immediately rather than sleeping.
 	_, err := clock.Update(remote)
 	if !errors.Is(err, hlc.ErrLogicalOverflow) {
 		t.Errorf("expected ErrLogicalOverflow, got %v", err)
