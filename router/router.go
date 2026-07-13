@@ -58,6 +58,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"uuid"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/internal/bind"
@@ -65,7 +66,6 @@ import (
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
-	"github.com/deep-rent/nexus/uuid"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -213,7 +213,7 @@ func (e *Error) Unwrap() error {
 // logs, making it easier to trace the specific occurrence of an issue
 // through the system.
 func ErrorID() string {
-	return uuid.New().String()
+	return uuid.NewV7().String()
 }
 
 // Exchange acts as a context object for a single HTTP request/response cycle.

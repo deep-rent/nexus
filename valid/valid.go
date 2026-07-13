@@ -64,10 +64,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"uuid"
 
 	"golang.org/x/mod/semver"
-
-	"github.com/deep-rent/nexus/uuid"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )
@@ -453,9 +452,9 @@ func Currency(s string) bool {
 		ascii.IsUpper(rune(s[2]))
 }
 
-// UUIDv7 checks if the string is a valid Version 7 UUID as defined in RFC 4122
-// and RFC 9562.
-func UUIDv7(s string) bool {
+// UUID checks if the string is a valid Version 4 or 7 UUID as defined in RFC
+// 4122 and RFC 9562.
+func UUID(s string) bool {
 	_, err := uuid.Parse(s)
 	return err == nil
 }

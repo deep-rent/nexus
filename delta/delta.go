@@ -17,9 +17,9 @@ package delta
 import (
 	"context"
 	"encoding/json/jsontext"
+	"uuid"
 
 	"github.com/deep-rent/nexus/internal/hlc"
-	"github.com/deep-rent/nexus/uuid"
 )
 
 type Action string
