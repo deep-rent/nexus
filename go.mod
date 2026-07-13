@@ -2,7 +2,7 @@ module github.com/deep-rent/nexus
 
 go 1.26.4
 
-// toolchain go1.27rc1
+toolchain go1.27rc2
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
