@@ -477,7 +477,9 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 					}
 				}
 				if !found {
-					return fmt.Errorf("down migration file not found for version %d", v)
+					return fmt.Errorf(
+						"down migration file not found for version %d", v,
+					)
 				}
 				applied[v] = false
 			}
@@ -597,7 +599,8 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 		}
 		if a.Checksum != f.Checksum {
 			return nil, nil, fmt.Errorf(
-				"checksum mismatch for migration %d: database has %x, file has %x",
+				"checksum mismatch for migration %d: "+
+					"database has %x, file has %x",
 				a.Version,
 				a.Checksum,
 				f.Checksum,
