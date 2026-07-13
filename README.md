@@ -1,6 +1,6 @@
 # Nexus
 
-[![Coverage](https://img.shields.io/badge/Coverage-92.9%25-brightgreen)](https://deep-rent.github.io/nexus)
+[![Coverage](https://img.shields.io/badge/Coverage-88.6%25-brightgreen)](https://deep-rent.github.io/nexus)
 ![Test](https://github.com/deep-rent/nexus/actions/workflows/test.yml/badge.svg)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Release](https://img.shields.io/github/v/release/deep-rent/nexus?label=Release)](https://pkg.go.dev/github.com/deep-rent/nexus)
