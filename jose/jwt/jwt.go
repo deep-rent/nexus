@@ -89,6 +89,27 @@ import (
 // Type is the media type of a JWT, as defined in RFC 7519.
 const Type = "JWT"
 
+var jsonOptions = json.JoinOptions(
+	json.WithMarshalers(json.MarshalFunc(func(t time.Time) ([]byte, error) {
+		if t.IsZero() {
+			return []byte("null"), nil
+		}
+		return strconv.AppendInt(nil, t.Unix(), 10), nil
+	})),
+	json.WithUnmarshalers(json.UnmarshalFunc(func(b []byte, t *time.Time) error {
+		if string(b) == "null" {
+			*t = time.Time{}
+			return nil
+		}
+		i, err := strconv.ParseInt(string(b), 10, 64)
+		if err != nil {
+			return err
+		}
+		*t = time.Unix(i, 0)
+		return nil
+	})),
+)
+
 // Header provides access to the metadata associated with a JWT, such as the
 // cryptographic algorithm used to sign the token and identifiers for the
 // signing key.
@@ -183,12 +204,12 @@ type audience []string
 // UnmarshalJSON handles the polymorphic nature of the "aud" claim.
 func (a *audience) UnmarshalJSON(b []byte) error {
 	var s string
-	if err := json.Unmarshal(b, &s); err == nil {
+	if err := json.Unmarshal(b, &s, jsonOptions); err == nil {
 		*a = audience{s}
 		return nil
 	}
 	var m []string
-	if err := json.Unmarshal(b, &m); err == nil {
+	if err := json.Unmarshal(b, &m, jsonOptions); err == nil {
 		*a = audience(m)
 		return nil
 	}
@@ -237,41 +258,17 @@ type MutableClaims interface {
 	SetNotBefore(t time.Time)
 }
 
-type numericDate struct {
-	time.Time
-}
-
-func (n numericDate) MarshalJSON() ([]byte, error) {
-	if n.IsZero() {
-		return []byte("null"), nil
-	}
-	return strconv.AppendInt(nil, n.Unix(), 10), nil
-}
-
-func (n *numericDate) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		n.Time = time.Time{}
-		return nil
-	}
-	i, err := strconv.ParseInt(string(b), 10, 64)
-	if err != nil {
-		return err
-	}
-	n.Time = time.Unix(i, 0)
-	return nil
-}
-
 // Reserved contains the standard registered claims for a JWT. It implements
 // the [Claims] interface and should be embedded in custom claims structs to
 // enable standard claim handling.
 type Reserved struct {
-	Jti string      `json:"jti,omitempty"` // JWT ID
-	Sub string      `json:"sub,omitempty"` // Subject
-	Iss string      `json:"iss,omitempty"` // Issuer
-	Aud audience    `json:"aud,omitempty"` // Audience
-	Iat numericDate `json:"iat,omitzero"`  // Issued At
-	Exp numericDate `json:"exp,omitzero"`  // Expires At
-	Nbf numericDate `json:"nbf,omitzero"`  // Not Before
+	Jti string    `json:"jti,omitempty"` // JWT ID
+	Sub string    `json:"sub,omitempty"` // Subject
+	Iss string    `json:"iss,omitempty"` // Issuer
+	Aud audience  `json:"aud,omitempty"` // Audience
+	Iat time.Time `json:"iat,omitzero"`  // Issued At
+	Exp time.Time `json:"exp,omitzero"`  // Expires At
+	Nbf time.Time `json:"nbf,omitzero"`  // Not Before
 }
 
 // ID implements [Claims].
@@ -299,22 +296,22 @@ func (r *Reserved) Audience() []string { return r.Aud }
 func (r *Reserved) SetAudience(aud []string) { r.Aud = aud }
 
 // IssuedAt implements [Claims].
-func (r *Reserved) IssuedAt() time.Time { return r.Iat.Time }
+func (r *Reserved) IssuedAt() time.Time { return r.Iat }
 
 // SetIssuedAt implements [MutableClaims].
-func (r *Reserved) SetIssuedAt(t time.Time) { r.Iat = numericDate{t} }
+func (r *Reserved) SetIssuedAt(t time.Time) { r.Iat = t }
 
 // ExpiresAt implements [Claims].
-func (r *Reserved) ExpiresAt() time.Time { return r.Exp.Time }
+func (r *Reserved) ExpiresAt() time.Time { return r.Exp }
 
 // SetExpiresAt implements [MutableClaims].
-func (r *Reserved) SetExpiresAt(t time.Time) { r.Exp = numericDate{t} }
+func (r *Reserved) SetExpiresAt(t time.Time) { r.Exp = t }
 
 // NotBefore implements [Claims].
-func (r *Reserved) NotBefore() time.Time { return r.Nbf.Time }
+func (r *Reserved) NotBefore() time.Time { return r.Nbf }
 
 // SetNotBefore implements [MutableClaims].
-func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = numericDate{t} }
+func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
 
 var _ MutableClaims = (*Reserved)(nil)
 
@@ -353,7 +350,7 @@ func Get[T any](c *DynamicClaims, key string) (T, bool) {
 		return zero, false
 	}
 	var out T
-	if err := json.Unmarshal(val, &out); err != nil {
+	if err := json.Unmarshal(val, &out, jsonOptions); err != nil {
 		var zero T
 		return zero, false
 	}
@@ -378,7 +375,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 		return nil, fmt.Errorf("failed to decode header: %w", err)
 	}
 	header := new(header)
-	if err := json.Unmarshal(h, header); err != nil {
+	if err := json.Unmarshal(h, header, jsonOptions); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal header: %w", err)
 	}
 	if typ := header.Typ; typ != "" && !isJWT(typ) {
@@ -389,7 +386,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 		return nil, fmt.Errorf("failed to decode claims: %w", err)
 	}
 	var claims T
-	if err := json.Unmarshal(c, &claims); err != nil {
+	if err := json.Unmarshal(c, &claims, jsonOptions); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal claims: %w", err)
 	}
 	sig, err := decode(in[j+1:])
@@ -629,14 +626,14 @@ func Sign(ctx context.Context, k jwk.KeyPair, claims any) ([]byte, error) {
 		Kid: k.KeyID(),
 	}
 
-	h, err := json.Marshal(header)
+	h, err := json.Marshal(header, jsonOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal header: %w", err)
 	}
 	h = encode(h)
 
 	// Marshal the claims.
-	c, err := json.Marshal(claims)
+	c, err := json.Marshal(claims, jsonOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal claims: %w", err)
 	}
