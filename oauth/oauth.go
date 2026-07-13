@@ -69,6 +69,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -502,6 +503,34 @@ type DeviceAuthorizationResponse struct {
 }
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload returned
+// UnixTime is a wrapper around time.Time that marshals to a Unix timestamp.
+type UnixTime struct {
+	time.Time
+}
+
+// MarshalJSON implements json.Marshaler.
+func (u UnixTime) MarshalJSON() ([]byte, error) {
+	if u.IsZero() {
+		return []byte("null"), nil
+	}
+	return strconv.AppendInt(nil, u.Unix(), 10), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (u *UnixTime) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		u.Time = time.Time{}
+		return nil
+	}
+	i, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return err
+	}
+	u.Time = time.Unix(i, 0)
+	return nil
+}
+
+// IntrospectionResponse represents the JSON response structure returned
 // from the token introspection endpoint.
 type IntrospectionResponse struct {
 	Active   bool      `json:"active"`
@@ -510,10 +539,10 @@ type IntrospectionResponse struct {
 	Jti      string    `json:"jti,omitempty"`
 	Iss      string    `json:"iss,omitempty"`
 	Aud      []string  `json:"aud,omitempty"`
-	Sub      string    `json:"sub,omitempty"`
-	Iat      time.Time `json:"iat,omitzero,format:unix"`
-	Exp      time.Time `json:"exp,omitzero,format:unix"`
-	Nbf      time.Time `json:"nbf,omitzero,format:unix"`
+	Sub      string   `json:"sub,omitempty"`
+	Iat      UnixTime `json:"iat,omitzero"`
+	Exp      UnixTime `json:"exp,omitzero"`
+	Nbf      UnixTime `json:"nbf,omitzero"`
 }
 
 // LoginRequest represents the payload for the resource owner login endpoint.

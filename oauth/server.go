@@ -219,9 +219,9 @@ func (s *Server) introspect(e *router.Exchange) error {
 			Iss:      claims.Iss,
 			Aud:      claims.Aud,
 			Sub:      claims.Sub,
-			Iat:      claims.Iat,
-			Exp:      claims.Exp,
-			Nbf:      claims.Nbf,
+			Iat:      UnixTime{claims.IssuedAt()},
+			Exp:      UnixTime{claims.ExpiresAt()},
+			Nbf:      UnixTime{claims.NotBefore()},
 		}
 	}
 

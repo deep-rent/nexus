@@ -43,6 +43,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -107,6 +108,33 @@ func (s *Status) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnixTime is a wrapper around time.Time that marshals to a Unix timestamp.
+type UnixTime struct {
+	time.Time
+}
+
+// MarshalJSON implements json.Marshaler.
+func (u UnixTime) MarshalJSON() ([]byte, error) {
+	if u.IsZero() {
+		return []byte("null"), nil
+	}
+	return strconv.AppendInt(nil, u.Unix(), 10), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (u *UnixTime) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		u.Time = time.Time{}
+		return nil
+	}
+	i, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return err
+	}
+	u.Time = time.Unix(i, 0)
+	return nil
+}
+
 // Result holds the outcome of a health check execution.
 type Result struct {
 	// Status is the state of the check.
@@ -114,7 +142,7 @@ type Result struct {
 	// Error contains a descriptive error message if the check failed.
 	Error string `json:"error,omitempty"`
 	// Timestamp records when this check was actually executed.
-	Timestamp time.Time `json:"timestamp,format:unix"`
+	Timestamp UnixTime `json:"timestamp"`
 }
 
 // Report represents the aggregated outcome of all registered health checks.
@@ -148,7 +176,7 @@ type check struct {
 // expired. It protects against panics in the callback.
 func (c *check) run(ctx context.Context) (res Result) {
 	c.mu.RLock()
-	if time.Since(c.last.Timestamp) < c.ttl {
+	if time.Since(c.last.Timestamp.Time) < c.ttl {
 		res := c.last
 		c.mu.RUnlock()
 		return res
@@ -158,7 +186,7 @@ func (c *check) run(ctx context.Context) (res Result) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Double-check the cache after acquiring the write lock.
-	if time.Since(c.last.Timestamp) < c.ttl {
+	if time.Since(c.last.Timestamp.Time) < c.ttl {
 		return c.last
 	}
 
@@ -167,7 +195,7 @@ func (c *check) run(ctx context.Context) (res Result) {
 			c.last = Result{
 				Status:    StatusSick,
 				Error:     fmt.Sprintf("health check panicked: %v", r),
-				Timestamp: time.Now(),
+				Timestamp: UnixTime{time.Now()},
 			}
 			res = c.last
 		}
@@ -187,7 +215,7 @@ func (c *check) run(ctx context.Context) (res Result) {
 	c.last = Result{
 		Status:    status,
 		Error:     msg,
-		Timestamp: time.Now(),
+		Timestamp: UnixTime{time.Now()},
 	}
 	return c.last
 }

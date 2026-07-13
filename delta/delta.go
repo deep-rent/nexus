@@ -53,7 +53,7 @@ type Change struct {
 	// The client assigns a random UUID to each change.
 	ID uuid.UUID `json:"id"`
 	// Type describes the target of the change and the format of the payload.
-	Type ChangeType `json:",inline"`
+	Type ChangeType `json:",embed"`
 	// EntityID is the unique identifier of the entity being changed within
 	// the scope of the entity type.
 	EntityID uuid.UUID `json:"entity_id"`

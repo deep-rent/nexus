@@ -26,7 +26,7 @@
 //	type Claims struct {
 //	  jwt.Reserved
 //	  Scope string         `json:"scp"`
-//	  Extra map[string]any `json:",unknown"`
+//	  Extra map[string]any `json:",embed"`
 //	}
 //
 // The top-level [Verify] function can be used for simple, one-off signature
@@ -79,6 +79,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -236,17 +237,41 @@ type MutableClaims interface {
 	SetNotBefore(t time.Time)
 }
 
+type numericDate struct {
+	time.Time
+}
+
+func (n numericDate) MarshalJSON() ([]byte, error) {
+	if n.IsZero() {
+		return []byte("null"), nil
+	}
+	return strconv.AppendInt(nil, n.Unix(), 10), nil
+}
+
+func (n *numericDate) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Time = time.Time{}
+		return nil
+	}
+	i, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return err
+	}
+	n.Time = time.Unix(i, 0)
+	return nil
+}
+
 // Reserved contains the standard registered claims for a JWT. It implements
 // the [Claims] interface and should be embedded in custom claims structs to
 // enable standard claim handling.
 type Reserved struct {
-	Jti string    `json:"jti,omitempty"`            // JWT ID
-	Sub string    `json:"sub,omitempty"`            // Subject
-	Iss string    `json:"iss,omitempty"`            // Issuer
-	Aud audience  `json:"aud,omitempty"`            // Audience
-	Iat time.Time `json:"iat,omitzero,format:unix"` // Issued At
-	Exp time.Time `json:"exp,omitzero,format:unix"` // Expires At
-	Nbf time.Time `json:"nbf,omitzero,format:unix"` // Not Before
+	Jti string      `json:"jti,omitempty"` // JWT ID
+	Sub string      `json:"sub,omitempty"` // Subject
+	Iss string      `json:"iss,omitempty"` // Issuer
+	Aud audience    `json:"aud,omitempty"` // Audience
+	Iat numericDate `json:"iat,omitzero"`  // Issued At
+	Exp numericDate `json:"exp,omitzero"`  // Expires At
+	Nbf numericDate `json:"nbf,omitzero"`  // Not Before
 }
 
 // ID implements [Claims].
@@ -274,22 +299,22 @@ func (r *Reserved) Audience() []string { return r.Aud }
 func (r *Reserved) SetAudience(aud []string) { r.Aud = aud }
 
 // IssuedAt implements [Claims].
-func (r *Reserved) IssuedAt() time.Time { return r.Iat }
+func (r *Reserved) IssuedAt() time.Time { return r.Iat.Time }
 
 // SetIssuedAt implements [MutableClaims].
-func (r *Reserved) SetIssuedAt(t time.Time) { r.Iat = t }
+func (r *Reserved) SetIssuedAt(t time.Time) { r.Iat = numericDate{t} }
 
 // ExpiresAt implements [Claims].
-func (r *Reserved) ExpiresAt() time.Time { return r.Exp }
+func (r *Reserved) ExpiresAt() time.Time { return r.Exp.Time }
 
 // SetExpiresAt implements [MutableClaims].
-func (r *Reserved) SetExpiresAt(t time.Time) { r.Exp = t }
+func (r *Reserved) SetExpiresAt(t time.Time) { r.Exp = numericDate{t} }
 
 // NotBefore implements [Claims].
-func (r *Reserved) NotBefore() time.Time { return r.Nbf }
+func (r *Reserved) NotBefore() time.Time { return r.Nbf.Time }
 
 // SetNotBefore implements [MutableClaims].
-func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = t }
+func (r *Reserved) SetNotBefore(t time.Time) { r.Nbf = numericDate{t} }
 
 var _ MutableClaims = (*Reserved)(nil)
 
@@ -297,7 +322,7 @@ var _ MutableClaims = (*Reserved)(nil)
 // custom claims. It embeds the standard [Reserved] claims and captures any
 // unmapped JSON properties into the Other map.
 //
-// By applying [jsontext.Value] and the `json:",inline"` tag from the
+// By applying [jsontext.Value] and the `json:",embed"` tag from the
 // encoding/json/v2 package, custom claims are retained as raw JSON bytes.
 // This defers parsing until the exact target type is known, avoiding the
 // common pitfalls of default map[string]any unmarshaling (such as all
@@ -306,7 +331,7 @@ type DynamicClaims struct {
 	// Reserved contains the standard registered JWT claims.
 	Reserved
 	// Other captures all custom claims as raw JSON.
-	Other map[string]jsontext.Value `json:",inline"`
+	Other map[string]jsontext.Value `json:",embed"`
 }
 
 // Get retrieves a specific custom claim by key from the [DynamicClaims]
