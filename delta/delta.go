@@ -97,9 +97,9 @@ type Feed struct {
 	Patches []Patch `json:"patches"`
 	// Time is the new anchor to store after applying the patches.
 	Time hlc.Time `json:"time"`
-	// Cursor is the opaque cursor for pagination. It is non-empty if more
-	// records are available.
-	Cursor string `json:"next,omitempty"`
+	// More indicates if there are more patches available following the returned
+	// timestamp.
+	More bool `json:"more"`
 }
 
 type FeedRequest struct {
@@ -108,12 +108,12 @@ type FeedRequest struct {
 	OwnerID uuid.UUID `json:"owner_id"`
 	// Since is the timestamp from which to start collecting patches.
 	Since hlc.Time `json:"since"`
+	// Until is used for subsequent page requests. If present and positive, it
+	// serves as the upper bound for the feed sync.
+	Until hlc.Time `json:"until"`
 	// EntityTypes is the set of entity types to collect patches for.
 	// If empty, all entity types are collected.
 	EntityTypes []EntityType `json:"entity_types"`
-	// Cursor is used for subsequent page requests. If present, it overrides
-	// the Since parameter.
-	Cursor string `json:"cursor,omitempty"`
 	// Limit caps the number of atomic records returned in the feed.
 	// If zero, a system-default maximum is applied.
 	Limit uint32 `json:"limit"`
