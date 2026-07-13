@@ -40,5 +40,6 @@
     "**/dist": true,
     "**/go.sum": true,
     "**/vendor": true
-  }
+  },
+  "makefile.configureOnOpen": false
 }
