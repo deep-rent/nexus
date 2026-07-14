@@ -153,9 +153,7 @@ func (s *scheduler) Context() context.Context {
 
 // Dispatch implements [Scheduler].
 func (s *scheduler) Dispatch(tick Tick) {
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		timer := time.NewTimer(0)
 		defer timer.Stop()
 
@@ -168,7 +166,7 @@ func (s *scheduler) Dispatch(tick Tick) {
 				timer.Reset(wait)
 			}
 		}
-	}()
+	})
 }
 
 // Shutdown implements [Scheduler].
