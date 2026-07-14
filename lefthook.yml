@@ -10,9 +10,9 @@ pre-commit:
     lint:
       root: "."
       glob: "*.go"
-      run: GOEXPERIMENT=jsonv2 golangci-lint run --fix
+      run: golangci-lint run --fix
       stage_fixed: true
     test:
       root: "."
       glob: "*.go"
-      run: GOEXPERIMENT=jsonv2 go test -v ./...
+      run: go test -v ./...
