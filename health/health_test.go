@@ -183,10 +183,10 @@ func TestMonitor_Caching(t *testing.T) {
 	t.Parallel()
 
 	m := health.NewMonitor()
-	var calls int32
+	var calls atomic.Int32
 
 	chk := func(ctx context.Context) (health.Status, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return health.StatusHealthy, nil
 	}
 
@@ -202,7 +202,7 @@ func TestMonitor_Caching(t *testing.T) {
 		)
 	}
 
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Errorf("atomic.LoadInt32(&calls) = %d; want 1 (must use cache)", got)
 	}
 
@@ -212,7 +212,7 @@ func TestMonitor_Caching(t *testing.T) {
 		httptest.NewRequest(http.MethodGet, "/health", nil),
 	)
 
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Errorf("atomic.LoadInt32(&calls) = %d; want 2 (must refresh cache)", got)
 	}
 }
