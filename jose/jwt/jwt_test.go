@@ -77,11 +77,9 @@ func TestVerifier_Validation(t *testing.T) {
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	c := &testClaims{
-		Reserved: jwt.Reserved{
-			Iss: "good-iss",
-			Aud: []string{"good-aud"},
-			Exp: now.Add(time.Hour),
-		},
+		Iss: "good-iss",
+		Aud: []string{"good-aud"},
+		Exp: now.Add(time.Hour),
 	}
 	token, err := jwt.Sign(t.Context(), k, c)
 	if err != nil {
@@ -167,7 +165,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 	t.Run("token not yet active", func(t *testing.T) {
 		t.Parallel()
-		c := &testClaims{Reserved: jwt.Reserved{Nbf: now.Add(time.Hour)}}
+		c := &testClaims{Nbf: now.Add(time.Hour)}
 		raw, _ := jwt.Sign(t.Context(), k, c)
 
 		v := jwt.NewVerifier[*testClaims](
@@ -183,7 +181,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 	t.Run("token too old", func(t *testing.T) {
 		t.Parallel()
-		c := &testClaims{Reserved: jwt.Reserved{Iat: now.Add(-2 * time.Hour)}}
+		c := &testClaims{Iat: now.Add(-2 * time.Hour)}
 		raw, _ := jwt.Sign(t.Context(), k, c)
 
 		v := jwt.NewVerifier[*testClaims](
