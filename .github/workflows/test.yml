@@ -35,7 +35,7 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      TESTCONTAINERS_RYUK_DISABLED: "true"
+      TESTCONTAINERS_RYUK_DISABLED: 'true'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -73,11 +73,11 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peter-evans/create-pull-request@v8
         with:
-          commit-message: "docs: update coverage badge"
-          title: "Update Coverage Badge"
-          body: "Updates the coverage badge based on the latest test results."
-          branch: "docs/badge-update"
-          base: "main"
+          commit-message: 'docs: update coverage badge'
+          title: 'Update Coverage Badge'
+          body: 'Updates the coverage badge based on the latest test results.'
+          branch: 'docs/badge-update'
+          base: 'main'
           delete-branch: true
           labels: skip-changelog
 
