@@ -118,7 +118,7 @@ func TestExchange_BindJSON(t *testing.T) {
 				target = &v
 			}
 
-			err := e.BindJSON(target)
+			err := bindJSONAny(e, target)
 
 			if tt.wantErr {
 				if err == nil {
@@ -156,10 +156,7 @@ func TestExchange_BindJSON(t *testing.T) {
 func TestExchange_BindQuery(t *testing.T) {
 	t.Parallel()
 
-	type input struct {
-		Name string   `form:"name"`
-		IDs  []string `form:"ids"`
-	}
+	// mockInput is used to test binding
 
 	tests := []struct {
 		name       string
@@ -172,15 +169,13 @@ func TestExchange_BindQuery(t *testing.T) {
 		{
 			name:    "success",
 			url:     "/?name=test&ids=1&ids=2",
-			target:  &input{},
+			target:  &mockInput{},
 			wantErr: false,
 		},
 		{
 			name: "failure parse",
 			url:  "/?age=invalid",
-			target: &struct {
-				Age int `form:"age"`
-			}{},
+			target: &mockAgeInput{},
 			wantErr:    true,
 			wantReason: router.ReasonParseQuery,
 			wantStatus: http.StatusBadRequest,
@@ -202,7 +197,7 @@ func TestExchange_BindQuery(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, tt.url, nil)
 			e := &router.Exchange{R: r}
 
-			err := e.BindQuery(tt.target)
+			err := bindQueryAny(e, tt.target)
 
 			if tt.wantErr {
 				if err == nil {
@@ -221,7 +216,7 @@ func TestExchange_BindQuery(t *testing.T) {
 				t.Errorf("BindQuery() err = %v; want nil", err)
 			}
 
-			if in, ok := tt.target.(*input); ok && !tt.wantErr {
+			if in, ok := tt.target.(*mockInput); ok && !tt.wantErr {
 				if in.Name != "test" {
 					t.Errorf("in.Name = %q; want %q", in.Name, "test")
 				}
@@ -236,9 +231,7 @@ func TestExchange_BindQuery(t *testing.T) {
 func TestExchange_BindForm(t *testing.T) {
 	t.Parallel()
 
-	type input struct {
-		Name string `form:"name"`
-	}
+	// mockInput is used to test binding
 
 	tests := []struct {
 		name       string
@@ -253,14 +246,14 @@ func TestExchange_BindForm(t *testing.T) {
 			name:    "success",
 			ctype:   router.MediaTypeForm,
 			body:    "name=test",
-			target:  &input{},
+			target:  &mockInput{},
 			wantErr: false,
 		},
 		{
 			name:       "failure content type",
 			ctype:      router.MediaTypeJSON,
 			body:       `{"name":"test"}`,
-			target:     &input{},
+			target:     &mockInput{},
 			wantErr:    true,
 			wantReason: router.ReasonWrongType,
 			wantStatus: http.StatusUnsupportedMediaType,
@@ -269,9 +262,7 @@ func TestExchange_BindForm(t *testing.T) {
 			name:  "failure parse",
 			ctype: router.MediaTypeForm,
 			body:  "age=invalid",
-			target: &struct {
-				Age int `form:"age"`
-			}{},
+			target: &mockAgeInput{},
 			wantErr:    true,
 			wantReason: router.ReasonParseForm,
 			wantStatus: http.StatusBadRequest,
@@ -298,7 +289,7 @@ func TestExchange_BindForm(t *testing.T) {
 			}
 
 			e := &router.Exchange{R: r}
-			err := e.BindForm(tt.target)
+			err := bindFormAny(e, tt.target)
 
 			if tt.wantErr {
 				if err == nil {
@@ -438,6 +429,51 @@ func (m *mockValidatable) Validate(v *valid.Validator) {
 }
 
 var _ valid.Validatable = (*mockValidatable)(nil)
+
+type mockAgeInput struct {
+	Age int `form:"age"`
+}
+type mockInput struct {
+	Name string   `form:"name"`
+	IDs  []string `form:"ids"`
+}
+
+func bindJSONAny(e *router.Exchange, target any) *router.Error {
+	switch v := target.(type) {
+	case *map[string]any:
+		return e.BindJSON(v)
+	case *mockValidatable:
+		return e.BindJSON(v)
+	default:
+		panic("unsupported JSON test type")
+	}
+}
+
+func bindQueryAny(e *router.Exchange, target any) *router.Error {
+	switch v := target.(type) {
+	case *mockInput:
+		return e.BindQuery(v)
+	case *mockAgeInput:
+		return e.BindQuery(v)
+	case *mockValidatable:
+		return e.BindQuery(v)
+	default:
+		panic("unsupported Query test type")
+	}
+}
+
+func bindFormAny(e *router.Exchange, target any) error {
+	switch v := target.(type) {
+	case *mockInput:
+		return e.BindForm(v)
+	case *mockAgeInput:
+		return e.BindForm(v)
+	case *mockValidatable:
+		return e.BindForm(v)
+	default:
+		panic("unsupported Form test type")
+	}
+}
 
 func TestExchange_JSON(t *testing.T) {
 	t.Parallel()

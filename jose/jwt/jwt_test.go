@@ -244,7 +244,7 @@ func TestDynamicClaims(t *testing.T) {
 
 	t.Run("valid string", func(t *testing.T) {
 		t.Parallel()
-		v, ok := jwt.Get[string](claims, "str")
+		v, ok := (claims).Get[string]( "str")
 		if !ok || v != "nexus" {
 			t.Errorf("Get[string]() = %v, %v; want \"nexus\", true", v, ok)
 		}
@@ -252,7 +252,7 @@ func TestDynamicClaims(t *testing.T) {
 
 	t.Run("valid int", func(t *testing.T) {
 		t.Parallel()
-		v, ok := jwt.Get[int](claims, "num")
+		v, ok := (claims).Get[int]( "num")
 		if !ok || v != 42 {
 			t.Errorf("Get[int]() = %v, %v; want 42, true", v, ok)
 		}
@@ -260,7 +260,7 @@ func TestDynamicClaims(t *testing.T) {
 
 	t.Run("valid bool", func(t *testing.T) {
 		t.Parallel()
-		v, ok := jwt.Get[bool](claims, "flag")
+		v, ok := (claims).Get[bool]( "flag")
 		if !ok || v != true {
 			t.Errorf("Get[bool]() = %v, %v; want true, true", v, ok)
 		}
@@ -271,7 +271,7 @@ func TestDynamicClaims(t *testing.T) {
 		type nested struct {
 			Foo string `json:"foo"`
 		}
-		v, ok := jwt.Get[nested](claims, "nested")
+		v, ok := (claims).Get[nested]( "nested")
 		if !ok || v.Foo != "bar" {
 			t.Errorf("Get[struct]() = %+v, %v; want Foo: \"bar\", true", v, ok)
 		}
@@ -279,14 +279,14 @@ func TestDynamicClaims(t *testing.T) {
 
 	t.Run("missing key", func(t *testing.T) {
 		t.Parallel()
-		if _, ok := jwt.Get[string](claims, "missing"); ok {
+		if _, ok := (claims).Get[string]( "missing"); ok {
 			t.Errorf("Get() missing key returned ok")
 		}
 	})
 
 	t.Run("type mismatch", func(t *testing.T) {
 		t.Parallel()
-		if _, ok := jwt.Get[string](claims, "num"); ok {
+		if _, ok := (claims).Get[string]( "num"); ok {
 			t.Errorf("Get() type mismatch returned ok")
 		}
 	})

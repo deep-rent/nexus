@@ -175,14 +175,13 @@ func New(name string, opts ...Option) *Binder {
 
 // Bind populates the fields of a struct using the provided source.
 // The given value v must be a non-nil pointer to a struct.
-func (b *Binder) Bind(v any, prefix string, source Source) error {
-	ptr := reflect.ValueOf(v)
-	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
+func (b *Binder) Bind[T any](v *T, prefix string, source Source) error {
+	if v == nil {
 		return errors.New(
 			"expected a non-nil pointer to a struct",
 		)
 	}
-	val := ptr.Elem()
+	val := reflect.ValueOf(v).Elem()
 	if kind := val.Kind(); kind != reflect.Struct {
 		return fmt.Errorf(
 			"expected a pointer to a struct, but got pointer to %v", kind,

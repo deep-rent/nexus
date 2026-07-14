@@ -267,7 +267,7 @@ func (e *Exchange) SetHeader(key, value string) { e.W.Header().Set(key, value) }
 // This method verifies that the media type is "application/json", checks that
 // the payload is not empty, unmarshals the JSON, and validates the input using
 // [valid.Test].
-func (e *Exchange) BindJSON(v any) *Error {
+func (e *Exchange) BindJSON[T any](v *T) *Error {
 	if t := header.MediaType(e.R.Header); t != MediaTypeJSON {
 		return &Error{
 			Status:      http.StatusUnsupportedMediaType,
@@ -306,7 +306,7 @@ func (e *Exchange) BindJSON(v any) *Error {
 }
 
 // BindQuery decodes URL query parameters into v.
-func (e *Exchange) BindQuery(v any) *Error {
+func (e *Exchange) BindQuery[T any](v *T) *Error {
 	q := e.R.URL.Query()
 	if err := formBinder.Bind(v, "", urlSource(q)); err != nil {
 		return &Error{
@@ -329,7 +329,7 @@ func (e *Exchange) BindQuery(v any) *Error {
 }
 
 // BindForm decodes URL-encoded form data from the request body into v.
-func (e *Exchange) BindForm(v any) error {
+func (e *Exchange) BindForm[T any](v *T) error {
 	form, err := e.ReadForm()
 	if err != nil {
 		return err

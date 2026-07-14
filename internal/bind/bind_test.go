@@ -16,6 +16,7 @@ package bind_test
 
 import (
 	"encoding"
+	"fmt"
 	"net/url"
 	"reflect"
 	"testing"
@@ -426,6 +427,141 @@ type mockTLocation struct {
 
 type mockTLocationPtr struct {
 	V *time.Location
+}
+
+func bindAny(b *bind.Binder, give any, prefix string, src bind.Source) error {
+	switch v := give.(type) {
+	case *mockTBool:
+		return b.Bind(v, prefix, src)
+	case *mockTComplex128:
+		return b.Bind(v, prefix, src)
+	case *mockTComplex64:
+		return b.Bind(v, prefix, src)
+	case *mockTCustomName:
+		return b.Bind(v, prefix, src)
+	case *mockTDefault:
+		return b.Bind(v, prefix, src)
+	case *mockTDefaultQuotes:
+		return b.Bind(v, prefix, src)
+	case *mockTDefaultSliceSplit:
+		return b.Bind(v, prefix, src)
+	case *mockTDuration:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitH:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitInvalid:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitM:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitMicro:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitMs:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitNs:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitS:
+		return b.Bind(v, prefix, src)
+	case *mockTDurationUnitUs:
+		return b.Bind(v, prefix, src)
+	case *mockTFloat32:
+		return b.Bind(v, prefix, src)
+	case *mockTFloat64:
+		return b.Bind(v, prefix, src)
+	case *mockTIgnored:
+		return b.Bind(v, prefix, src)
+	case *mockTInline:
+		return b.Bind(v, prefix, src)
+	case *mockTInt:
+		return b.Bind(v, prefix, src)
+	case *mockTInt16:
+		return b.Bind(v, prefix, src)
+	case *mockTInt32:
+		return b.Bind(v, prefix, src)
+	case *mockTInt64:
+		return b.Bind(v, prefix, src)
+	case *mockTInt8:
+		return b.Bind(v, prefix, src)
+	case *mockTLocation:
+		return b.Bind(v, prefix, src)
+	case *mockTLocationPtr:
+		return b.Bind(v, prefix, src)
+	case *mockTNested:
+		return b.Bind(v, prefix, src)
+	case *mockTNestedCustomPrefix:
+		return b.Bind(v, prefix, src)
+	case *mockTNestedDoublePtr:
+		return b.Bind(v, prefix, src)
+	case *mockTNestedEmptyPrefix:
+		return b.Bind(v, prefix, src)
+	case *mockTNestedPtr:
+		return b.Bind(v, prefix, src)
+	case *mockTPtrPtrInt:
+		return b.Bind(v, prefix, src)
+	case *mockTPtrString:
+		return b.Bind(v, prefix, src)
+	case *mockTRequired:
+		return b.Bind(v, prefix, src)
+	case *mockTRequiredWithDefault:
+		return b.Bind(v, prefix, src)
+	case *mockTSliceByte:
+		return b.Bind(v, prefix, src)
+	case *mockTSliceByteBase64:
+		return b.Bind(v, prefix, src)
+	case *mockTSliceByteHex:
+		return b.Bind(v, prefix, src)
+	case *mockTSliceCustomSplit:
+		return b.Bind(v, prefix, src)
+	case *mockTSliceInt:
+		return b.Bind(v, prefix, src)
+	case *mockTSliceString:
+		return b.Bind(v, prefix, src)
+	case *mockTSnakeCase:
+		return b.Bind(v, prefix, src)
+	case *mockTString:
+		return b.Bind(v, prefix, src)
+	case *mockTTextUnmarshaler:
+		return b.Bind(v, prefix, src)
+	case *mockTTime:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatDate:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatDateTime:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatTime:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatUnix:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatUnixUnit:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatUnixUnitInvalid:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatUnixUnitMicro:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatUnixUnitS:
+		return b.Bind(v, prefix, src)
+	case *mockTTimeFormatUnixUnitUs:
+		return b.Bind(v, prefix, src)
+	case *mockTTrimOptions:
+		return b.Bind(v, prefix, src)
+	case *mockTURL:
+		return b.Bind(v, prefix, src)
+	case *mockTURLPtr:
+		return b.Bind(v, prefix, src)
+	case *mockTUint:
+		return b.Bind(v, prefix, src)
+	case *mockTUint16:
+		return b.Bind(v, prefix, src)
+	case *mockTUint32:
+		return b.Bind(v, prefix, src)
+	case *mockTUint64:
+		return b.Bind(v, prefix, src)
+	case *mockTUint8:
+		return b.Bind(v, prefix, src)
+	case *mockTUnexported:
+		return b.Bind(v, prefix, src)
+	default:
+		panic(fmt.Sprintf("unsupported type in test: %T", give))
+	}
 }
 
 func TestBinder_TypeTests(t *testing.T) {
@@ -919,7 +1055,7 @@ func TestBinder_TypeTests(t *testing.T) {
 				src[k] = []string{v}
 			}
 
-			err := b.Bind(tt.give, prefix, src)
+			err := bindAny(b, tt.give, prefix, src)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("Bind() error = nil; want non-nil")

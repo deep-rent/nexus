@@ -176,7 +176,7 @@ var _ bind.Source = (*source)(nil)
 // To ignore a field, tag it with `env:"-"`. Unexported fields are always
 // excluded. If a variable is not set, the field remains unchanged unless a
 // default value is specified in the struct tag, or it is marked as required.
-func Unmarshal(v any, opts ...Option) error {
+func Unmarshal[T any](v *T, opts ...Option) error {
 	cfg := config{
 		Lookup: os.LookupEnv,
 	}

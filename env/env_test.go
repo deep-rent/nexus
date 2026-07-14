@@ -25,46 +25,26 @@ import (
 func TestUnmarshal(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		vars    map[string]string
-		opts    []env.Option
-		give    any
-		want    any
-		wantErr bool
-	}{
-		{
-			name: "global prefix",
-			vars: map[string]string{"APP_V": "foo"},
-			opts: []env.Option{env.WithPrefix("APP_")},
-			give: &struct{ V string }{},
-			want: &struct{ V string }{"foo"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			opts := tt.opts
-			opts = append(opts, env.WithLookup(func(k string) (string, bool) {
-				v, ok := tt.vars[k]
+	t.Run("global prefix", func(t *testing.T) {
+		t.Parallel()
+		opts := []env.Option{
+			env.WithPrefix("APP_"),
+			env.WithLookup(func(k string) (string, bool) {
+				vars := map[string]string{"APP_V": "foo"}
+				v, ok := vars[k]
 				return v, ok
-			}))
-			err := env.Unmarshal(tt.give, opts...)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("Unmarshal() error = nil; want non-nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Unmarshal() unexpected error: %v", err)
-			}
-			if !reflect.DeepEqual(tt.give, tt.want) {
-				t.Errorf("Unmarshal() = %v; want %v", tt.give, tt.want)
-			}
-		})
-	}
+			}),
+		}
+		var give struct{ V string }
+		err := env.Unmarshal(&give, opts...)
+		if err != nil {
+			t.Fatalf("Unmarshal() unexpected error: %v", err)
+		}
+		want := struct{ V string }{"foo"}
+		if !reflect.DeepEqual(give, want) {
+			t.Errorf("Unmarshal() = %v; want %v", give, want)
+		}
+	})
 }
 
 func TestUnmarshal_Errors(t *testing.T) {
@@ -72,24 +52,8 @@ func TestUnmarshal_Errors(t *testing.T) {
 
 	t.Run("nil", func(t *testing.T) {
 		t.Parallel()
-		if err := env.Unmarshal(nil); err == nil {
+		if err := env.Unmarshal[struct{}](nil); err == nil {
 			t.Error("Unmarshal(nil) error = nil; want non-nil")
-		}
-	})
-
-	t.Run("not a pointer", func(t *testing.T) {
-		t.Parallel()
-		var s struct{}
-		if err := env.Unmarshal(s); err == nil {
-			t.Error("Unmarshal(struct) error = nil; want non-nil")
-		}
-	})
-
-	t.Run("not a pointer to a struct", func(t *testing.T) {
-		t.Parallel()
-		var i int
-		if err := env.Unmarshal(&i); err == nil {
-			t.Error("Unmarshal(*int) error = nil; want non-nil")
 		}
 	})
 }

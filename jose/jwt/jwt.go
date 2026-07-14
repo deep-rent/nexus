@@ -339,7 +339,7 @@ type DynamicClaims struct {
 // found, or the raw JSON cannot be successfully unmarshaled into type T,
 // Get returns the zero value of T and false. Otherwise, it returns the
 // parsed value and true.
-func Get[T any](c *DynamicClaims, key string) (T, bool) {
+func (c *DynamicClaims) Get[T any](key string) (T, bool) {
 	if c == nil || c.Other == nil {
 		var zero T
 		return zero, false
