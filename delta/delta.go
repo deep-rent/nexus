@@ -17,6 +17,8 @@ package delta
 import (
 	"context"
 	"encoding/json/jsontext"
+	"fmt"
+	"strconv"
 	"uuid"
 
 	"github.com/deep-rent/nexus/internal/hlc"
@@ -46,6 +48,16 @@ type ChangeType struct {
 	// backwards compatibility on schema updates.
 	Version uint64 `json:"version"`
 }
+
+// String returns a string representation of the change type in the form of
+// "<action>:<entity-type>@<version>".
+func (t ChangeType) String() string {
+	return string(t.Action) +
+		":" + string(t.EntityType) +
+		"@" + strconv.FormatUint(t.Version, 10)
+}
+
+var _ fmt.Stringer = (*ChangeType)(nil)
 
 // Change envelops a single granular change to the state.
 type Change struct {
