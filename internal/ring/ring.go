@@ -74,11 +74,11 @@ type Buffer[T any] struct {
 
 	// head is a monotonically increasing counter representing the read index.
 	// The actual array index is calculated as (head & mask).
-	head uint64
+	head atomic.Uint64
 
 	// tail is a monotonically increasing counter representing the write index.
 	// The actual array index is calculated as (tail & mask).
-	tail uint64
+	tail atomic.Uint64
 
 	// mask is used to perform a bitwise AND operation (tail & mask) to
 	// wrap the counters around the buffer size efficiently.
@@ -119,8 +119,8 @@ func New[T any](size int, policy Policy) *Buffer[T] {
 // [runtime.Gosched].
 func (b *Buffer[T]) Push(item T) bool {
 	for {
-		head := atomic.LoadUint64(&b.head)
-		tail := atomic.LoadUint64(&b.tail)
+		head := b.head.Load()
+		tail := b.tail.Load()
 		capacity := b.mask + 1
 
 		// 1. Check if the buffer is full.
@@ -130,18 +130,20 @@ func (b *Buffer[T]) Push(item T) bool {
 				return false // Discard the incoming event
 			case DropOldest:
 				// Try to advance head to invalidate the oldest item.
-				// If CAS fails, another goroutine already changed head; loop and retry.
-				atomic.CompareAndSwapUint64(&b.head, head, head+1)
+				// If CAS fails, another goroutine already changed head; loop
+				// and retry.
+				b.head.CompareAndSwap(head, head+1)
 				continue
 			case Block:
-				// Yield execution to the scheduler to allow consumers to catch up.
+				// Yield execution to the scheduler to allow consumers to
+				// catch up.
 				runtime.Gosched()
 				continue
 			}
 		}
 
 		// 2. Try to claim the tail slot.
-		if atomic.CompareAndSwapUint64(&b.tail, tail, tail+1) {
+		if b.tail.CompareAndSwap(tail, tail+1) {
 			// 3. Write data to the claimed slot.
 			b.data[tail&b.mask] = item
 			// 4. Publish the write by updating the sequence number.
@@ -161,8 +163,8 @@ func (b *Buffer[T]) Pop() (T, bool) {
 	var zero T // Used to return a zero-value on failure
 
 	for {
-		head := atomic.LoadUint64(&b.head)
-		tail := atomic.LoadUint64(&b.tail)
+		head := b.head.Load()
+		tail := b.tail.Load()
 
 		// 1. Check if the buffer is empty.
 		if head == tail {
@@ -182,7 +184,7 @@ func (b *Buffer[T]) Pop() (T, bool) {
 		item := b.data[head&b.mask]
 
 		// 4. Try to commit the read.
-		if atomic.CompareAndSwapUint64(&b.head, head, head+1) {
+		if b.head.CompareAndSwap(head, head+1) {
 			return item, true
 		}
 		// CAS failed: another consumer popped the item first; loop and retry.
