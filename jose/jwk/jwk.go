@@ -203,7 +203,7 @@ func NewKeyPair[T crypto.PublicKey](
 		return nil
 	}
 	return &keyPair[T]{
-		key:    key[T]{alg: alg, kid: kid, mat: mat},
+		alg: alg, kid: kid, mat: mat,
 		signer: s,
 	}
 }
