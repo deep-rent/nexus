@@ -58,6 +58,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"uuid"
 
 	"github.com/deep-rent/nexus/header"
@@ -469,8 +470,8 @@ type Middleware func(Handler) Handler
 // The functions are applied in reverse order, meaning the first middleware in
 // the list is the outermost and executes first.
 func Chain(h Handler, mws ...Middleware) Handler {
-	for i := len(mws) - 1; i >= 0; i-- {
-		if mw := mws[i]; mw != nil {
+	for _, mw := range slices.Backward(mws) {
+		if mw != nil {
 			h = mw(h)
 		}
 	}
