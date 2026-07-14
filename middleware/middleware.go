@@ -56,6 +56,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -74,8 +75,8 @@ type Pipe func(http.Handler) http.Handler
 // handler equivalent to A(B(C(h))). Any nil pipes in the list are safely
 // ignored.
 func Chain(h http.Handler, pipes ...Pipe) http.Handler {
-	for i := len(pipes) - 1; i >= 0; i-- {
-		if pipe := pipes[i]; pipe != nil {
+	for _, pipe := range slices.Backward(pipes) {
+		if pipe != nil {
 			h = pipe(h)
 		}
 	}
