@@ -547,7 +547,7 @@ func IBAN(s string) bool {
 	for i := 4; i < n; i++ {
 		rem = mod97(rem, b[i])
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		rem = mod97(rem, b[i])
 	}
 
