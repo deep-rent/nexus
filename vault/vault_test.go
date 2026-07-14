@@ -15,6 +15,7 @@
 package vault_test
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -92,50 +93,63 @@ func encode(t *testing.T, key any) string {
 func TestLoad(t *testing.T) {
 	t.Parallel()
 
-	s1, err := jwa.RS256.Generate()
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	s2, err := jwa.ES256.Generate()
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-
-	items := vault.Items{
-		{
-			Kid: "key-1",
-			Alg: "RS256",
-			Pem: encode(t, s1),
-		},
-		{
-			Kid: "key-2",
-			Alg: "ES256",
-			Pem: encode(t, s2),
-		},
+	tests := []struct {
+		alg string
+		gen func() (crypto.Signer, error)
+	}{
+		{alg: "RS256", gen: jwa.RS256.Generate},
+		{alg: "RS384", gen: jwa.RS384.Generate},
+		{alg: "RS512", gen: jwa.RS512.Generate},
+		{alg: "PS256", gen: jwa.PS256.Generate},
+		{alg: "PS384", gen: jwa.PS384.Generate},
+		{alg: "PS512", gen: jwa.PS512.Generate},
+		{alg: "ES256", gen: jwa.ES256.Generate},
+		{alg: "ES384", gen: jwa.ES384.Generate},
+		{alg: "ES512", gen: jwa.ES512.Generate},
+		{alg: "EdDSA", gen: jwa.EdDSA.Generate},
 	}
 
-	data, err := json.Marshal(items)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.alg, func(t *testing.T) {
+			t.Parallel()
 
-	v, err := vault.Load(data, rotor.Sequential)
-	if err != nil {
-		t.Fatalf("unexpected error loading vault: %v", err)
-	}
+			signer, err := tt.gen()
+			if err != nil {
+				t.Fatalf("failed to generate key for %s: %v", tt.alg, err)
+			}
 
-	keys := v.Keys()
-	if exp, act := 2, keys.Len(); exp != act {
-		t.Errorf("expected %d keys, got %d", exp, act)
-	}
+			items := vault.Items{
+				{
+					Kid: "key-1",
+					Alg: tt.alg,
+					Pem: encode(t, signer),
+				},
+			}
 
-	next := v.Next()
-	if next == nil {
-		t.Fatal("v.Next() returned nil")
-	}
+			data, err := json.Marshal(items)
+			if err != nil {
+				t.Fatalf("failed to marshal config: %v", err)
+			}
 
-	if act := next.KeyID(); act != "key-1" && act != "key-2" {
-		t.Errorf("unexpected next key ID: %s", act)
+			v, err := vault.Load(data, rotor.Sequential)
+			if err != nil {
+				t.Fatalf("unexpected error loading vault: %v", err)
+			}
+
+			keys := v.Keys()
+			if exp, act := 1, keys.Len(); exp != act {
+				t.Errorf("expected %d keys, got %d", exp, act)
+			}
+
+			next := v.Next()
+			if next == nil {
+				t.Fatal("v.Next() returned nil")
+			}
+
+			if got, want := next.KeyID(), "key-1"; got != want {
+				t.Errorf("Next() = %q; want %q", got, want)
+			}
+		})
 	}
 }
 
