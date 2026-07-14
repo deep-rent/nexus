@@ -463,8 +463,8 @@ func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
 
 		// Revert applied migrations strictly greater than the target version in
 		// descending order.
-		for i := len(records) - 1; i >= 0; i-- {
-			v := records[i].Version
+		for _, record := range slices.Backward(records) {
+			v := record.Version
 			if v > target {
 				found := false
 				for _, f := range files {
