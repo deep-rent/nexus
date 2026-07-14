@@ -1,6 +1,6 @@
 .PHONY: all format lint test help
 
-FLAGS := GOEXPERIMENT=jsonv2
+FLAGS :=
 PACKAGES := ./...
 
 all: format lint test
