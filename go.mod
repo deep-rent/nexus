@@ -1,6 +1,6 @@
 module github.com/deep-rent/nexus
 
-go 1.26.4
+go 1.27
 
 toolchain go1.27rc2
 
