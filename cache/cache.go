@@ -163,10 +163,11 @@ func NewController[T any](
 			ExpectContinueTimeout: 1 * time.Second,
 			DisableKeepAlives:     true,
 		}
-		t = retry.NewTransport(header.NewTransport(t, cfg.headers...), cfg.retry...)
+
+		t = header.NewTransport(t, cfg.headers...)
 		client = &http.Client{
 			Timeout:   cfg.timeout,
-			Transport: t,
+			Transport: retry.NewTransport(t, cfg.retry...),
 		}
 	}
 
@@ -239,7 +240,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	if err != nil {
 		// This is a non-retriable error in request creation.
 		c.logger.Error("Failed to create request", slog.Any("error", err))
-		return c.minInterval // Wait a long time before trying to create it again.
+		return c.minInterval // Wait longer before trying to create it again.
 	}
 
 	// Add conditional headers if we have them from a previous request.
@@ -264,7 +265,10 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			c.logger.Warn("Failed to close response body", slog.Any("error", err))
+			c.logger.Warn(
+				"Failed to close response body",
+				slog.Any("error", err),
+			)
 		}
 	}()
 
@@ -278,7 +282,10 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 	case http.StatusOK:
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			c.logger.Error("Failed to read response body", slog.Any("error", err))
+			c.logger.Error(
+				"Failed to read response body",
+				slog.Any("error", err),
+			)
 			return c.minInterval
 		}
 		resource, err := c.mapper(&Response{
@@ -287,7 +294,10 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 			Logger: c.logger,
 		})
 		if err != nil {
-			c.logger.Error("Couldn't parse response body", slog.Any("error", err))
+			c.logger.Error(
+				"Couldn't parse response body",
+				slog.Any("error", err),
+			)
 			return c.minInterval
 		}
 		c.mu.Lock()
