@@ -92,34 +92,34 @@ func encode(t *testing.T, key any) string {
 func TestLoad(t *testing.T) {
 	t.Parallel()
 
-	rsaSigner, err := jwa.RS256.Generate()
+	s1, err := jwa.RS256.Generate()
 	if err != nil {
-		t.Fatalf("failed to generate RSA key: %v", err)
+		t.Fatalf("failed to generate key: %v", err)
 	}
-	ecdsaSigner, err := jwa.ES256.Generate()
+	s2, err := jwa.ES256.Generate()
 	if err != nil {
-		t.Fatalf("failed to generate ECDSA key: %v", err)
+		t.Fatalf("failed to generate key: %v", err)
 	}
 
 	items := vault.Items{
 		{
-			Kid: "rsa-key-1",
+			Kid: "key-1",
 			Alg: "RS256",
-			Pem: encode(t, rsaSigner),
+			Pem: encode(t, s1),
 		},
 		{
-			Kid: "ecdsa-key-1",
+			Kid: "key-2",
 			Alg: "ES256",
-			Pem: encode(t, ecdsaSigner),
+			Pem: encode(t, s2),
 		},
 	}
 
-	configData, err := json.Marshal(items)
+	data, err := json.Marshal(items)
 	if err != nil {
 		t.Fatalf("failed to marshal config: %v", err)
 	}
 
-	v, err := vault.Load(configData, rotor.Sequential)
+	v, err := vault.Load(data, rotor.Sequential)
 	if err != nil {
 		t.Fatalf("unexpected error loading vault: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestLoad(t *testing.T) {
 		t.Fatal("v.Next() returned nil")
 	}
 
-	if act := next.KeyID(); act != "rsa-key-1" && act != "ecdsa-key-1" {
+	if act := next.KeyID(); act != "key-1" && act != "key-2" {
 		t.Errorf("unexpected next key ID: %s", act)
 	}
 }
@@ -144,12 +144,12 @@ func TestLoadFile(t *testing.T) {
 
 	signer, err := jwa.ES256.Generate()
 	if err != nil {
-		t.Fatalf("failed to generate ECDSA key: %v", err)
+		t.Fatalf("failed to generate key: %v", err)
 	}
 
 	items := vault.Items{
 		{
-			Kid: "ecdsa-file-1",
+			Kid: "key-1",
 			Alg: "ES256",
 			Pem: encode(t, signer),
 		},
