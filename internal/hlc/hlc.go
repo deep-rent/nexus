@@ -12,11 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package hlc provides a Hybrid Logical Clock implementation.
+// Package hlc provides a Hybrid Logical Clock (HLC) implementation.
 //
 // HLCs are used to generate causally ordered timestamps for distributed
 // systems. They combine a physical wall-clock timestamp (in milliseconds)
 // with a logical counter, fitting both into a single uint64.
+//
+// # Usage
+//
+// The clock provides two methods: [Now] for generating timestamps and [Update]
+// for updating the clock with a remote timestamp.
+//
+// Example:
+//
+//	// Create a new clock.
+//	c := hlc.New(nil)
+//
+//	// Generate a timestamp.
+//	t := c.Now()
+//
+//	// Update the clock with a remote timestamp.
+//	t, err := c.Update(t)
 package hlc
 
 import (
