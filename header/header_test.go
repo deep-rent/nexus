@@ -93,7 +93,7 @@ func TestDirectives(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Directives(%q) = %v; want %v", tt.give, got, tt.want)
+				t.Errorf("for input %q: got %v; want %v", tt.give, got, tt.want)
 			}
 		})
 	}
@@ -181,7 +181,7 @@ func TestThrottle(t *testing.T) {
 			}
 
 			if diff > time.Second {
-				t.Errorf("Throttle(h, now) = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -263,7 +263,7 @@ func TestLifetime(t *testing.T) {
 			}
 
 			if diff > time.Second {
-				t.Errorf("Lifetime(h, now) = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -321,7 +321,7 @@ func TestCredentials(t *testing.T) {
 			t.Parallel()
 
 			if got := header.Credentials(tt.h, tt.scheme); got != tt.want {
-				t.Errorf("Credentials(h, %q) = %q; want %q", tt.scheme, got, tt.want)
+				t.Errorf("for scheme %q: got %q; want %q", tt.scheme, got, tt.want)
 			}
 		})
 	}
@@ -387,7 +387,7 @@ func TestPreferences(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Preferences(%q) = %v; want %v", tt.give, got, tt.want)
+				t.Errorf("for input %q: got %v; want %v", tt.give, got, tt.want)
 			}
 		})
 	}
@@ -475,7 +475,10 @@ func TestAccepts(t *testing.T) {
 			t.Parallel()
 
 			if got := header.Accepts(tt.value, tt.key); got != tt.want {
-				t.Errorf("Accepts(%q, %q) = %t; want %t", tt.value, tt.key, got, tt.want)
+				t.Errorf(
+					"for %q and key %q: got %t; want %t",
+					tt.value, tt.key, got, tt.want,
+				)
 			}
 		})
 	}
@@ -521,7 +524,7 @@ func TestMediaType(t *testing.T) {
 			t.Parallel()
 
 			if got := header.MediaType(tt.h); got != tt.want {
-				t.Errorf("MediaType(h) = %q; want %q", got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -593,7 +596,10 @@ func TestLink(t *testing.T) {
 			t.Parallel()
 
 			if got := header.Link(tt.value, tt.rel); got != tt.want {
-				t.Errorf("Link(%q, %q) = %q; want %q", tt.value, tt.rel, got, tt.want)
+				t.Errorf(
+					"for %q and rel %q: got %q; want %q",
+					tt.value, tt.rel, got, tt.want,
+				)
 			}
 		})
 	}
@@ -677,7 +683,7 @@ func TestLinks(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Links(%q) = %v; want %v", tt.value, got, tt.want)
+				t.Errorf("for input %q: got %v; want %v", tt.value, got, tt.want)
 			}
 		})
 	}
@@ -749,7 +755,7 @@ func TestFilename(t *testing.T) {
 			t.Parallel()
 
 			if got := header.Filename(tt.h); got != tt.want {
-				t.Errorf("Filename(h) = %q; want %q", got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -761,15 +767,15 @@ func TestNew(t *testing.T) {
 	h := header.New("x-foo-bar", "baz")
 
 	if h.Key != "X-Foo-Bar" {
-		t.Errorf("h.Key = %q; want %q", h.Key, "X-Foo-Bar")
+		t.Errorf("key: got %q; want %q", h.Key, "X-Foo-Bar")
 	}
 
 	if h.Value != "baz" {
-		t.Errorf("h.Value = %q; want %q", h.Value, "baz")
+		t.Errorf("value: got %q; want %q", h.Value, "baz")
 	}
 
 	if got, want := h.String(), "X-Foo-Bar: baz"; got != want {
-		t.Errorf("h.String() = %q; want %q", got, want)
+		t.Errorf("string form: got %q; want %q", got, want)
 	}
 }
 
@@ -805,11 +811,11 @@ func TestUserAgent(t *testing.T) {
 
 			h := header.UserAgent(tt.product, tt.version, tt.comment)
 			if h.Key != "User-Agent" {
-				t.Errorf("h.Key = %q; want %q", h.Key, "User-Agent")
+				t.Errorf("key: got %q; want %q", h.Key, "User-Agent")
 			}
 
 			if h.Value != tt.want {
-				t.Errorf("h.Value = %q; want %q", h.Value, tt.want)
+				t.Errorf("value: got %q; want %q", h.Value, tt.want)
 			}
 		})
 	}
@@ -825,7 +831,7 @@ func TestNewTransport(t *testing.T) {
 		wrapped := header.NewTransport(base)
 
 		if base != wrapped {
-			t.Errorf("NewTransport(base) = %p; want %p", wrapped, base)
+			t.Errorf("got %p; want %p", wrapped, base)
 		}
 	})
 
@@ -839,7 +845,7 @@ func TestNewTransport(t *testing.T) {
 			nil,
 		)
 		if err != nil {
-			t.Fatalf("http.NewRequestWithContext() = %v", err)
+			t.Fatalf("creating request: should not have returned an error: %v", err)
 		}
 
 		originalHeader := req.Header.Clone()
@@ -853,12 +859,12 @@ func TestNewTransport(t *testing.T) {
 
 		_, err = transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("transport.RoundTrip(req) = %v; want nil", err)
+			t.Fatalf("round trip: should not have returned an error: %v", err)
 		}
 
 		r := base.trap
 		if r == nil {
-			t.Fatal("base.trap = nil; want *http.Request")
+			t.Fatal("transport should have received a request")
 		}
 
 		if r == req {
@@ -866,15 +872,15 @@ func TestNewTransport(t *testing.T) {
 		}
 
 		if got := r.Header.Get("X-Foo"); got != "foo" {
-			t.Errorf("r.Header.Get(\"X-Foo\") = %q; want %q", got, "foo")
+			t.Errorf("x-foo header: got %q; want %q", got, "foo")
 		}
 
 		if got := r.Header.Get("X-Bar"); got != "bar" {
-			t.Errorf("r.Header.Get(\"X-Bar\") = %q; want %q", got, "bar")
+			t.Errorf("x-bar header: got %q; want %q", got, "bar")
 		}
 
 		if !reflect.DeepEqual(req.Header, originalHeader) {
-			t.Errorf("req.Header = %v; want %v (original should be untouched)",
+			t.Errorf("original header was modified: got %v; want %v",
 				req.Header, originalHeader)
 		}
 	})

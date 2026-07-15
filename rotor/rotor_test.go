@@ -35,10 +35,10 @@ func TestNew(t *testing.T) {
 			defer func() {
 				r := recover()
 				if r == nil {
-					t.Errorf("expected panic with %q, but it did not panic", want)
+					t.Errorf("should have panicked with %q", want)
 				}
 				if r != want {
-					t.Errorf("recover() = %v; want %q", r, want)
+					t.Errorf("panic value: got %v; want %q", r, want)
 				}
 			}()
 			fn()
@@ -54,13 +54,13 @@ func TestNew(t *testing.T) {
 		r := rotor.New(rotor.Sequential, items)
 
 		if r == nil {
-			t.Fatal("New(items) = nil; want non-nil")
+			t.Fatal("rotor should not be nil")
 		}
 
 		expected := []string{"a", "b", "c", "a"}
 		for i, want := range expected {
 			if got := r.Next(); got != want {
-				t.Errorf("Next() #%d = %q; want %q", i+1, got, want)
+				t.Errorf("on call %d: got %q; want %q", i+1, got, want)
 			}
 		}
 	})
@@ -72,7 +72,7 @@ func TestNew(t *testing.T) {
 
 		for range 2 {
 			if got, want := r.Next(), "a"; got != want {
-				t.Errorf("Next() = %q; want %q", got, want)
+				t.Errorf("got %q; want %q", got, want)
 			}
 		}
 	})
@@ -86,7 +86,7 @@ func TestNew_Copy(t *testing.T) {
 	items[0] = "Z"
 
 	if got, want := r.Next(), "a"; got != want {
-		t.Errorf("Next() after external slice modification = %q; want %q",
+		t.Errorf("after external slice modification: got %q; want %q",
 			got, want)
 	}
 }
@@ -113,7 +113,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 				r := rotor.New(rotor.Sequential, tt.give)
 				for i, want := range tt.want {
 					if got := r.Next(); got != want {
-						t.Errorf("Next() #%d = %q; want %q", i+1, got, want)
+						t.Errorf("on call %d: got %q; want %q", i+1, got, want)
 					}
 				}
 			})
@@ -128,7 +128,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 		sequence := []int{1, 2, 1, 2}
 		for i, want := range sequence {
 			if got := r.Next(); got != want {
-				t.Errorf("Next() #%d = %d; want %d", i+1, got, want)
+				t.Errorf("on call %d: got %d; want %d", i+1, got, want)
 			}
 		}
 	})
@@ -140,7 +140,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 
 		for range 3 {
 			if got, want := r.Next(), true; got != want {
-				t.Errorf("Next() = %v; want %v", got, want)
+				t.Errorf("got %v; want %v", got, want)
 			}
 		}
 	})
@@ -182,12 +182,12 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	wg.Wait()
 
 	if got := countD.Load(); got != 0 {
-		t.Errorf("received %d unexpected items", got)
+		t.Errorf("got %d unexpected items; want 0", got)
 	}
 
 	a, b, c := countA.Load(), countB.Load(), countC.Load()
 	if got, want := a+b+c, exp; got != want {
-		t.Errorf("total calls = %d; want %d", got, want)
+		t.Errorf("total calls: got %d; want %d", got, want)
 	}
 
 	avg := float64(exp) / float64(len(items))
@@ -196,8 +196,8 @@ func TestRotor_Next_Concurrent(t *testing.T) {
 	counts := map[string]uint64{"a": a, "b": b, "c": c}
 	for label, got := range counts {
 		if diff := math.Abs(float64(got) - avg); diff > tol {
-			t.Errorf("distribution for %q = %d; outside tolerance of %f from %f",
-				label, got, tol, avg)
+			t.Errorf("for %q: got count %d; want %f (tolerance %f)",
+				label, got, avg, tol)
 		}
 	}
 }

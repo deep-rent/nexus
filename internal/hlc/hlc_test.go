@@ -32,10 +32,10 @@ func TestPackUnpack(t *testing.T) {
 	actP, actL := hlc.Unpack(packed)
 
 	if actP != expP {
-		t.Errorf("expected physical %d, got %d", expP, actP)
+		t.Errorf("physical: got %d; want %d", actP, expP)
 	}
 	if actL != expL {
-		t.Errorf("expected logical %d, got %d", expL, actL)
+		t.Errorf("logical: got %d; want %d", actL, expL)
 	}
 }
 
@@ -48,7 +48,8 @@ func TestClock_Now(t *testing.T) {
 	t2 := clock.Now()
 
 	if t1 >= t2 {
-		t.Errorf("expected strictly monotonic timestamps, t1=%d, t2=%d", t1, t2)
+		t.Errorf("timestamps should be strictly monotonic; got t1=%d, t2=%d",
+			t1, t2)
 	}
 }
 
@@ -64,21 +65,22 @@ func TestClock_Update(t *testing.T) {
 
 	t2, err := clock.Update(remoteOld)
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("for old remote: should not have returned an error: %v", err)
 	}
 	if t2 <= t1 {
-		t.Errorf("expected updated timestamp %d to be > %d", t2, t1)
+		t.Errorf("for old remote: got timestamp %d; want greater than %d",
+			t2, t1)
 	}
 
 	remoteNew := hlc.Pack(p1+500, 0)
 	t3, err := clock.Update(remoteNew)
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("for new remote: should not have returned an error: %v", err)
 	}
 
 	if t3 <= remoteNew {
-		t.Errorf("expected updated timestamp %d to be strictly > remote %d",
-			t3, remoteNew)
+		t.Errorf("for new remote: got timestamp %d; want strictly greater "+
+			"than %d", t3, remoteNew)
 	}
 }
 
@@ -92,7 +94,7 @@ func TestClock_Update_Drift(t *testing.T) {
 
 	_, err := clock.Update(future)
 	if !errors.Is(err, hlc.ErrClockDriftTooLarge) {
-		t.Errorf("expected clock drift error, got %v", err)
+		t.Errorf("got error %v; want ErrClockDriftTooLarge", err)
 	}
 }
 
@@ -109,6 +111,6 @@ func TestClock_Update_Overflow(t *testing.T) {
 
 	_, err := clock.Update(remote)
 	if !errors.Is(err, hlc.ErrLogicalOverflow) {
-		t.Errorf("expected ErrLogicalOverflow, got %v", err)
+		t.Errorf("got error %v; want ErrLogicalOverflow", err)
 	}
 }

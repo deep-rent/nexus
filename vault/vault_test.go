@@ -35,7 +35,7 @@ func generate(t *testing.T, kid string) jwk.KeyPair {
 	t.Helper()
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	return jwk.NewKeyPair(jwa.ES256, kid, sign.From(k))
 }
@@ -54,29 +54,29 @@ func TestVault(t *testing.T) {
 	t.Run("Keys", func(t *testing.T) {
 		set := v.Keys()
 		if got, want := set.Len(), 3; got != want {
-			t.Errorf("Keys().Len() = %d; want %d", got, want)
+			t.Errorf("got %d keys; want %d", got, want)
 		}
 
 		for _, h := range keys {
 			k := set.Find(h)
 			if k == nil {
-				t.Errorf("Keys() missing key with ID %q", h.KeyID())
+				t.Errorf("should contain key with ID %q", h.KeyID())
 			}
 		}
 	})
 
 	t.Run("Next", func(t *testing.T) {
 		if got, want := v.Next().KeyID(), "key-1"; got != want {
-			t.Errorf("Next() = %q; want %q", got, want)
+			t.Errorf("on first call: got %q; want %q", got, want)
 		}
 		if got, want := v.Next().KeyID(), "key-2"; got != want {
-			t.Errorf("Next() = %q; want %q", got, want)
+			t.Errorf("on second call: got %q; want %q", got, want)
 		}
 		if got, want := v.Next().KeyID(), "key-3"; got != want {
-			t.Errorf("Next() = %q; want %q", got, want)
+			t.Errorf("on third call: got %q; want %q", got, want)
 		}
 		if got, want := v.Next().KeyID(), "key-1"; got != want {
-			t.Errorf("Next() = %q; want %q", got, want)
+			t.Errorf("on fourth call: got %q; want %q", got, want)
 		}
 	})
 }
@@ -85,7 +85,7 @@ func encode(t *testing.T, key any) string {
 	t.Helper()
 	data, err := sign.Encode(key)
 	if err != nil {
-		t.Fatalf("failed to serialize key: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	return string(data)
 }
@@ -115,7 +115,10 @@ func TestLoad(t *testing.T) {
 
 			signer, err := tt.gen()
 			if err != nil {
-				t.Fatalf("failed to generate key for %s: %v", tt.alg, err)
+				t.Fatalf(
+					"when generating the key: "+
+						"should not have returned an error: %v", err,
+				)
 			}
 
 			items := vault.Items{
@@ -128,26 +131,32 @@ func TestLoad(t *testing.T) {
 
 			data, err := json.Marshal(items)
 			if err != nil {
-				t.Fatalf("failed to marshal config: %v", err)
+				t.Fatalf(
+					"when marshaling the config: "+
+						"should not have returned an error: %v", err,
+				)
 			}
 
 			v, err := vault.Load(data, rotor.Sequential)
 			if err != nil {
-				t.Fatalf("unexpected error loading vault: %v", err)
+				t.Fatalf(
+					"when loading the vault: "+
+						"should not have returned an error: %v", err,
+				)
 			}
 
 			keys := v.Keys()
 			if exp, act := 1, keys.Len(); exp != act {
-				t.Errorf("expected %d keys, got %d", exp, act)
+				t.Errorf("got %d keys; want %d", act, exp)
 			}
 
 			next := v.Next()
 			if next == nil {
-				t.Fatal("v.Next() returned nil")
+				t.Fatal("next key should not be nil")
 			}
 
 			if got, want := next.KeyID(), "key-1"; got != want {
-				t.Errorf("Next() = %q; want %q", got, want)
+				t.Errorf("next key ID: got %q; want %q", got, want)
 			}
 		})
 	}
@@ -158,7 +167,8 @@ func TestLoadFile(t *testing.T) {
 
 	signer, err := jwa.ES256.Generate()
 	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+		t.Fatalf("when generating the key: "+
+			"should not have returned an error: %v", err)
 	}
 
 	items := vault.Items{
@@ -171,21 +181,24 @@ func TestLoadFile(t *testing.T) {
 
 	config, err := json.Marshal(items)
 	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
+		t.Fatalf("when marshaling the config: "+
+			"should not have returned an error: %v", err)
 	}
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "keys.json")
 	if err := os.WriteFile(path, config, 0o600); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
+		t.Fatalf("when writing the config file: "+
+			"should not have returned an error: %v", err)
 	}
 
 	v, err := vault.LoadFile(path, rotor.Sequential)
 	if err != nil {
-		t.Fatalf("unexpected error loading from file: %v", err)
+		t.Fatalf("when loading the vault: "+
+			"should not have returned an error: %v", err)
 	}
 
 	if exp, act := 1, v.Keys().Len(); exp != act {
-		t.Errorf("expected %d keys, got %d", exp, act)
+		t.Errorf("got %d keys; want %d", act, exp)
 	}
 }

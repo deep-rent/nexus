@@ -29,10 +29,10 @@ func TestFree(t *testing.T) {
 
 	p, err := ports.Free()
 	if err != nil {
-		t.Fatalf("ports.Free() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if p <= 0 {
-		t.Errorf("ports.Free() = %d; want > 0", p)
+		t.Errorf("got port %d; want greater than 0", p)
 	}
 }
 
@@ -41,7 +41,7 @@ func TestFreeT(t *testing.T) {
 
 	p := ports.FreeT(t)
 	if p <= 0 {
-		t.Errorf("ports.FreeT(t) = %d; want > 0", p)
+		t.Errorf("got port %d; want greater than 0", p)
 	}
 }
 
@@ -52,7 +52,8 @@ func TestWait(t *testing.T) {
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(p))
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
-		t.Fatalf("net.Listen(tcp, %q) err = %v", addr, err)
+		t.Fatalf("when listening on %q: should not have returned an error: %v",
+			addr, err)
 	}
 	defer func() {
 		_ = l.Close()
@@ -62,7 +63,7 @@ func TestWait(t *testing.T) {
 	defer cancel()
 
 	if err := ports.Wait(ctx, "127.0.0.1", p); err != nil {
-		t.Errorf("ports.Wait(ctx, 127.0.0.1, %d) err = %v", p, err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }
 
@@ -74,7 +75,7 @@ func TestWait_Timeout(t *testing.T) {
 	defer cancel()
 
 	if err := ports.Wait(ctx, "127.0.0.1", p); err == nil {
-		t.Error("ports.Wait() err = nil; want timeout error")
+		t.Error("should have returned a timeout error")
 	}
 }
 
@@ -85,7 +86,8 @@ func TestWaitT(t *testing.T) {
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(p))
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
-		t.Fatalf("net.Listen(tcp, %q) err = %v", addr, err)
+		t.Fatalf("when listening on %q: should not have returned an error: %v",
+			addr, err)
 	}
 	defer func() {
 		_ = l.Close()
@@ -105,7 +107,7 @@ func TestWaitT_TimeoutCondition(t *testing.T) {
 		defer cancel()
 
 		if err := ports.Wait(ctx, "127.0.0.1", p); err == nil {
-			t.Error("ports.Wait() err = nil; want error")
+			t.Error("should have returned an error")
 		}
 	})
 }

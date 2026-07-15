@@ -39,7 +39,7 @@ func TestAlgorithm_RSASignVerify(t *testing.T) {
 
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		t.Fatalf("rsa.GenerateKey() error = %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 
 	tests := []struct {
@@ -59,10 +59,10 @@ func TestAlgorithm_RSASignVerify(t *testing.T) {
 			t.Parallel()
 			sig, err := tt.a.Sign(t.Context(), sign.From(k), mockMsg)
 			if err != nil {
-				t.Fatalf("%s.Sign() error = %v", tt.name, err)
+				t.Fatalf("signing: should not have returned an error: %v", err)
 			}
 			if !tt.a.Verify(&k.PublicKey, mockMsg, sig) {
-				t.Errorf("%s.Verify() = false; want true", tt.name)
+				t.Error("verification: got false; want true")
 			}
 		})
 	}
@@ -86,15 +86,17 @@ func TestAlgorithm_ECDSASignVerify(t *testing.T) {
 			t.Parallel()
 			k, err := ecdsa.GenerateKey(tt.curve, rand.Reader)
 			if err != nil {
-				t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+				t.Fatalf(
+					"key generation: should not have returned an error: %v", err,
+				)
 			}
 
 			sig, err := tt.a.Sign(t.Context(), sign.From(k), mockMsg)
 			if err != nil {
-				t.Fatalf("%s.Sign() error = %v", tt.name, err)
+				t.Fatalf("signing: should not have returned an error: %v", err)
 			}
 			if !tt.a.Verify(&k.PublicKey, mockMsg, sig) {
-				t.Errorf("%s.Verify() = false; want true", tt.name)
+				t.Error("verification: got false; want true")
 			}
 		})
 	}
@@ -107,15 +109,17 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 		t.Parallel()
 		pub, prv, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
-			t.Fatalf("ed25519.GenerateKey() error = %v", err)
+			t.Fatalf(
+				"key generation: should not have returned an error: %v", err,
+			)
 		}
 
 		sig, err := jwa.EdDSA.Sign(t.Context(), sign.From(prv), mockMsg)
 		if err != nil {
-			t.Fatalf("EdDSA.Sign(Ed25519) error = %v", err)
+			t.Fatalf("signing: should not have returned an error: %v", err)
 		}
 		if !jwa.EdDSA.Verify(pub, mockMsg, sig) {
-			t.Errorf("EdDSA.Verify(Ed25519) = false; want true")
+			t.Error("verification: got false; want true")
 		}
 	})
 }
@@ -146,7 +150,7 @@ func TestAlgorithm_Sign(t *testing.T) {
 
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		t.Fatalf("rsa.GenerateKey() error = %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 
 	mock := &mockSigner{signer: k}
@@ -154,24 +158,24 @@ func TestAlgorithm_Sign(t *testing.T) {
 
 	_, err = jwa.RS256.Sign(ctx, mock, mockMsg)
 	if err != nil {
-		t.Fatalf("RS256.Sign() error = %v", err)
+		t.Fatalf("RS256 signing: should not have returned an error: %v", err)
 	}
 	if !mock.passed {
-		t.Errorf("RS256 did not propagate context")
+		t.Error("RS256 should have propagated the context")
 	}
 
 	esKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	mockES := &mockSigner{signer: esKey}
 	_, _ = jwa.ES256.Sign(ctx, mockES, mockMsg)
 	if !mockES.passed {
-		t.Errorf("ES256 did not propagate context")
+		t.Error("ES256 should have propagated the context")
 	}
 
 	_, edKey, _ := ed25519.GenerateKey(rand.Reader)
 	mockEd := &mockSigner{signer: edKey}
 	_, _ = jwa.EdDSA.Sign(ctx, mockEd, mockMsg)
 	if !mockEd.passed {
-		t.Errorf("EdDSA did not propagate context")
+		t.Error("EdDSA should have propagated the context")
 	}
 }
 
@@ -200,13 +204,13 @@ func TestAlgorithm_Generate(t *testing.T) {
 			t.Parallel()
 			s, err := tt.gen()
 			if err != nil {
-				t.Fatalf("%s generation failed: %v", name, err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if s == nil {
-				t.Fatalf("%s generation returned nil signer", name)
+				t.Fatal("got nil signer; want non-nil")
 			}
 			if s.Public() == nil {
-				t.Errorf("%s generation returned nil public key", name)
+				t.Error("got nil public key; want non-nil")
 			}
 		})
 	}
@@ -232,7 +236,7 @@ func TestAlgorithm_ECDSAPaddingPanic(t *testing.T) {
 
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 
 	// 261 bits, P-256 is 256 bits max
@@ -240,12 +244,12 @@ func TestAlgorithm_ECDSAPaddingPanic(t *testing.T) {
 	concat := struct{ R, S *big.Int }{R: exceed, S: exceed}
 	der, err := asn1.Marshal(concat)
 	if err != nil {
-		t.Fatalf("asn1.Marshal() error = %v", err)
+		t.Fatalf("marshalling: should not have returned an error: %v", err)
 	}
 
 	mock := &mockECDSASigner{pub: &k.PublicKey, sig: der}
 	_, err = jwa.ES256.Sign(t.Context(), mock, mockMsg)
 	if err == nil {
-		t.Error("expected error when R/S are too large, got nil")
+		t.Error("should have returned an error")
 	}
 }

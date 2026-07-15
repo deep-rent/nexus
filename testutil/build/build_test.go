@@ -31,14 +31,14 @@ func TestBinary_Build(t *testing.T) {
 	mod := []byte("module dummy\n\ngo 1.24\n")
 	modPath := filepath.Join(src, "go.mod")
 	if err := os.WriteFile(modPath, mod, 0o600); err != nil {
-		t.Fatalf("os.WriteFile(go.mod) err = %v", err)
+		t.Fatalf("for go.mod: should not have returned an error: %v", err)
 	}
 
 	// Create the main package.
 	code := []byte("package main\nfunc main() {}\n")
 	codePath := filepath.Join(src, "main.go")
 	if err := os.WriteFile(codePath, code, 0o600); err != nil {
-		t.Fatalf("os.WriteFile(main.go) err = %v", err)
+		t.Fatalf("for main.go: should not have returned an error: %v", err)
 	}
 
 	// Build the directory.
@@ -47,9 +47,9 @@ func TestBinary_Build(t *testing.T) {
 	// Verify the executable was created.
 	stat, err := os.Stat(exe)
 	if err != nil {
-		t.Fatalf("os.Stat(%q) err = %v", exe, err)
+		t.Fatalf("for %q: should not have returned an error: %v", exe, err)
 	}
 	if stat.IsDir() {
-		t.Errorf("os.Stat(%q).IsDir() = true; want false", exe)
+		t.Errorf("%q should not be a directory", exe)
 	}
 }

@@ -62,7 +62,9 @@ func readTestFile(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec
 	if err != nil {
-		t.Fatalf("os.ReadFile(%q) error = %v", name, err)
+		t.Fatalf(
+			"test file %q: should not have returned an error: %v", name, err,
+		)
 	}
 	return b
 }
@@ -139,29 +141,34 @@ func TestParse(t *testing.T) {
 
 			key1, err := jwk.Parse(in)
 			if err != nil {
-				t.Fatalf("Parse(%q) error = %v", tt.src, err)
+				t.Fatalf(
+					"parsing %q: should not have returned an error: %v",
+					tt.src, err,
+				)
 			}
 			if got, want := key1.Algorithm(), tt.alg; got != want {
-				t.Errorf("key1.Algorithm() = %q; want %q", got, want)
+				t.Errorf("key1 algorithm: got %q; want %q", got, want)
 			}
 			if got, want := key1.KeyID(), tt.kid; got != want {
-				t.Errorf("key1.KeyID() = %q; want %q", got, want)
+				t.Errorf("key1 key id: got %q; want %q", got, want)
 			}
 
 			encoded, err := jwk.Write(key1)
 			if err != nil {
-				t.Fatalf("Write() error = %v", err)
+				t.Fatalf("encoding: should not have returned an error: %v", err)
 			}
 
 			key2, err := jwk.Parse(encoded)
 			if err != nil {
-				t.Fatalf("Parse(encoded) error = %v", err)
+				t.Fatalf(
+					"re-parsing: should not have returned an error: %v", err,
+				)
 			}
 			if got, want := key2.Algorithm(), key1.Algorithm(); got != want {
-				t.Errorf("key2.Algorithm() = %q; want %q", got, want)
+				t.Errorf("key2 algorithm: got %q; want %q", got, want)
 			}
 			if got, want := key2.KeyID(), key1.KeyID(); got != want {
-				t.Errorf("key2.KeyID() = %q; want %q", got, want)
+				t.Errorf("key2 key id: got %q; want %q", got, want)
 			}
 		})
 	}
@@ -188,7 +195,7 @@ func TestParse_Error(t *testing.T) {
 			t.Parallel()
 			in := readTestFile(t, tt.file)
 			if _, err := jwk.Parse(in); err == nil {
-				t.Errorf("Parse(%q) expected error; got nil", tt.file)
+				t.Error("should have returned an error")
 			}
 		})
 	}
@@ -201,23 +208,23 @@ func TestParseSet(t *testing.T) {
 
 	set, err := jwk.ParseSet(in)
 	if err != nil {
-		t.Fatalf("ParseSet() error = %v", err)
+		t.Fatalf("parsing: should not have returned an error: %v", err)
 	}
 	if got, want := set.Len(), 10; got != want {
-		t.Errorf("set.Len() = %d; want %d", got, want)
+		t.Errorf("set size: got %d; want %d", got, want)
 	}
 
 	encoded, err := jwk.WriteSet(set)
 	if err != nil {
-		t.Fatalf("WriteSet() error = %v", err)
+		t.Fatalf("encoding: should not have returned an error: %v", err)
 	}
 
 	set2, err := jwk.ParseSet(encoded)
 	if err != nil {
-		t.Fatalf("ParseSet(encoded) error = %v", err)
+		t.Fatalf("re-parsing: should not have returned an error: %v", err)
 	}
 	if got, want := set2.Len(), set.Len(); got != want {
-		t.Errorf("set2.Len() = %d; want %d", got, want)
+		t.Errorf("re-parsed set size: got %d; want %d", got, want)
 	}
 
 	for k := range set.Keys() {
@@ -227,7 +234,7 @@ func TestParseSet(t *testing.T) {
 			continue
 		}
 		if got, want := found.KeyID(), k.KeyID(); got != want {
-			t.Errorf("found.KeyID() = %q; want %q", got, want)
+			t.Errorf("key id: got %q; want %q", got, want)
 		}
 	}
 }
@@ -247,7 +254,7 @@ func TestParseSet_Error(t *testing.T) {
 			t.Parallel()
 			in := readTestFile(t, tt.file)
 			if _, err := jwk.ParseSet(in); err == nil {
-				t.Errorf("ParseSet(%q) expected error; got nil", tt.file)
+				t.Error("should have returned an error")
 			}
 		})
 	}
@@ -258,19 +265,19 @@ func TestParseSet_PartialSuccess(t *testing.T) {
 
 	set, err := jwk.ParseSet(readTestFile(t, "set_partial.json"))
 	if err == nil {
-		t.Errorf("ParseSet(partial) expected error; got nil")
+		t.Error("should have returned an error")
 	}
 	if got, want := set.Len(), 2; got != want {
-		t.Errorf("set.Len() = %d; want %d", got, want)
+		t.Errorf("set size: got %d; want %d", got, want)
 	}
 
 	k1 := set.Find(&mockKey{alg: "ES256", kid: "valid-1"})
 	if k1 == nil {
-		t.Errorf("could not find valid-1")
+		t.Error("should have found valid-1")
 	}
 	k2 := set.Find(&mockKey{alg: "ES512", kid: "valid-2"})
 	if k2 == nil {
-		t.Errorf("could not find valid-2")
+		t.Error("should have found valid-2")
 	}
 }
 
@@ -329,10 +336,10 @@ func TestWrite_Errors(t *testing.T) {
 			t.Parallel()
 			_, err := jwk.Write(tt.key)
 			if err == nil {
-				t.Fatalf("Write() expected error; got nil")
+				t.Fatal("should have returned an error")
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Write() error = %q; want it to contain %q",
+				t.Errorf("got error %q; want it to contain %q",
 					err, tt.wantErr)
 			}
 		})
@@ -344,7 +351,7 @@ func TestWriteSet_Errors(t *testing.T) {
 
 	s := jwk.Singleton(&mockKey{alg: "XY99"})
 	if _, err := jwk.WriteSet(s); err == nil {
-		t.Errorf("WriteSet() expected error; got nil")
+		t.Error("should have returned an error")
 	}
 }
 
@@ -357,21 +364,21 @@ func TestSingleton(t *testing.T) {
 	}
 	set := jwk.Singleton(key)
 	if got, want := set.Len(), 1; got != want {
-		t.Errorf("set.Len() = %d; want %d", got, want)
+		t.Errorf("set size: got %d; want %d", got, want)
 	}
 	if got, want := set.Find(key), key; got != want {
-		t.Errorf("set.Find() = %v; want %v", got, want)
+		t.Errorf("found key: got %v; want %v", got, want)
 	}
 
 	var called bool
 	for k := range set.Keys() {
 		if k != key {
-			t.Errorf("set.Keys() yielded %v; want %v", k, key)
+			t.Errorf("yielded key: got %v; want %v", k, key)
 		}
 		called = true
 	}
 	if !called {
-		t.Errorf("set.Keys() did not yield the key")
+		t.Error("should have yielded the key")
 	}
 }
 
@@ -395,7 +402,7 @@ func TestNewSet(t *testing.T) {
 		t.Parallel()
 		s := jwk.NewSet()
 		if got, want := s.Len(), 0; got != want {
-			t.Errorf("Len() = %d; want %d", got, want)
+			t.Errorf("got size %d; want %d", got, want)
 		}
 	})
 
@@ -403,7 +410,7 @@ func TestNewSet(t *testing.T) {
 		t.Parallel()
 		s := jwk.NewSet(k1)
 		if got, want := s.Len(), 1; got != want {
-			t.Errorf("Len() = %d; want %d", got, want)
+			t.Errorf("got size %d; want %d", got, want)
 		}
 	})
 
@@ -411,10 +418,10 @@ func TestNewSet(t *testing.T) {
 		t.Parallel()
 		s := jwk.NewSet(k1, k2)
 		if got, want := s.Len(), 2; got != want {
-			t.Errorf("Len() = %d; want %d", got, want)
+			t.Errorf("size: got %d; want %d", got, want)
 		}
 		if got := s.Find(mockHint{alg: "RS256", kid: "k2"}); got != k2 {
-			t.Errorf("Find(k2) = %v; want %v", got, k2)
+			t.Errorf("found key: got %v; want %v", got, k2)
 		}
 	})
 
@@ -422,10 +429,10 @@ func TestNewSet(t *testing.T) {
 		t.Parallel()
 		s := jwk.NewSet(k1, k3)
 		if got, want := s.Len(), 2; got != want {
-			t.Errorf("Len() = %d; want %d", got, want)
+			t.Errorf("size: got %d; want %d", got, want)
 		}
 		if got := s.Find(mockHint{alg: "RS256", kid: "k1"}); got != k3 {
-			t.Errorf("Find(k1) = %v; want %v", got, k3)
+			t.Errorf("found key: got %v; want %v", got, k3)
 		}
 	})
 
@@ -437,7 +444,7 @@ func TestNewSet(t *testing.T) {
 			order = append(order, k.KeyID())
 		}
 		if len(order) != 2 || order[0] != "k1" || order[1] != "k2" {
-			t.Errorf("Keys() order = %v; want [k1 k2]", order)
+			t.Errorf("got order %v; want [k1 k2]", order)
 		}
 	})
 }
@@ -496,10 +503,10 @@ func TestSingletonSet_Find(t *testing.T) {
 
 			if tt.wantFound {
 				if got != key {
-					t.Errorf("Find() = %v; want original key", got)
+					t.Errorf("got %v; want the original key", got)
 				}
 			} else if got != nil {
-				t.Errorf("Find() = %v; want nil", got)
+				t.Errorf("got %v; want nil", got)
 			}
 		})
 	}
@@ -510,7 +517,7 @@ func TestBuilder(t *testing.T) {
 
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 	id := "test-id"
 
@@ -518,10 +525,10 @@ func TestBuilder(t *testing.T) {
 		t.Parallel()
 		v := jwk.NewKey(jwa.ES256, id, &k.PublicKey)
 		if got, want := v.KeyID(), id; got != want {
-			t.Errorf("v.KeyID() = %q; want %q", got, want)
+			t.Errorf("key id: got %q; want %q", got, want)
 		}
 		if got, want := v.Algorithm(), "ES256"; got != want {
-			t.Errorf("v.Algorithm() = %q; want %q", got, want)
+			t.Errorf("algorithm: got %q; want %q", got, want)
 		}
 	})
 
@@ -529,28 +536,28 @@ func TestBuilder(t *testing.T) {
 		t.Parallel()
 		p := jwk.NewKeyPair(jwa.ES256, id, sign.From(k))
 		if got, want := p.KeyID(), id; got != want {
-			t.Errorf("p.KeyID() = %q; want %q", got, want)
+			t.Errorf("key id: got %q; want %q", got, want)
 		}
 
 		msg := []byte("payload")
 		sig, err := p.Sign(context.Background(), msg)
 		if err != nil {
-			t.Fatalf("p.Sign() error = %v", err)
+			t.Fatalf("signing: should not have returned an error: %v", err)
 		}
 		if !p.Verify(msg, sig) {
-			t.Errorf("p.Verify() = false; want true")
+			t.Error("verification: got false; want true")
 		}
 	})
 	t.Run("empty kid", func(t *testing.T) {
 		t.Parallel()
 		v := jwk.NewKey(jwa.ES256, "", &k.PublicKey)
 		if got, want := v.KeyID(), ""; got != want {
-			t.Errorf("v.KeyID() = %q; want %q", got, want)
+			t.Errorf("key: got %q; want %q", got, want)
 		}
 
 		p := jwk.NewKeyPair(jwa.ES256, "", sign.From(k))
 		if got, want := p.KeyID(), ""; got != want {
-			t.Errorf("p.KeyID() = %q; want %q", got, want)
+			t.Errorf("key pair: got %q; want %q", got, want)
 		}
 	})
 
@@ -558,10 +565,10 @@ func TestBuilder(t *testing.T) {
 		t.Parallel()
 		rs, _ := rsa.GenerateKey(rand.Reader, 2048)
 		if p := jwk.NewKeyPair(jwa.ES256, "x", sign.From(rs)); p != nil {
-			t.Errorf("expected nil when passing RS signer to ES256 algorithm")
+			t.Error("should have returned nil for an RS signer with ES256")
 		}
 		if p := jwk.NewKeyPair(jwa.RS256, "x", sign.From(k)); p != nil {
-			t.Errorf("expected nil when passing EC signer to RS256 algorithm")
+			t.Error("should have returned nil for an EC signer with RS256")
 		}
 	})
 }
@@ -571,23 +578,23 @@ func TestThumbprint(t *testing.T) {
 
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		t.Fatalf("rsa.GenerateKey() error = %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 
 	kid, err := jwk.Thumbprint(&k.PublicKey)
 	if err != nil {
-		t.Fatalf("Thumbprint() error = %v", err)
+		t.Fatalf("on first call: should not have returned an error: %v", err)
 	}
 	if kid == "" {
-		t.Errorf("Thumbprint() returned empty string")
+		t.Error("got empty thumbprint; want non-empty")
 	}
 
 	kid2, err := jwk.Thumbprint(&k.PublicKey)
 	if err != nil {
-		t.Fatalf("Thumbprint() second call error = %v", err)
+		t.Fatalf("on second call: should not have returned an error: %v", err)
 	}
 	if kid != kid2 {
-		t.Errorf("Thumbprint() is not deterministic: %q != %q", kid, kid2)
+		t.Errorf("should be deterministic: got %q and %q", kid, kid2)
 	}
 }
 
@@ -596,27 +603,27 @@ func TestGenerate(t *testing.T) {
 
 	kp, err := jwk.Generate(jwa.ES256)
 	if err != nil {
-		t.Fatalf("Generate(ES256) error = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if kp == nil {
-		t.Fatalf("Generate(ES256) returned nil")
+		t.Fatal("got nil key pair; want non-nil")
 	}
 
 	if kp.Algorithm() != "ES256" {
-		t.Errorf("kp.Algorithm() = %q; want %q", kp.Algorithm(), "ES256")
+		t.Errorf("algorithm: got %q; want %q", kp.Algorithm(), "ES256")
 	}
 
 	if kp.KeyID() == "" {
-		t.Errorf("kp.KeyID() is empty")
+		t.Error("got empty key id; want non-empty")
 	}
 
 	msg := []byte("payload")
 	sig, err := kp.Sign(context.Background(), msg)
 	if err != nil {
-		t.Fatalf("kp.Sign() error = %v", err)
+		t.Fatalf("signing: should not have returned an error: %v", err)
 	}
 	if !kp.Verify(msg, sig) {
-		t.Errorf("kp.Verify() = false; want true")
+		t.Error("verification: got false; want true")
 	}
 }
 
@@ -639,20 +646,20 @@ func TestHandler(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	if exp, act := http.StatusOK, rec.Code; exp != act {
-		t.Errorf("expected status %d, got %d", exp, act)
+		t.Errorf("status code: got %d; want %d", act, exp)
 	}
 
 	if exp, act := jwk.MediaTypeSet,
 		rec.Header().Get("Content-Type"); exp != act {
-		t.Errorf("expected content type %s, got %s", exp, act)
+		t.Errorf("content type: got %s; want %s", act, exp)
 	}
 
 	set, err := jwk.ParseSet(rec.Body.Bytes())
 	if err != nil {
-		t.Fatalf("failed to parse returned JWKS: %v", err)
+		t.Fatalf("parsing response: should not have returned an error: %v", err)
 	}
 
 	if exp, act := 1, set.Len(); exp != act {
-		t.Errorf("expected %d keys in JWKS, got %d", exp, act)
+		t.Errorf("set size: got %d; want %d", act, exp)
 	}
 }

@@ -34,12 +34,12 @@ func TestNew(t *testing.T) {
 
 	j1 := jitter.New(0.5, nil)
 	if j1 == nil {
-		t.Fatal("jitter.New(0.5, nil) = nil; want non-nil")
+		t.Fatal("with nil rand: should not have returned nil")
 	}
 
 	j2 := jitter.New(0.5, mockRand{val: 0.1})
 	if j2 == nil {
-		t.Fatal("jitter.New(0.5, mockRand) = nil; want non-nil")
+		t.Fatal("with mock rand: should not have returned nil")
 	}
 }
 
@@ -64,7 +64,7 @@ func TestJitter_Apply(t *testing.T) {
 			t.Parallel()
 			j := jitter.New(tt.p, mockRand{val: tt.rand})
 			if got := j.Apply(tt.give); got != tt.want {
-				t.Errorf("Apply(%v) = %v; want %v", tt.give, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -90,7 +90,7 @@ func TestJitter_Floor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := j.Floor(tt.give, tt.f); got != tt.want {
-				t.Errorf("Floor(%v, %f) = %v; want %v", tt.give, tt.f, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -107,10 +107,10 @@ func TestJitter_Apply_RealRand(t *testing.T) {
 	for range 100 {
 		got := j.Apply(d)
 		if got > d {
-			t.Errorf("Apply(%v) = %v; want <= %v", d, got, d)
+			t.Errorf("got %v; want at most %v", got, d)
 		}
 		if got < min {
-			t.Errorf("Apply(%v) = %v; want >= %v", d, got, min)
+			t.Errorf("got %v; want at least %v", got, min)
 		}
 	}
 }

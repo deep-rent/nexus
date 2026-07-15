@@ -39,7 +39,7 @@ func TestNewPool_PanicOnInvalidSize(t *testing.T) {
 			t.Parallel()
 			defer func() {
 				if r := recover(); r == nil {
-					t.Errorf("NewPool(%d, %d) did not panic", tt.min, tt.max)
+					t.Error("should have panicked")
 				}
 			}()
 			buffer.NewPool(tt.min, tt.max)
@@ -65,7 +65,7 @@ func TestNewPool_SizeClamping(t *testing.T) {
 			t.Parallel()
 			p := buffer.NewPool(tt.min, tt.max)
 			if got := cap(p.Get()); got != tt.want {
-				t.Errorf("cap(p.Get()) = %d; want %d", got, tt.want)
+				t.Errorf("got capacity %d; want %d", got, tt.want)
 			}
 		})
 	}
@@ -79,14 +79,14 @@ func TestPool_GetPut(t *testing.T) {
 
 	b1 := p.Get()
 	if got, want := cap(b1), min; got != want {
-		t.Fatalf("cap(b1) = %d; want %d", got, want)
+		t.Fatalf("got capacity %d; want %d", got, want)
 	}
 
 	p.Put(b1)
 
 	b2 := p.Get()
 	if &b1[0] != &b2[0] {
-		t.Errorf("p.Get() returned new buffer; want recycled buffer")
+		t.Error("should have returned the recycled buffer")
 	}
 }
 
@@ -107,10 +107,10 @@ func TestPool_Put_DiscardOversized(t *testing.T) {
 
 	bR := p.Get()
 	if &b1[0] != &bR[0] {
-		t.Errorf("p.Get() returned unexpected buffer; want recycled b1")
+		t.Error("should have returned the recycled buffer b1")
 	}
 	if got, want := int(bR[0]), 10; got != want {
-		t.Errorf("bR[0] = %d; want %d", got, want)
+		t.Errorf("recycled b1: got %d; want %d", got, want)
 	}
 
 	// Buffer at max capacity
@@ -120,9 +120,9 @@ func TestPool_Put_DiscardOversized(t *testing.T) {
 
 	bK := p.Get()
 	if &bM[0] != &bK[0] {
-		t.Errorf("p.Get() returned unexpected buffer; want recycled bM")
+		t.Error("should have returned the recycled buffer bM")
 	}
 	if got, want := int(bK[0]), 99; got != want {
-		t.Errorf("bK[0] = %d; want %d", got, want)
+		t.Errorf("recycled bM: got %d; want %d", got, want)
 	}
 }

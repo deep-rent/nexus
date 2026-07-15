@@ -48,7 +48,7 @@ func TestRemove(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.Remove(tt.give); got != tt.want {
-				t.Errorf("Remove(%q) = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -78,7 +78,7 @@ func TestRemoveAll(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.RemoveAll(tt.give); got != tt.want {
-				t.Errorf("RemoveAll(%q) = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -109,7 +109,7 @@ func TestHas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.Has(tt.give); got != tt.want {
-				t.Errorf("Has(%q) = %v; want %v", tt.give, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -135,7 +135,7 @@ func TestWrap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.Wrap(tt.give, tt.q); got != tt.want {
-				t.Errorf("Wrap(%q, %q) = %q; want %q", tt.give, tt.q, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -159,7 +159,7 @@ func TestDouble(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.Double(tt.give); got != tt.want {
-				t.Errorf("Double(%q) = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -183,7 +183,7 @@ func TestSingle(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.Single(tt.give); got != tt.want {
-				t.Errorf("Single(%q) = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -209,7 +209,7 @@ func TestIs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := quote.Is(tt.give); got != tt.want {
-				t.Errorf("Is(%q) = %v; want %v", tt.give, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}

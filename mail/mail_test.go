@@ -63,7 +63,7 @@ func TestAPIError_Error(t *testing.T) {
 	want := "mail: api returned status 400: bad request"
 
 	if got := err.Error(); got != want {
-		t.Errorf("Error() = %q; want %q", got, want)
+		t.Errorf("got %q; want %q", got, want)
 	}
 }
 
@@ -72,7 +72,7 @@ func TestAPIError_Unwrap(t *testing.T) {
 
 	err := &mail.APIError{Status: 500, Body: "server error"}
 	if !errors.Is(err, mail.ErrDispatchFailed) {
-		t.Errorf("errors.Is(err, ErrDispatchFailed) = false; want true")
+		t.Error("should wrap ErrDispatchFailed")
 	}
 }
 
@@ -100,7 +100,7 @@ func TestMail_String(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := tt.give.String(), tt.want; got != want {
-				t.Errorf("String() = %q; want %q", got, want)
+				t.Errorf("got %q; want %q", got, want)
 			}
 		})
 	}
@@ -136,7 +136,7 @@ func TestRecipient_Validate(t *testing.T) {
 			t.Parallel()
 			err := tt.give.Validate()
 			if got, want := err, tt.want; !errors.Is(got, want) {
-				t.Errorf("Validate() = %v; want %v", got, want)
+				t.Errorf("got %v; want %v", got, want)
 			}
 		})
 	}
@@ -153,19 +153,19 @@ func TestRecipient_Builders(t *testing.T) {
 		AddTemplateData("key", "val")
 
 	if got, want := len(r.To), 2; got != want {
-		t.Errorf("len(To) = %d; want %d", got, want)
+		t.Errorf("to count: got %d; want %d", got, want)
 	}
 	if got, want := len(r.CC), 1; got != want {
-		t.Errorf("len(CC) = %d; want %d", got, want)
+		t.Errorf("cc count: got %d; want %d", got, want)
 	}
 	if got, want := r.TemplateData["key"], "val"; got != want {
-		t.Errorf("TemplateData[key] = %v; want %v", got, want)
+		t.Errorf("template data value: got %v; want %v", got, want)
 	}
 
 	data := map[string]any{"new": "data"}
 	r.SetTemplateData(data)
 	if got, want := r.TemplateData, data; !reflect.DeepEqual(got, want) {
-		t.Errorf("TemplateData = %v; want %v", got, want)
+		t.Errorf("template data after set: got %v; want %v", got, want)
 	}
 }
 
@@ -217,7 +217,7 @@ func TestMessage_Validate(t *testing.T) {
 			t.Parallel()
 			err := tt.give.Validate()
 			if got, want := err, tt.want; !errors.Is(got, want) {
-				t.Errorf("Validate() = %v; want %v", got, want)
+				t.Errorf("got %v; want %v", got, want)
 			}
 		})
 	}
@@ -233,13 +233,13 @@ func TestMessage_Builders(t *testing.T) {
 		WithReplyTo(reply)
 
 	if got, want := len(msg.Recipients), 1; got != want {
-		t.Errorf("len(Recipients) = %d; want %d", got, want)
+		t.Errorf("recipient count: got %d; want %d", got, want)
 	}
 	if msg.ReplyTo == nil {
-		t.Fatalf("ReplyTo is nil")
+		t.Fatal("reply-to should not be nil")
 	}
 	if got, want := *msg.ReplyTo, reply; got != want {
-		t.Errorf("ReplyTo = %v; want %v", got, want)
+		t.Errorf("reply-to: got %v; want %v", got, want)
 	}
 }
 
@@ -268,7 +268,7 @@ func TestNewSender_Panics(t *testing.T) {
 			t.Parallel()
 			defer func() {
 				if r := recover(); r == nil {
-					t.Errorf("NewSender() did not panic")
+					t.Error("should have panicked")
 				}
 			}()
 			_ = mail.NewSender(tt.apiKey, tt.opts...)
@@ -339,18 +339,18 @@ func TestSender_Send(t *testing.T) {
 
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Errorf("Send() = %v; want nil", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 				return
 			}
 
 			if err == nil {
-				t.Fatalf("Send() = nil; want %v", tt.wantErr)
+				t.Fatalf("should have returned an error matching %v", tt.wantErr)
 			}
 
 			if !errors.Is(err, tt.wantErr) &&
 				!strings.Contains(err.Error(), tt.wantErr.Error()) {
-				t.Errorf("Send() = %v; want err containing %v", err, tt.wantErr)
+				t.Errorf("want match for %v; got %v", tt.wantErr, err)
 			}
 		})
 	}
@@ -386,12 +386,12 @@ func TestSender_CustomLogger(t *testing.T) {
 
 	err := sender.Send(t.Context(), msg)
 	if err != nil {
-		t.Fatalf("Send() unexpected error: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	if s := buf.String(); !strings.Contains(s,
 		"Dispatching message to provider") {
-		t.Errorf("Expected debug log output in buffer, got: %q", s)
+		t.Errorf("log buffer should contain the debug output; got %q", s)
 	}
 }
 
@@ -400,7 +400,7 @@ func TestSender_DefaultClientCreation(t *testing.T) {
 
 	h := func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.URL.Path, "/mail/send"; got != want {
-			t.Errorf("r.URL.Path = %q; want %q", got, want)
+			t.Errorf("request path: got %q; want %q", got, want)
 		}
 		w.WriteHeader(http.StatusAccepted)
 	}
@@ -421,6 +421,6 @@ func TestSender_DefaultClientCreation(t *testing.T) {
 
 	err := sender.Send(t.Context(), msg)
 	if err != nil {
-		t.Fatalf("Send() failed using the default HTTP client: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 }

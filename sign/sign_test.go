@@ -49,15 +49,15 @@ func TestFrom(t *testing.T) {
 
 	key := s.Public()
 	if exp, act := "foo", key.(string); exp != act {
-		t.Errorf("expected %s, got %s", exp, act)
+		t.Errorf("public key: got %s; want %s", act, exp)
 	}
 
 	sig, err := s.Sign(t.Context(), nil, nil, nil)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if exp, act := "bar", string(sig); exp != act {
-		t.Errorf("expected %s, got %s", exp, act)
+		t.Errorf("signature: got %s; want %s", act, exp)
 	}
 }
 
@@ -71,10 +71,10 @@ func TestFrom_CancelledContext(t *testing.T) {
 
 	_, err := s.Sign(ctx, nil, nil, nil)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal("should have returned an error")
 	}
 	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got %v", err)
+		t.Errorf("got %v; want context.Canceled", err)
 	}
 }
 
@@ -106,18 +106,18 @@ func TestTo(t *testing.T) {
 
 	key := s.Public()
 	if exp, act := "ctx-foo", key.(string); exp != act {
-		t.Errorf("expected %s, got %s", exp, act)
+		t.Errorf("public key: got %s; want %s", act, exp)
 	}
 
 	sig, err := s.Sign(nil, nil, nil)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if exp, act := "ctx-bar", string(sig); exp != act {
-		t.Errorf("expected %s, got %s", exp, act)
+		t.Errorf("signature: got %s; want %s", act, exp)
 	}
 	if m.passedCtx != ctx {
-		t.Error("context was not propagated to underlying Signer")
+		t.Error("should have propagated the context to the underlying signer")
 	}
 }
 
@@ -129,7 +129,7 @@ func TestTo_Unwraps(t *testing.T) {
 	unwrapped := sign.To(t.Context(), wrapped)
 
 	if orig != unwrapped {
-		t.Error("expected To() to unwrap From() wrapper to original signer")
+		t.Error("should have unwrapped to the original signer")
 	}
 }
 
@@ -138,12 +138,12 @@ func TestDecode(t *testing.T) {
 
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 
 	der, err := x509.MarshalPKCS8PrivateKey(k)
 	if err != nil {
-		t.Fatalf("failed to marshal key: %v", err)
+		t.Fatalf("marshalling: should not have returned an error: %v", err)
 	}
 
 	block := &pem.Block{
@@ -154,19 +154,19 @@ func TestDecode(t *testing.T) {
 
 	s, err := sign.Decode(data)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	if s == nil {
-		t.Fatal("expected Signer, got nil")
+		t.Fatal("got nil signer; want non-nil")
 	}
 
 	pub, ok := s.Public().(*ecdsa.PublicKey)
 	if !ok {
-		t.Fatalf("expected *ecdsa.PublicKey, got %T", s.Public())
+		t.Fatalf("public key: got %T; want *ecdsa.PublicKey", s.Public())
 	}
 	if !pub.Equal(&k.PublicKey) {
-		t.Error("public key mismatch")
+		t.Error("public key does not match the generated key")
 	}
 
 	msg := []byte("payload")
@@ -176,10 +176,10 @@ func TestDecode(t *testing.T) {
 
 	sig, err := s.Sign(t.Context(), rand.Reader, hashed, nil)
 	if err != nil {
-		t.Fatalf("failed to sign with decoded key: %v", err)
+		t.Fatalf("signing: should not have returned an error: %v", err)
 	}
 	if !ecdsa.VerifyASN1(&k.PublicKey, hashed, sig) {
-		t.Error("signature verification failed")
+		t.Error("signature should have verified")
 	}
 }
 
@@ -189,7 +189,7 @@ func TestDecode_Error(t *testing.T) {
 	t.Run("invalid block", func(t *testing.T) {
 		t.Parallel()
 		if _, err := sign.Decode([]byte("invalid")); err == nil {
-			t.Error("expected error for invalid block, got nil")
+			t.Error("should have returned an error")
 		}
 	})
 
@@ -202,10 +202,10 @@ func TestDecode_Error(t *testing.T) {
 		pemData := pem.EncodeToMemory(block)
 		_, err := sign.Decode(pemData)
 		if err == nil {
-			t.Fatal("expected error for invalid key material, got nil")
+			t.Fatal("should have returned an error")
 		}
 		if err.Error() == "failed to parse private key" {
-			t.Errorf("expected wrapped error, got: %v", err)
+			t.Errorf("got unwrapped error %v; want a wrapped error", err)
 		}
 	})
 }
@@ -215,32 +215,32 @@ func TestEncode(t *testing.T) {
 
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 
 	pem1, err := sign.Encode(k)
 	if err != nil {
-		t.Fatalf("unexpected error serializing raw key: %v", err)
+		t.Fatalf("raw key: should not have returned an error: %v", err)
 	}
 	if len(pem1) == 0 {
-		t.Error("expected non-empty PEM string")
+		t.Error("got empty PEM; want non-empty")
 	}
 
 	wrapped := sign.From(k)
 	pem2, err := sign.Encode(wrapped)
 	if err != nil {
-		t.Fatalf("unexpected error serializing wrapped key: %v", err)
+		t.Fatalf("wrapped key: should not have returned an error: %v", err)
 	}
 	if string(pem1) != string(pem2) {
-		t.Error("expected serialized output to match for raw and wrapped key")
+		t.Error("raw and wrapped key should have encoded identically")
 	}
 
 	parsed, err := sign.Decode(pem1)
 	if err != nil {
-		t.Fatalf("failed to parse generated PEM: %v", err)
+		t.Fatalf("decoding: should not have returned an error: %v", err)
 	}
 	if parsed == nil {
-		t.Fatal("expected non-nil signer")
+		t.Fatal("got nil signer; want non-nil")
 	}
 }
 
@@ -249,6 +249,6 @@ func TestEncode_Error(t *testing.T) {
 
 	_, err := sign.Encode("not-a-key")
 	if err == nil {
-		t.Error("expected error for invalid key type, got nil")
+		t.Error("should have returned an error")
 	}
 }

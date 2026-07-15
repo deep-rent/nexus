@@ -34,7 +34,7 @@ func TestRun_Success(t *testing.T) {
 	r := func(context.Context) error { return nil }
 
 	if err := app.Run(r); err != nil {
-		t.Fatalf("Run(r) = %v; want nil", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 }
 
@@ -46,11 +46,11 @@ func TestRun_Error(t *testing.T) {
 
 	err := app.Run(r)
 	if err == nil {
-		t.Fatalf("Run(r) = nil; want error")
+		t.Fatal("should have returned an error")
 	}
 
 	if !errors.Is(err, wantErr) {
-		t.Errorf("Run(r) error = %v; want %v", err, wantErr)
+		t.Errorf("got %v; want %v", err, wantErr)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestRun_Panic(t *testing.T) {
 
 	err := app.Run(r)
 	if err == nil {
-		t.Fatalf("Run(r) = nil; want error")
+		t.Fatal("should have returned an error")
 	}
 
 	tests := []struct {
@@ -78,10 +78,7 @@ func TestRun_Panic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Errorf(
-					"Run(r) error = %q; want to contain %q",
-					err.Error(), tt.want,
-				)
+				t.Errorf("want match for %q; got %q", tt.want, err.Error())
 			}
 		})
 	}
@@ -109,17 +106,17 @@ func TestRun_SignalShutdown(t *testing.T) {
 
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
-		t.Fatalf("os.FindProcess(os.Getpid()) = %v; want nil", err)
+		t.Fatalf("finding process: should not have returned an error: %v", err)
 	}
 
 	if err := p.Signal(sig); err != nil {
-		t.Fatalf("p.Signal(sig) = %v; want nil", err)
+		t.Fatalf("sending signal: should not have returned an error: %v", err)
 	}
 
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Errorf("Run() = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("did not return after shutdown signal")
@@ -154,7 +151,7 @@ func TestRun_ContextCanceledIgnored(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Errorf("Run() = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("timeout waiting for shutdown")
@@ -186,11 +183,11 @@ func TestRun_ShutdownTimeout(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err == nil {
-			t.Fatalf("Run() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 
 		if want := "shutdown timed out"; !strings.Contains(err.Error(), want) {
-			t.Errorf("Run() error = %q; want to contain %q", err.Error(), want)
+			t.Errorf("want match for %q; got %q", want, err.Error())
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not time out as expected")
@@ -219,7 +216,7 @@ func TestRun_CancelParentContext(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("Run() = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("did not return after parent context was canceled")
@@ -234,7 +231,7 @@ func TestRun_WithLogger(t *testing.T) {
 	r := func(context.Context) error { return nil }
 
 	if err := app.Run(r, app.WithLogger(logger)); err != nil {
-		t.Fatalf("Run() = %v; want nil", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	logs := buf.String()
@@ -249,7 +246,7 @@ func TestRun_WithLogger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !strings.Contains(logs, tt.want) {
-				t.Errorf("logs = %q; want to contain %q", logs, tt.want)
+				t.Errorf("want match for %q; got %q", tt.want, logs)
 			}
 		})
 	}
@@ -262,7 +259,7 @@ func TestRunAll_Success(t *testing.T) {
 	r2 := func(ctx context.Context) error { return nil }
 
 	if err := app.RunAll([]app.Runnable{r1, r2}); err != nil {
-		t.Fatalf("RunAll() = %v; want nil", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 }
 
@@ -288,15 +285,15 @@ func TestRunAll_CascadingError(t *testing.T) {
 	err := app.RunAll([]app.Runnable{r1, r2})
 
 	if err == nil {
-		t.Fatalf("RunAll() = nil; want error")
+		t.Fatal("should have returned an error")
 	}
 
 	if !errors.Is(err, errTriggered) {
-		t.Errorf("RunAll() error = %v; want %v", err, errTriggered)
+		t.Errorf("error: got %v; want %v", err, errTriggered)
 	}
 
 	if !canceled {
-		t.Errorf("canceled = %t; want true", canceled)
+		t.Errorf("canceled: got %t; want true", canceled)
 	}
 }
 
@@ -321,16 +318,16 @@ func TestRunAll_CascadingPanic(t *testing.T) {
 	err := app.RunAll([]app.Runnable{r1, r2})
 
 	if err == nil {
-		t.Fatalf("RunAll() = nil; want error")
+		t.Fatal("should have returned an error")
 	}
 
 	if got, want := err.Error(),
 		"worker 1 panicked"; !strings.Contains(got, want) {
-		t.Errorf("RunAll() error = %q; want to contain %q", got, want)
+		t.Errorf("error: want match for %q; got %q", want, got)
 	}
 
 	if !canceled {
-		t.Errorf("canceled = %t; want true", canceled)
+		t.Errorf("canceled: got %t; want true", canceled)
 	}
 }
 
@@ -363,28 +360,28 @@ func TestRunAll_SignalShutdownAll(t *testing.T) {
 
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
-		t.Fatalf("os.FindProcess(os.Getpid()) = %v; want nil", err)
+		t.Fatalf("finding process: should not have returned an error: %v", err)
 	}
 
 	if err := p.Signal(sig); err != nil {
-		t.Fatalf("p.Signal(sig) = %v; want nil", err)
+		t.Fatalf("sending signal: should not have returned an error: %v", err)
 	}
 
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("RunAll() = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("timeout waiting for shutdown")
 	}
 
 	if !canceled1 {
-		t.Errorf("canceled1 = %t; want true", canceled1)
+		t.Errorf("first runnable canceled: got %t; want true", canceled1)
 	}
 
 	if !canceled2 {
-		t.Errorf("canceled2 = %t; want true", canceled2)
+		t.Errorf("second runnable canceled: got %t; want true", canceled2)
 	}
 }
 
@@ -412,12 +409,12 @@ func TestRunAll_ShutdownTimeoutOnCascadingError(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err == nil {
-			t.Fatalf("RunAll() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 
 		if got, want := err.Error(),
 			"shutdown timed out"; !strings.Contains(got, want) {
-			t.Errorf("RunAll() error = %q; want to contain %q", got, want)
+			t.Errorf("want match for %q; got %q", want, got)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not time out as expected")

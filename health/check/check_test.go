@@ -33,7 +33,7 @@ func TestTCP(t *testing.T) {
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("net.Listen() = %v; want nil", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	defer func() {
 		_ = l.Close()
@@ -73,11 +73,15 @@ func TestTCP(t *testing.T) {
 			status, err := chk(t.Context())
 
 			if status != tt.wantStatus {
-				t.Errorf("TCP(%q) status = %q; want %q", tt.addr, status, tt.wantStatus)
+				t.Errorf("status: got %q; want %q", status, tt.wantStatus)
 			}
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("TCP(%q) error = %v; wantErr %t", tt.addr, err, tt.wantErr)
+				if tt.wantErr {
+					t.Error("should have returned an error")
+				} else {
+					t.Errorf("should not have returned an error: %v", err)
+				}
 			}
 		})
 	}
@@ -147,17 +151,15 @@ func TestHTTP(t *testing.T) {
 			status, err := chk(t.Context())
 
 			if status != tt.wantStatus {
-				t.Errorf(
-					"HTTP(%q) status = %q; want %q",
-					server.URL, status, tt.wantStatus,
-				)
+				t.Errorf("status: got %q; want %q", status, tt.wantStatus)
 			}
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf(
-					"HTTP(%q) error = %v; wantErr %t",
-					server.URL, err, tt.wantErr,
-				)
+				if tt.wantErr {
+					t.Error("should have returned an error")
+				} else {
+					t.Errorf("should not have returned an error: %v", err)
+				}
 			}
 		})
 	}
@@ -171,11 +173,11 @@ func TestHTTP_Unreachable(t *testing.T) {
 	status, err := chk(t.Context())
 
 	if got, want := status, health.StatusSick; got != want {
-		t.Errorf("HTTP(%q) status = %q; want %q", url, got, want)
+		t.Errorf("status: got %q; want %q", got, want)
 	}
 
 	if err == nil {
-		t.Errorf("HTTP(%q) error = nil; want error", url)
+		t.Error("should have returned an error")
 	}
 }
 
@@ -195,19 +197,16 @@ func TestHTTP_Timeout(t *testing.T) {
 	status, err := chk(t.Context())
 
 	if got, want := status, health.StatusSick; got != want {
-		t.Errorf("HTTP(%q) status = %q; want %q", server.URL, got, want)
+		t.Errorf("status: got %q; want %q", got, want)
 	}
 
 	if err == nil {
-		t.Fatalf("HTTP(%q) error = nil; want error", server.URL)
+		t.Fatal("should have returned an error")
 	}
 
 	if msg := err.Error(); !strings.Contains(msg, "Timeout") &&
 		!strings.Contains(msg, "context deadline exceeded") {
-		t.Errorf(
-			"HTTP(%q) error = %q; want it to contain timeout info",
-			server.URL, msg,
-		)
+		t.Errorf("error: want timeout info; got %q", msg)
 	}
 }
 
@@ -248,11 +247,15 @@ func TestPing(t *testing.T) {
 			status, err := chk(t.Context())
 
 			if status != tt.wantStatus {
-				t.Errorf("Ping() status = %q; want %q", status, tt.wantStatus)
+				t.Errorf("status: got %q; want %q", status, tt.wantStatus)
 			}
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Ping() error = %v; wantErr %t", err, tt.wantErr)
+				if tt.wantErr {
+					t.Error("should have returned an error")
+				} else {
+					t.Errorf("should not have returned an error: %v", err)
+				}
 			}
 		})
 	}
@@ -289,11 +292,15 @@ func TestDNS(t *testing.T) {
 			status, err := chk(t.Context())
 
 			if status != tt.wantStatus {
-				t.Errorf("DNS(%q) status = %q; want %q", tt.host, status, tt.wantStatus)
+				t.Errorf("status: got %q; want %q", status, tt.wantStatus)
 			}
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("DNS(%q) error = %v; wantErr %t", tt.host, err, tt.wantErr)
+				if tt.wantErr {
+					t.Error("should have returned an error")
+				} else {
+					t.Errorf("should not have returned an error: %v", err)
+				}
 			}
 		})
 	}
@@ -350,11 +357,11 @@ func TestWrappers(t *testing.T) {
 
 			status, err := tt.chk(t.Context())
 			if status != tt.wantStatus {
-				t.Errorf("%s status = %q; want %q", tt.name, status, tt.wantStatus)
+				t.Errorf("status: got %q; want %q", status, tt.wantStatus)
 			}
 
 			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("%s error = %v; want %v", tt.name, err, tt.wantErr)
+				t.Errorf("error: got %v; want %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -371,17 +378,17 @@ func TestWrapContext_PassesContext(t *testing.T) {
 	chk := check.WrapContext(func(c context.Context) error {
 		t.Helper()
 		if got := c.Value(contextKey{}); got != val {
-			t.Errorf("context value = %v; want %v", got, val)
+			t.Errorf("context value: got %v; want %v", got, val)
 		}
 		return nil
 	})
 
 	status, err := chk(ctx)
 	if got, want := status, health.StatusHealthy; got != want {
-		t.Errorf("WrapContext() status = %q; want %q", got, want)
+		t.Errorf("status: got %q; want %q", got, want)
 	}
 
 	if err != nil {
-		t.Errorf("WrapContext() error = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }

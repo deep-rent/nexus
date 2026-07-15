@@ -37,7 +37,7 @@ func mockKeyPair(t *testing.T) jwk.KeyPair {
 	t.Helper()
 	key, err := jwk.Generate(jwa.ES256)
 	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+		t.Fatalf("key generation: should not have returned an error: %v", err)
 	}
 	return key
 }
@@ -54,19 +54,19 @@ func TestSignVerify(t *testing.T) {
 
 	raw, err := jwt.Sign(t.Context(), k, claims)
 	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
+		t.Fatalf("signing: should not have returned an error: %v", err)
 	}
 
 	out, err := jwt.Verify[*testClaims](set, raw)
 	if err != nil {
-		t.Fatalf("Verify() error = %v", err)
+		t.Fatalf("verification: should not have returned an error: %v", err)
 	}
 
 	if got, want := out.Subject(), "alice"; got != want {
-		t.Errorf("out.Subject() = %q; want %q", got, want)
+		t.Errorf("subject: got %q; want %q", got, want)
 	}
 	if got, want := out.Role, "admin"; got != want {
-		t.Errorf("out.Role = %q; want %q", got, want)
+		t.Errorf("role: got %q; want %q", got, want)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestVerifier_Validation(t *testing.T) {
 	}
 	token, err := jwt.Sign(t.Context(), k, c)
 	if err != nil {
-		t.Fatalf("failed to sign token: %v", err)
+		t.Fatalf("signing: should not have returned an error: %v", err)
 	}
 
 	d1 := 2 * time.Hour
@@ -146,11 +146,11 @@ func TestVerifier_Validation(t *testing.T) {
 			_, err := tt.v.Verify(token)
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Errorf("Verify() unexpected error = %v", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 			} else {
 				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("Verify() error = %v; want %v", err, tt.wantErr)
+					t.Errorf("got error %v; want %v", err, tt.wantErr)
 				}
 			}
 		})
@@ -175,7 +175,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 		wantErr := jwt.ErrTokenNotYetActive
 		if _, err := v.Verify(raw); !errors.Is(err, wantErr) {
-			t.Errorf("Verify() error = %v; want %v", err, wantErr)
+			t.Errorf("got error %v; want %v", err, wantErr)
 		}
 	})
 
@@ -192,7 +192,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 		wantErr := jwt.ErrTokenTooOld
 		if _, err := v.Verify(raw); !errors.Is(err, wantErr) {
-			t.Errorf("Verify() error = %v; want %v", err, wantErr)
+			t.Errorf("got error %v; want %v", err, wantErr)
 		}
 	})
 }
@@ -202,7 +202,7 @@ func TestOmitEmpty(t *testing.T) {
 	k := mockKeyPair(t)
 	raw, err := jwt.Sign(t.Context(), k, &jwt.Reserved{})
 	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
+		t.Fatalf("signing: should not have returned an error: %v", err)
 	}
 	tok, _ := jwt.Parse[*jwt.Reserved](raw)
 	b, _ := json.Marshal(tok.Claims())
@@ -211,11 +211,11 @@ func TestOmitEmpty(t *testing.T) {
 	keys := []string{"jti", "sub", "iss", "aud", "iat", "nbf", "exp"}
 	for _, key := range keys {
 		if strings.Contains(got, key) {
-			t.Errorf("JSON output contains unexpected key %q: %s", key, got)
+			t.Errorf("should have omitted key %q: %s", key, got)
 		}
 	}
 	if got != "{}" {
-		t.Errorf("JSON output = %q; want %q", got, "{}")
+		t.Errorf("json output: got %q; want %q", got, "{}")
 	}
 }
 
@@ -234,35 +234,35 @@ func TestDynamicClaims(t *testing.T) {
 
 	raw, err := jwt.Sign(t.Context(), k, input)
 	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
+		t.Fatalf("signing: should not have returned an error: %v", err)
 	}
 
 	claims, err := jwt.Verify[*jwt.DynamicClaims](set, raw)
 	if err != nil {
-		t.Fatalf("Verify() error = %v", err)
+		t.Fatalf("verification: should not have returned an error: %v", err)
 	}
 
 	t.Run("valid string", func(t *testing.T) {
 		t.Parallel()
-		v, ok := (claims).Get[string]( "str")
+		v, ok := (claims).Get[string]("str")
 		if !ok || v != "nexus" {
-			t.Errorf("Get[string]() = %v, %v; want \"nexus\", true", v, ok)
+			t.Errorf("got %v, %v; want \"nexus\", true", v, ok)
 		}
 	})
 
 	t.Run("valid int", func(t *testing.T) {
 		t.Parallel()
-		v, ok := (claims).Get[int]( "num")
+		v, ok := (claims).Get[int]("num")
 		if !ok || v != 42 {
-			t.Errorf("Get[int]() = %v, %v; want 42, true", v, ok)
+			t.Errorf("got %v, %v; want 42, true", v, ok)
 		}
 	})
 
 	t.Run("valid bool", func(t *testing.T) {
 		t.Parallel()
-		v, ok := (claims).Get[bool]( "flag")
+		v, ok := (claims).Get[bool]("flag")
 		if !ok || v != true {
-			t.Errorf("Get[bool]() = %v, %v; want true, true", v, ok)
+			t.Errorf("got %v, %v; want true, true", v, ok)
 		}
 	})
 
@@ -271,23 +271,23 @@ func TestDynamicClaims(t *testing.T) {
 		type nested struct {
 			Foo string `json:"foo"`
 		}
-		v, ok := (claims).Get[nested]( "nested")
+		v, ok := (claims).Get[nested]("nested")
 		if !ok || v.Foo != "bar" {
-			t.Errorf("Get[struct]() = %+v, %v; want Foo: \"bar\", true", v, ok)
+			t.Errorf("got %+v, %v; want Foo: \"bar\", true", v, ok)
 		}
 	})
 
 	t.Run("missing key", func(t *testing.T) {
 		t.Parallel()
-		if _, ok := (claims).Get[string]( "missing"); ok {
-			t.Errorf("Get() missing key returned ok")
+		if _, ok := (claims).Get[string]("missing"); ok {
+			t.Error("should not have found a value for a missing key")
 		}
 	})
 
 	t.Run("type mismatch", func(t *testing.T) {
 		t.Parallel()
-		if _, ok := (claims).Get[string]( "num"); ok {
-			t.Errorf("Get() type mismatch returned ok")
+		if _, ok := (claims).Get[string]("num"); ok {
+			t.Error("should not have found a value on type mismatch")
 		}
 	})
 }
@@ -314,10 +314,10 @@ func TestParse_Errors(t *testing.T) {
 			t.Parallel()
 			_, err := jwt.Parse[*testClaims]([]byte(tt.in))
 			if err == nil {
-				t.Fatalf("Parse() expected error; got nil")
+				t.Fatal("should have returned an error")
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Parse() error = %q; must contain %q", err, tt.wantErr)
+				t.Errorf("got error %q; want it to contain %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -336,7 +336,7 @@ func TestVerify_Errors(t *testing.T) {
 		if _, err := jwt.Verify[*testClaims](set, raw); !errors.Is(
 			err, jwt.ErrKeyNotFound,
 		) {
-			t.Errorf("Verify() error = %v; want %v", err, jwt.ErrKeyNotFound)
+			t.Errorf("got error %v; want %v", err, jwt.ErrKeyNotFound)
 		}
 	})
 
@@ -360,7 +360,7 @@ func TestVerify_Errors(t *testing.T) {
 		if _, err := jwt.Verify[*testClaims](set, tampered); !errors.Is(
 			err, wantErr,
 		) {
-			t.Errorf("Verify() error = %v; want %v", err, wantErr)
+			t.Errorf("got error %v; want %v", err, wantErr)
 		}
 	})
 }
@@ -398,20 +398,20 @@ func TestAudience_UnmarshalJSON(t *testing.T) {
 			err := json.Unmarshal([]byte(tt.json), &c)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("UnmarshalJSON() expected error; got nil")
+					t.Error("should have returned an error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("UnmarshalJSON() error = %v", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			got := c.Audience()
 			if act, exp := len(got), len(tt.want); act != exp {
-				t.Fatalf("Audience() length = %d; want %d", act, exp)
+				t.Fatalf("got length %d; want %d", act, exp)
 			}
 			for i := range got {
 				if act, exp := got[i], tt.want[i]; act != exp {
-					t.Errorf("Audience()[%d] = %q; want %q", i, act, exp)
+					t.Errorf("at index %d: got %q; want %q", i, act, exp)
 				}
 			}
 		})
@@ -435,7 +435,10 @@ func TestParse_ValidTypes(t *testing.T) {
 			// Header JSON: {"typ":"<typ>"}
 			headerJSON, err := json.Marshal(map[string]string{"typ": typ})
 			if err != nil {
-				t.Fatalf("failed to marshal header: %v", err)
+				t.Fatalf(
+					"header marshalling: should not have returned an error: %v",
+					err,
+				)
 			}
 			hEncoded := base64.RawURLEncoding.EncodeToString(headerJSON)
 
@@ -443,7 +446,7 @@ func TestParse_ValidTypes(t *testing.T) {
 			tokenStr := hEncoded + ".e30.c2lnbmF0dXJl" // e30 is Base64Url for {}
 			_, err = jwt.Parse[*testClaims]([]byte(tokenStr))
 			if err != nil {
-				t.Fatalf("Parse() failed for typ %q: %v", typ, err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 		})
 	}

@@ -58,7 +58,7 @@ func TestChain(t *testing.T) {
 
 		want := "a,b,c"
 		if got := strings.Join(order, ","); got != want {
-			t.Errorf("Chain() order = %q; want %q", got, want)
+			t.Errorf("got %q; want %q", got, want)
 		}
 	})
 
@@ -76,7 +76,7 @@ func TestChain(t *testing.T) {
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 
 		if !called {
-			t.Errorf("Chain() = %v; want true", called)
+			t.Errorf("got %v; want true", called)
 		}
 	})
 
@@ -87,10 +87,10 @@ func TestChain(t *testing.T) {
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
-			t.Errorf("Chain().Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := rr.Body.String(), "ok"; got != want {
-			t.Errorf("Chain().Body = %q; want %q", got, want)
+			t.Errorf("body: got %q; want %q", got, want)
 		}
 	})
 }
@@ -113,7 +113,7 @@ func TestRecover(t *testing.T) {
 		h.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusInternalServerError; got != want {
-			t.Errorf("Recover().Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 
 		out := buf.String()
@@ -125,7 +125,7 @@ func TestRecover(t *testing.T) {
 		}
 		for _, want := range contains {
 			if !strings.Contains(out, want) {
-				t.Errorf("Recover() log missing %q; got %q", want, out)
+				t.Errorf("log: want match for %q; got %q", want, out)
 			}
 		}
 	})
@@ -141,13 +141,13 @@ func TestRecover(t *testing.T) {
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/ok", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
-			t.Errorf("Recover().Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := rr.Body.String(), "ok"; got != want {
-			t.Errorf("Recover().Body = %q; want %q", got, want)
+			t.Errorf("body: got %q; want %q", got, want)
 		}
 		if got := buf.String(); len(got) != 0 {
-			t.Errorf("Recover() log = %q; want empty", got)
+			t.Errorf("log: got %q; want empty", got)
 		}
 	})
 }
@@ -166,16 +166,16 @@ func TestRequestID(t *testing.T) {
 
 	id := rr.Header().Get("X-Request-ID")
 	if len(id) == 0 {
-		t.Fatalf("RequestID() X-Request-ID header is empty")
+		t.Fatal("request id header is empty")
 	}
 	if got, want := len(id), 32; got != want {
-		t.Errorf("len(RequestID()) = %d; want %d", got, want)
+		t.Errorf("id length: got %d; want %d", got, want)
 	}
 	if len(captured) == 0 {
-		t.Fatalf("RequestID() captured context ID is empty")
+		t.Fatal("request id in context is empty")
 	}
 	if id != captured {
-		t.Errorf("RequestID() = %q; want %q", id, captured)
+		t.Errorf("header id: got %q; want %q", id, captured)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestGetSetRequestID(t *testing.T) {
 	t.Run("get from empty context", func(t *testing.T) {
 		t.Parallel()
 		if got := mw.GetRequestID(t.Context()); len(got) != 0 {
-			t.Errorf("GetRequestID() = %q; want empty", got)
+			t.Errorf("got %q; want empty", got)
 		}
 	})
 
@@ -194,7 +194,7 @@ func TestGetSetRequestID(t *testing.T) {
 		want := "test-id"
 		ctx := mw.SetRequestID(t.Context(), want)
 		if got := mw.GetRequestID(ctx); got != want {
-			t.Errorf("GetRequestID() = %q; want %q", got, want)
+			t.Errorf("got %q; want %q", got, want)
 		}
 	})
 }
@@ -222,7 +222,7 @@ func TestLog(t *testing.T) {
 		h.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusNotFound; got != want {
-			t.Errorf("Log().Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 
 		out := buf.String()
@@ -238,7 +238,7 @@ func TestLog(t *testing.T) {
 		}
 		for _, want := range contains {
 			if !strings.Contains(out, want) {
-				t.Errorf("Log() log missing %q; got %q", want, out)
+				t.Errorf("log: want match for %q; got %q", want, out)
 			}
 		}
 	})
@@ -258,10 +258,10 @@ func TestLog(t *testing.T) {
 		ch.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
-			t.Errorf("Log().Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if want := `status=200`; !strings.Contains(buf.String(), want) {
-			t.Errorf("Log() log missing %q", want)
+			t.Errorf("log: want match for %q", want)
 		}
 	})
 }
@@ -275,16 +275,16 @@ func TestVolatile(t *testing.T) {
 	wantCC := "no-store, no-cache, must-revalidate, proxy-revalidate"
 
 	if got, want := rr.Code, http.StatusOK; got != want {
-		t.Errorf("Volatile().Code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 	if got := rr.Header().Get("Cache-Control"); got != wantCC {
-		t.Errorf("Volatile() Cache-Control = %q; want %q", got, wantCC)
+		t.Errorf("cache-control header: got %q; want %q", got, wantCC)
 	}
 	if got, want := rr.Header().Get("Pragma"), "no-cache"; got != want {
-		t.Errorf("Volatile() Pragma = %q; want %q", got, want)
+		t.Errorf("pragma header: got %q; want %q", got, want)
 	}
 	if got, want := rr.Header().Get("Expires"), "0"; got != want {
-		t.Errorf("Volatile() Expires = %q; want %q", got, want)
+		t.Errorf("expires header: got %q; want %q", got, want)
 	}
 }
 
@@ -298,15 +298,15 @@ func TestSecure(t *testing.T) {
 		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
-			t.Errorf("Secure().Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 
 		hsts := rr.Header().Get("Strict-Transport-Security")
 		if !strings.Contains(hsts, "max-age=31536000") {
-			t.Errorf("HSTS max-age missing; got %q", hsts)
+			t.Errorf("hsts: want match for %q; got %q", "max-age=31536000", hsts)
 		}
 		if !strings.Contains(hsts, "includeSubDomains") {
-			t.Errorf("HSTS includeSubDomains missing; got %q", hsts)
+			t.Errorf("hsts: want match for %q; got %q", "includeSubDomains", hsts)
 		}
 
 		tests := []struct {
@@ -341,7 +341,7 @@ func TestSecure(t *testing.T) {
 
 		for _, tt := range tests {
 			if got := rr.Header().Get(tt.key); got != tt.want {
-				t.Errorf("Secure() %s = %q; want %q", tt.key, got, tt.want)
+				t.Errorf("for header %q: got %q; want %q", tt.key, got, tt.want)
 			}
 		}
 	})
@@ -383,7 +383,7 @@ func TestSecure(t *testing.T) {
 
 		for _, tt := range tests {
 			if got := hdr.Get(tt.key); got != tt.want {
-				t.Errorf("Secure() %s = %q; want %q", tt.key, got, tt.want)
+				t.Errorf("for header %q: got %q; want %q", tt.key, got, tt.want)
 			}
 		}
 	})
@@ -410,13 +410,13 @@ func TestSecure(t *testing.T) {
 
 		for _, k := range checks {
 			if got := hdr.Get(k); len(got) != 0 {
-				t.Errorf("Secure() %s = %q; want empty", k, got)
+				t.Errorf("for header %s: got %q; want empty", k, got)
 			}
 		}
 
 		const key = "X-Permitted-Cross-Domain-Policies"
 		if got, want := hdr.Get(key), "none"; got != want {
-			t.Errorf("Secure() %s = %q; want %q", key, got, want)
+			t.Errorf("for header %q: got %q; want %q", key, got, want)
 		}
 	})
 }
@@ -428,7 +428,7 @@ func TestIntegration(t *testing.T) {
 
 	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if id := mw.GetRequestID(r.Context()); len(id) == 0 {
-			t.Errorf("GetRequestID() = %q; want non-empty", id)
+			t.Errorf("request id in context: got %q; want non-empty", id)
 		}
 		w.WriteHeader(http.StatusAccepted)
 	})
@@ -448,10 +448,10 @@ func TestIntegration(t *testing.T) {
 
 	id := rr.Header().Get("X-Request-ID")
 	if len(id) == 0 {
-		t.Fatalf("Integration X-Request-ID header is empty")
+		t.Fatal("request id header is empty")
 	}
 	if got, want := rr.Code, http.StatusAccepted; got != want {
-		t.Errorf("Integration.Code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 
 	tests := []struct {
@@ -465,7 +465,7 @@ func TestIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		if got := rr.Header().Get(tt.key); got != tt.want {
-			t.Errorf("Integration %s = %q; want %q", tt.key, got, tt.want)
+			t.Errorf("for header %q: got %q; want %q", tt.key, got, tt.want)
 		}
 	}
 
@@ -477,7 +477,7 @@ func TestIntegration(t *testing.T) {
 	}
 	for _, want := range contains {
 		if !strings.Contains(out, want) {
-			t.Errorf("Integration log missing %q; got %q", want, out)
+			t.Errorf("log: want match for %q; got %q", want, out)
 		}
 	}
 }

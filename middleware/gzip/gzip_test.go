@@ -162,21 +162,21 @@ func TestMiddleware(t *testing.T) {
 			chain.ServeHTTP(w, r)
 
 			if got, want := w.Code, http.StatusOK; got != want {
-				t.Fatalf("Middleware() status = %d; want %d", got, want)
+				t.Fatalf("status code: got %d; want %d", got, want)
 			}
 
 			hdr := w.Header()
 
 			if got, want := hdr.Get("Content-Encoding"), tt.wantEnc; got != want {
-				t.Errorf("Middleware() Content-Encoding = %q; want %q", got, want)
+				t.Errorf("content-encoding header: got %q; want %q", got, want)
 			}
 
 			if tt.wantEnc == "gzip" {
 				if got, want := hdr.Get("Vary"), "Accept-Encoding"; got != want {
-					t.Errorf("Middleware() Vary = %q; want %q", got, want)
+					t.Errorf("vary header: got %q; want %q", got, want)
 				}
 				if got := hdr.Get("Content-Length"); len(got) != 0 {
-					t.Errorf("Middleware() Content-Length = %q; want empty", got)
+					t.Errorf("content-length header: got %q; want empty", got)
 				}
 			}
 
@@ -184,26 +184,38 @@ func TestMiddleware(t *testing.T) {
 			if tt.wantZip {
 				gzr, err := compress.NewReader(w.Body)
 				if err != nil {
-					t.Fatalf("compress.NewReader() error = %v", err)
+					t.Fatalf(
+						"opening gzip reader: should not have returned an error: %v",
+						err,
+					)
 				}
 				data, err := io.ReadAll(gzr)
 				if err != nil {
-					t.Fatalf("io.ReadAll(gzip) error = %v", err)
+					t.Fatalf(
+						"reading gzip body: should not have returned an error: %v",
+						err,
+					)
 				}
 				if err := gzr.Close(); err != nil {
-					t.Errorf("gzr.Close() error = %v", err)
+					t.Errorf(
+						"closing gzip reader: should not have returned an error: %v",
+						err,
+					)
 				}
 				body = string(data)
 			} else {
 				data, err := io.ReadAll(w.Body)
 				if err != nil {
-					t.Fatalf("io.ReadAll() error = %v", err)
+					t.Fatalf(
+						"reading body: should not have returned an error: %v",
+						err,
+					)
 				}
 				body = string(data)
 			}
 
 			if got, want := body, tt.body; got != want {
-				t.Errorf("Middleware() body = %q; want %q", got, want)
+				t.Errorf("body: got %q; want %q", got, want)
 			}
 		})
 	}
@@ -217,16 +229,16 @@ func TestFlusher(t *testing.T) {
 		w.Header().Set("Content-Type", "text/plain")
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			t.Fatalf("ResponseWriter does not implement http.Flusher")
+			t.Fatal("response writer should implement http.Flusher")
 		}
 
 		if _, err := w.Write([]byte("foo")); err != nil {
-			t.Errorf("w.Write(foo) error = %v", err)
+			t.Errorf("writing foo: should not have returned an error: %v", err)
 		}
 		flusher.Flush()
 
 		if _, err := w.Write([]byte("bar")); err != nil {
-			t.Errorf("w.Write(bar) error = %v", err)
+			t.Errorf("writing bar: should not have returned an error: %v", err)
 		}
 	}))
 
@@ -237,30 +249,39 @@ func TestFlusher(t *testing.T) {
 	h.ServeHTTP(w, r)
 
 	if got, want := w.Code, http.StatusOK; got != want {
-		t.Fatalf("Flusher status = %d; want %d", got, want)
+		t.Fatalf("status code: got %d; want %d", got, want)
 	}
 
 	if got, want := w.Header().Get("Content-Encoding"), "gzip"; got != want {
-		t.Errorf("Flusher Content-Encoding = %q; want %q", got, want)
+		t.Errorf("content-encoding header: got %q; want %q", got, want)
 	}
 
 	if !w.Flushed {
-		t.Errorf("Flusher was not called")
+		t.Error("flusher should have been called")
 	}
 
 	gzr, err := compress.NewReader(w.Body)
 	if err != nil {
-		t.Fatalf("compress.NewReader() error = %v", err)
+		t.Fatalf(
+			"opening gzip reader: should not have returned an error: %v",
+			err,
+		)
 	}
 	data, err := io.ReadAll(gzr)
 	if err != nil {
-		t.Fatalf("io.ReadAll() error = %v", err)
+		t.Fatalf(
+			"reading gzip body: should not have returned an error: %v",
+			err,
+		)
 	}
 	if err := gzr.Close(); err != nil {
-		t.Errorf("gzr.Close() error = %v", err)
+		t.Errorf(
+			"closing gzip reader: should not have returned an error: %v",
+			err,
+		)
 	}
 
 	if got, want := string(data), "foobar"; got != want {
-		t.Errorf("Flusher body = %q; want %q", got, want)
+		t.Errorf("body: got %q; want %q", got, want)
 	}
 }

@@ -172,27 +172,23 @@ func TestMiddleware(t *testing.T) {
 			handler.ServeHTTP(w, r)
 
 			if got, want := w.Code, tt.wantStatusCode; got != want {
-				t.Errorf("Middleware(%s) status = %d; want %d",
-					tt.name, got, want)
+				t.Errorf("status code: got %d; want %d", got, want)
 			}
 
 			if got, want := called, tt.wantNextCalled; got != want {
-				t.Errorf("Middleware(%s) next called = %v; want %v",
-					tt.name, got, want)
+				t.Errorf("next called: got %v; want %v", got, want)
 			}
 
 			if tt.wantResHeaders == nil {
 				for h := range w.Header() {
 					if strings.Contains(strings.ToLower(h), "access-control-") {
-						t.Errorf("Middleware(%s) found unexpected CORS header: %s",
-							tt.name, h)
+						t.Errorf("unexpected cors header: %s", h)
 					}
 				}
 			} else {
 				for k, want := range tt.wantResHeaders {
 					if got := w.Header().Get(k); got != want {
-						t.Errorf("Middleware(%s) header %q = %q; want %q",
-							tt.name, k, got, want)
+						t.Errorf("for header %q: got %q; want %q", k, got, want)
 					}
 				}
 			}

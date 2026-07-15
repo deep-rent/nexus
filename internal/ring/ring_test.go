@@ -48,7 +48,7 @@ func TestNew(t *testing.T) {
 				c++
 			}
 			if got, want := c, tt.want; got != want {
-				t.Errorf("New(%d) final count = %d; want %d", tt.size, got, want)
+				t.Errorf("got final count %d; want %d", got, want)
 			}
 		})
 	}
@@ -60,34 +60,34 @@ func TestRing_Push_Pop(t *testing.T) {
 	b := ring.New[string](4, ring.Block)
 
 	if _, ok := b.Pop(); ok {
-		t.Errorf("Pop() on empty ring = _, true; want _, false")
+		t.Error("pop on empty ring should have failed")
 	}
 
 	if !b.Push("a") {
-		t.Errorf("Push(%q) = false; want true", "a")
+		t.Errorf("push of %q should have succeeded", "a")
 	}
 	if !b.Push("b") {
-		t.Errorf("Push(%q) = false; want true", "b")
+		t.Errorf("push of %q should have succeeded", "b")
 	}
 
 	v1, ok1 := b.Pop()
 	if !ok1 {
-		t.Fatalf("Pop() #1 = _, false; want _, true")
+		t.Fatal("first pop should have succeeded")
 	}
 	if got, want := v1, "a"; got != want {
-		t.Errorf("Pop() #1 = %q; want %q", got, want)
+		t.Errorf("on first pop: got %q; want %q", got, want)
 	}
 
 	v2, ok2 := b.Pop()
 	if !ok2 {
-		t.Fatalf("Pop() #2 = _, false; want _, true")
+		t.Fatal("second pop should have succeeded")
 	}
 	if got, want := v2, "b"; got != want {
-		t.Errorf("Pop() #2 = %q; want %q", got, want)
+		t.Errorf("on second pop: got %q; want %q", got, want)
 	}
 
 	if _, ok := b.Pop(); ok {
-		t.Errorf("Pop() after drain = _, true; want _, false")
+		t.Error("pop after drain should have failed")
 	}
 }
 
@@ -98,20 +98,20 @@ func TestRing_Push_DropNewest(t *testing.T) {
 
 	for i := range 4 {
 		if !b.Push(i) {
-			t.Errorf("Push(%d) = false; want true", i)
+			t.Errorf("push of %d should have succeeded", i)
 		}
 	}
 
 	if b.Push(4) {
-		t.Errorf("Push(4) to full DropNewest ring = true; want false")
+		t.Error("push to full ring should have failed")
 	}
 
 	v, ok := b.Pop()
 	if !ok {
-		t.Fatalf("Pop() = _, false; want _, true")
+		t.Fatal("pop should have succeeded")
 	}
 	if got, want := v, 0; got != want {
-		t.Errorf("Pop() = %d; want %d", got, want)
+		t.Errorf("got %d; want %d", got, want)
 	}
 }
 
@@ -126,18 +126,18 @@ func TestRing_Push_DropOldest(t *testing.T) {
 
 	v1, ok1 := b.Pop()
 	if !ok1 {
-		t.Fatalf("Pop() #1 = _, false; want _, true")
+		t.Fatal("first pop should have succeeded")
 	}
 	if got, want := v1, 2; got != want {
-		t.Errorf("Pop() #1 = %d; want %d", got, want)
+		t.Errorf("on first pop: got %d; want %d", got, want)
 	}
 
 	v2, ok2 := b.Pop()
 	if !ok2 {
-		t.Fatalf("Pop() #2 = _, false; want _, true")
+		t.Fatal("second pop should have succeeded")
 	}
 	if got, want := v2, 3; got != want {
-		t.Errorf("Pop() #2 = %d; want %d", got, want)
+		t.Errorf("on second pop: got %d; want %d", got, want)
 	}
 }
 
@@ -179,6 +179,6 @@ func TestRing_ConcurrentMPSC(t *testing.T) {
 	<-done
 
 	if got, want := count, total; got != want {
-		t.Errorf("count = %d; want %d", got, want)
+		t.Errorf("got count %d; want %d", got, want)
 	}
 }

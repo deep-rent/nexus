@@ -38,11 +38,11 @@ func TestUnmarshal(t *testing.T) {
 		var give struct{ V string }
 		err := env.Unmarshal(&give, opts...)
 		if err != nil {
-			t.Fatalf("Unmarshal() unexpected error: %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		want := struct{ V string }{"foo"}
 		if !reflect.DeepEqual(give, want) {
-			t.Errorf("Unmarshal() = %v; want %v", give, want)
+			t.Errorf("got %v; want %v", give, want)
 		}
 	})
 }
@@ -53,7 +53,7 @@ func TestUnmarshal_Errors(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		t.Parallel()
 		if err := env.Unmarshal[struct{}](nil); err == nil {
-			t.Error("Unmarshal(nil) error = nil; want non-nil")
+			t.Error("should have returned an error")
 		}
 	})
 }
@@ -190,15 +190,15 @@ func TestExpand(t *testing.T) {
 			got, err := env.Expand(tt.give, opts...)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("Expand() error = nil; want non-nil")
+					t.Fatal("should have returned an error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("Expand() unexpected error: %v", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("Expand() = %q; want %q", got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -231,7 +231,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 	for b.Loop() {
 		var cfg mockBenchConfig
 		if err := env.Unmarshal(&cfg, opts...); err != nil {
-			b.Fatalf("Unmarshal() unexpected error: %v", err)
+			b.Fatalf("should not have returned an error: %v", err)
 		}
 	}
 }
@@ -255,7 +255,7 @@ func BenchmarkExpand(b *testing.B) {
 	for b.Loop() {
 		_, err := env.Expand(input, opts...)
 		if err != nil {
-			b.Fatalf("Expand() unexpected error: %v", err)
+			b.Fatalf("should not have returned an error: %v", err)
 		}
 	}
 }

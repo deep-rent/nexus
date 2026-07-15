@@ -57,17 +57,17 @@ func TestBinder_Bind(t *testing.T) {
 
 		err := b.Bind(&cfg, "", src)
 		if err != nil {
-			t.Fatalf("Bind() failed: %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if cfg.Host != "localhost" {
-			t.Errorf("Host = %q; want 'localhost'", cfg.Host)
+			t.Errorf("host: got %q; want 'localhost'", cfg.Host)
 		}
 		if cfg.Port != 8080 {
-			t.Errorf("Port = %d; want 8080", cfg.Port)
+			t.Errorf("port: got %d; want 8080", cfg.Port)
 		}
 		if !reflect.DeepEqual(cfg.Tags, []string{"a", "b"}) {
-			t.Errorf("Tags = %v; want [a b]", cfg.Tags)
+			t.Errorf("tags: got %v; want [a b]", cfg.Tags)
 		}
 	})
 
@@ -79,7 +79,7 @@ func TestBinder_Bind(t *testing.T) {
 
 		err := b.Bind(&cfg, "", src)
 		if err == nil {
-			t.Fatal("Bind() expected error, got nil")
+			t.Fatal("should have returned an error")
 		}
 	})
 
@@ -94,11 +94,11 @@ func TestBinder_Bind(t *testing.T) {
 
 		err := b.Bind(&cfg, "", src)
 		if err != nil {
-			t.Fatalf("Bind() failed: %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if !reflect.DeepEqual(cfg.IDs, []int{1, 2, 3}) {
-			t.Errorf("IDs = %v; want [1 2 3]", cfg.IDs)
+			t.Errorf("got %v; want [1 2 3]", cfg.IDs)
 		}
 	})
 }
@@ -109,7 +109,7 @@ func TestBinder_PanicOnInvalidTag(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Errorf("Expected panic on invalid tag, but did not panic")
+			t.Error("should have panicked")
 		}
 	}()
 
@@ -137,17 +137,17 @@ func TestBinder_Caching(t *testing.T) {
 	var cfg1 Config
 	err := b.Bind(&cfg1, "", src)
 	if err != nil {
-		t.Fatalf("First Bind() failed: %v", err)
+		t.Fatalf("on first call: should not have returned an error: %v", err)
 	}
 
 	var cfg2 Config
 	err = b.Bind(&cfg2, "", src)
 	if err != nil {
-		t.Fatalf("Second Bind() failed: %v", err)
+		t.Fatalf("on second call: should not have returned an error: %v", err)
 	}
 
 	if cfg2.Host != "localhost" || cfg2.Port != 8080 {
-		t.Errorf("Unexpected result from cached Bind(): %+v", cfg2)
+		t.Errorf("bad result from cached bind: %+v", cfg2)
 	}
 
 	allocs := testing.AllocsPerRun(10, func() {
@@ -156,7 +156,7 @@ func TestBinder_Caching(t *testing.T) {
 	})
 
 	if allocs > 5 {
-		t.Errorf("Expected low allocations, got %v allocs/run", allocs)
+		t.Errorf("got %v allocs/run; want at most 5", allocs)
 	}
 }
 
@@ -1058,15 +1058,15 @@ func TestBinder_TypeTests(t *testing.T) {
 			err := bindAny(b, tt.give, prefix, src)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("Bind() error = nil; want non-nil")
+					t.Fatal("should have returned an error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("Bind() unexpected error: %v", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if !reflect.DeepEqual(tt.give, tt.want) {
-				t.Errorf("Bind() = %v; want %v", tt.give, tt.want)
+				t.Errorf("got %v; want %v", tt.give, tt.want)
 			}
 		})
 	}

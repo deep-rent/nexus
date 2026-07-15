@@ -125,7 +125,7 @@ func TestVerifyRedirectURI(t *testing.T) {
 			got := VerifyRedirectURI(tt.uri, tt.whitelist)
 			if got != tt.want {
 				t.Errorf(
-					"VerifyRedirectURI(%q, %v) = %t; want %t",
+					"for uri %q against %v: got %t; want %t",
 					tt.uri,
 					tt.whitelist,
 					got,

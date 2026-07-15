@@ -41,7 +41,7 @@ func TestParse(t *testing.T) {
 		t.Run(tt.give, func(t *testing.T) {
 			t.Parallel()
 			if got := tag.Parse(tt.give).Name; got != tt.want {
-				t.Errorf("Parse(%q).Name = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -147,7 +147,7 @@ func TestTag_Opts(t *testing.T) {
 			p := tag.Parse(s)
 			got := maps.Collect(p.Opts())
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Parse(%q).Opts() = %v; want %v", s, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}

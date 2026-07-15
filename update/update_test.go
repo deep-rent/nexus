@@ -57,10 +57,10 @@ func TestNew(t *testing.T) {
 				defer func() {
 					r := recover()
 					if r == nil {
-						t.Errorf("New() did not panic; want %q", tt.want)
+						t.Errorf("should have panicked with %q", tt.want)
 					}
 					if got, ok := r.(string); !ok || got != tt.want {
-						t.Errorf("panic = %v; want %q", r, tt.want)
+						t.Errorf("panic value: got %v; want %q", r, tt.want)
 					}
 				}()
 				update.New(tt.give)
@@ -70,7 +70,7 @@ func TestNew(t *testing.T) {
 		t.Run("invalid semver", func(t *testing.T) {
 			defer func() {
 				if r := recover(); r == nil {
-					t.Error("New() with invalid semver did not panic")
+					t.Error("should have panicked")
 				}
 			}()
 			update.New(&update.Config{
@@ -90,7 +90,7 @@ func TestNew(t *testing.T) {
 			Current:    "1.0.0",
 		})
 		if u == nil {
-			t.Fatal("New() = nil; want non-nil")
+			t.Fatal("updater should not be nil")
 		}
 	})
 }
@@ -165,11 +165,11 @@ func TestCheck(t *testing.T) {
 				func(w http.ResponseWriter, r *http.Request) {
 					if got, want := r.URL.Path,
 						"/repos/owner/repo/releases/latest"; got != want {
-						t.Errorf("r.URL.Path = %q; want %q", got, want)
+						t.Errorf("request path: got %q; want %q", got, want)
 					}
 					if got, want := r.Header.Get("Accept"),
 						"application/vnd.github.v3+json"; got != want {
-						t.Errorf("Accept header = %q; want %q", got, want)
+						t.Errorf("accept header: got %q; want %q", got, want)
 					}
 					w.WriteHeader(tt.status)
 					_, _ = w.Write([]byte(tt.body))
@@ -187,28 +187,30 @@ func TestCheck(t *testing.T) {
 
 			if tt.wantErr != "" {
 				if err == nil {
-					t.Fatalf("Check() err = nil; want to contain %q", tt.wantErr)
+					t.Fatalf(
+						"should have returned an error matching %q", tt.wantErr,
+					)
 				}
 				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("err = %q; want to contain %q", err.Error(), tt.wantErr)
+					t.Errorf("want match for %q; got %q", tt.wantErr, err.Error())
 				}
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("Check() err = %v; want nil", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 
 			if tt.want == "" {
 				if got != nil {
-					t.Errorf("Check() = %v; want nil", got)
+					t.Errorf("got %v; want nil", got)
 				}
 			} else {
 				if got == nil {
-					t.Fatal("Check() = nil; want non-nil")
+					t.Fatal("release should not be nil")
 				}
 				if got.Version != tt.want {
-					t.Errorf("got.Version = %q; want %q", got.Version, tt.want)
+					t.Errorf("version: got %q; want %q", got.Version, tt.want)
 				}
 			}
 		})
@@ -231,10 +233,10 @@ func TestCheck_NetworkError(t *testing.T) {
 
 	_, err := update.Check(t.Context(), cfg)
 	if err == nil {
-		t.Fatal("Check() err = nil; want network error")
+		t.Fatal("should have returned a network error")
 	}
 	if got, want := err.Error(), "failed to fetch"; !strings.Contains(got, want) {
-		t.Errorf("err = %q; want to contain %q", got, want)
+		t.Errorf("want match for %q; got %q", want, got)
 	}
 }
 
@@ -245,7 +247,7 @@ func TestCheck_UserAgent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if got := r.Header.Get("User-Agent"); got != want {
-				t.Errorf("User-Agent = %q; want %q", got, want)
+				t.Errorf("user agent: got %q; want %q", got, want)
 			}
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"tag_name": "v1.0.0"}`))
@@ -261,7 +263,7 @@ func TestCheck_UserAgent(t *testing.T) {
 	}
 
 	if _, err := update.Check(t.Context(), cfg); err != nil {
-		t.Errorf("Check() err = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }
 
@@ -272,7 +274,7 @@ func TestCheck_Token(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if got := r.Header.Get("Authorization"); got != want {
-				t.Errorf("Authorization = %q; want %q", got, want)
+				t.Errorf("authorization header: got %q; want %q", got, want)
 			}
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"tag_name": "v1.0.0"}`))
@@ -288,6 +290,6 @@ func TestCheck_Token(t *testing.T) {
 	}
 
 	if _, err := update.Check(t.Context(), cfg); err != nil {
-		t.Errorf("Check() err = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }

@@ -123,7 +123,7 @@ func TestPostgres(t *testing.T) {
 			t.Parallel()
 			got := schema.Postgres([]byte(tt.script))
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Postgres(%q) = %v; want %v", tt.script, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -160,11 +160,11 @@ func TestPostgres_TestData(t *testing.T) {
 			path := filepath.Join("testdata", tt.file)
 			content, err := os.ReadFile(path) //nolint:gosec
 			if err != nil {
-				t.Fatalf("os.ReadFile(%q) err = %v; want nil", path, err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 
 			if got := len(schema.Postgres(content)); got != tt.want {
-				t.Errorf("len(Postgres(%s)) = %d; want %d", tt.file, got, tt.want)
+				t.Errorf("got %d statements; want %d", got, tt.want)
 			}
 		})
 	}
@@ -184,7 +184,7 @@ func BenchmarkPostgres_Complex(b *testing.B) {
 	path := filepath.Join("testdata", "00002_audit_triggers.up.sql")
 	script, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
-		b.Fatalf("failed to read testdata: %v", err)
+		b.Fatalf("should not have returned an error: %v", err)
 	}
 
 	b.ReportAllocs()

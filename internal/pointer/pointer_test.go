@@ -38,9 +38,9 @@ func TestAlloc(t *testing.T) {
 
 		pointer.Alloc(rv)
 		if i == nil {
-			t.Errorf("pointer should now point to a value")
+			t.Error("pointer should now point to a value")
 		} else if got, want := *i, 0; got != want {
-			t.Errorf("*i = %d; want %d", got, want)
+			t.Errorf("got %d; want %d", got, want)
 		}
 	})
 
@@ -54,7 +54,7 @@ func TestAlloc(t *testing.T) {
 
 		defer func() {
 			if r := recover(); r == nil {
-				t.Errorf("Alloc did not panic on non-settable pointer")
+				t.Error("should have panicked")
 			}
 		}()
 		pointer.Alloc(rv)
@@ -84,7 +84,7 @@ func TestDeref(t *testing.T) {
 			wantKind: reflect.Int,
 			check: func(t *testing.T, out, _ reflect.Value) {
 				if got, want := out.Int(), int64(42); got != want {
-					t.Errorf("out.Int() = %d; want %d", got, want)
+					t.Errorf("value: got %d; want %d", got, want)
 				}
 			},
 		},
@@ -98,7 +98,7 @@ func TestDeref(t *testing.T) {
 			wantKind: reflect.Int,
 			check: func(t *testing.T, out, _ reflect.Value) {
 				if got, want := out.Int(), int64(42); got != want {
-					t.Errorf("out.Int() = %d; want %d", got, want)
+					t.Errorf("value: got %d; want %d", got, want)
 				}
 			},
 		},
@@ -113,7 +113,7 @@ func TestDeref(t *testing.T) {
 			wantKind: reflect.Int,
 			check: func(t *testing.T, out, _ reflect.Value) {
 				if got, want := out.Int(), int64(42); got != want {
-					t.Errorf("out.Int() = %d; want %d", got, want)
+					t.Errorf("value: got %d; want %d", got, want)
 				}
 			},
 		},
@@ -128,12 +128,12 @@ func TestDeref(t *testing.T) {
 			check: func(t *testing.T, out, root reflect.Value) {
 				p := root.Elem().Interface().(*int)
 				if p == nil {
-					t.Errorf("root pointer should not be nil")
+					t.Error("root pointer should not be nil")
 				} else if got, want := *p, 0; got != want {
-					t.Errorf("*p = %d; want %d", got, want)
+					t.Errorf("pointee: got %d; want %d", got, want)
 				}
 				if got, want := out.Int(), int64(0); got != want {
-					t.Errorf("out.Int() = %d; want %d", got, want)
+					t.Errorf("value: got %d; want %d", got, want)
 				}
 			},
 		},
@@ -148,13 +148,13 @@ func TestDeref(t *testing.T) {
 			check: func(t *testing.T, out, root reflect.Value) {
 				p := root.Elem().Interface().(**int)
 				if p == nil || *p == nil {
-					t.Fatalf("pointers were not allocated")
+					t.Fatal("pointers should have been allocated")
 				}
 				if got, want := **p, 0; got != want {
-					t.Errorf("**p = %d; want %d", got, want)
+					t.Errorf("pointee: got %d; want %d", got, want)
 				}
 				if got, want := out.Int(), int64(0); got != want {
-					t.Errorf("out.Int() = %d; want %d", got, want)
+					t.Errorf("value: got %d; want %d", got, want)
 				}
 			},
 		},
@@ -169,10 +169,10 @@ func TestDeref(t *testing.T) {
 			check: func(t *testing.T, out, root reflect.Value) {
 				fb := root.Interface().(*foobar)
 				if fb.v != nil {
-					t.Errorf("fb.v should remain nil")
+					t.Error("field v should remain nil")
 				}
 				if !out.IsNil() {
-					t.Errorf("output should be nil")
+					t.Error("output should be nil")
 				}
 			},
 		},
@@ -187,13 +187,13 @@ func TestDeref(t *testing.T) {
 			check: func(t *testing.T, out, root reflect.Value) {
 				fb := root.Interface().(*foobar)
 				if fb.V == nil {
-					t.Fatalf("fb.V was not allocated")
+					t.Fatal("field V should have been allocated")
 				}
 				if got, want := *fb.V, 0; got != want {
-					t.Errorf("*fb.V = %d; want %d", got, want)
+					t.Errorf("pointee: got %d; want %d", got, want)
 				}
 				if got, want := out.Int(), int64(0); got != want {
-					t.Errorf("out.Int() = %d; want %d", got, want)
+					t.Errorf("value: got %d; want %d", got, want)
 				}
 			},
 		},
@@ -206,7 +206,7 @@ func TestDeref(t *testing.T) {
 			out := pointer.Deref(in)
 
 			if got, want := out.Kind(), tt.wantKind; got != want {
-				t.Errorf("Deref().Kind() = %v; want %v", got, want)
+				t.Errorf("kind: got %v; want %v", got, want)
 			}
 			if tt.check != nil {
 				tt.check(t, out, root)

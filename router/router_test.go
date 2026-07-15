@@ -122,32 +122,32 @@ func TestExchange_BindJSON(t *testing.T) {
 
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("BindJSON() err = nil; want non-nil")
+					t.Fatal("should have returned an error")
 				}
 				if got, want := err.Reason, tt.wantReason; got != want {
-					t.Errorf("err.Reason = %q; want %q", got, want)
+					t.Errorf("reason: got %q; want %q", got, want)
 				}
 				if got, want := err.Status, tt.wantStatus; got != want {
-					t.Errorf("err.Status = %d; want %d", got, want)
+					t.Errorf("status code: got %d; want %d", got, want)
 				}
 				if tt.wantReason == router.ReasonValidationFailed {
 					if err.Context == nil {
-						t.Fatal("Context is nil")
+						t.Fatal("context: got nil; want non-nil")
 					}
 					verrs, ok := err.Context.(valid.Error)
 					if !ok {
-						t.Fatalf("Context is %T; want valid.Error", err.Context)
+						t.Fatalf("context: got %T; want valid.Error", err.Context)
 					}
 					msgs := verrs["name"]
 					if len(msgs) == 0 || msgs[0] != "must not be empty" {
-						t.Errorf("Context[\"name\"] = %v; want [\"must not be empty\"]", msgs)
+						t.Errorf("name messages: got %v; want [\"must not be empty\"]", msgs)
 					}
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("BindJSON() err = %v; want nil", err)
+				t.Errorf("should not have returned an error: %v", err)
 			}
 		})
 	}
@@ -173,9 +173,9 @@ func TestExchange_BindQuery(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "failure parse",
-			url:  "/?age=invalid",
-			target: &mockAgeInput{},
+			name:       "failure parse",
+			url:        "/?age=invalid",
+			target:     &mockAgeInput{},
 			wantErr:    true,
 			wantReason: router.ReasonParseQuery,
 			wantStatus: http.StatusBadRequest,
@@ -201,27 +201,27 @@ func TestExchange_BindQuery(t *testing.T) {
 
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("BindQuery() err = nil; want non-nil")
+					t.Fatal("should have returned an error")
 				}
 				if got, want := err.Reason, tt.wantReason; got != want {
-					t.Errorf("err.Reason = %q; want %q", got, want)
+					t.Errorf("reason: got %q; want %q", got, want)
 				}
 				if got, want := err.Status, tt.wantStatus; got != want {
-					t.Errorf("err.Status = %d; want %d", got, want)
+					t.Errorf("status code: got %d; want %d", got, want)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("BindQuery() err = %v; want nil", err)
+				t.Errorf("should not have returned an error: %v", err)
 			}
 
 			if in, ok := tt.target.(*mockInput); ok && !tt.wantErr {
 				if in.Name != "test" {
-					t.Errorf("in.Name = %q; want %q", in.Name, "test")
+					t.Errorf("name: got %q; want %q", in.Name, "test")
 				}
 				if len(in.IDs) != 2 || in.IDs[0] != "1" || in.IDs[1] != "2" {
-					t.Errorf("in.IDs = %v; want [1 2]", in.IDs)
+					t.Errorf("ids: got %v; want [1 2]", in.IDs)
 				}
 			}
 		})
@@ -259,10 +259,10 @@ func TestExchange_BindForm(t *testing.T) {
 			wantStatus: http.StatusUnsupportedMediaType,
 		},
 		{
-			name:  "failure parse",
-			ctype: router.MediaTypeForm,
-			body:  "age=invalid",
-			target: &mockAgeInput{},
+			name:       "failure parse",
+			ctype:      router.MediaTypeForm,
+			body:       "age=invalid",
+			target:     &mockAgeInput{},
 			wantErr:    true,
 			wantReason: router.ReasonParseForm,
 			wantStatus: http.StatusBadRequest,
@@ -293,23 +293,23 @@ func TestExchange_BindForm(t *testing.T) {
 
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("expected non-nil error, got nil")
+					t.Fatal("should have returned an error")
 				}
 				act, ok := errors.AsType[*router.Error](err)
 				if !ok {
-					t.Fatalf("error is %T; want *router.Error", err)
+					t.Fatalf("error type: got %T; want *router.Error", err)
 				}
 				if got, want := act.Reason, tt.wantReason; got != want {
-					t.Errorf("got reason %q; want %q", got, want)
+					t.Errorf("reason: got %q; want %q", got, want)
 				}
 				if got, want := act.Status, tt.wantStatus; got != want {
-					t.Errorf("got status %d; want %d", got, want)
+					t.Errorf("status code: got %d; want %d", got, want)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("BindForm() err = %v; want nil", err)
+				t.Errorf("should not have returned an error: %v", err)
 			}
 		})
 	}
@@ -384,33 +384,33 @@ func TestExchange_ReadForm(t *testing.T) {
 
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("ReadForm() err = nil; want non-nil")
+					t.Fatal("should have returned an error")
 				}
 				re, ok := errors.AsType[*router.Error](err)
 				if !ok {
-					t.Fatalf("err is %T; want *router.Error", err)
+					t.Fatalf("error type: got %T; want *router.Error", err)
 				}
 				if got, want := re.Reason, tt.wantReason; got != want {
-					t.Errorf("err.Reason = %q; want %q", got, want)
+					t.Errorf("reason: got %q; want %q", got, want)
 				}
 				if got, want := re.Status, tt.wantStatus; got != want {
-					t.Errorf("err.Status = %d; want %d", got, want)
+					t.Errorf("status code: got %d; want %d", got, want)
 				}
 				if vals != nil {
-					t.Errorf("ReadForm() vals = %v; want nil", vals)
+					t.Errorf("values: got %v; want nil", vals)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("ReadForm() err = %v; want nil", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if got, want := vals.Get(tt.wantKey), tt.wantVal; got != want {
-				t.Errorf("vals.Get(%q) = %q; want %q", tt.wantKey, got, want)
+				t.Errorf("for key %q: got %q; want %q", tt.wantKey, got, want)
 			}
 			if tt.missingKey != "" {
 				if got := vals.Get(tt.missingKey); got != "" {
-					t.Errorf("vals.Get(%q) = %q; want empty", tt.missingKey, got)
+					t.Errorf("for key %q: got %q; want empty", tt.missingKey, got)
 				}
 			}
 		})
@@ -483,20 +483,20 @@ func TestExchange_JSON(t *testing.T) {
 	payload := map[string]string{"foo": "bar"}
 
 	if err := e.JSON(http.StatusCreated, payload); err != nil {
-		t.Fatalf("JSON() err = %v; want nil", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	if got, want := rec.Code, http.StatusCreated; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 	if got, want := rec.Header().Get("Content-Type"),
 		router.MediaTypeJSON; got != want {
-		t.Errorf("Content-Type = %q; want %q", got, want)
+		t.Errorf("content type: got %q; want %q", got, want)
 	}
 
 	wantBody := `{"foo":"bar"}`
 	if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
-		t.Errorf("rec.Body = %q; want %q", got, wantBody)
+		t.Errorf("body: got %q; want %q", got, wantBody)
 	}
 }
 
@@ -514,20 +514,20 @@ func TestExchange_Form(t *testing.T) {
 		vals.Set("space", "a b")
 
 		if err := e.Form(http.StatusOK, vals); err != nil {
-			t.Fatalf("Form() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if got, want := rec.Code, http.StatusOK; got != want {
-			t.Errorf("rec.Code = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := rec.Header().Get("Content-Type"),
 			router.MediaTypeForm; got != want {
-			t.Errorf("Content-Type = %q; want %q", got, want)
+			t.Errorf("content type: got %q; want %q", got, want)
 		}
 
 		wantBody := "foo=bar&space=a+b"
 		if got := rec.Body.String(); got != wantBody {
-			t.Errorf("rec.Body = %q; want %q", got, wantBody)
+			t.Errorf("body: got %q; want %q", got, wantBody)
 		}
 	})
 
@@ -541,12 +541,12 @@ func TestExchange_Form(t *testing.T) {
 		vals := url.Values{"a": {"b"}}
 
 		if err := e.Form(http.StatusOK, vals); err != nil {
-			t.Fatalf("Form() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if got, want := rec.Header().Get("Content-Type"),
 			"text/plain"; got != want {
-			t.Errorf("Content-Type = %q; want %q", got, want)
+			t.Errorf("content type: got %q; want %q", got, want)
 		}
 	})
 }
@@ -559,7 +559,7 @@ func TestExchange_Status(t *testing.T) {
 
 	e.Status(http.StatusNoContent)
 	if got, want := rec.Code, http.StatusNoContent; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
+		t.Errorf("got %d; want %d", got, want)
 	}
 }
 
@@ -571,14 +571,14 @@ func TestExchange_Redirect(t *testing.T) {
 	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	if err := e.Redirect("/new", http.StatusFound); err != nil {
-		t.Fatalf("Redirect() err = %v; want nil", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	if got, want := rec.Code, http.StatusFound; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 	if got, want := rec.Header().Get("Location"), "/new"; got != want {
-		t.Errorf("Location = %q; want %q", got, want)
+		t.Errorf("location: got %q; want %q", got, want)
 	}
 }
 
@@ -591,32 +591,32 @@ func TestExchange_MetadataHelpers(t *testing.T) {
 	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	if got, want := e.Method(), http.MethodGet; got != want {
-		t.Errorf("Method() = %q; want %q", got, want)
+		t.Errorf("method: got %q; want %q", got, want)
 	}
 	if got, want := e.Path(), "/users/123"; got != want {
-		t.Errorf("Path() = %q; want %q", got, want)
+		t.Errorf("path: got %q; want %q", got, want)
 	}
 	if e.URL() == nil {
-		t.Error("URL() = nil; want non-nil")
+		t.Error("url: got nil; want non-nil")
 	}
 	if e.Context() == nil {
-		t.Error("Context() = nil; want non-nil")
+		t.Error("context: got nil; want non-nil")
 	}
 	if got, want := e.Param("id"), "123"; got != want {
-		t.Errorf("Param(\"id\") = %q; want %q", got, want)
+		t.Errorf("for path param \"id\": got %q; want %q", got, want)
 	}
 	if got, want := e.Query().Get("q"), "search"; got != want {
-		t.Errorf("Query().Get(\"q\") = %q; want %q", got, want)
+		t.Errorf("for query param \"q\": got %q; want %q", got, want)
 	}
 
 	req.Header.Set("X-In", "foo")
 	if got, want := e.GetHeader("X-In"), "foo"; got != want {
-		t.Errorf("GetHeader(\"X-In\") = %q; want %q", got, want)
+		t.Errorf("for request header \"X-In\": got %q; want %q", got, want)
 	}
 
 	e.SetHeader("X-Out", "bar")
 	if got, want := rec.Header().Get("X-Out"), "bar"; got != want {
-		t.Errorf("Header.Get(\"X-Out\") = %q; want %q", got, want)
+		t.Errorf("for response header \"X-Out\": got %q; want %q", got, want)
 	}
 }
 
@@ -630,10 +630,10 @@ func TestExchange_Cookies(t *testing.T) {
 
 		c, err := e.Cookie("test")
 		if err != nil {
-			t.Fatalf("Cookie() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if c.Value != "val" {
-			t.Errorf("c.Value = %q; want %q", c.Value, "val")
+			t.Errorf("cookie value: got %q; want %q", c.Value, "val")
 		}
 	})
 
@@ -645,7 +645,7 @@ func TestExchange_Cookies(t *testing.T) {
 
 		got := rec.Header().Get("Set-Cookie")
 		if !strings.Contains(got, "out=gold") {
-			t.Errorf("Set-Cookie = %q; want to contain %q", got, "out=gold")
+			t.Errorf("got %q; want it to contain %q", got, "out=gold")
 		}
 	})
 }
@@ -665,20 +665,20 @@ func TestRouter_RouteMatching(t *testing.T) {
 	t.Run("func handler", func(t *testing.T) {
 		res, err := http.Get(srv.URL + "/func")
 		if err != nil {
-			t.Fatalf("http.Get() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 	})
 
 	t.Run("struct handler", func(t *testing.T) {
 		res, err := http.Get(srv.URL + "/struct")
 		if err != nil {
-			t.Fatalf("http.Get() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 	})
 }
@@ -704,7 +704,7 @@ func TestRouter_ErrorResponse(t *testing.T) {
 	t.Run("typed error", func(t *testing.T) {
 		res, _ := http.Get(srv.URL + "/typed")
 		if got, want := res.StatusCode, http.StatusTeapot; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 	})
 
@@ -712,7 +712,7 @@ func TestRouter_ErrorResponse(t *testing.T) {
 		res, _ := http.Get(srv.URL + "/std")
 		if got, want := res.StatusCode,
 			http.StatusInternalServerError; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 	})
 }
@@ -746,10 +746,10 @@ func TestRouter_StrictJSONDecoding(t *testing.T) {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("http.Do() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if got, want := res.StatusCode, http.StatusBadRequest; got != want {
-		t.Errorf("res.StatusCode = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 }
 
@@ -771,12 +771,12 @@ func TestRouter_MaxBodyLimit(t *testing.T) {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("http.Do() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	if res.StatusCode != http.StatusBadRequest &&
 		res.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Errorf("res.StatusCode = %d; want 400 or 413", res.StatusCode)
+		t.Errorf("got status %d; want 400 or 413", res.StatusCode)
 	}
 }
 
@@ -787,7 +787,10 @@ func TestRouter_ErrorAfterResponse(t *testing.T) {
 	r.HandleFunc("GET /double", func(e *router.Exchange) error {
 		payload := map[string]string{"ok": "true"}
 		if err := e.JSON(http.StatusCreated, payload); err != nil {
-			t.Fatalf("JSON() err = %v", err)
+			t.Fatalf(
+				"writing the response: should not have returned an error: %v",
+				err,
+			)
 		}
 		return errors.New("late error")
 	})
@@ -797,10 +800,10 @@ func TestRouter_ErrorAfterResponse(t *testing.T) {
 
 	res, err := http.Get(srv.URL + "/double")
 	if err != nil {
-		t.Fatalf("http.Get() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if got, want := res.StatusCode, http.StatusCreated; got != want {
-		t.Errorf("res.StatusCode = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 }
 
@@ -820,10 +823,10 @@ func TestRouter_MountMux(t *testing.T) {
 
 	res, err := http.Get(srv.URL + "/mnt/check")
 	if err != nil {
-		t.Fatalf("http.Get() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if got, want := res.StatusCode, http.StatusAccepted; got != want {
-		t.Errorf("res.StatusCode = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 }
 
@@ -848,7 +851,7 @@ func TestRouter_MiddlewareHeader(t *testing.T) {
 
 	res, _ := http.Get(srv.URL + "/")
 	if got, want := res.Header.Get("X-Global"), "true"; got != want {
-		t.Errorf("X-Global = %q; want %q", got, want)
+		t.Errorf("got %q; want %q", got, want)
 	}
 }
 
@@ -880,10 +883,10 @@ func TestHandler_ChainMiddleware(t *testing.T) {
 	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	if err := h.ServeHTTP(e); err != nil {
-		t.Fatalf("ServeHTTP() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if got, want := rec.Header().Get("X-Chain"), "ABC"; got != want {
-		t.Errorf("X-Chain = %q; want %q", got, want)
+		t.Errorf("got %q; want %q", got, want)
 	}
 }
 
@@ -903,13 +906,13 @@ func TestHandler_WrapStd(t *testing.T) {
 
 	res, err := http.Get(srv.URL + "/wrap")
 	if err != nil {
-		t.Fatalf("http.Get() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if got, want := res.StatusCode, http.StatusAccepted; got != want {
-		t.Errorf("res.StatusCode = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 	if got, want := res.Header.Get("X-Wrapped"), "true"; got != want {
-		t.Errorf("X-Wrapped = %q; want %q", got, want)
+		t.Errorf("header \"X-Wrapped\": got %q; want %q", got, want)
 	}
 }
 
@@ -936,13 +939,13 @@ func TestHandler_AdaptStdMiddleware(t *testing.T) {
 
 	res, err := http.Get(srv.URL + "/adapt")
 	if err != nil {
-		t.Fatalf("http.Get() err = %v", err)
+		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if got, want := res.StatusCode, http.StatusInternalServerError; got != want {
-		t.Errorf("res.StatusCode = %d; want %d", got, want)
+		t.Errorf("response status: got %d; want %d", got, want)
 	}
 	if got, want := capturedStatus, http.StatusInternalServerError; got != want {
-		t.Errorf("capturedStatus = %d; want %d", got, want)
+		t.Errorf("captured status: got %d; want %d", got, want)
 	}
 }
 
@@ -954,7 +957,7 @@ func TestResponseWriter_UnwrapStd(t *testing.T) {
 	rc := http.NewResponseController(rw)
 
 	if err := rc.Flush(); err != nil {
-		t.Errorf("rc.Flush() err = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }
 
@@ -966,7 +969,7 @@ func TestError_ErrorString(t *testing.T) {
 		Description: "description",
 	}
 	if got, want := e.Error(), "reason: description"; got != want {
-		t.Errorf("Error() = %q; want %q", got, want)
+		t.Errorf("got %q; want %q", got, want)
 	}
 }
 
@@ -982,7 +985,7 @@ func TestExchange_JSONMarshalError(t *testing.T) {
 	err := e.JSON(http.StatusOK, mockUnmarshalable{C: make(chan int)})
 
 	if err == nil {
-		t.Error("JSON() err = nil; want non-nil for unmarshalable type")
+		t.Error("should have returned an error")
 	}
 }
 
@@ -995,10 +998,10 @@ func TestExchange_NoContent(t *testing.T) {
 	e.NoContent()
 
 	if got, want := rec.Code, http.StatusNoContent; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 	if !e.W.Closed() {
-		t.Error("e.W.Closed() = false; want true")
+		t.Error("closed flag: got false; want true")
 	}
 }
 
@@ -1023,10 +1026,10 @@ func TestMiddleware_Connectivity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if tt.fn == nil {
-				t.Fatalf("%s middleware factory returned nil", tt.name)
+				t.Fatal("factory: got nil; want non-nil")
 			}
 			if _, ok := tt.fn.(router.Middleware); !ok {
-				t.Errorf("%s does not satisfy router.Middleware", tt.name)
+				t.Error("should satisfy router.Middleware")
 			}
 		})
 	}
@@ -1036,10 +1039,10 @@ func TestErrorID(t *testing.T) {
 	id := router.ErrorID()
 
 	if id == "" {
-		t.Error("ErrorID() returned an empty string")
+		t.Error("got an empty string; want non-empty")
 	}
 
 	if id == router.ErrorID() {
-		t.Error("ErrorID() returned non-unique strings")
+		t.Error("got the same ID twice; want unique IDs")
 	}
 }

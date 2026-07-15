@@ -94,7 +94,7 @@ func TestNew(t *testing.T) {
 			migrate.WithDriver(drvmock.New()),
 		)
 		if m == nil {
-			t.Fatal("migrate.New() = nil; want non-nil")
+			t.Fatal("got nil; want non-nil")
 		}
 	})
 
@@ -103,7 +103,7 @@ func TestNew(t *testing.T) {
 		want := "migrate: source is required"
 		defer func() {
 			if r := recover(); r != want {
-				t.Errorf("recover() = %v; want %q", r, want)
+				t.Errorf("got %v; want %q", r, want)
 			}
 		}()
 		migrate.New(migrate.WithDriver(drvmock.New()))
@@ -114,7 +114,7 @@ func TestNew(t *testing.T) {
 		want := "migrate: driver is required"
 		defer func() {
 			if r := recover(); r != want {
-				t.Errorf("recover() = %v; want %q", r, want)
+				t.Errorf("got %v; want %q", r, want)
 			}
 		}()
 		migrate.New(migrate.WithSource(srcmock.New()))
@@ -145,21 +145,21 @@ func TestMigrator_Up(t *testing.T) {
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		if err := m.Up(t.Context()); err != nil {
-			t.Fatalf("Up() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		state := drv.State()
 		if len(state) != 2 {
-			t.Errorf("len(state) = %d; want 2", len(state))
+			t.Errorf("state size: got %d; want 2", len(state))
 		}
 		if state[1].Checksum != sha256.Sum256(up1) {
-			t.Errorf("version 1 checksum mismatch")
+			t.Error("checksum mismatch at version 1")
 		}
 		if state[2].Checksum != sha256.Sum256(up2) {
-			t.Errorf("version 2 checksum mismatch")
+			t.Error("checksum mismatch at version 2")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -178,10 +178,10 @@ func TestMigrator_Up(t *testing.T) {
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		if err := m.Up(t.Context()); err != nil {
-			t.Errorf("Up() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -196,10 +196,10 @@ func TestMigrator_Up(t *testing.T) {
 
 		err := m.Up(t.Context())
 		if err == nil {
-			t.Fatal("Up() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("IsLocked = true; want false")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -214,10 +214,10 @@ func TestMigrator_Up(t *testing.T) {
 
 		err := m.Up(t.Context())
 		if err == nil {
-			t.Fatal("Up() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released on init failure")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -236,10 +236,10 @@ func TestMigrator_Up(t *testing.T) {
 
 		err := m.Up(t.Context())
 		if err == nil {
-			t.Fatal("Up() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released on execute failure")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -255,10 +255,10 @@ func TestMigrator_Up(t *testing.T) {
 
 		err := m.Up(t.Context())
 		if err == nil {
-			t.Fatal("Up() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -282,10 +282,10 @@ func TestMigrator_Up(t *testing.T) {
 
 		err := m.Up(t.Context())
 		if err == nil {
-			t.Fatal("Up() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -309,10 +309,10 @@ func TestMigrator_Up(t *testing.T) {
 
 		err := m.Up(t.Context())
 		if err == nil {
-			t.Fatal("Up() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 }
@@ -342,14 +342,14 @@ func TestMigrator_Down(t *testing.T) {
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		if err := m.Down(t.Context()); err != nil {
-			t.Errorf("Down() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 
 		if len(drv.State()) != 0 {
-			t.Errorf("len(state) = %d; want 0", len(drv.State()))
+			t.Errorf("state size: got %d; want 0", len(drv.State()))
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -360,10 +360,10 @@ func TestMigrator_Down(t *testing.T) {
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		if err := m.Down(t.Context()); err != nil {
-			t.Errorf("Down() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -383,10 +383,10 @@ func TestMigrator_Down(t *testing.T) {
 
 		err := m.Down(t.Context())
 		if err == nil {
-			t.Fatal("Down() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 }
@@ -403,10 +403,10 @@ func TestMigrator_Force(t *testing.T) {
 		)
 
 		if err := m.Force(t.Context(), 5); err != nil {
-			t.Errorf("Force() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -421,10 +421,10 @@ func TestMigrator_Force(t *testing.T) {
 
 		err := m.Force(t.Context(), 5)
 		if err == nil {
-			t.Fatal("Force() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 }
@@ -467,14 +467,14 @@ func TestMigrator_MigrateTo(t *testing.T) {
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		if err := m.MigrateTo(t.Context(), 3); err != nil {
-			t.Errorf("MigrateTo(3) err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 
 		if len(drv.State()) != 3 {
-			t.Errorf("len(state) = %d; want 3", len(drv.State()))
+			t.Errorf("state size: got %d; want 3", len(drv.State()))
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -486,18 +486,18 @@ func TestMigrator_MigrateTo(t *testing.T) {
 		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
 
 		if err := m.MigrateTo(t.Context(), 1); err != nil {
-			t.Errorf("MigrateTo(1) err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 
 		state := drv.State()
 		if len(state) != 1 {
-			t.Errorf("len(state) = %d; want 1", len(state))
+			t.Errorf("state size: got %d; want 1", len(state))
 		}
 		if _, ok := state[1]; !ok {
-			t.Error("version 1 missing from state")
+			t.Error("version 1 missing from the state")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 
@@ -512,10 +512,10 @@ func TestMigrator_MigrateTo(t *testing.T) {
 
 		err := m.MigrateTo(t.Context(), 2)
 		if err == nil {
-			t.Fatal("MigrateTo() = nil; want error")
+			t.Fatal("should have returned an error")
 		}
 		if drv.IsLocked {
-			t.Error("lock not released")
+			t.Error("lock was not released")
 		}
 	})
 }
@@ -552,25 +552,25 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 
 	pending, err := m.Pending(t.Context())
 	if err != nil {
-		t.Fatalf("Pending() err = %v; want nil", err)
+		t.Fatalf("pending: should not have returned an error: %v", err)
 	}
 	if len(pending) != 2 {
-		t.Errorf("len(pending) = %d; want 2", len(pending))
+		t.Errorf("pending size: got %d; want 2", len(pending))
 	}
 	if pending[0].Version != 2 || pending[1].Version != 3 {
-		t.Errorf("pending versions = [%d, %d]; want [2, 3]",
+		t.Errorf("pending versions: got [%d, %d]; want [2, 3]",
 			pending[0].Version, pending[1].Version)
 	}
 
 	applied, err := m.Applied(t.Context())
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied: should not have returned an error: %v", err)
 	}
 	if len(applied) != 1 {
-		t.Errorf("len(applied) = %d; want 1", len(applied))
+		t.Errorf("applied size: got %d; want 1", len(applied))
 	}
 	if applied[0].Version != 1 {
-		t.Errorf("applied[0].Version = %d; want 1", applied[0].Version)
+		t.Errorf("applied at index 0: got version %d; want 1", applied[0].Version)
 	}
 }
 
@@ -593,14 +593,14 @@ func TestMigrator_DryRun(t *testing.T) {
 	)
 
 	if err := m.Up(t.Context()); err != nil {
-		t.Errorf("Up() err = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 
 	if len(drv.State()) != 0 {
-		t.Errorf("len(state) = %d; want 0", len(drv.State()))
+		t.Errorf("state size: got %d; want 0", len(drv.State()))
 	}
 	if drv.IsLocked {
-		t.Error("lock not released")
+		t.Error("lock was not released")
 	}
 }
 
@@ -642,51 +642,54 @@ func TestMigrator_Integration(t *testing.T) {
 	)
 
 	if err := m.Up(ctx); err != nil {
-		t.Fatalf("Up() err = %v; want nil", err)
+		t.Fatalf("on up: should not have returned an error: %v", err)
 	}
 
 	var count int
 	query := "SELECT count(*) FROM integration_users"
 	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		t.Fatalf("query failed: %v", err)
+		t.Fatalf("querying after up: should not have returned an error: %v", err)
 	}
 	if count != 2 {
-		t.Errorf("count = %d; want 2", count)
+		t.Errorf("after up: got count %d; want 2", count)
 	}
 
 	applied, err := m.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied after up: should not have returned an error: %v", err)
 	}
 	if len(applied) != 2 {
-		t.Errorf("len(applied) = %d; want 2", len(applied))
+		t.Errorf("after up: got applied size %d; want 2", len(applied))
 	}
 
 	if err := m.Down(ctx); err != nil {
-		t.Fatalf("Down() err = %v; want nil", err)
+		t.Fatalf("on down: should not have returned an error: %v", err)
 	}
 
 	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		t.Fatalf("query failed: %v", err)
+		t.Fatalf("querying after down: should not have returned an error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("count = %d; want 0", count)
+		t.Errorf("after down: got count %d; want 0", count)
 	}
 
 	if err := m.Down(ctx); err != nil {
-		t.Fatalf("Down() #2 err = %v; want nil", err)
+		t.Fatalf("on second down: should not have returned an error: %v", err)
 	}
 
 	err = db.QueryRowContext(ctx, query).Scan(&count)
 	if err == nil {
-		t.Error("query succeeded; want error on dropped table")
+		t.Error("querying the dropped table should have returned an error")
 	}
 
 	applied, err = m.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf(
+			"applied after second down: should not have returned an error: %v",
+			err,
+		)
 	}
 	if len(applied) != 0 {
-		t.Errorf("len(applied) = %d; want 0", len(applied))
+		t.Errorf("after second down: got applied size %d; want 0", len(applied))
 	}
 }

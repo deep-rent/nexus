@@ -85,7 +85,7 @@ func TestNew(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := log.New(tt.opts...); got == nil {
-				t.Fatalf("New() = nil; want *slog.Logger")
+				t.Fatal("should not have returned nil")
 			}
 		})
 	}
@@ -116,11 +116,13 @@ func TestParseLevel(t *testing.T) {
 			t.Parallel()
 			got, err := log.ParseLevel(tt.in)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("ParseLevel(%q) error = %v; wantErr %v",
-					tt.in, err, tt.wantErr)
+				if tt.wantErr {
+					t.Fatal("should have returned an error")
+				}
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("ParseLevel(%q) = %v; want %v", tt.in, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -149,11 +151,13 @@ func TestParseFormat(t *testing.T) {
 			t.Parallel()
 			got, err := log.ParseFormat(tt.in)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("ParseFormat(%q) error = %v; wantErr %v",
-					tt.in, err, tt.wantErr)
+				if tt.wantErr {
+					t.Fatal("should have returned an error")
+				}
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("ParseFormat(%q) = %v; want %v", tt.in, got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -174,7 +178,7 @@ func TestFormat_String(t *testing.T) {
 		t.Run(tt.want, func(t *testing.T) {
 			t.Parallel()
 			if got := tt.in.String(); got != tt.want {
-				t.Errorf("Format.String() = %q; want %q", got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -185,7 +189,7 @@ func TestSilent(t *testing.T) {
 
 	logger := log.Silent()
 	if logger == nil {
-		t.Fatalf("Silent() = nil; want *slog.Logger")
+		t.Fatal("should not have returned nil")
 	}
 
 	ctx := t.Context()
@@ -198,7 +202,7 @@ func TestSilent(t *testing.T) {
 
 	for _, l := range levels {
 		if logger.Enabled(ctx, l) {
-			t.Errorf("Silent().Enabled(ctx, %v) = true; want false", l)
+			t.Errorf("level %v should not be enabled", l)
 		}
 	}
 
@@ -216,11 +220,11 @@ func TestNewHandler(t *testing.T) {
 	)
 
 	if handler == nil {
-		t.Fatalf("NewHandler() = nil; want slog.Handler")
+		t.Fatal("should not have returned nil")
 	}
 
 	if !handler.Enabled(t.Context(), slog.LevelDebug) {
-		t.Errorf("NewHandler().Enabled(debug) = false; want true")
+		t.Error("debug level should be enabled")
 	}
 }
 
@@ -233,24 +237,24 @@ func TestCombine(t *testing.T) {
 
 	logger := log.Combine(h1, h2)
 	if logger == nil {
-		t.Fatalf("Combine() = nil; want *slog.Logger")
+		t.Fatal("should not have returned nil")
 	}
 
 	logger.Info("broadcast message", slog.String("key", "value"))
 
 	out1 := buf1.String()
 	if want := "broadcast message"; !strings.Contains(out1, want) {
-		t.Errorf("buf1 missing %q; got %q", want, out1)
+		t.Errorf("buf1: want match for %q; got %q", want, out1)
 	}
 	if want := "key=value"; !strings.Contains(out1, want) {
-		t.Errorf("buf1 missing %q; got %q", want, out1)
+		t.Errorf("buf1: want match for %q; got %q", want, out1)
 	}
 
 	out2 := buf2.String()
 	if want := "broadcast message"; !strings.Contains(out2, want) {
-		t.Errorf("buf2 missing %q; got %q", want, out2)
+		t.Errorf("buf2: want match for %q; got %q", want, out2)
 	}
 	if want := `"key":"value"`; !strings.Contains(out2, want) {
-		t.Errorf("buf2 missing %q; got %q", want, out2)
+		t.Errorf("buf2: want match for %q; got %q", want, out2)
 	}
 }

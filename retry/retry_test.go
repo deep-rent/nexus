@@ -127,7 +127,7 @@ func TestAttempt_Idempotent(t *testing.T) {
 			req, _ := http.NewRequest(tt.method, "/", nil)
 			a := retry.Attempt{Request: req}
 			if got := a.Idempotent(); got != tt.want {
-				t.Errorf("Attempt.Idempotent() = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -155,7 +155,7 @@ func TestAttempt_Temporary(t *testing.T) {
 			t.Parallel()
 			a := retry.Attempt{Response: &http.Response{StatusCode: tt.status}}
 			if got := a.Temporary(); got != tt.want {
-				t.Errorf("Attempt.Temporary() = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -184,7 +184,7 @@ func TestAttempt_Transient(t *testing.T) {
 			t.Parallel()
 			a := retry.Attempt{Error: tt.err}
 			if got := a.Transient(); got != tt.want {
-				t.Errorf("Attempt.Transient() = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -237,7 +237,7 @@ func TestDefaultPolicy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := policy(tt.attempt); got != tt.want {
-				t.Errorf("DefaultPolicy(attempt) = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -283,13 +283,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := m.Calls(), 1; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -305,13 +305,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -327,13 +327,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -350,13 +350,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
 		res, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusServiceUnavailable; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -380,10 +380,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 
 		_, err := transport.RoundTrip(req)
 		if !errors.Is(err, context.Canceled) {
-			t.Errorf("RoundTrip() err = %v; want %v", err, context.Canceled)
+			t.Errorf("error: got %v; want %v", err, context.Canceled)
 		}
 		if got, want := m.Calls(), 1; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -398,13 +398,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 		req, _ := http.NewRequest("PUT", "/", http.NoBody)
 		res, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusServiceUnavailable; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := m.Calls(), 1; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -424,13 +424,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 		}
 		res, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("res.StatusCode = %d; want %d", got, want)
+			t.Errorf("status code: got %d; want %d", got, want)
 		}
 		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -455,14 +455,14 @@ func TestTransport_RoundTrip(t *testing.T) {
 		start := time.Now()
 		_, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if d := time.Since(start); d < time.Second {
-			t.Errorf("time.Since(start) = %v; want >= 1s", d)
+			t.Errorf("elapsed: got %v; want >= 1s", d)
 		}
 		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("m.Calls() = %d; want %d", got, want)
+			t.Errorf("call count: got %d; want %d", got, want)
 		}
 	})
 
@@ -491,7 +491,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
 		_, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if !seen {
@@ -524,12 +524,12 @@ func TestTransport_RoundTrip(t *testing.T) {
 
 		_, err := transport.RoundTrip(req)
 		if err != nil {
-			t.Fatalf("RoundTrip() err = %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if s := buf.String(); !strings.Contains(s,
 			"Request attempt failed, retrying") {
-			t.Errorf("expected debug log output from custom logger, got: %q", s)
+			t.Errorf("logs: got %q; want debug output from custom logger", s)
 		}
 	})
 }

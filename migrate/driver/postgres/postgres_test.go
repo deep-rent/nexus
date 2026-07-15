@@ -87,10 +87,10 @@ func TestNew(t *testing.T) {
 		postgres.WithTable("test_table"),
 	)
 	if drv == nil {
-		t.Fatal("postgres.New() = nil; want non-nil")
+		t.Fatal("driver: got nil; want non-nil")
 	}
 	if drv.Parser() == nil {
-		t.Fatal("d.Parser() = nil; want non-nil")
+		t.Fatal("parser: got nil; want non-nil")
 	}
 }
 
@@ -102,12 +102,12 @@ func TestDriver_Init(t *testing.T) {
 
 	// 1. Initial creation
 	if err := drv.Init(ctx); err != nil {
-		t.Errorf("Init() #1 err = %v; want nil", err)
+		t.Errorf("on first call: should not have returned an error: %v", err)
 	}
 
 	// 2. Idempotency check
 	if err := drv.Init(ctx); err != nil {
-		t.Errorf("Init() #2 err = %v; want nil", err)
+		t.Errorf("on second call: should not have returned an error: %v", err)
 	}
 }
 
@@ -124,26 +124,29 @@ func TestDriver_Locking(t *testing.T) {
 
 	// Acquire lock with instance 1
 	if err := d1.Lock(ctx); err != nil {
-		t.Fatalf("d1.Lock() err = %v; want nil", err)
+		t.Fatalf("locking d1: should not have returned an error: %v", err)
 	}
 
 	// Attempt to acquire same lock with instance 2 (should fail via timeout)
 	if err := d2.Lock(ctx); err == nil {
-		t.Error("d2.Lock() = nil; want timeout error")
+		t.Error("locking d2 while held: should have returned a timeout error")
 	}
 
 	// Release lock from instance 1
 	if err := d1.Unlock(ctx); err != nil {
-		t.Errorf("d1.Unlock() err = %v; want nil", err)
+		t.Errorf("unlocking d1: should not have returned an error: %v", err)
 	}
 
 	// Instance 2 should now succeed
 	if err := d2.Lock(ctx); err != nil {
-		t.Errorf("d2.Lock() err = %v; want nil", err)
+		t.Errorf(
+			"locking d2 after release: should not have returned an error: %v",
+			err,
+		)
 	}
 
 	if err := d2.Unlock(ctx); err != nil {
-		t.Errorf("d2.Unlock() err = %v; want nil", err)
+		t.Errorf("unlocking d2: should not have returned an error: %v", err)
 	}
 }
 
@@ -154,7 +157,7 @@ func TestDriver_ExecuteAndApplied(t *testing.T) {
 	ctx := context.Background()
 
 	if err := drv.Init(ctx); err != nil {
-		t.Fatalf("Init() err = %v; want nil", err)
+		t.Fatalf("init: should not have returned an error: %v", err)
 	}
 
 	checksum := sha256.Sum256([]byte("1"))
@@ -171,24 +174,24 @@ func TestDriver_ExecuteAndApplied(t *testing.T) {
 		Tx: true,
 	})
 	if err != nil {
-		t.Fatalf("Execute(Up) err = %v; want nil", err)
+		t.Fatalf("executing up: should not have returned an error: %v", err)
 	}
 
 	applied, err := drv.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied after up: should not have returned an error: %v", err)
 	}
 	if got, want := len(applied), 1; got != want {
-		t.Fatalf("len(applied) = %d; want %d", got, want)
+		t.Fatalf("after up: got applied size %d; want %d", got, want)
 	}
 	if applied[0].Version != 1 {
-		t.Errorf("applied[0].Version = %d; want 1", applied[0].Version)
+		t.Errorf("after up: got version %d; want 1", applied[0].Version)
 	}
 	if applied[0].Checksum != checksum {
-		t.Errorf("applied[0].Checksum mismatch")
+		t.Error("after up: checksum mismatch")
 	}
 	if applied[0].Dirty {
-		t.Error("applied[0].Dirty = true; want false")
+		t.Error("after up: got dirty true; want false")
 	}
 
 	// 2. Execute DOWN migration
@@ -201,15 +204,15 @@ func TestDriver_ExecuteAndApplied(t *testing.T) {
 		Tx: true,
 	})
 	if err != nil {
-		t.Fatalf("Execute(Down) err = %v; want nil", err)
+		t.Fatalf("executing down: should not have returned an error: %v", err)
 	}
 
 	applied, err = drv.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied after down: should not have returned an error: %v", err)
 	}
 	if len(applied) != 0 {
-		t.Errorf("len(applied) = %d; want 0", len(applied))
+		t.Errorf("after down: got applied size %d; want 0", len(applied))
 	}
 }
 
@@ -220,7 +223,7 @@ func TestDriver_Execute_FailureRollback(t *testing.T) {
 	ctx := context.Background()
 
 	if err := drv.Init(ctx); err != nil {
-		t.Fatalf("Init() err = %v; want nil", err)
+		t.Fatalf("init: should not have returned an error: %v", err)
 	}
 
 	script := migrate.ParsedScript{
@@ -235,19 +238,19 @@ func TestDriver_Execute_FailureRollback(t *testing.T) {
 	}
 
 	if err := drv.Execute(ctx, script); err == nil {
-		t.Error("Execute() = nil; want syntax error")
+		t.Error("execute: should have returned a syntax error")
 	}
 
 	// Verify the database state is marked as dirty
 	applied, err := drv.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied: should not have returned an error: %v", err)
 	}
 	if got, want := len(applied), 1; got != want {
-		t.Fatalf("len(applied) = %d; want %d", got, want)
+		t.Fatalf("got applied size %d; want %d", got, want)
 	}
 	if !applied[0].Dirty {
-		t.Error("applied[0].Dirty = false; want true")
+		t.Error("got dirty false; want true")
 	}
 
 	// Verify the table creation was rolled back
@@ -256,10 +259,10 @@ func TestDriver_Execute_FailureRollback(t *testing.T) {
     SELECT count(*) FROM information_schema.tables WHERE table_name = 'posts'
   `
 	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		t.Fatalf("query err = %v; want nil", err)
+		t.Fatalf("query: should not have returned an error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("count = %d; want 0 (rolled back)", count)
+		t.Errorf("got count %d; want 0 (rolled back)", count)
 	}
 }
 
@@ -270,7 +273,7 @@ func TestDriver_Force(t *testing.T) {
 	ctx := context.Background()
 
 	if err := drv.Init(ctx); err != nil {
-		t.Fatalf("Init() err = %v; want nil", err)
+		t.Fatalf("init: should not have returned an error: %v", err)
 	}
 
 	// Manually inject a dirty state at version 1 and a clean state at version 2
@@ -279,26 +282,26 @@ func TestDriver_Force(t *testing.T) {
     VALUES (1, '\x01', true), (2, '\x02', false)
   `
 	if _, err := db.ExecContext(ctx, query); err != nil {
-		t.Fatalf("manual insert err = %v; want nil", err)
+		t.Fatalf("manual insert: should not have returned an error: %v", err)
 	}
 
 	// Force back to version 1
 	if err := drv.Force(ctx, 1); err != nil {
-		t.Errorf("Force(1) err = %v; want nil", err)
+		t.Errorf("force: should not have returned an error: %v", err)
 	}
 
 	applied, err := drv.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied: should not have returned an error: %v", err)
 	}
 	if got, want := len(applied), 1; got != want {
-		t.Fatalf("len(applied) = %d; want %d", got, want)
+		t.Fatalf("got applied size %d; want %d", got, want)
 	}
 	if applied[0].Version != 1 {
-		t.Errorf("applied[0].Version = %d; want 1", applied[0].Version)
+		t.Errorf("got version %d; want 1", applied[0].Version)
 	}
 	if applied[0].Dirty {
-		t.Error("applied[0].Dirty = true; want false")
+		t.Error("got dirty true; want false")
 	}
 }
 
@@ -309,7 +312,7 @@ func TestDriver_Execute_NonTransactional(t *testing.T) {
 	ctx := context.Background()
 
 	if err := drv.Init(ctx); err != nil {
-		t.Fatalf("Init() err = %v; want nil", err)
+		t.Fatalf("init: should not have returned an error: %v", err)
 	}
 
 	err := drv.Execute(ctx, migrate.ParsedScript{
@@ -323,15 +326,15 @@ func TestDriver_Execute_NonTransactional(t *testing.T) {
 		Tx: false,
 	})
 	if err != nil {
-		t.Errorf("Execute(Tx: false) err = %v; want nil", err)
+		t.Errorf("execute: should not have returned an error: %v", err)
 	}
 
 	applied, err := drv.Applied(ctx)
 	if err != nil {
-		t.Fatalf("Applied() err = %v; want nil", err)
+		t.Fatalf("applied: should not have returned an error: %v", err)
 	}
 	if len(applied) != 1 {
-		t.Errorf("len(applied) = %d; want 1", len(applied))
+		t.Errorf("got applied size %d; want 1", len(applied))
 	}
 }
 
@@ -343,7 +346,7 @@ func TestDriver_Execute_StatementTimeout(t *testing.T) {
 	ctx := context.Background()
 
 	if err := drv.Init(ctx); err != nil {
-		t.Fatalf("Init() err = %v; want nil", err)
+		t.Fatalf("init: should not have returned an error: %v", err)
 	}
 
 	err := drv.Execute(ctx, migrate.ParsedScript{
@@ -356,7 +359,7 @@ func TestDriver_Execute_StatementTimeout(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("Execute() = nil; want statement timeout error")
+		t.Error("execute: should have returned a statement timeout error")
 	}
 }
 
@@ -367,11 +370,11 @@ func TestDriver_Close(t *testing.T) {
 	ctx := context.Background()
 
 	if err := drv.Close(); err != nil {
-		t.Errorf("Close() err = %v; want nil", err)
+		t.Errorf("close: should not have returned an error: %v", err)
 	}
 
 	// Verify the underlying pool is closed
 	if err := db.PingContext(ctx); err == nil {
-		t.Error("Ping() = nil; want database closed error")
+		t.Error("ping: should have returned a database closed error")
 	}
 }

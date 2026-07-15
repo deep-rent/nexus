@@ -32,11 +32,11 @@ func TestNew(t *testing.T) {
 	s := mock.New(scripts...)
 
 	if s == nil {
-		t.Fatal("mock.New() = nil; want non-nil")
+		t.Fatal("got nil; want non-nil")
 	}
 
 	if !reflect.DeepEqual(s.Scripts, scripts) {
-		t.Errorf("New(%v).Scripts = %v; want %v", scripts, s.Scripts, scripts)
+		t.Errorf("scripts: got %v; want %v", s.Scripts, scripts)
 	}
 }
 
@@ -54,17 +54,17 @@ func TestSource_List(t *testing.T) {
 
 		got, err := s.List()
 		if err != nil {
-			t.Fatalf("List() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if !reflect.DeepEqual(got, want) {
-			t.Errorf("List() = %v; want %v", got, want)
+			t.Errorf("got %v; want %v", got, want)
 		}
 
 		// Verify deep copy by mutating result
 		got[0].Version = 999
 		if s.Scripts[0].Version == got[0].Version {
-			t.Errorf("List() returned reference; want deep copy")
+			t.Error("returned a reference; want a deep copy")
 		}
 	})
 
@@ -77,11 +77,11 @@ func TestSource_List(t *testing.T) {
 
 		got, err := s.List()
 		if !errors.Is(err, wantErr) {
-			t.Errorf("List() err = %v; want %v", err, wantErr)
+			t.Errorf("error: got %v; want %v", err, wantErr)
 		}
 
 		if got != nil {
-			t.Errorf("List() = %v; want nil", got)
+			t.Errorf("scripts: got %v; want nil", got)
 		}
 	})
 
@@ -91,11 +91,11 @@ func TestSource_List(t *testing.T) {
 		s := mock.New()
 		got, err := s.List()
 		if err != nil {
-			t.Fatalf("List() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if len(got) != 0 {
-			t.Errorf("len(List()) = %d; want 0", len(got))
+			t.Errorf("got size %d; want 0", len(got))
 		}
 	})
 }

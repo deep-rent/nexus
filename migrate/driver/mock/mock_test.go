@@ -27,27 +27,27 @@ func TestNewDriver(t *testing.T) {
 
 	d := mock.New()
 	if d == nil {
-		t.Fatal("mock.New() = nil; want non-nil")
+		t.Fatal("driver: got nil; want non-nil")
 	}
 	if d.State() == nil {
-		t.Error("d.State() = nil; want non-nil")
+		t.Error("state: got nil; want non-nil")
 	}
 	if d.ParserFunc == nil {
-		t.Error("d.ParserFunc = nil; want non-nil")
+		t.Error("parser func: got nil; want non-nil")
 	}
 
 	parser := d.Parser()
 	if got := parser(nil); got != nil {
-		t.Errorf("parser(nil) = %v; want nil", got)
+		t.Errorf("for nil input: got %v; want nil", got)
 	}
 	if got := parser([]byte{}); got != nil {
-		t.Errorf("parser([]) = %v; want nil", got)
+		t.Errorf("for empty input: got %v; want nil", got)
 	}
 
 	want := []string{"statement"}
 	got := parser([]byte("statement"))
 	if len(got) != 1 || got[0] != want[0] {
-		t.Errorf("parser(statement) = %v; want %v", got, want)
+		t.Errorf("for a single statement: got %v; want %v", got, want)
 	}
 }
 
@@ -58,10 +58,10 @@ func TestDriver_Init(t *testing.T) {
 		t.Parallel()
 		d := mock.New()
 		if err := d.Init(t.Context()); err != nil {
-			t.Errorf("Init() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if !d.IsInit {
-			t.Error("d.IsInit = false; want true")
+			t.Error("init flag: got false; want true")
 		}
 	})
 
@@ -71,10 +71,10 @@ func TestDriver_Init(t *testing.T) {
 		want := errors.New("init failed")
 		d.InitErr = want
 		if err := d.Init(t.Context()); !errors.Is(err, want) {
-			t.Errorf("Init() err = %v; want %v", err, want)
+			t.Errorf("error: got %v; want %v", err, want)
 		}
 		if d.IsInit {
-			t.Error("d.IsInit = true; want false")
+			t.Error("init flag: got true; want false")
 		}
 	})
 }
@@ -86,10 +86,10 @@ func TestDriver_Lock(t *testing.T) {
 		t.Parallel()
 		d := mock.New()
 		if err := d.Lock(t.Context()); err != nil {
-			t.Errorf("Lock() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if !d.IsLocked {
-			t.Error("d.IsLocked = false; want true")
+			t.Error("lock flag: got false; want true")
 		}
 	})
 
@@ -99,10 +99,10 @@ func TestDriver_Lock(t *testing.T) {
 		want := errors.New("lock failed")
 		d.LockErr = want
 		if err := d.Lock(t.Context()); !errors.Is(err, want) {
-			t.Errorf("Lock() err = %v; want %v", err, want)
+			t.Errorf("error: got %v; want %v", err, want)
 		}
 		if d.IsLocked {
-			t.Error("d.IsLocked = true; want false")
+			t.Error("lock flag: got true; want false")
 		}
 	})
 
@@ -113,7 +113,7 @@ func TestDriver_Lock(t *testing.T) {
 
 		want := "mock: already locked"
 		if err := d.Lock(t.Context()); err == nil || err.Error() != want {
-			t.Errorf("Lock() #2 err = %v; want %q", err, want)
+			t.Errorf("on second call: got %v; want %q", err, want)
 		}
 	})
 }
@@ -126,10 +126,10 @@ func TestDriver_Unlock(t *testing.T) {
 		d := mock.New()
 		d.IsLocked = true
 		if err := d.Unlock(t.Context()); err != nil {
-			t.Errorf("Unlock() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if d.IsLocked {
-			t.Error("d.IsLocked = true; want false")
+			t.Error("lock flag: got true; want false")
 		}
 	})
 
@@ -140,10 +140,10 @@ func TestDriver_Unlock(t *testing.T) {
 		want := errors.New("unlock failed")
 		d.UnlockErr = want
 		if err := d.Unlock(t.Context()); !errors.Is(err, want) {
-			t.Errorf("Unlock() err = %v; want %v", err, want)
+			t.Errorf("error: got %v; want %v", err, want)
 		}
 		if !d.IsLocked {
-			t.Error("d.IsLocked = false; want true")
+			t.Error("lock flag: got false; want true")
 		}
 	})
 
@@ -152,7 +152,7 @@ func TestDriver_Unlock(t *testing.T) {
 		d := mock.New()
 		want := "mock: not locked"
 		if err := d.Unlock(t.Context()); err == nil || err.Error() != want {
-			t.Errorf("Unlock() err = %v; want %q", err, want)
+			t.Errorf("got %v; want %q", err, want)
 		}
 	})
 }
@@ -169,17 +169,17 @@ func TestDriver_Applied(t *testing.T) {
 
 		records, err := d.Applied(t.Context())
 		if err != nil {
-			t.Fatalf("Applied() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := len(records), 3; got != want {
-			t.Fatalf("len(records) = %d; want %d", got, want)
+			t.Fatalf("got size %d; want %d", got, want)
 		}
 		v1 := records[0].Version
 		v2 := records[1].Version
 		v3 := records[2].Version
 		if v1 != 1 || v2 != 2 || v3 != 3 {
 			t.Errorf(
-				"records version order = [%d, %d, %d]; want [1, 2, 3]",
+				"version order: got [%d, %d, %d]; want [1, 2, 3]",
 				v1, v2, v3,
 			)
 		}
@@ -192,10 +192,10 @@ func TestDriver_Applied(t *testing.T) {
 		d.AppliedErr = want
 		records, err := d.Applied(t.Context())
 		if !errors.Is(err, want) {
-			t.Errorf("Applied() err = %v; want %v", err, want)
+			t.Errorf("error: got %v; want %v", err, want)
 		}
 		if records != nil {
-			t.Errorf("records = %v; want nil", records)
+			t.Errorf("records: got %v; want nil", records)
 		}
 	})
 }
@@ -211,21 +211,21 @@ func TestDriver_Force(t *testing.T) {
 		d.Set(migrate.Record{Version: 3, Dirty: false})
 
 		if err := d.Force(t.Context(), 2); err != nil {
-			t.Errorf("Force() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 
 		state := d.State()
 		if len(state) != 2 {
-			t.Errorf("len(state) = %d; want 2", len(state))
+			t.Errorf("state size: got %d; want 2", len(state))
 		}
 		if state[1].Dirty {
-			t.Error("state[1].Dirty = true; want false")
+			t.Error("dirty flag at version 1: got true; want false")
 		}
 		if state[2].Dirty {
-			t.Error("state[2].Dirty = true; want false")
+			t.Error("dirty flag at version 2: got true; want false")
 		}
 		if _, exists := state[3]; exists {
-			t.Error("state[3] exists; want removed")
+			t.Error("version 3 should have been removed from the state")
 		}
 	})
 
@@ -235,7 +235,7 @@ func TestDriver_Force(t *testing.T) {
 		want := errors.New("force failed")
 		d.ForceErr = want
 		if err := d.Force(t.Context(), 1); !errors.Is(err, want) {
-			t.Errorf("Force() err = %v; want %v", err, want)
+			t.Errorf("got %v; want %v", err, want)
 		}
 	})
 }
@@ -261,16 +261,16 @@ func TestDriver_Execute(t *testing.T) {
 				t.Helper()
 				rec, ok := d.Get(1)
 				if !ok {
-					t.Fatalf("d.Get(1) returned false; want true")
+					t.Fatal("version 1 not found in the state")
 				}
 				if rec.Version != 1 {
-					t.Errorf("rec.Version = %d; want 1", rec.Version)
+					t.Errorf("version: got %d; want 1", rec.Version)
 				}
 				if rec.Checksum != [32]byte{1, 2, 3} {
-					t.Errorf("rec.Checksum mismatch")
+					t.Error("checksum mismatch")
 				}
 				if rec.Dirty {
-					t.Error("rec.Dirty = true; want false")
+					t.Error("dirty flag: got true; want false")
 				}
 			},
 		},
@@ -286,13 +286,13 @@ func TestDriver_Execute(t *testing.T) {
 				t.Helper()
 				rec, ok := d.Get(2)
 				if !ok {
-					t.Fatalf("d.Get(2) returned false; want true")
+					t.Fatal("version 2 not found in the state")
 				}
 				if rec.Version != 2 {
-					t.Errorf("rec.Version = %d; want 2", rec.Version)
+					t.Errorf("version: got %d; want 2", rec.Version)
 				}
 				if !rec.Dirty {
-					t.Error("rec.Dirty = false; want true")
+					t.Error("dirty flag: got false; want true")
 				}
 			},
 		},
@@ -308,7 +308,7 @@ func TestDriver_Execute(t *testing.T) {
 			validate: func(t *testing.T, d *mock.Driver) {
 				t.Helper()
 				if _, ok := d.Get(3); ok {
-					t.Error("d.Get(3) returned true; want false")
+					t.Error("version 3 should have been removed from the state")
 				}
 			},
 		},
@@ -326,10 +326,10 @@ func TestDriver_Execute(t *testing.T) {
 				t.Helper()
 				rec, ok := d.Get(4)
 				if !ok {
-					t.Fatalf("d.Get(4) returned false; want true")
+					t.Fatal("version 4 not found in the state")
 				}
 				if !rec.Dirty {
-					t.Error("rec.Dirty = false; want true")
+					t.Error("dirty flag: got false; want true")
 				}
 			},
 		},
@@ -347,10 +347,10 @@ func TestDriver_Execute(t *testing.T) {
 			err := d.Execute(t.Context(), tt.script)
 			if tt.giveErr != nil {
 				if !errors.Is(err, tt.giveErr) {
-					t.Errorf("Execute() err = %v; want %v", err, tt.giveErr)
+					t.Errorf("error: got %v; want %v", err, tt.giveErr)
 				}
 			} else if err != nil {
-				t.Errorf("Execute() unexpected err = %v", err)
+				t.Errorf("should not have returned an error: %v", err)
 			}
 
 			if tt.validate != nil {
@@ -367,10 +367,10 @@ func TestDriver_Close(t *testing.T) {
 		t.Parallel()
 		d := mock.New()
 		if err := d.Close(); err != nil {
-			t.Errorf("Close() err = %v; want nil", err)
+			t.Errorf("should not have returned an error: %v", err)
 		}
 		if !d.IsClosed {
-			t.Error("d.IsClosed = false; want true")
+			t.Error("closed flag: got false; want true")
 		}
 	})
 
@@ -380,10 +380,10 @@ func TestDriver_Close(t *testing.T) {
 		want := errors.New("close failed")
 		d.CloseErr = want
 		if err := d.Close(); !errors.Is(err, want) {
-			t.Errorf("Close() err = %v; want %v", err, want)
+			t.Errorf("error: got %v; want %v", err, want)
 		}
 		if d.IsClosed {
-			t.Error("d.IsClosed = true; want false")
+			t.Error("closed flag: got true; want false")
 		}
 	})
 }

@@ -16,6 +16,7 @@ package delta
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
 	"strconv"
@@ -23,6 +24,12 @@ import (
 
 	"github.com/deep-rent/nexus/internal/hlc"
 )
+
+// State abstracts the execution of transactions against a durable store.
+type State[Tx any] interface {
+	// Exec executes a callback within a transaction.
+	Exec(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
+}
 
 type Action string
 
@@ -87,11 +94,73 @@ type ChangeSet struct {
 	OwnerID uuid.UUID `json:"owner_id"`
 }
 
+// Deduplicator defines a two-phase commit contract for filtering duplicate
+// [Change] events.
+type Deduplicator interface {
+	// Lock attempts to acquire an idempotency lease on the set of change IDs.
+	// It returns the subset of IDs that were successfully locked (i.e. are
+	// actually new).
+	Lock(ctx context.Context, ids []uuid.UUID) ([]uuid.UUID, error)
+
+	// Commit marks the given change IDs as permanently processed.
+	Commit(ctx context.Context, ids []uuid.UUID) error
+
+	// Unlock releases the pending locks for the given IDs if a transaction
+	// fails (i.e. is rolled back)
+	Unlock(ctx context.Context, ids []uuid.UUID) error
+}
+
+type deduplicator struct {
+	// Uses Redis
+}
+
 // Ingester manages the inbound synchronization pipeline into the [State].
 type Ingester interface {
 	Supported() []ChangeType
 
 	Ingest(ctx context.Context, set *ChangeSet) error
+}
+
+type ChangeWriter[Tx any, T any] func(
+	ctx context.Context,
+	tx Tx,
+	ownerID, id uuid.UUID,
+	data T,
+	time hlc.Time,
+) error
+
+type changeWriter[Tx any] interface {
+	Save(
+		ctx context.Context,
+		tx Tx,
+		ownerID, id uuid.UUID,
+		data json.RawMessage,
+		time hlc.Time,
+	) error
+}
+
+type changeWriterBridge[Tx any, T any] struct {
+	fn ChangeWriter[Tx, T]
+}
+
+func (b *changeWriterBridge[Tx, T]) Save(
+	ctx context.Context,
+	tx Tx,
+	ownerID, id uuid.UUID,
+	data json.RawMessage,
+	time hlc.Time,
+) error {
+	var v T
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	return b.fn(ctx, tx, ownerID, id, v, time)
+}
+
+type ingester[Tx any] struct {
+	state State[Tx]
+	dedup Deduplicator
+	types map[ChangeType]changeWriter[Tx]
 }
 
 type Patch struct {
@@ -114,7 +183,7 @@ type Feed struct {
 	More bool `json:"more"`
 }
 
-type FeedRequest struct {
+type Query struct {
 	// OwnerID is the ID of the subject requesting the feed.
 	// It is used to enforce access control and for accountability.
 	OwnerID uuid.UUID `json:"owner_id"`
@@ -123,12 +192,13 @@ type FeedRequest struct {
 	// Until is used for subsequent page requests. If present and positive, it
 	// serves as the upper bound for the feed sync.
 	Until hlc.Time `json:"until"`
-	// EntityTypes is the set of entity types to collect patches for.
-	// If empty, all entity types are collected.
-	EntityTypes []EntityType `json:"entity_types"`
 	// Limit caps the number of atomic records returned in the feed.
 	// If zero, a system-default maximum is applied.
 	Limit uint32 `json:"limit"`
+}
+
+type FeedRequest struct {
+	Query Query `json:,embed`
 }
 
 // Feeder coordinates the generation of the outbound synchronization [Feed] from
@@ -139,24 +209,13 @@ type Feeder interface {
 	Feed(ctx context.Context, req FeedRequest) (*Feed, error)
 }
 
-// State abstracts the execution of transactions against a durable store.
-type State[Tx any] interface {
-	// Exec executes a callback within a transaction.
-	Exec(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
+type Snapshot[T any] struct {
+	Updates []T
+	Deletes []uuid.UUID
 }
 
-// Deduplicator defines a two-phase commit contract for filtering duplicate
-// [Change] events.
-type Deduplicator interface {
-	// Lock attempts to acquire an idempotency lease on the set of change IDs.
-	// It returns the subset of IDs that were successfully locked (i.e. are
-	// actually new).
-	Lock(ctx context.Context, ids []uuid.UUID) ([]uuid.UUID, error)
-
-	// Commit marks the given change IDs as permanently processed.
-	Commit(ctx context.Context, ids []uuid.UUID) error
-
-	// Unlock releases the pending locks for the given IDs if a transaction
-	// fails (i.e. is rolled back)
-	Unlock(ctx context.Context, ids []uuid.UUID) error
-}
+type Fetcher[Tx any, T any] func(
+	ctx context.Context,
+	tx Tx,
+	q Query,
+) (*Snapshot[T], error)

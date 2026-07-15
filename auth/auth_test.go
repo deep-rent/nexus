@@ -44,12 +44,12 @@ func TestClaims_HasRole(t *testing.T) {
 
 	wantRoleA := "a"
 	if !c.HasRole(wantRoleA) {
-		t.Errorf("Claims.HasRole(%q) = %t; want %t", wantRoleA, false, true)
+		t.Errorf("for role %q: got %t; want %t", wantRoleA, false, true)
 	}
 
 	wantRoleC := "c"
 	if c.HasRole(wantRoleC) {
-		t.Errorf("Claims.HasRole(%q) = %t; want %t", wantRoleC, true, false)
+		t.Errorf("for role %q: got %t; want %t", wantRoleC, true, false)
 	}
 }
 
@@ -90,10 +90,10 @@ func TestClaims_HasScope(t *testing.T) {
 	c := &auth.Claims{Scope: auth.Scope{"read", "write"}}
 
 	if !c.HasScope("read") {
-		t.Errorf("Claims.HasScope(%q) = false; want true", "read")
+		t.Errorf("for scope %q: got false; want true", "read")
 	}
 	if c.HasScope("delete") {
-		t.Errorf("Claims.HasScope(%q) = true; want false", "delete")
+		t.Errorf("for scope %q: got true; want false", "delete")
 	}
 }
 
@@ -102,19 +102,19 @@ func TestClaims_Delegated(t *testing.T) {
 
 	c1 := &auth.Claims{}
 	if c1.Delegated() {
-		t.Errorf("Claims.Delegated() = true; want false")
+		t.Error("for empty claims: got true; want false")
 	}
 
 	c2 := &auth.Claims{Azp: "client1"}
 	c2.Sub = "client1"
 	if c2.Delegated() {
-		t.Errorf("Claims.Delegated() = true; want false")
+		t.Error("when azp equals sub: got true; want false")
 	}
 
 	c3 := &auth.Claims{Azp: "client1"}
 	c3.Sub = "user1"
 	if !c3.Delegated() {
-		t.Errorf("Claims.Delegated() = false; want true")
+		t.Error("when azp differs from sub: got false; want true")
 	}
 }
 
@@ -147,11 +147,11 @@ func TestRules(t *testing.T) {
 			err := tt.rule.Eval(t.Context(), c)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("rule.Eval() = nil; want error")
+					t.Error("should have returned an error")
 				}
 			} else {
 				if err != nil {
-					t.Errorf("rule.Eval() = %v; want nil", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 			}
 		})
@@ -246,28 +246,30 @@ func TestGuard_Secure(t *testing.T) {
 
 			if tt.wantStatus == http.StatusOK {
 				if err != nil {
-					t.Errorf("handler.ServeHTTP() = %v; want nil", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 				if rec.Code != tt.wantStatus {
-					t.Errorf("recorder.Code = %d; want %d", rec.Code, tt.wantStatus)
+					t.Errorf(
+						"status code: got %d; want %d", rec.Code, tt.wantStatus,
+					)
 				}
 			} else {
 				var re *router.Error
 				if !errors.As(err, &re) {
 					t.Fatalf(
-						"handler.ServeHTTP() error = %v; want type *router.Error", err,
+						"got error %v; want type *router.Error", err,
 					)
 				}
 				if re.Status != tt.wantStatus {
 					t.Errorf(
-						"router.Error.Status = %d; want %d",
+						"status code: got %d; want %d",
 						re.Status,
 						tt.wantStatus,
 					)
 				}
 				if re.Reason != tt.wantReason {
 					t.Errorf(
-						"router.Error.Reason = %q; want %q",
+						"reason: got %q; want %q",
 						re.Reason,
 						tt.wantReason,
 					)
@@ -293,36 +295,36 @@ func TestContextExtraction(t *testing.T) {
 		c1, ok1 := auth.From[*auth.Claims](e)
 		if !ok1 {
 			t.Errorf(
-				"auth.From(e) ok = %t; want %t", ok1, true,
+				"from exchange: got ok %t; want %t", ok1, true,
 			)
 		}
 		if c1 != want {
 			t.Errorf(
-				"auth.From(e) claims = %v; want %v", c1, want,
+				"from exchange: got claims %v; want %v", c1, want,
 			)
 		}
 
 		c2, ok2 := auth.FromRequest[*auth.Claims](e.R)
 		if !ok2 {
 			t.Errorf(
-				"auth.FromRequest(e.R) ok = %t; want %t", ok2, true,
+				"from request: got ok %t; want %t", ok2, true,
 			)
 		}
 		if c2 != want {
 			t.Errorf(
-				"auth.FromRequest(e.R) claims = %v; want %v", c2, want,
+				"from request: got claims %v; want %v", c2, want,
 			)
 		}
 
 		c3, ok3 := auth.FromContext[*auth.Claims](e.Context())
 		if !ok3 {
 			t.Errorf(
-				"auth.FromContext(e.Context()) ok = %t; want %t", ok3, true,
+				"from context: got ok %t; want %t", ok3, true,
 			)
 		}
 		if c3 != want {
 			t.Errorf(
-				"auth.FromContext(e.Context()) claims = %v; want %v", c3, want,
+				"from context: got claims %v; want %v", c3, want,
 			)
 		}
 
@@ -337,7 +339,7 @@ func TestContextExtraction(t *testing.T) {
 
 	err := handler.ServeHTTP(e)
 	if err != nil {
-		t.Errorf("handler.ServeHTTP() = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }
 
@@ -368,9 +370,9 @@ func TestGuard_CustomExtractor(t *testing.T) {
 	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
 
 	if err := handler.ServeHTTP(e); err != nil {
-		t.Errorf("handler.ServeHTTP() = %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 	if rec.Code != http.StatusOK {
-		t.Errorf("recorder.Code = %d; want %d", rec.Code, http.StatusOK)
+		t.Errorf("status code: got %d; want %d", rec.Code, http.StatusOK)
 	}
 }

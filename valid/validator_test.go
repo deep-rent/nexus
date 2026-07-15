@@ -76,17 +76,17 @@ func TestErrors_Size(t *testing.T) {
 
 	errors = valid.Error{}
 	if exp, act := 0, errors.Size(); exp != act {
-		t.Errorf("expected size %d, got %d", exp, act)
+		t.Errorf("got size %d; want %d", act, exp)
 	}
 
 	errors = valid.Error{"a": {"1"}}
 	if exp, act := 1, errors.Size(); exp != act {
-		t.Errorf("expected size %d, got %d", exp, act)
+		t.Errorf("got size %d; want %d", act, exp)
 	}
 
 	errors = valid.Error{"a": {"1", "2"}, "b": {"3", "4"}}
 	if exp, act := 4, errors.Size(); exp != act {
-		t.Errorf("expected size %d, got %d", exp, act)
+		t.Errorf("got size %d; want %d", act, exp)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestErrors_Error(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := tt.give.Error(); got != tt.want {
-				t.Errorf("Errors.Error() = %q; want %q", got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -129,7 +129,7 @@ func TestErrors_Error(t *testing.T) {
 		if !strings.HasPrefix(got, "validation failed: ") ||
 			!strings.Contains(got, "a: 1") ||
 			!strings.Contains(got, "b: 2") {
-			t.Errorf("Unexpected map formatting: %s", got)
+			t.Errorf("bad map formatting: %s", got)
 		}
 	})
 }
@@ -139,12 +139,12 @@ func TestValidator_Error(t *testing.T) {
 
 	v := valid.New()
 	if err := v.Error(); err != nil {
-		t.Errorf("New().Error() = %v; want nil", err)
+		t.Errorf("before failing: should not have returned an error: %v", err)
 	}
 
 	v.Fail("f", "msg")
 	if err := v.Error(); err == nil {
-		t.Error("Error() = nil; want error")
+		t.Error("after failing: should have returned an error")
 	}
 }
 
@@ -209,16 +209,16 @@ func TestTest(t *testing.T) {
 			err := valid.Test(tt.give)
 			if tt.want == nil {
 				if err != nil {
-					t.Errorf("Test() = %v; want nil", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 				return
 			}
 			got, ok := errors.AsType[valid.Error](err)
 			if !ok {
-				t.Fatalf("Test() returned %T; want valid.Errors", err)
+				t.Fatalf("got error of type %T; want valid.Error", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Test() = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -268,16 +268,16 @@ func TestEach(t *testing.T) {
 			err := valid.Each(tt.give)
 			if tt.want == nil {
 				if err != nil {
-					t.Errorf("Each() = %v; want nil", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 				return
 			}
 			got, ok := errors.AsType[valid.Error](err)
 			if !ok {
-				t.Fatalf("Each() returned %T; want valid.Errors", err)
+				t.Fatalf("got error of type %T; want valid.Error", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Each() = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -294,7 +294,7 @@ func TestValidator_NestedPaths(t *testing.T) {
 	err := valid.Test(p)
 	got, ok := errors.AsType[valid.Error](err)
 	if !ok {
-		t.Fatalf("Test() returned %T; want valid.Errors", err)
+		t.Fatalf("got error of type %T; want valid.Error", err)
 	}
 
 	want := valid.Error{
@@ -303,7 +303,7 @@ func TestValidator_NestedPaths(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Test() = %v; want %v", got, want)
+		t.Errorf("got %v; want %v", got, want)
 	}
 }
 
@@ -769,17 +769,17 @@ func TestValidator_Methods(t *testing.T) {
 
 			err := v.Error()
 			if err == nil {
-				t.Fatal("expected validation error, got nil")
+				t.Fatal("should have returned a validation error")
 			}
 
 			gotErr, ok := errors.AsType[valid.Error](err)
 			if !ok {
-				t.Fatalf("expected valid.Errors, got %T", err)
+				t.Fatalf("got error of type %T; want valid.Error", err)
 			}
 
 			msgs, ok := gotErr[tt.field]
 			if !ok {
-				t.Fatalf("missing expected field %q in %v", tt.field, gotErr)
+				t.Fatalf("no errors for field %q in %v", tt.field, gotErr)
 			}
 
 			if len(msgs) != 1 || msgs[0] != tt.want {
@@ -795,7 +795,7 @@ func TestValidator_Unique_Short(t *testing.T) {
 	v := valid.New()
 	v.Unique("f", []string{"a"}) // Under minimum length for a collision
 	if err := v.Error(); err != nil {
-		t.Errorf("Unique() returned %v; want nil", err)
+		t.Errorf("should not have returned an error: %v", err)
 	}
 }
 
@@ -834,18 +834,18 @@ func TestEach_EdgeCases(t *testing.T) {
 			err := valid.Each(tt.give)
 			if tt.want == nil {
 				if err != nil {
-					t.Errorf("Each() = %v; want nil", err)
+					t.Errorf("should not have returned an error: %v", err)
 				}
 				return
 			}
 
 			got, ok := errors.AsType[valid.Error](err)
 			if !ok {
-				t.Fatalf("Each() returned %T; want valid.Errors", err)
+				t.Fatalf("got error of type %T; want valid.Error", err)
 			}
 
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Each() = %v; want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -885,11 +885,11 @@ func TestValidator_PathEscaping(t *testing.T) {
 			err := v.Error()
 			gotErr, ok := errors.AsType[valid.Error](err)
 			if !ok {
-				t.Fatalf("Error() returned %T; want valid.Errors", err)
+				t.Fatalf("got error of type %T; want valid.Error", err)
 			}
 
 			if _, exists := gotErr[tt.want]; !exists {
-				t.Errorf("expected path %q to exist in %v", tt.want, gotErr)
+				t.Errorf("no errors for path %q in %v", tt.want, gotErr)
 			}
 		})
 	}
@@ -919,7 +919,7 @@ func TestValidator_ShortCircuits(t *testing.T) {
 			tt.apply(v)
 
 			if err := v.Error(); err != nil {
-				t.Errorf("expected nil error, got %v", err)
+				t.Errorf("should not have returned an error: %v", err)
 			}
 		})
 	}

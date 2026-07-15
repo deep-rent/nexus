@@ -44,17 +44,17 @@ func TestBus_Basic(t *testing.T) {
 
 	event1 := 10
 	if ok := bus.Publish(event1); !ok {
-		t.Errorf("Publish(%d) = %t; want %t", event1, ok, true)
+		t.Errorf("publishing %d: got %t; want %t", event1, ok, true)
 	}
 
 	event2 := 20
 	if ok := bus.Publish(event2); !ok {
-		t.Errorf("Publish(%d) = %t; want %t", event2, ok, true)
+		t.Errorf("publishing %d: got %t; want %t", event2, ok, true)
 	}
 
 	wg.Wait()
 	if got, want := sum.Load(), int64(event1+event2); got != want {
-		t.Errorf("sum = %d; want %d", got, want)
+		t.Errorf("sum: got %d; want %d", got, want)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestBus_Unsubscribe(t *testing.T) {
 
 	wg.Add(1)
 	if ok := bus.Publish(1); !ok {
-		t.Fatalf("Publish(1) = %t; want %t", ok, true)
+		t.Fatalf("publishing 1: got %t; want %t", ok, true)
 	}
 	wg.Wait()
 
@@ -81,12 +81,12 @@ func TestBus_Unsubscribe(t *testing.T) {
 	unsub()
 
 	if ok := bus.Publish(2); !ok {
-		t.Errorf("Publish(2) = %t; want %t", ok, true)
+		t.Errorf("publishing 2: got %t; want %t", ok, true)
 	}
 	time.Sleep(10 * time.Millisecond)
 
 	if got, want := c.Load(), int32(1); got != want {
-		t.Errorf("count = %d; want %d", got, want)
+		t.Errorf("count: got %d; want %d", got, want)
 	}
 }
 
@@ -114,10 +114,10 @@ func TestBus_Options(t *testing.T) {
 			defer b.Close()
 
 			if b == nil {
-				t.Fatal("NewBus() = nil; want non-nil")
+				t.Fatal("bus should not be nil")
 			}
 			if ok := b.Publish(1); !ok {
-				t.Errorf("Publish(1) = %t; want %t", ok, true)
+				t.Errorf("publishing 1: got %t; want %t", ok, true)
 			}
 		})
 	}
@@ -145,19 +145,19 @@ func TestBus_PanicRecovery_Sync(t *testing.T) {
 	})
 
 	if ok := bus.Publish(1); !ok {
-		t.Fatalf("Publish(1) = %t; want %t", ok, true)
+		t.Fatalf("publishing 1: got %t; want %t", ok, true)
 	}
 	if ok := bus.Publish(2); !ok {
-		t.Fatalf("Publish(2) = %t; want %t", ok, true)
+		t.Fatalf("publishing 2: got %t; want %t", ok, true)
 	}
 	wg.Wait()
 
 	out := buf.String()
 	if want := "Subscriber panicked"; !strings.Contains(out, want) {
-		t.Errorf("logs = %q; want to contain %q", out, want)
+		t.Errorf("want match for %q; got %q", want, out)
 	}
 	if want := "sync panic"; !strings.Contains(out, want) {
-		t.Errorf("logs = %q; want to contain %q", out, want)
+		t.Errorf("want match for %q; got %q", want, out)
 	}
 }
 
@@ -168,18 +168,18 @@ func TestBroker_Topic(t *testing.T) {
 
 	bus1 := event.Topic[int](broker, "t1")
 	if bus1 == nil {
-		t.Fatal("Topic[int](t1) = nil; want non-nil")
+		t.Fatal("bus should not be nil")
 	}
 
 	bus2 := event.Topic[int](broker, "t1")
 	if bus1 != bus2 {
-		t.Errorf("Topic(t1) returned different buses; want same")
+		t.Error("buses for the same topic should be identical")
 	}
 
 	defer func() {
 		want := `event: topic "t1" exists but expects a different event type`
 		if r := recover(); r != want {
-			t.Errorf("recover() = %v; want %v", r, want)
+			t.Errorf("panic value: got %v; want %v", r, want)
 		}
 	}()
 
@@ -237,7 +237,7 @@ func TestBus_Concurrency_MPMC(t *testing.T) {
 	}
 
 	if got, want := sum.Load(), int64(pc*mc*sc); got != want {
-		t.Errorf("sum = %d; want %d", got, want)
+		t.Errorf("sum: got %d; want %d", got, want)
 	}
 }
 
@@ -252,12 +252,12 @@ func TestBroker_Options(t *testing.T) {
 
 	b := event.Topic[int](broker, "t1")
 	if ok := b.Publish(1); !ok {
-		t.Fatalf("Publish(1) = %t; want %t", ok, true)
+		t.Fatalf("publishing 1: got %t; want %t", ok, true)
 	}
 	b.Close()
 
 	if got := w.signalCount.Load(); got < 1 {
-		t.Errorf("signalCount = %d; want >= 1", got)
+		t.Errorf("signal count: got %d; want >= 1", got)
 	}
 }
 
@@ -269,19 +269,19 @@ func TestBroker_Close(t *testing.T) {
 	bus2 := event.Topic[string](broker, "t2")
 
 	if ok := bus1.Publish(1); !ok {
-		t.Fatalf("Publish(1) = %t; want %t", ok, true)
+		t.Fatalf("publishing 1: got %t; want %t", ok, true)
 	}
 	if ok := bus2.Publish("a"); !ok {
-		t.Fatalf("Publish(a) = %t; want %t", ok, true)
+		t.Fatalf("publishing \"a\": got %t; want %t", ok, true)
 	}
 
 	broker.Close()
 
 	if ok := bus1.Publish(2); ok {
-		t.Errorf("Publish(2) after close = %t; want %t", ok, false)
+		t.Errorf("publishing 2 after close: got %t; want %t", ok, false)
 	}
 	if ok := bus2.Publish("b"); ok {
-		t.Errorf("Publish(b) after close = %t; want %t", ok, false)
+		t.Errorf("publishing \"b\" after close: got %t; want %t", ok, false)
 	}
 }
 
@@ -301,12 +301,12 @@ func TestBus_CustomWaitStrategy(t *testing.T) {
 	bus := event.NewBus[int](event.WithCustomWaitStrategy(w))
 
 	if ok := bus.Publish(1); !ok {
-		t.Errorf("Publish(1) = %t; want %t", ok, true)
+		t.Errorf("publishing 1: got %t; want %t", ok, true)
 	}
 	bus.Close()
 
 	if got := w.signalCount.Load(); got < 1 {
-		t.Errorf("signalCount = %d; want >= 1", got)
+		t.Errorf("signal count: got %d; want >= 1", got)
 	}
 }
 
@@ -329,13 +329,13 @@ func TestBus_DropNewestMode(t *testing.T) {
 	)
 
 	if ok := bus.Publish(1); !ok {
-		t.Errorf("Publish(1) = %t; want %t", ok, true)
+		t.Errorf("publishing 1: got %t; want %t", ok, true)
 	}
 	if ok := bus.Publish(2); !ok {
-		t.Errorf("Publish(2) = %t; want %t", ok, true)
+		t.Errorf("publishing 2: got %t; want %t", ok, true)
 	}
 	if ok := bus.Publish(3); ok {
-		t.Errorf("Publish(3) in DropNewest = %t; want %t", ok, false)
+		t.Errorf("publishing 3 on overflow: got %t; want %t", ok, false)
 	}
 
 	close(w.sem)
@@ -352,13 +352,13 @@ func TestBus_DropOldestMode(t *testing.T) {
 	)
 
 	if ok := bus.Publish(1); !ok {
-		t.Errorf("Publish(1) = %t; want %t", ok, true)
+		t.Errorf("publishing 1: got %t; want %t", ok, true)
 	}
 	if ok := bus.Publish(2); !ok {
-		t.Errorf("Publish(2) = %t; want %t", ok, true)
+		t.Errorf("publishing 2: got %t; want %t", ok, true)
 	}
 	if ok := bus.Publish(3); !ok {
-		t.Errorf("Publish(3) in DropOldest = %t; want %t", ok, true)
+		t.Errorf("publishing 3 on overflow: got %t; want %t", ok, true)
 	}
 
 	close(w.sem)
@@ -407,11 +407,11 @@ func TestBus_PanicRecovery_Async(t *testing.T) {
 
 	event1 := 1
 	if ok := bus.Publish(event1); !ok {
-		t.Fatalf("Publish(%d) = %t; want %t", event1, ok, true)
+		t.Fatalf("publishing %d: got %t; want %t", event1, ok, true)
 	}
 	event2 := 2
 	if ok := bus.Publish(event2); !ok {
-		t.Fatalf("Publish(%d) = %t; want %t", event2, ok, true)
+		t.Fatalf("publishing %d: got %t; want %t", event2, ok, true)
 	}
 
 	wg.Wait()
@@ -424,7 +424,7 @@ func TestBus_PanicRecovery_Async(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("expected panic logs were not written in time")
+			t.Fatal("panic logs should have been written in time")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -452,12 +452,12 @@ func TestBroker_ConcurrentTopicCreation(t *testing.T) {
 
 	first := buses[0]
 	if first == nil {
-		t.Fatal("Topic[0] = nil; want non-nil")
+		t.Fatal("first bus should not be nil")
 	}
 
 	for i, b := range buses[1:] {
 		if first != b {
-			t.Errorf("Topic[%d] returned different bus; want same", i+1)
+			t.Errorf("bus at index %d should be identical to the first", i+1)
 		}
 	}
 }
@@ -497,7 +497,7 @@ func TestBus_ConcurrentSubUnsub(t *testing.T) {
 			unsub()
 
 			if got := c.Load(); got <= 0 {
-				t.Errorf("count = %d; want > 0", got)
+				t.Errorf("got count %d; want > 0", got)
 			}
 		}()
 	}

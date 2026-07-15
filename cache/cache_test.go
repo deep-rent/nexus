@@ -125,31 +125,31 @@ func TestController_GetAndReady(t *testing.T) {
 
 	_, ok := c.Get()
 	if ok {
-		t.Errorf("Get() ok = %t; want %t", ok, false)
+		t.Errorf("before fetch: got ok %t; want %t", ok, false)
 	}
 
 	select {
 	case <-c.Ready():
-		t.Fatal("Ready() channel should block before first fetch")
+		t.Fatal("ready channel should block before first fetch")
 	default:
 	}
 
 	d := c.Run(t.Context())
 	if d == 0 {
-		t.Errorf("Run() delay = %v; want non-zero", d)
+		t.Errorf("got delay %v; want non-zero", d)
 	}
 
 	r, ok := c.Get()
 	if !ok {
-		t.Errorf("Get() ok = %t; want %t", ok, true)
+		t.Errorf("after fetch: got ok %t; want %t", ok, true)
 	}
 	if got, want := r, (mockResource{ID: 1, Name: "test"}); got != want {
-		t.Errorf("Get() resource = %v; want %v", got, want)
+		t.Errorf("resource: got %v; want %v", got, want)
 	}
 	select {
 	case <-c.Ready():
 	case <-time.After(10 * time.Millisecond):
-		t.Fatal("Ready channel should be closed after successful fetch")
+		t.Fatal("ready channel should be closed after successful fetch")
 	}
 }
 
@@ -291,24 +291,24 @@ func TestController_Run(t *testing.T) {
 			if tt.wantDelayDelta > 0 {
 				diff := math.Abs(float64(tt.wantDelayDelta - d))
 				if diff > float64(time.Second) {
-					t.Errorf("Run() delay = %v; want %v (delta %v)",
+					t.Errorf("delay: got %v; want %v (delta %v)",
 						d, tt.wantDelayDelta, time.Second)
 				}
 			} else if d != tt.wantDelay {
-				t.Errorf("Run() delay = %v; want %v", d, tt.wantDelay)
+				t.Errorf("delay: got %v; want %v", d, tt.wantDelay)
 			}
 
 			res, ok := c.Get()
 			if ok != tt.wantOK {
-				t.Errorf("Get() ok = %t; want %t", ok, tt.wantOK)
+				t.Errorf("ok: got %t; want %t", ok, tt.wantOK)
 			}
 			if res != tt.wantResource {
-				t.Errorf("Get() resource = %v; want %v", res, tt.wantResource)
+				t.Errorf("resource: got %v; want %v", res, tt.wantResource)
 			}
 
 			if tt.wantLogs != "" {
 				if got := buf.String(); !strings.Contains(got, tt.wantLogs) {
-					t.Errorf("logs = %q; want to contain %q", got, tt.wantLogs)
+					t.Errorf("want match for %q; got %q", tt.wantLogs, got)
 				}
 			}
 
@@ -316,7 +316,7 @@ func TestController_Run(t *testing.T) {
 				select {
 				case <-c.Ready():
 				default:
-					t.Error("Ready() channel should be closed on success")
+					t.Error("ready channel should be closed on success")
 				}
 			}
 		})
@@ -347,13 +347,13 @@ func TestController_Run_ConditionalHeaders(t *testing.T) {
 
 	c.Run(t.Context())
 	if got, want := h.Count(), 1; got != want {
-		t.Fatalf("Count() = %d; want %d", got, want)
+		t.Fatalf("on first run: got count %d; want %d", got, want)
 	}
 	if got := h.RequestHeader(ifNoneMatch); len(got) != 0 {
-		t.Errorf("RequestHeader(%q) = %q; want empty", ifNoneMatch, got)
+		t.Errorf("for header %q: got %q; want empty", ifNoneMatch, got)
 	}
 	if got := h.RequestHeader(ifModifiedSince); len(got) != 0 {
-		t.Errorf("RequestHeader(%q) = %q; want empty", ifModifiedSince, got)
+		t.Errorf("for header %q: got %q; want empty", ifModifiedSince, got)
 	}
 
 	h.mu.Lock()
@@ -363,21 +363,21 @@ func TestController_Run_ConditionalHeaders(t *testing.T) {
 
 	c.Run(t.Context())
 	if got, want := h.Count(), 2; got != want {
-		t.Fatalf("Count() = %d; want %d", got, want)
+		t.Fatalf("on second run: got count %d; want %d", got, want)
 	}
 	if got, want := h.RequestHeader(ifNoneMatch), `"v1"`; got != want {
-		t.Errorf("RequestHeader(%q) = %q; want %q", ifNoneMatch, got, want)
+		t.Errorf("for header %q: got %q; want %q", ifNoneMatch, got, want)
 	}
 	if got, want := h.RequestHeader(ifModifiedSince), "some-date"; got != want {
-		t.Errorf("RequestHeader(%q) = %q; want %q", ifModifiedSince, got, want)
+		t.Errorf("for header %q: got %q; want %q", ifModifiedSince, got, want)
 	}
 
 	res, ok := c.Get()
 	if !ok {
-		t.Fatalf("Get() ok = %t; want %t", ok, true)
+		t.Fatalf("got ok %t; want %t", ok, true)
 	}
 	if got, want := res.ID, 1; got != want {
-		t.Errorf("Get().ID = %d; want %d", got, want)
+		t.Errorf("resource id: got %d; want %d", got, want)
 	}
 }
 
@@ -406,13 +406,13 @@ func TestController_Get_WithScheduler(t *testing.T) {
 
 	res, ok := c.Get()
 	if !ok {
-		t.Errorf("Get() ok = %t; want %t", ok, true)
+		t.Errorf("got ok %t; want %t", ok, true)
 	}
 	if got, want := res, (mockResource{ID: 123, Name: "scheduled"}); got != want {
-		t.Errorf("Get() resource = %v; want %v", got, want)
+		t.Errorf("resource: got %v; want %v", got, want)
 	}
 	if got := h.Count(); got < 1 {
-		t.Errorf("Count() = %d; want >= 1", got)
+		t.Errorf("got count %d; want >= 1", got)
 	}
 }
 
@@ -432,7 +432,7 @@ func TestController_Run_ContextCancellation(t *testing.T) {
 
 	c.Run(ctx)
 	if got, want := h.Count(), 0; got != want {
-		t.Errorf("Count() = %d; want %d", got, want)
+		t.Errorf("got count %d; want %d", got, want)
 	}
 }
 
@@ -444,7 +444,7 @@ func TestNewController_Options(t *testing.T) {
 			roundTrip: func(r *http.Request) (*http.Response, error) {
 				used.Store(true)
 				if got := r.Header.Get("X-Test"); len(got) != 0 {
-					t.Errorf("Header X-Test = %q; want empty", got)
+					t.Errorf("for header X-Test: got %q; want empty", got)
 				}
 				return &http.Response{
 					StatusCode: http.StatusNoContent,
@@ -485,10 +485,10 @@ func TestNewController_Options(t *testing.T) {
 		c.Run(t.Context())
 
 		if got, want := h.RequestHeader(xFoo), "bar"; got != want {
-			t.Errorf("RequestHeader(%q) = %q; want %q", xFoo, got, want)
+			t.Errorf("for header %q: got %q; want %q", xFoo, got, want)
 		}
 		if got, want := h.RequestHeader(xBaz), "qux"; got != want {
-			t.Errorf("RequestHeader(%q) = %q; want %q", xBaz, got, want)
+			t.Errorf("for header %q: got %q; want %q", xBaz, got, want)
 		}
 	})
 }

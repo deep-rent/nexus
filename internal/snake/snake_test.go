@@ -43,7 +43,7 @@ func TestToUpper(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := snake.ToUpper(tt.give); got != tt.want {
-				t.Errorf("ToUpper(%q) = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -72,7 +72,7 @@ func TestToLower(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := snake.ToLower(tt.give); got != tt.want {
-				t.Errorf("ToLower(%q) = %q; want %q", tt.give, got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}

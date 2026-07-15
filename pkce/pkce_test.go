@@ -43,17 +43,17 @@ func TestVerifier(t *testing.T) {
 			t.Parallel()
 			got, err := pkce.Verifier(tt.length)
 			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("Verifier() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("error: got %v; want %v", err, tt.wantErr)
 				return
 			}
 			if err != nil {
 				return
 			}
 			if len(got) != tt.length {
-				t.Errorf("Verifier() length = %d, want %d", len(got), tt.length)
+				t.Errorf("got length %d; want %d", len(got), tt.length)
 			}
 			if !pkce.IsUnreserved(got) {
-				t.Errorf("Verifier() contains invalid characters: %q", got)
+				t.Errorf("should not contain reserved characters: %q", got)
 			}
 		})
 	}
@@ -113,14 +113,14 @@ func TestChallenge(t *testing.T) {
 			t.Parallel()
 			got, err := pkce.Challenge(tt.verifier, tt.method)
 			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("Challenge() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("error: got %v; want %v", err, tt.wantErr)
 				return
 			}
 			if err != nil {
 				return
 			}
 			if got != tt.want {
-				t.Errorf("Challenge() = %q, want %q", got, tt.want)
+				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -155,7 +155,7 @@ func TestVerify(t *testing.T) {
 			if got := pkce.Verify(
 				tt.verifier, tt.challenge, tt.method,
 			); got != tt.want {
-				t.Errorf("Verify() = %v, want %v", got, tt.want)
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -192,7 +192,7 @@ func TestIsUnreserved(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := pkce.IsUnreserved(tt.give); got != tt.want {
-				t.Errorf("IsUnreserved(%q) = %v, want %v", tt.give, got, tt.want)
+				t.Errorf("for %q: got %v; want %v", tt.give, got, tt.want)
 			}
 		})
 	}
@@ -215,7 +215,9 @@ func TestSupports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := pkce.Supports(tt.method); got != tt.want {
-				t.Errorf("Supports(%q) = %v, want %v", tt.method, got, tt.want)
+				t.Errorf(
+					"for method %q: got %v; want %v", tt.method, got, tt.want,
+				)
 			}
 		})
 	}

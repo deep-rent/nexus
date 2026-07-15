@@ -61,22 +61,22 @@ func TestBackoffConstant(t *testing.T) {
 			s := backoff.Constant(tt.delay)
 
 			if got := s.MinDelay(); got != tt.want {
-				t.Errorf("MinDelay() = %v; want %v", got, tt.want)
+				t.Errorf("min delay: got %v; want %v", got, tt.want)
 			}
 			if got := s.MaxDelay(); got != tt.want {
-				t.Errorf("MaxDelay() = %v; want %v", got, tt.want)
+				t.Errorf("max delay: got %v; want %v", got, tt.want)
 			}
 
 			if got := s.Next(); got != tt.want {
-				t.Errorf("Next() 1st call = %v; want %v", got, tt.want)
+				t.Errorf("on first call: got %v; want %v", got, tt.want)
 			}
 			if got := s.Next(); got != tt.want {
-				t.Errorf("Next() 2nd call = %v; want %v", got, tt.want)
+				t.Errorf("on second call: got %v; want %v", got, tt.want)
 			}
 
 			s.Done()
 			if got := s.Next(); got != tt.want {
-				t.Errorf("Next() after Done() = %v; want %v", got, tt.want)
+				t.Errorf("after done: got %v; want %v", got, tt.want)
 			}
 		})
 	}
@@ -177,12 +177,12 @@ func TestBackoffNew(t *testing.T) {
 
 			if got, want := s.MinDelay(),
 				tt.wantMin; math.Abs(float64(got-want)) > float64(unit) {
-				t.Errorf("MinDelay() = %v; want %v (delta %v)", got, want, unit)
+				t.Errorf("min delay: got %v; want %v (delta %v)", got, want, unit)
 			}
 
 			if got, want := s.MaxDelay(),
 				tt.wantMax; math.Abs(float64(got-want)) > float64(unit) {
-				t.Errorf("MaxDelay() = %v; want %v (delta %v)", got, want, unit)
+				t.Errorf("max delay: got %v; want %v (delta %v)", got, want, unit)
 			}
 
 			if tt.seq != nil {
@@ -190,7 +190,7 @@ func TestBackoffNew(t *testing.T) {
 					got := s.Next()
 					if math.Abs(float64(got-want)) > float64(unit) {
 						t.Errorf(
-							"Next() sequence index %d = %v; want %v (delta %v)",
+							"at sequence index %d: got %v; want %v (delta %v)",
 							i, got, want, unit,
 						)
 					}
@@ -199,7 +199,7 @@ func TestBackoffNew(t *testing.T) {
 				got := s.Next()
 				if math.Abs(float64(got-tt.seq[0])) > float64(unit) {
 					t.Errorf(
-						"Next() after Done() = %v; want %v (delta %v)",
+						"after done: got %v; want %v (delta %v)",
 						got, tt.seq[0], unit,
 					)
 				}

@@ -38,10 +38,10 @@ func TestAfter(t *testing.T) {
 	actual := tick.Run(t.Context())
 
 	if !seen.Load() {
-		t.Error("After.Run() did not execute the wrapped task")
+		t.Error("wrapped task should have been executed")
 	}
 	if got, want := actual, delay; got != want {
-		t.Errorf("After.Run() = %v; want %v", got, want)
+		t.Errorf("got %v; want %v", got, want)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestEvery(t *testing.T) {
 			wait := tick.Run(t.Context())
 
 			if !seen.Load() {
-				t.Error("Every.Run() did not execute the wrapped task")
+				t.Error("wrapped task should have been executed")
 			}
 
 			diff := wait - tt.expectedWait
@@ -107,7 +107,7 @@ func TestEvery(t *testing.T) {
 				diff = -diff
 			}
 			if diff > tt.tolerance {
-				t.Errorf("Every.Run() wait = %v; want %v (±%v)",
+				t.Errorf("wait: got %v; want %v (±%v)",
 					wait, tt.expectedWait, tt.tolerance)
 			}
 		})
@@ -119,10 +119,10 @@ func TestScheduler_New(t *testing.T) {
 
 	s := schedule.New(t.Context())
 	if s == nil {
-		t.Fatal("scheduler.New() = nil; want non-nil")
+		t.Fatal("scheduler should not be nil")
 	}
 	if got := s.Context(); got == nil {
-		t.Error("s.Context() = nil; want non-nil")
+		t.Error("context should not be nil")
 	}
 }
 
@@ -133,7 +133,7 @@ func TestScheduler_Context_Cancellation(t *testing.T) {
 	s := schedule.New(ctx)
 
 	if err := s.Context().Err(); err != nil {
-		t.Fatalf("s.Context().Err() = %v; want nil before cancellation", err)
+		t.Fatalf("before cancellation: got error %v; want nil", err)
 	}
 
 	cancel()
@@ -141,11 +141,11 @@ func TestScheduler_Context_Cancellation(t *testing.T) {
 	select {
 	case <-s.Context().Done():
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("context cancellation did not propagate to scheduler")
+		t.Fatal("cancellation should have propagated to the scheduler")
 	}
 
 	if err := s.Context().Err(); !errors.Is(err, context.Canceled) {
-		t.Errorf("s.Context().Err() = %v; want %v", err, context.Canceled)
+		t.Errorf("after cancellation: got %v; want %v", err, context.Canceled)
 	}
 }
 
@@ -168,12 +168,12 @@ func TestScheduler_Dispatch_Shutdown(t *testing.T) {
 
 	final := count.Load()
 	if final < 2 {
-		t.Errorf("count = %d; want >= 2 before shutdown", final)
+		t.Errorf("before shutdown: got count %d; want >= 2", final)
 	}
 
 	time.Sleep(20 * time.Millisecond)
 	if got := count.Load(); got != final {
-		t.Errorf("count = %d; want %d (no runs after shutdown)", got, final)
+		t.Errorf("after shutdown: got count %d; want %d", got, final)
 	}
 }
 
@@ -203,7 +203,7 @@ func TestScheduler_Shutdown_Blocking(t *testing.T) {
 
 	select {
 	case <-completed:
-		t.Fatal("Shutdown() completed before the task finished")
+		t.Fatal("shutdown should not have completed before the task finished")
 	case <-time.After(20 * time.Millisecond):
 	}
 
@@ -212,7 +212,7 @@ func TestScheduler_Shutdown_Blocking(t *testing.T) {
 	select {
 	case <-completed:
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Shutdown() did not complete after task finished")
+		t.Fatal("shutdown should have completed after the task finished")
 	}
 
 	wg.Wait()
@@ -240,10 +240,10 @@ func TestScheduler_Dispatch_Concurrent(t *testing.T) {
 	s.Shutdown()
 
 	if got := count1.Load(); got < 2 {
-		t.Errorf("count1 = %d; want >= 2", got)
+		t.Errorf("first task: got count %d; want >= 2", got)
 	}
 	if got := count2.Load(); got < 1 {
-		t.Errorf("count2 = %d; want >= 1", got)
+		t.Errorf("second task: got count %d; want >= 1", got)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestOnceScheduler_Context(t *testing.T) {
 	s := schedule.Once(ctx)
 
 	if got, want := s.Context(), ctx; got != want {
-		t.Errorf("s.Context() = %v; want %v", got, want)
+		t.Errorf("got %v; want %v", got, want)
 	}
 }
 
@@ -275,12 +275,12 @@ func TestOnceScheduler_Dispatch_Synchronous(t *testing.T) {
 
 	s.Dispatch(tick)
 	if got, want := count.Load(), int32(1); got != want {
-		t.Errorf("count = %d; want %d after first dispatch", got, want)
+		t.Errorf("after first dispatch: got count %d; want %d", got, want)
 	}
 
 	s.Dispatch(tick)
 	if got, want := count.Load(), int32(2); got != want {
-		t.Errorf("count = %d; want %d after second dispatch", got, want)
+		t.Errorf("after second dispatch: got count %d; want %d", got, want)
 	}
 }
 
@@ -298,6 +298,6 @@ func TestOnceScheduler_Shutdown_Noop(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(50 * time.Millisecond):
-		t.Error("OnceScheduler.Shutdown() blocked; want no-op")
+		t.Error("shutdown should not have blocked")
 	}
 }

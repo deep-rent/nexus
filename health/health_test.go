@@ -114,26 +114,29 @@ func TestMonitor_Ready(t *testing.T) {
 			r.ServeHTTP(w, req)
 
 			if got, want := w.Code, tt.wantCode; got != want {
-				t.Errorf("ServeHTTP() status code = %d; want %d", got, want)
+				t.Errorf("status code: got %d; want %d", got, want)
 			}
 
 			var rep health.Report
 			if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
-				t.Fatalf("json.Unmarshal(body) = %v; want nil", err)
+				t.Fatalf(
+					"unmarshaling body: should not have returned an error: %v",
+					err,
+				)
 			}
 
 			if got, want := rep.Status, tt.wantStatus; got != want {
-				t.Errorf("Report.Status = %q; want %q", got, want)
+				t.Errorf("report status: got %q; want %q", got, want)
 			}
 
 			if got, want := len(rep.Checks), len(tt.checks); got != want {
-				t.Errorf("len(Report.Checks) = %d; want %d", got, want)
+				t.Errorf("number of checks: got %d; want %d", got, want)
 			}
 
 			now := time.Now()
 			for name, res := range rep.Checks {
 				if res.Timestamp.Time.IsZero() {
-					t.Errorf("Check %q timestamp is zero; want non-zero", name)
+					t.Errorf("timestamp for check %q is zero; want non-zero", name)
 				}
 
 				diff := now.Sub(res.Timestamp.Time)
@@ -141,7 +144,7 @@ func TestMonitor_Ready(t *testing.T) {
 					diff = -diff
 				}
 				if diff > 2*time.Second {
-					t.Errorf("Check %q timestamp = %v; want within 2s of %v",
+					t.Errorf("for check %q: got timestamp %v; want within 2s of %v",
 						name, res.Timestamp.Time, now)
 				}
 			}
@@ -166,16 +169,16 @@ func TestMonitor_Live(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	if got, want := w.Code, http.StatusOK; got != want {
-		t.Errorf("ServeHTTP() status code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 
 	var rep health.Report
 	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
-		t.Fatalf("json.Unmarshal(body) = %v; want nil", err)
+		t.Fatalf("unmarshaling body: should not have returned an error: %v", err)
 	}
 
 	if got, want := rep.Status, health.StatusHealthy; got != want {
-		t.Errorf("Report.Status = %v; want %v", got, want)
+		t.Errorf("report status: got %v; want %v", got, want)
 	}
 }
 
@@ -203,7 +206,7 @@ func TestMonitor_Caching(t *testing.T) {
 	}
 
 	if got := calls.Load(); got != 1 {
-		t.Errorf("atomic.LoadInt32(&calls) = %d; want 1 (must use cache)", got)
+		t.Errorf("calls while cached: got %d; want 1", got)
 	}
 
 	time.Sleep(60 * time.Millisecond)
@@ -213,7 +216,7 @@ func TestMonitor_Caching(t *testing.T) {
 	)
 
 	if got := calls.Load(); got != 2 {
-		t.Errorf("atomic.LoadInt32(&calls) = %d; want 2 (must refresh cache)", got)
+		t.Errorf("calls after cache expiry: got %d; want 2", got)
 	}
 }
 
@@ -232,11 +235,11 @@ func TestMonitor_Lifecycle(t *testing.T) {
 	r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/health", nil))
 	var rep1 health.Report
 	if err := json.Unmarshal(w1.Body.Bytes(), &rep1); err != nil {
-		t.Fatalf("json.Unmarshal(body) = %v", err)
+		t.Fatalf("before detach: should not have returned an error: %v", err)
 	}
 
 	if _, ok := rep1.Checks["tmp"]; !ok {
-		t.Errorf("Report.Checks contains %q; want true", "tmp")
+		t.Errorf("checks should contain %q before detach", "tmp")
 	}
 
 	m.Detach("tmp")
@@ -244,11 +247,11 @@ func TestMonitor_Lifecycle(t *testing.T) {
 	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/health", nil))
 	var rep2 health.Report
 	if err := json.Unmarshal(w2.Body.Bytes(), &rep2); err != nil {
-		t.Fatalf("json.Unmarshal(body) = %v", err)
+		t.Fatalf("after detach: should not have returned an error: %v", err)
 	}
 
 	if _, ok := rep2.Checks["tmp"]; ok {
-		t.Errorf("Report.Checks contains %q; want false", "tmp")
+		t.Errorf("checks should not contain %q after detach", "tmp")
 	}
 }
 
@@ -273,7 +276,7 @@ func TestMonitor_Concurrency(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/health", nil)
 			r.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
-				t.Errorf("ServeHTTP() status code = %d; want 200", w.Code)
+				t.Errorf("status code: got %d; want 200", w.Code)
 			}
 		})
 	}
@@ -330,20 +333,20 @@ func TestStatus_Serialization(t *testing.T) {
 		t.Run("Marshal_"+tt.name, func(t *testing.T) {
 			got, err := json.Marshal(tt.status)
 			if err != nil {
-				t.Fatalf("Marshal() error = %v", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if string(got) != tt.expected {
-				t.Errorf("Marshal() = %s; want %s", string(got), tt.expected)
+				t.Errorf("got %s; want %s", string(got), tt.expected)
 			}
 		})
 
 		t.Run("Unmarshal_"+tt.name, func(t *testing.T) {
 			var got health.Status
 			if err := json.Unmarshal([]byte(tt.expected), &got); err != nil {
-				t.Fatalf("Unmarshal() error = %v", err)
+				t.Fatalf("should not have returned an error: %v", err)
 			}
 			if got != tt.status {
-				t.Errorf("Unmarshal() = %v; want %v", got, tt.status)
+				t.Errorf("got %v; want %v", got, tt.status)
 			}
 		})
 	}
@@ -352,7 +355,7 @@ func TestStatus_Serialization(t *testing.T) {
 		var got health.Status
 		err := json.Unmarshal([]byte(`"unknown_status"`), &got)
 		if err == nil {
-			t.Error("Unmarshal() expected error for invalid status; got nil")
+			t.Error("should have returned an error")
 		}
 	})
 }
@@ -360,9 +363,9 @@ func TestStatus_Serialization(t *testing.T) {
 func TestStatus_String(t *testing.T) {
 	t.Parallel()
 	if got, want := health.StatusHealthy.String(), "healthy"; got != want {
-		t.Errorf("StatusHealthy.String() = %q; want %q", got, want)
+		t.Errorf("healthy status: got %q; want %q", got, want)
 	}
 	if got, want := health.Status(-1).String(), "unknown"; got != want {
-		t.Errorf("Undefined status String() = %q; want %q", got, want)
+		t.Errorf("undefined status: got %q; want %q", got, want)
 	}
 }

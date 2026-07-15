@@ -27,13 +27,13 @@ type test struct {
 	want bool
 }
 
-func run(t *testing.T, name string, fn func(string) bool, tests []test) {
+func run(t *testing.T, fn func(string) bool, tests []test) {
 	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := fn(tt.give), tt.want; got != want {
-				t.Errorf("%s(%q) = %v; want %v", name, tt.give, got, want)
+				t.Errorf("for %q: got %v; want %v", tt.give, got, want)
 			}
 		})
 	}
@@ -47,7 +47,7 @@ func TestCIDR(t *testing.T) {
 		{"missing mask", "192.168.1.0", false},
 		{"invalid ip", "not-an-ip/24", false},
 	}
-	run(t, "CIDR", valid.CIDR, tests)
+	run(t, valid.CIDR, tests)
 }
 
 func TestCIDRv4(t *testing.T) {
@@ -57,7 +57,7 @@ func TestCIDRv4(t *testing.T) {
 		{"invalid ipv6", "2001:db8::/32", false},
 		{"missing mask", "192.168.1.0", false},
 	}
-	run(t, "CIDRv4", valid.CIDRv4, tests)
+	run(t, valid.CIDRv4, tests)
 }
 
 func TestCIDRv6(t *testing.T) {
@@ -67,7 +67,7 @@ func TestCIDRv6(t *testing.T) {
 		{"invalid ipv4", "192.168.1.0/24", false},
 		{"missing mask", "2001:db8::", false},
 	}
-	run(t, "CIDRv6", valid.CIDRv6, tests)
+	run(t, valid.CIDRv6, tests)
 }
 
 func TestHostname(t *testing.T) {
@@ -78,7 +78,7 @@ func TestHostname(t *testing.T) {
 		{"invalid start char", "-example.com", false},
 		{"empty", "", false},
 	}
-	run(t, "Hostname", valid.Hostname, tests)
+	run(t, valid.Hostname, tests)
 }
 
 func TestPort(t *testing.T) {
@@ -98,7 +98,7 @@ func TestPort(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := valid.Port(tt.give), tt.want; got != want {
-				t.Errorf("Port(%d) = %v; want %v", tt.give, got, want)
+				t.Errorf("for port %d: got %v; want %v", tt.give, got, want)
 			}
 		})
 	}
@@ -111,7 +111,7 @@ func TestIP(t *testing.T) {
 		{"valid ipv6", "2001:db8::1", true},
 		{"invalid", "not-ip", false},
 	}
-	run(t, "IP", valid.IP, tests)
+	run(t, valid.IP, tests)
 }
 
 func TestIPv4(t *testing.T) {
@@ -121,7 +121,7 @@ func TestIPv4(t *testing.T) {
 		{"invalid ipv6", "2001:db8::1", false},
 		{"invalid", "not-ip", false},
 	}
-	run(t, "IPv4", valid.IPv4, tests)
+	run(t, valid.IPv4, tests)
 }
 
 func TestIPv6(t *testing.T) {
@@ -131,7 +131,7 @@ func TestIPv6(t *testing.T) {
 		{"invalid ipv4", "192.168.1.1", false},
 		{"invalid", "not-ip", false},
 	}
-	run(t, "IPv6", valid.IPv6, tests)
+	run(t, valid.IPv6, tests)
 }
 
 func TestFQDN(t *testing.T) {
@@ -142,7 +142,7 @@ func TestFQDN(t *testing.T) {
 		{"invalid no tld", "example", false},
 		{"empty", "", false},
 	}
-	run(t, "FQDN", valid.FQDN, tests)
+	run(t, valid.FQDN, tests)
 }
 
 func TestURI(t *testing.T) {
@@ -152,7 +152,7 @@ func TestURI(t *testing.T) {
 		{"valid urn", "urn:isbn:0451450523", true},
 		{"invalid", "::bad::", false},
 	}
-	run(t, "URI", valid.URI, tests)
+	run(t, valid.URI, tests)
 }
 
 func TestURL(t *testing.T) {
@@ -162,7 +162,7 @@ func TestURL(t *testing.T) {
 		{"invalid missing scheme", "example.com", false},
 		{"empty", "", false},
 	}
-	run(t, "URL", valid.URL, tests)
+	run(t, valid.URL, tests)
 }
 
 func TestURN(t *testing.T) {
@@ -172,7 +172,7 @@ func TestURN(t *testing.T) {
 		{"invalid missing urn", "isbn:0451450523", false},
 		{"empty", "", false},
 	}
-	run(t, "URN", valid.URN, tests)
+	run(t, valid.URN, tests)
 }
 
 func TestAlpha(t *testing.T) {
@@ -183,7 +183,7 @@ func TestAlpha(t *testing.T) {
 		{"invalid with spaces", "abc ABC", false},
 		{"empty", "", false},
 	}
-	run(t, "Alpha", valid.Alpha, tests)
+	run(t, valid.Alpha, tests)
 }
 
 func TestAlphaNum(t *testing.T) {
@@ -193,7 +193,7 @@ func TestAlphaNum(t *testing.T) {
 		{"invalid special char", "abc-123", false},
 		{"empty", "", false},
 	}
-	run(t, "AlphaNum", valid.AlphaNum, tests)
+	run(t, valid.AlphaNum, tests)
 }
 
 func TestASCII(t *testing.T) {
@@ -203,7 +203,7 @@ func TestASCII(t *testing.T) {
 		{"invalid non-ascii", "abc€", false},
 		{"empty", "", false},
 	}
-	run(t, "ASCII", valid.ASCII, tests)
+	run(t, valid.ASCII, tests)
 }
 
 func TestSlug(t *testing.T) {
@@ -216,7 +216,7 @@ func TestSlug(t *testing.T) {
 		{"invalid consecutive hyphens", "a--b", false},
 		{"empty", "", false},
 	}
-	run(t, "Slug", valid.Slug, tests)
+	run(t, valid.Slug, tests)
 }
 
 func TestUpper(t *testing.T) {
@@ -227,7 +227,7 @@ func TestUpper(t *testing.T) {
 		{"invalid numbers", "ABC1", false},
 		{"empty", "", false},
 	}
-	run(t, "Upper", valid.Upper, tests)
+	run(t, valid.Upper, tests)
 }
 
 func TestLower(t *testing.T) {
@@ -238,7 +238,7 @@ func TestLower(t *testing.T) {
 		{"invalid numbers", "abc1", false},
 		{"empty", "", false},
 	}
-	run(t, "Lower", valid.Lower, tests)
+	run(t, valid.Lower, tests)
 }
 
 func TestBase64(t *testing.T) {
@@ -249,7 +249,7 @@ func TestBase64(t *testing.T) {
 		{"invalid no padding", "YWI", false},
 		{"invalid chars", "YWI!", false},
 	}
-	run(t, "Base64", valid.Base64, tests)
+	run(t, valid.Base64, tests)
 }
 
 func TestBase64URL(t *testing.T) {
@@ -260,7 +260,7 @@ func TestBase64URL(t *testing.T) {
 		{"valid padding", "YWI=", true},
 		{"invalid base64 chars", "YWI+", false},
 	}
-	run(t, "Base64URL", valid.Base64URL, tests)
+	run(t, valid.Base64URL, tests)
 }
 
 func TestMAC(t *testing.T) {
@@ -271,7 +271,7 @@ func TestMAC(t *testing.T) {
 		{"invalid", "not-a-mac", false},
 		{"empty", "", false},
 	}
-	run(t, "MAC", valid.MAC, tests)
+	run(t, valid.MAC, tests)
 }
 
 func TestLang(t *testing.T) {
@@ -283,7 +283,7 @@ func TestLang(t *testing.T) {
 		{"invalid underscore", "en_US", false},
 		{"empty", "", false},
 	}
-	run(t, "Lang", valid.Lang, tests)
+	run(t, valid.Lang, tests)
 }
 
 func TestJSON(t *testing.T) {
@@ -295,7 +295,7 @@ func TestJSON(t *testing.T) {
 		{"invalid structure", `{a: 1}`, false},
 		{"empty", "", false},
 	}
-	run(t, "JSON", valid.JSON, tests)
+	run(t, valid.JSON, tests)
 }
 
 func TestMIME(t *testing.T) {
@@ -306,7 +306,7 @@ func TestMIME(t *testing.T) {
 		{"invalid missing subtype", "text", false},
 		{"empty", "", false},
 	}
-	run(t, "MIME", valid.MIME, tests)
+	run(t, valid.MIME, tests)
 }
 
 func TestCreditCard(t *testing.T) {
@@ -319,7 +319,7 @@ func TestCreditCard(t *testing.T) {
 		{"invalid length", "424242424242", false},
 		{"invalid chars", "424242424242424a", false},
 	}
-	run(t, "CreditCard", valid.CreditCard, tests)
+	run(t, valid.CreditCard, tests)
 }
 
 func TestEmail(t *testing.T) {
@@ -332,7 +332,7 @@ func TestEmail(t *testing.T) {
 		{"invalid missing user", "@example.com", false},
 		{"empty", "", false},
 	}
-	run(t, "Email", valid.Email, tests)
+	run(t, valid.Email, tests)
 }
 
 func TestHex(t *testing.T) {
@@ -343,7 +343,7 @@ func TestHex(t *testing.T) {
 		{"invalid chars", "1g", false},
 		{"empty", "", false},
 	}
-	run(t, "Hex", valid.Hex, tests)
+	run(t, valid.Hex, tests)
 }
 
 func TestHexColor(t *testing.T) {
@@ -355,7 +355,7 @@ func TestHexColor(t *testing.T) {
 		{"invalid length", "#ffff", false},
 		{"invalid chars", "#gggggg", false},
 	}
-	run(t, "HexColor", valid.HexColor, tests)
+	run(t, valid.HexColor, tests)
 }
 
 func TestISSN(t *testing.T) {
@@ -366,7 +366,7 @@ func TestISSN(t *testing.T) {
 		{"invalid missing hyphen", "03785955", false},
 		{"invalid length", "0378-595", false},
 	}
-	run(t, "ISSN", valid.ISSN, tests)
+	run(t, valid.ISSN, tests)
 }
 
 func TestISBN10(t *testing.T) {
@@ -378,7 +378,7 @@ func TestISBN10(t *testing.T) {
 		{"invalid length", "0-306-40615", false},
 		{"invalid checksum char", "0-306-40615-Y", false},
 	}
-	run(t, "ISBN10", valid.ISBN10, tests)
+	run(t, valid.ISBN10, tests)
 }
 
 func TestISBN13(t *testing.T) {
@@ -389,7 +389,7 @@ func TestISBN13(t *testing.T) {
 		{"invalid length", "978-3-16-148410", false},
 		{"invalid X checksum", "978-3-16-148410-X", false},
 	}
-	run(t, "ISBN13", valid.ISBN13, tests)
+	run(t, valid.ISBN13, tests)
 }
 
 func TestISBN(t *testing.T) {
@@ -399,7 +399,7 @@ func TestISBN(t *testing.T) {
 		{"valid 13", "978-3-16-148410-0", true},
 		{"invalid format", "bad", false},
 	}
-	run(t, "ISBN", valid.ISBN, tests)
+	run(t, valid.ISBN, tests)
 }
 
 func TestCountry2(t *testing.T) {
@@ -409,7 +409,7 @@ func TestCountry2(t *testing.T) {
 		{"invalid lowercase", "us", false},
 		{"invalid length", "USA", false},
 	}
-	run(t, "Country2", valid.Country2, tests)
+	run(t, valid.Country2, tests)
 }
 
 func TestCountry3(t *testing.T) {
@@ -419,7 +419,7 @@ func TestCountry3(t *testing.T) {
 		{"invalid lowercase", "usa", false},
 		{"invalid length", "US", false},
 	}
-	run(t, "Country3", valid.Country3, tests)
+	run(t, valid.Country3, tests)
 }
 
 func TestCountryN(t *testing.T) {
@@ -429,7 +429,7 @@ func TestCountryN(t *testing.T) {
 		{"invalid length", "84", false},
 		{"invalid chars", "84a", false},
 	}
-	run(t, "CountryN", valid.CountryN, tests)
+	run(t, valid.CountryN, tests)
 }
 
 func TestCurrency(t *testing.T) {
@@ -439,7 +439,7 @@ func TestCurrency(t *testing.T) {
 		{"invalid lowercase", "usd", false},
 		{"invalid length", "US", false},
 	}
-	run(t, "Currency", valid.Currency, tests)
+	run(t, valid.Currency, tests)
 }
 
 func TestUUID(t *testing.T) {
@@ -449,7 +449,7 @@ func TestUUID(t *testing.T) {
 		{"valid v7", uuid.NewV7().String(), true},
 		{"invalid", "018e6-123", false},
 	}
-	run(t, "UUID", valid.UUID, tests)
+	run(t, valid.UUID, tests)
 }
 
 func TestLat(t *testing.T) {
@@ -469,7 +469,7 @@ func TestLat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := valid.Lat(tt.give), tt.want; got != want {
-				t.Errorf("Lat(%f) = %v; want %v", tt.give, got, want)
+				t.Errorf("for latitude %f: got %v; want %v", tt.give, got, want)
 			}
 		})
 	}
@@ -492,7 +492,7 @@ func TestLon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := valid.Lon(tt.give), tt.want; got != want {
-				t.Errorf("Lon(%f) = %v; want %v", tt.give, got, want)
+				t.Errorf("for longitude %f: got %v; want %v", tt.give, got, want)
 			}
 		})
 	}
@@ -505,7 +505,7 @@ func TestMD5(t *testing.T) {
 		{"invalid length", "d41d8cd98f00b204e9800998ecf8427", false},
 		{"invalid chars", "d41d8cd98f00b204e9800998ecf8427z", false},
 	}
-	run(t, "MD5", valid.MD5, tests)
+	run(t, valid.MD5, tests)
 }
 
 func TestSHA256(t *testing.T) {
@@ -515,7 +515,7 @@ func TestSHA256(t *testing.T) {
 			"34ca495991b7852b855", true},
 		{"invalid length", "e3b0c44298fc1c149afbf4c8996fb92427ae41e46", false},
 	}
-	run(t, "SHA256", valid.SHA256, tests)
+	run(t, valid.SHA256, tests)
 }
 
 func TestSHA384(t *testing.T) {
@@ -525,7 +525,7 @@ func TestSHA384(t *testing.T) {
 			"7434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b", true},
 		{"invalid length", "38b060a751ac96384cd9327eb1b1e36a21fdb7111", false},
 	}
-	run(t, "SHA384", valid.SHA384, tests)
+	run(t, valid.SHA384, tests)
 }
 
 func TestSHA512(t *testing.T) {
@@ -536,7 +536,7 @@ func TestSHA512(t *testing.T) {
 			"7417a81a538327af927da3e", true},
 		{"invalid length", "cf83e1357eefb8bdf1542850d66d8007d620e4050", false},
 	}
-	run(t, "SHA512", valid.SHA512, tests)
+	run(t, valid.SHA512, tests)
 }
 
 func TestSemVer(t *testing.T) {
@@ -549,7 +549,7 @@ func TestSemVer(t *testing.T) {
 		{"valid no minor", "v1", true},
 		{"empty", "", false},
 	}
-	run(t, "SemVer", valid.SemVer, tests)
+	run(t, valid.SemVer, tests)
 }
 
 func TestPhone(t *testing.T) {
@@ -561,7 +561,7 @@ func TestPhone(t *testing.T) {
 		{"invalid too short", "+1", false},
 		{"invalid too long", "+1234567890123456", false},
 	}
-	run(t, "Phone", valid.Phone, tests)
+	run(t, valid.Phone, tests)
 }
 
 func TestBIC(t *testing.T) {
@@ -572,7 +572,7 @@ func TestBIC(t *testing.T) {
 		{"invalid length", "SBANDE21XX", false},
 		{"invalid format", "SBANDE21!!!", false},
 	}
-	run(t, "BIC", valid.BIC, tests)
+	run(t, valid.BIC, tests)
 }
 
 func TestIBAN(t *testing.T) {
@@ -584,5 +584,5 @@ func TestIBAN(t *testing.T) {
 		{"invalid length", "DE8937040044053201300", false},
 		{"invalid chars", "DE8937040044053201300!", false},
 	}
-	run(t, "IBAN", valid.IBAN, tests)
+	run(t, valid.IBAN, tests)
 }

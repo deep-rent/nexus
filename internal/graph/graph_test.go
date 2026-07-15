@@ -26,7 +26,7 @@ func TestNew(t *testing.T) {
 
 	g := graph.New[int]()
 	if g == nil {
-		t.Fatalf("expected non-nil graph")
+		t.Fatal("graph should not be nil")
 	}
 }
 
@@ -43,11 +43,11 @@ func TestGraph_Sort(t *testing.T) {
 
 		sorted, err := g.Sort()
 		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 
 		if len(sorted) != 5 {
-			t.Fatalf("expected 5 nodes, got %d", len(sorted))
+			t.Fatalf("got %d nodes; want 5", len(sorted))
 		}
 
 		pos := make(map[string]int)
@@ -56,13 +56,13 @@ func TestGraph_Sort(t *testing.T) {
 		}
 
 		if pos["foo"] > pos["bar"] {
-			t.Errorf("expected foo to come before bar")
+			t.Error("foo should come before bar")
 		}
 		if pos["foo"] > pos["qux"] {
-			t.Errorf("expected foo to come before qux")
+			t.Error("foo should come before qux")
 		}
 		if pos["bar"] > pos["baz"] {
-			t.Errorf("expected bar to come before baz")
+			t.Error("bar should come before baz")
 		}
 	})
 
@@ -75,7 +75,7 @@ func TestGraph_Sort(t *testing.T) {
 
 		_, err := g.Sort()
 		if !errors.Is(err, graph.ErrCycleDetected) {
-			t.Fatalf("expected cycle detection error, got %v", err)
+			t.Fatalf("got error %v; want ErrCycleDetected", err)
 		}
 	})
 }

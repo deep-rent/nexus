@@ -54,20 +54,20 @@ func TestNew(t *testing.T) {
 
 	s := file.New(mfs, file.WithExtension("txt"), file.WithLogger(l))
 	if got, want := s.Extension(), ".txt"; got != want {
-		t.Errorf("Extension() = %q; want %q", got, want)
+		t.Errorf("extension: got %q; want %q", got, want)
 	}
 	if got, want := s.Directory(), mfs; !reflect.DeepEqual(got, want) {
-		t.Errorf("Directory() = %v; want %v", got, want)
+		t.Errorf("directory: got %v; want %v", got, want)
 	}
 
 	s2 := file.New(mfs, file.WithExtension(""))
 	if got, want := s2.Extension(), file.DefaultExtension; got != want {
-		t.Errorf("Extension() = %q; want %q", got, want)
+		t.Errorf("for an empty extension: got %q; want %q", got, want)
 	}
 
 	s3 := file.New(mfs, file.WithExtension(".csv"))
 	if got, want := s3.Extension(), ".csv"; got != want {
-		t.Errorf("Extension() = %q; want %q", got, want)
+		t.Errorf("for a dotted extension: got %q; want %q", got, want)
 	}
 }
 
@@ -192,38 +192,38 @@ func TestSource_Parse(t *testing.T) {
 			v, desc, dir, tx, err := s.Parse(tt.give)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("Parse(%q) err = %v; want %v", tt.give, err, tt.wantErr)
+					t.Errorf("for %q: got error %v; want %v", tt.give, err, tt.wantErr)
 				}
 				return
 			}
 
 			if err != nil {
 				t.Fatalf(
-					"Parse(%q) unexpected err = %v",
+					"for %q: should not have returned an error: %v",
 					tt.give, err,
 				)
 			}
 			if v != tt.wantVersion {
 				t.Errorf(
-					"Parse(%q) version = %d; want %d",
+					"for %q: got version %d; want %d",
 					tt.give, v, tt.wantVersion,
 				)
 			}
 			if desc != tt.wantDesc {
 				t.Errorf(
-					"Parse(%q) description = %q; want %q",
+					"for %q: got description %q; want %q",
 					tt.give, desc, tt.wantDesc,
 				)
 			}
 			if dir != tt.wantDir {
 				t.Errorf(
-					"Parse(%q) direction = %v; want %v",
+					"for %q: got direction %v; want %v",
 					tt.give, dir, tt.wantDir,
 				)
 			}
 			if tx != tt.wantTx {
 				t.Errorf(
-					"Parse(%q) tx = %v; want %v",
+					"for %q: got tx %v; want %v",
 					tt.give, tx, tt.wantTx,
 				)
 			}
@@ -246,45 +246,48 @@ func TestSource_List(t *testing.T) {
 		s := file.New(mfs)
 		scripts, err := s.List()
 		if err != nil {
-			t.Fatalf("List() err = %v; want nil", err)
+			t.Fatalf("should not have returned an error: %v", err)
 		}
 		if got, want := len(scripts), 4; got != want {
-			t.Fatalf("len(scripts) = %d; want %d", got, want)
+			t.Fatalf("got size %d; want %d", got, want)
 		}
 
 		// Verify first script
 		if got, want := scripts[0].Version, uint64(1); got != want {
-			t.Errorf("scripts[0].Version = %d; want %d", got, want)
+			t.Errorf("at index 0: got version %d; want %d", got, want)
 		}
 		if got, want := scripts[0].Description, "init"; got != want {
-			t.Errorf("scripts[0].Description = %q; want %q", got, want)
+			t.Errorf("at index 0: got description %q; want %q", got, want)
 		}
 		if got, want := scripts[0].Direction, migrate.Up; got != want {
-			t.Errorf("scripts[0].Direction = %v; want %v", got, want)
+			t.Errorf("at index 0: got direction %v; want %v", got, want)
 		}
 		if !scripts[0].Tx {
-			t.Errorf("scripts[0].Tx = false; want true")
+			t.Error("at index 0: got tx false; want true")
 		}
 		if got, want := scripts[0].Path, "01_init.up.sql"; got != want {
-			t.Errorf("scripts[0].Path = %q; want %q", got, want)
+			t.Errorf("at index 0: got path %q; want %q", got, want)
 		}
 		if !bytes.Equal(scripts[0].Content, []byte("UP1")) {
-			t.Errorf("scripts[0].Content = %q; want %q", scripts[0].Content, "UP1")
+			t.Errorf(
+				"at index 0: got content %q; want %q",
+				scripts[0].Content, "UP1",
+			)
 		}
 
 		// Verify direction logic
 		if got, want := scripts[1].Direction, migrate.Down; got != want {
-			t.Errorf("scripts[1].Direction = %v; want %v", got, want)
+			t.Errorf("at index 1: got direction %v; want %v", got, want)
 		}
 
 		// Verify _notx flag
 		if scripts[2].Tx {
-			t.Errorf("scripts[2].Tx = true; want false")
+			t.Error("at index 2: got tx true; want false")
 		}
 
 		// Verify subdirectory paths
 		if got, want := scripts[3].Path, "subdir/03_sub.up.sql"; got != want {
-			t.Errorf("scripts[3].Path = %q; want %q", got, want)
+			t.Errorf("at index 3: got path %q; want %q", got, want)
 		}
 	})
 
@@ -293,7 +296,7 @@ func TestSource_List(t *testing.T) {
 		s := file.New(mockWalkErrFS{})
 		_, err := s.List()
 		if err == nil {
-			t.Errorf("List() did not return error")
+			t.Error("should have returned an error")
 		}
 	})
 
@@ -305,7 +308,7 @@ func TestSource_List(t *testing.T) {
 		s := file.New(mockReadErrFS{FS: mfs})
 		_, err := s.List()
 		if err == nil {
-			t.Errorf("List() did not return error")
+			t.Error("should have returned an error")
 		}
 	})
 }

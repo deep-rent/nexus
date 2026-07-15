@@ -44,7 +44,10 @@ func TestHandler_ServeHTTP_EndToEnd(t *testing.T) {
 
 	u, err := url.Parse(server1.URL)
 	if err != nil {
-		t.Fatalf("url.Parse(%q) err = %v", server1.URL, err)
+		t.Fatalf(
+			"parsing %q: should not have returned an error: %v",
+			server1.URL, err,
+		)
 	}
 
 	server2 := httptest.NewServer(proxy.NewHandler(u))
@@ -52,22 +55,25 @@ func TestHandler_ServeHTTP_EndToEnd(t *testing.T) {
 
 	res, err := http.Get(server2.URL)
 	if err != nil {
-		t.Fatalf("http.Get(%q) err = %v", server2.URL, err)
+		t.Fatalf(
+			"getting %q: should not have returned an error: %v",
+			server2.URL, err,
+		)
 	}
 	defer func() {
 		_ = res.Body.Close()
 	}()
 
 	if got, want := res.StatusCode, http.StatusOK; got != want {
-		t.Errorf("res.StatusCode = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
-		t.Fatalf("io.ReadAll(res.Body) err = %v", err)
+		t.Fatalf("reading body: should not have returned an error: %v", err)
 	}
 	if got, want := string(b), msg; got != want {
-		t.Errorf("res.Body = %q; want %q", got, want)
+		t.Errorf("body: got %q; want %q", got, want)
 	}
 }
 
@@ -101,7 +107,7 @@ func TestHandler_ServeHTTP_Rewrite(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	if got, want := rec.Code, http.StatusOK; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
+		t.Errorf("got %d; want %d", got, want)
 	}
 }
 
@@ -154,16 +160,16 @@ func TestErrorHandler_Handle_StatusAndLogging(t *testing.T) {
 
 			if tt.code != 0 {
 				if got, want := rec.Code, tt.code; got != want {
-					t.Errorf("rec.Code = %d; want %d", got, want)
+					t.Errorf("status code: got %d; want %d", got, want)
 				}
 			}
 			if tt.log != "" {
 				if got := buf.String(); !strings.Contains(got, tt.log) {
-					t.Errorf("log output = %q; want it to contain %q", got, tt.log)
+					t.Errorf("log: want match for %q; got %q", tt.log, got)
 				}
 			} else {
 				if got := buf.Len(); got != 0 {
-					t.Errorf("buf.Len() = %d; want 0", got)
+					t.Errorf("log length: got %d; want 0", got)
 				}
 			}
 		})
@@ -189,17 +195,17 @@ func TestNewHandler_Options_Configuration(t *testing.T) {
 
 		rp, ok := h.(*httputil.ReverseProxy)
 		if !ok {
-			t.Fatalf("h is %T; want *httputil.ReverseProxy", h)
+			t.Fatalf("handler type: got %T; want *httputil.ReverseProxy", h)
 		}
 
 		if got, want := rp.Transport, transport; got != want {
-			t.Errorf("rp.Transport = %p; want %p", got, want)
+			t.Errorf("transport: got %p; want %p", got, want)
 		}
 		if got, want := rp.FlushInterval, d; got != want {
-			t.Errorf("rp.FlushInterval = %v; want %v", got, want)
+			t.Errorf("flush interval: got %v; want %v", got, want)
 		}
 		if rp.BufferPool == nil {
-			t.Error("rp.BufferPool is nil; want non-nil")
+			t.Error("buffer pool should not be nil")
 		}
 	})
 
@@ -217,17 +223,17 @@ func TestNewHandler_Options_Configuration(t *testing.T) {
 
 		rp, ok := h.(*httputil.ReverseProxy)
 		if !ok {
-			t.Fatalf("h is %T; want *httputil.ReverseProxy", h)
+			t.Fatalf("handler type: got %T; want *httputil.ReverseProxy", h)
 		}
 
 		if rp.BufferPool == nil {
-			t.Error("rp.BufferPool is nil; want non-nil")
+			t.Error("buffer pool should not be nil")
 		}
 		if rp.ErrorHandler == nil {
-			t.Error("rp.ErrorHandler is nil; want non-nil")
+			t.Error("error handler should not be nil")
 		}
 		if rp.Rewrite == nil {
-			t.Error("rp.Rewrite is nil; want non-nil")
+			t.Error("rewrite should not be nil")
 		}
 		// if rp.Director != nil { //nolint:staticcheck
 		// 	t.Error("rp.Director is non-nil; want nil")
@@ -247,7 +253,7 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 		return func(w http.ResponseWriter, r *http.Request, err error) {
 			called = true
 			if !errors.Is(err, wantErr) {
-				t.Errorf("ErrorHandler(err) = %v; want %v", err, wantErr)
+				t.Errorf("error passed to handler: got %v; want %v", err, wantErr)
 			}
 			w.WriteHeader(http.StatusTeapot)
 		}
@@ -256,7 +262,7 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 	h := proxy.NewHandler(u, proxy.WithErrorHandler(ehf))
 	rp, ok := h.(*httputil.ReverseProxy)
 	if !ok {
-		t.Fatalf("h is %T; want *httputil.ReverseProxy", h)
+		t.Fatalf("handler type: got %T; want *httputil.ReverseProxy", h)
 	}
 
 	rec := httptest.NewRecorder()
@@ -265,9 +271,9 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 	rp.ErrorHandler(rec, req, wantErr)
 
 	if !called {
-		t.Error("ErrorHandler was not called")
+		t.Error("error handler should have been called")
 	}
 	if got, want := rec.Code, http.StatusTeapot; got != want {
-		t.Errorf("rec.Code = %d; want %d", got, want)
+		t.Errorf("status code: got %d; want %d", got, want)
 	}
 }

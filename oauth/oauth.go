@@ -533,12 +533,12 @@ func (u *UnixTime) UnmarshalJSON(b []byte) error {
 // IntrospectionResponse represents the JSON response structure returned
 // from the token introspection endpoint.
 type IntrospectionResponse struct {
-	Active   bool      `json:"active"`
-	ClientID string    `json:"client_id,omitempty"`
-	Scope    string    `json:"scope,omitempty"`
-	Jti      string    `json:"jti,omitempty"`
-	Iss      string    `json:"iss,omitempty"`
-	Aud      []string  `json:"aud,omitempty"`
+	Active   bool     `json:"active"`
+	ClientID string   `json:"client_id,omitempty"`
+	Scope    string   `json:"scope,omitempty"`
+	Jti      string   `json:"jti,omitempty"`
+	Iss      string   `json:"iss,omitempty"`
+	Aud      []string `json:"aud,omitempty"`
 	Sub      string   `json:"sub,omitempty"`
 	Iat      UnixTime `json:"iat,omitzero"`
 	Exp      UnixTime `json:"exp,omitzero"`
