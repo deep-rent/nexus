@@ -53,12 +53,12 @@ const (
 // ErrClockDriftTooLarge is returned when updating the clock with a remote
 // timestamp that is too far in the future compared to the local physical clock.
 var ErrClockDriftTooLarge = errors.New(
-	"hlc: remote clock drift exceeds maximum offset",
+	"remote clock drift exceeds maximum offset",
 )
 
 // ErrLogicalOverflow is returned when the logical counter space for a single
 // millisecond is exhausted while applying a remote timestamp.
-var ErrLogicalOverflow = errors.New("hlc: logical counter overflow")
+var ErrLogicalOverflow = errors.New("logical counter overflow")
 
 // Time represents a causally ordered timestamp.
 // It combines physical milliseconds and logical counter into a single value.

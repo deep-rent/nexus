@@ -130,7 +130,7 @@ type rotor[E any] struct {
 // exactly one item, an optimized [Rotor] implementation will be created.
 func New[E any](t Strategy, items []E) Rotor[E] {
 	if len(items) == 0 {
-		panic("rotor: items slice must not be empty")
+		panic("items slice must not be empty")
 	}
 	if len(items) == 1 {
 		return &singleton[E]{item: items[0]}

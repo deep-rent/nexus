@@ -100,7 +100,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("panic missing source", func(t *testing.T) {
 		t.Parallel()
-		want := "migrate: source is required"
+		want := "source is required"
 		defer func() {
 			if r := recover(); r != want {
 				t.Errorf("got %v; want %q", r, want)
@@ -111,7 +111,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("panic missing driver", func(t *testing.T) {
 		t.Parallel()
-		want := "migrate: driver is required"
+		want := "driver is required"
 		defer func() {
 			if r := recover(); r != want {
 				t.Errorf("got %v; want %q", r, want)

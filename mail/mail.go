@@ -67,16 +67,16 @@ const (
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
-	ErrNilMessage = errors.New("mail: message cannot be nil")
+	ErrNilMessage = errors.New("message cannot be nil")
 	// ErrMissingRecipients is returned when an email has no recipients.
-	ErrMissingRecipients = errors.New("mail: at least one recipient is needed")
+	ErrMissingRecipients = errors.New("at least one recipient is needed")
 	// ErrMissingTemplateID is returned when an email has no template ID.
-	ErrMissingTemplateID = errors.New("mail: template ID is needed")
+	ErrMissingTemplateID = errors.New("template ID is needed")
 	// ErrMissingFrom is returned when an email has no sender address.
-	ErrMissingFrom = errors.New("mail: from address is needed")
+	ErrMissingFrom = errors.New("from address is needed")
 	// ErrDispatchFailed is returned when the underlying provider rejects the
 	// payload.
-	ErrDispatchFailed = errors.New("mail: dispatching failed")
+	ErrDispatchFailed = errors.New("dispatching failed")
 )
 
 // APIError represents an error returned by the underlying email provider.
@@ -89,7 +89,7 @@ type APIError struct {
 
 // Error implements the [error] interface.
 func (e *APIError) Error() string {
-	return fmt.Sprintf("mail: api returned status %d: %s", e.Status, e.Body)
+	return fmt.Sprintf("api returned status %d: %s", e.Status, e.Body)
 }
 
 // Unwrap allows [errors.Is] to match against [ErrDispatchFailed].
@@ -358,7 +358,7 @@ func WithLogger(logger *slog.Logger) Option {
 // URL is invalid.
 func NewSender(apiKey string, opts ...Option) Sender {
 	if apiKey == "" {
-		panic("mail: API key is required")
+		panic("API key is required")
 	}
 
 	cfg := config{
@@ -373,7 +373,7 @@ func NewSender(apiKey string, opts ...Option) Sender {
 
 	endpoint, err := url.JoinPath(cfg.baseURL, "mail/send")
 	if err != nil {
-		panic(fmt.Errorf("mail: invalid base URL: %w", err))
+		panic(fmt.Errorf("invalid base URL: %w", err))
 	}
 
 	s := &sender{
@@ -430,7 +430,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(msg); err != nil {
-		return fmt.Errorf("mail: failed to encode payload: %w", err)
+		return fmt.Errorf("failed to encode payload: %w", err)
 	}
 	req, err := http.NewRequestWithContext(
 		ctx,
@@ -439,7 +439,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		&buf,
 	)
 	if err != nil {
-		return fmt.Errorf("mail: failed to create request: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", s.auth)
@@ -457,7 +457,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	start := time.Now()
 	res, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("mail: request failed: %w", err)
+		return fmt.Errorf("request failed: %w", err)
 	}
 	delta := time.Since(start)
 

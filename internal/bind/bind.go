@@ -81,7 +81,7 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []field {
 		flags, err := parse(val)
 		if err != nil {
 			panic(fmt.Errorf(
-				"bind: failed to parse tag for field %q: %w", ft.Name, err,
+				"failed to parse tag for field %q: %w", ft.Name, err,
 			))
 		}
 

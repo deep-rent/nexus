@@ -184,10 +184,7 @@ func Unmarshal[T any](v *T, opts ...Option) error {
 		opt(&cfg)
 	}
 
-	if err := binder.Bind(v, cfg.Prefix, source{cfg.Lookup}); err != nil {
-		return fmt.Errorf("env: %w", err)
-	}
-	return nil
+	return binder.Bind(v, cfg.Prefix, source{cfg.Lookup})
 }
 
 // Expand substitutes environment variables in a string.
@@ -238,13 +235,13 @@ func Expand(s string, opts ...Option) (string, error) {
 				end++
 			}
 			if i+end == len(s) {
-				return "", errors.New("env: variable bracket not closed")
+				return "", errors.New("variable bracket not closed")
 			} else {
 				// Extract the bracketed variable name.
 				key := cfg.Prefix + s[i+2:i+end]
 				val, ok := cfg.Lookup(key)
 				if !ok {
-					return "", fmt.Errorf("env: variable %q is not set", key)
+					return "", fmt.Errorf("variable %q is not set", key)
 				}
 				b.WriteString(val)
 				// Move the index past the processed variable `${KEY}`.
@@ -275,7 +272,7 @@ func Expand(s string, opts ...Option) (string, error) {
 				key := cfg.Prefix + s[i+1:i+1+n]
 				val, ok := cfg.Lookup(key)
 				if !ok {
-					return "", fmt.Errorf("env: variable %q is not set", key)
+					return "", fmt.Errorf("variable %q is not set", key)
 				}
 				b.WriteString(val)
 				// Move the index past the processed variable `$KEY`.

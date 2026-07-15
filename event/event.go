@@ -516,7 +516,7 @@ func Topic[T any](b *Broker, name string) *Bus[T] {
 		bus, ok := existing.(*Bus[T])
 		if !ok {
 			panic(fmt.Sprintf(
-				"event: topic %q exists but expects a different event type",
+				"topic %q exists but expects a different event type",
 				name,
 			))
 		}
@@ -533,7 +533,7 @@ func Topic[T any](b *Broker, name string) *Bus[T] {
 		bus, ok := existing.(*Bus[T])
 		if !ok {
 			panic(fmt.Sprintf(
-				"event: topic %q exists but expects a different event type",
+				"topic %q exists but expects a different event type",
 				name,
 			))
 		}

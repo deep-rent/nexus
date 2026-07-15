@@ -38,17 +38,17 @@ func TestNew(t *testing.T) {
 			{
 				name: "owner is required",
 				give: &update.Config{Repository: "r", Current: "v1.0.0"},
-				want: "update: owner is required",
+				want: "owner is required",
 			},
 			{
 				name: "repository is required",
 				give: &update.Config{Owner: "o", Current: "v1.0.0"},
-				want: "update: repository is required",
+				want: "repository is required",
 			},
 			{
 				name: "current version is required",
 				give: &update.Config{Owner: "o", Repository: "r"},
-				want: "update: current version is required",
+				want: "current version is required",
 			},
 		}
 

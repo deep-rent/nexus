@@ -111,7 +111,7 @@ func TestDriver_Lock(t *testing.T) {
 		d := mock.New()
 		_ = d.Lock(t.Context())
 
-		want := "mock: already locked"
+		want := "already locked"
 		if err := d.Lock(t.Context()); err == nil || err.Error() != want {
 			t.Errorf("on second call: got %v; want %q", err, want)
 		}
@@ -150,7 +150,7 @@ func TestDriver_Unlock(t *testing.T) {
 	t.Run("not locked", func(t *testing.T) {
 		t.Parallel()
 		d := mock.New()
-		want := "mock: not locked"
+		want := "not locked"
 		if err := d.Unlock(t.Context()); err == nil || err.Error() != want {
 			t.Errorf("got %v; want %q", err, want)
 		}

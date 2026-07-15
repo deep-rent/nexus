@@ -149,7 +149,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 		return d.LockErr
 	}
 	if d.IsLocked {
-		return errors.New("mock: already locked")
+		return errors.New("already locked")
 	}
 
 	d.IsLocked = true
@@ -165,7 +165,7 @@ func (d *Driver) Unlock(ctx context.Context) error {
 		return d.UnlockErr
 	}
 	if !d.IsLocked {
-		return errors.New("mock: not locked")
+		return errors.New("not locked")
 	}
 
 	d.IsLocked = false

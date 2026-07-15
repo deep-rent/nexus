@@ -74,22 +74,18 @@ var (
 	// ErrInvalidLength indicates that the requested verifier length is outside
 	// the RFC 7636 bounds defined by [MinVerifierLength] and [MaxVerifierLength].
 	ErrInvalidLength = fmt.Errorf(
-		"pkce: verifier length must be between %d and %d characters",
+		"verifier length must be between %d and %d characters",
 		MinVerifierLength,
 		MaxVerifierLength,
 	)
 
 	// ErrUnsupportedMethod indicates that the provided challenge method is not
 	// supported. Valid methods are [MethodS256] and [MethodPlain].
-	ErrUnsupportedMethod = errors.New(
-		"pkce: unsupported challenge method",
-	)
+	ErrUnsupportedMethod = errors.New("unsupported challenge method")
 
 	// ErrInvalidVerifier indicates that the provided code verifier contains
 	// characters that are not allowed by RFC 7636.
-	ErrInvalidVerifier = errors.New(
-		"pkce: code verifier contains invalid characters",
-	)
+	ErrInvalidVerifier = errors.New("code verifier contains invalid characters")
 )
 
 // Supports checks if the provided challenge method string is supported by this

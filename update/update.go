@@ -118,18 +118,18 @@ type Updater struct {
 // not a valid semantic version.
 func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
-		panic("update: owner is required")
+		panic("owner is required")
 	}
 	if cfg.Repository == "" {
-		panic("update: repository is required")
+		panic("repository is required")
 	}
 	if cfg.Current == "" {
-		panic("update: current version is required")
+		panic("current version is required")
 	}
 	current := normalize(cfg.Current)
 	if !semver.IsValid(current) {
 		panic(fmt.Sprintf(
-			"update: current version %q is not a valid semver",
+			"current version %q is not a valid semver",
 			cfg.Current,
 		))
 	}

@@ -177,7 +177,7 @@ func TestBroker_Topic(t *testing.T) {
 	}
 
 	defer func() {
-		want := `event: topic "t1" exists but expects a different event type`
+		want := `topic "t1" exists but expects a different event type`
 		if r := recover(); r != want {
 			t.Errorf("panic value: got %v; want %v", r, want)
 		}

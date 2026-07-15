@@ -256,10 +256,10 @@ func New(opts ...Option) *Migrator {
 		opt(m)
 	}
 	if m.source == nil {
-		panic("migrate: source is required")
+		panic("source is required")
 	}
 	if m.driver == nil {
-		panic("migrate: driver is required")
+		panic("driver is required")
 	}
 	return m
 }

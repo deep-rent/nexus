@@ -60,7 +60,7 @@ func TestAPIError_Error(t *testing.T) {
 	t.Parallel()
 
 	err := &mail.APIError{Status: 400, Body: "bad request"}
-	want := "mail: api returned status 400: bad request"
+	want := "api returned status 400: bad request"
 
 	if got := err.Error(); got != want {
 		t.Errorf("got %q; want %q", got, want)
@@ -319,7 +319,7 @@ func TestSender_Send(t *testing.T) {
 			name:    "network failure",
 			msg:     validMessage,
 			mockErr: errors.New("connection reset by peer"),
-			wantErr: errors.New("mail: request failed"),
+			wantErr: errors.New("request failed"),
 		},
 	}
 

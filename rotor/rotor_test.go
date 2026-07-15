@@ -28,7 +28,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("panics on empty slice", func(t *testing.T) {
 		t.Parallel()
-		want := "rotor: items slice must not be empty"
+		want := "items slice must not be empty"
 
 		checkPanic := func(t *testing.T, fn func()) {
 			t.Helper()
