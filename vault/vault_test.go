@@ -20,6 +20,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json/v2"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,6 +29,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/rotor"
+	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/vault"
 )
@@ -200,5 +203,68 @@ func TestLoadFile(t *testing.T) {
 
 	if exp, act := 1, v.Keys().Len(); exp != act {
 		t.Errorf("got %d keys; want %d", act, exp)
+	}
+}
+
+func TestHandler(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		keys []jwk.KeyPair
+	}{
+		{
+			name: "single key",
+			keys: []jwk.KeyPair{
+				generate(t, "key-1"),
+			},
+		},
+		{
+			name: "multiple keys",
+			keys: []jwk.KeyPair{
+				generate(t, "key-1"),
+				generate(t, "key-2"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			v := vault.New(tt.keys, rotor.Sequential)
+			h := vault.Handler(v)
+
+			const path = "/.well-known/jwks.json"
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
+
+			if err := h.ServeHTTP(e); err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+
+			if got, want := rec.Code, http.StatusOK; got != want {
+				t.Errorf("status code: got %d; want %d", got, want)
+			}
+
+			ct := rec.Header().Get("Content-Type")
+			if got, want := ct, "application/jwk-set+json"; got != want {
+				t.Errorf("content type: got %q; want %q", got, want)
+			}
+
+			var set struct {
+				Keys []map[string]any `json:"keys"`
+			}
+
+			if err := json.Unmarshal(rec.Body.Bytes(), &set); err != nil {
+				t.Fatalf("failed to parse response body: %v", err)
+			}
+
+			if got, want := len(set.Keys), len(tt.keys); got != want {
+				t.Errorf("keys: got %d; want %d", got, want)
+			}
+		})
 	}
 }
