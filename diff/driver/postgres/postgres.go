@@ -72,6 +72,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
+	"github.com/deep-rent/nexus/internal/pointer"
 	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/deep-rent/nexus/internal/schema"
 )
@@ -782,7 +783,7 @@ func (h *shares) Delete(
 			op.Meta.ID.String(),
 			int64(op.Time),
 			op.Meta.UserID,
-			teamString(op.Meta.TeamID),
+			pointer.Value(op.Meta.TeamID),
 			scope.UserID,
 			diff.TypeShare,
 		}
@@ -936,15 +937,6 @@ func toStrings(ids []uuid.UUID) []string {
 		out[i] = id.String()
 	}
 	return out
-}
-
-// teamString renders an optional team ID for text array parameters, using
-// the empty string as the NULL sentinel (converted via nullif in SQL).
-func teamString(team *string) string {
-	if team == nil {
-		return ""
-	}
-	return *team
 }
 
 // ident assembles a fully qualified, safely quoted PostgreSQL identifier.

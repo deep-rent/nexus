@@ -26,6 +26,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
+	"github.com/deep-rent/nexus/internal/pointer"
 )
 
 // tableConfig holds the internal configuration options of a [Table].
@@ -320,7 +321,7 @@ func (t *Table) Upsert(
 	for i, op := range ops {
 		ids[i] = op.Meta.ID.String()
 		users[i] = op.Meta.UserID
-		teams[i] = teamString(op.Meta.TeamID)
+		teams[i] = pointer.Value(op.Meta.TeamID)
 		hlcs[i] = int64(op.Time)
 		datas[i] = string(op.Data)
 	}
@@ -433,7 +434,7 @@ func (t *Table) Delete(
 		ids[i] = op.Meta.ID.String()
 		hlcs[i] = int64(op.Time)
 		users[i] = op.Meta.UserID
-		teams[i] = teamString(op.Meta.TeamID)
+		teams[i] = pointer.Value(op.Meta.TeamID)
 	}
 
 	rows, err := tx.QueryContext(ctx, t.deleteSQL,
