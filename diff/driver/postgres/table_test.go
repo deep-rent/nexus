@@ -86,13 +86,14 @@ func setupTables(t *testing.T) (
 	return db, s, assets, files, notes
 }
 
-func scopeOf(user uuid.UUID, teams ...uuid.UUID) diff.Scope {
+func scopeOf(user string, teams ...string) diff.Scope {
 	return diff.Scope{UserID: user, Teams: teams}
 }
 
 func upsertOp(
-	id, user uuid.UUID,
-	team *uuid.UUID,
+	id uuid.UUID,
+	user string,
+	team *string,
 	ts uint64,
 	data string,
 ) diff.Op {
@@ -104,7 +105,7 @@ func upsertOp(
 	}
 }
 
-func deleteOp(id, user uuid.UUID, team *uuid.UUID, ts uint64) diff.Op {
+func deleteOp(id uuid.UUID, user string, team *string, ts uint64) diff.Op {
 	return diff.Op{
 		Meta:   diff.Meta{ID: id, UserID: user, TeamID: team},
 		Action: diff.ActionDelete,
@@ -264,7 +265,7 @@ func TestNewTable_Panics(t *testing.T) {
 func TestTable_RootLWW(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	scope := scopeOf(owner)
 	x := uuid.NewV7()
 
@@ -344,9 +345,9 @@ func TestTable_RootLWW(t *testing.T) {
 	if user, _ := rowStr(t, db,
 		"SELECT user_id::text FROM diff_tombstones"+
 			" WHERE type = 'asset' AND id = $1::uuid", y.String(),
-	); user.String != owner.String() {
+	); user.String != owner {
 		t.Errorf("absent delete: got tombstone user %q; want %q",
-			user.String, owner.String())
+			user.String, owner)
 	}
 
 	// A stale delete is a complete no-op: the row survives and no
@@ -366,8 +367,8 @@ func TestTable_RootLWW(t *testing.T) {
 func TestTable_HijackGuard(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7()
-	attacker := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	attacker := uuid.NewV7().String()
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner),
@@ -379,8 +380,8 @@ func TestTable_HijackGuard(t *testing.T) {
 		upsertOp(x, attacker, nil, 99, assetDoc(x, 666)))
 	if user, _ := rowStr(t, db,
 		"SELECT user_id::text FROM assets WHERE id = $1::uuid", x.String(),
-	); user.String != owner.String() {
-		t.Errorf("got owner %q; want %q", user.String, owner.String())
+	); user.String != owner {
+		t.Errorf("got owner %q; want %q", user.String, owner)
 	}
 	if hlc, _ := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
@@ -404,9 +405,9 @@ func TestTable_HijackGuard(t *testing.T) {
 func TestTable_OwnerImmutable(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7()
-	member := uuid.NewV7()
-	team := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	member := uuid.NewV7().String()
+	team := uuid.NewV7().String()
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner, team),
@@ -424,16 +425,16 @@ func TestTable_OwnerImmutable(t *testing.T) {
 	}
 	if user, _ := rowStr(t, db,
 		"SELECT user_id::text FROM assets WHERE id = $1::uuid", x.String(),
-	); user.String != owner.String() {
-		t.Errorf("got owner %q; want %q (immutable)", user.String, owner.String())
+	); user.String != owner {
+		t.Errorf("got owner %q; want %q (immutable)", user.String, owner)
 	}
 }
 
 func TestTable_Resolve(t *testing.T) {
 	_, s, assets, files, _ := setupTables(t)
 
-	owner := uuid.NewV7()
-	team := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	team := uuid.NewV7().String()
 	scope := scopeOf(owner, team)
 	x := uuid.NewV7()
 	f := uuid.NewV7()
@@ -482,8 +483,8 @@ func TestTable_Resolve(t *testing.T) {
 func TestTable_TeamMoveCascade(t *testing.T) {
 	db, s, assets, files, notes := setupTables(t)
 
-	owner := uuid.NewV7()
-	team := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	team := uuid.NewV7().String()
 	scope := scopeOf(owner, team)
 
 	x := uuid.NewV7()
@@ -504,18 +505,18 @@ func TestTable_TeamMoveCascade(t *testing.T) {
 
 	if got, _ := rowStr(t, db,
 		"SELECT team_id::text FROM assets WHERE id = $1::uuid", x.String(),
-	); got.String != team.String() {
-		t.Errorf("got root team %q; want %q", got.String, team.String())
+	); got.String != team {
+		t.Errorf("got root team %q; want %q", got.String, team)
 	}
 	if got, _ := rowStr(t, db,
 		"SELECT root_team_id::text FROM files WHERE id = $1::uuid", f.String(),
-	); got.String != team.String() {
-		t.Errorf("got file team %q; want %q", got.String, team.String())
+	); got.String != team {
+		t.Errorf("got file team %q; want %q", got.String, team)
 	}
 	if got, _ := rowStr(t, db,
 		"SELECT root_team_id::text FROM notes WHERE id = $1::uuid", n.String(),
-	); got.String != team.String() {
-		t.Errorf("got note team %q; want %q", got.String, team.String())
+	); got.String != team {
+		t.Errorf("got note team %q; want %q", got.String, team)
 	}
 
 	// Descendants re-enter the feed under fresh sequence values.
@@ -542,7 +543,7 @@ func TestTable_TeamMoveCascade(t *testing.T) {
 func TestTable_DeleteCascade(t *testing.T) {
 	db, s, assets, files, notes := setupTables(t)
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	scope := scopeOf(owner)
 
 	x := uuid.NewV7()
@@ -584,7 +585,7 @@ func TestTable_DeleteCascade(t *testing.T) {
 func TestTable_FetchWindow(t *testing.T) {
 	_, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	scope := scopeOf(owner)
 
 	// Sequential upserts assign seq 1, 2, 3; the absent delete tombstones
@@ -655,7 +656,8 @@ func TestTable_FetchWindow(t *testing.T) {
 	}
 
 	// Foreign scopes see nothing.
-	if foreign := fetchAll(t, s, assets, scopeOf(uuid.NewV7())); len(foreign) != 0 {
+	foreign := fetchAll(t, s, assets, scopeOf(uuid.NewV7().String()))
+	if len(foreign) != 0 {
 		t.Errorf("foreign scope: got %d versions; want 0", len(foreign))
 	}
 }
@@ -664,9 +666,9 @@ func TestShares_GrantRevoke(t *testing.T) {
 	db, s, assets, files, _ := setupTables(t)
 	shares := s.Shares()
 
-	owner := uuid.NewV7()
-	member := uuid.NewV7()
-	team := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	member := uuid.NewV7().String()
+	team := uuid.NewV7().String()
 
 	ownerScope := scopeOf(owner)
 	memberScope := scopeOf(member, team)
@@ -702,8 +704,8 @@ func TestShares_GrantRevoke(t *testing.T) {
 	if len(got) != 1 || got[0].ID != grant {
 		t.Fatalf("after grant: got shares %v; want [%v]", got, grant)
 	}
-	if data := string(got[0].Data); !strings.Contains(data, owner.String()) ||
-		!strings.Contains(data, team.String()) {
+	if data := string(got[0].Data); !strings.Contains(data, owner) ||
+		!strings.Contains(data, team) {
 		t.Errorf("got share payload %s; want owner and team included", data)
 	}
 
@@ -744,8 +746,8 @@ func TestShares_DuplicateGrants(t *testing.T) {
 	db, s, _, _, _ := setupTables(t)
 	shares := s.Shares()
 
-	owner := uuid.NewV7()
-	team := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	team := uuid.NewV7().String()
 	scope := scopeOf(owner)
 
 	// A newer grant for the same (user, team) pair supersedes the older
@@ -784,7 +786,7 @@ func TestShares_DuplicateGrants(t *testing.T) {
 func TestStore_PruneTombstones(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	scope := scopeOf(owner)
 
 	// Deleting absent documents seeds two tombstones at seq 1 and 2.

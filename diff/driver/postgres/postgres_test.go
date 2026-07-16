@@ -19,7 +19,6 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -30,6 +29,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/deep-rent/nexus/diff/driver/postgres"
+	"github.com/deep-rent/nexus/migrate"
+	migratepg "github.com/deep-rent/nexus/migrate/driver/postgres"
+	"github.com/deep-rent/nexus/migrate/source/file"
 )
 
 func setupDB(t *testing.T) *sql.DB {
@@ -131,40 +133,68 @@ func TestStore_Init(t *testing.T) {
 	}
 }
 
-func TestDDLConstants(t *testing.T) {
+func TestStore_Init_RejectsCustomNames(t *testing.T) {
+	// No live database connection is needed: Init must refuse customized
+	// object names before touching the database, because the embedded
+	// migration files only cover the defaults.
+	db, err := sql.Open("pgx", "postgres://user:pass@localhost:5432/db")
+	if err != nil {
+		t.Fatalf("open: should not have returned an error: %v", err)
+	}
+
+	s := postgres.New(db, postgres.WithSchema("custom"))
+	if err := s.Init(context.Background()); err == nil {
+		t.Error("init with custom schema: should have returned an error")
+	}
+
+	s = postgres.New(db, postgres.WithSequence("custom_seq"))
+	if err := s.Init(context.Background()); err == nil {
+		t.Error("init with custom sequence: should have returned an error")
+	}
+}
+
+func TestMigrations_Pipeline(t *testing.T) {
 	db := setupDB(t)
 	ctx := context.Background()
 
-	// The exported DDL must bootstrap a working default configuration.
-	blocks := []string{
-		postgres.DDLSequence,
-		postgres.DDLMutations,
-		postgres.DDLTombstones,
-		postgres.DDLState,
-		postgres.DDLShares,
-	}
-	for _, block := range blocks {
-		for stmt := range strings.SplitSeq(block, ";") {
-			if strings.TrimSpace(stmt) == "" {
-				continue
-			}
-			if _, err := db.ExecContext(ctx, stmt); err != nil {
-				t.Fatalf("ddl: should not have returned an error: %v", err)
-			}
-		}
+	// The embedded migration files must apply cleanly through the real
+	// migrate pipeline.
+	m := migrate.New(
+		migrate.WithSource(file.New(postgres.Migrations())),
+		migrate.WithDriver(migratepg.New(db)),
+	)
+	if err := m.Up(ctx); err != nil {
+		t.Fatalf("up: should not have returned an error: %v", err)
 	}
 
-	// Init must remain a no-op on top of the constants.
+	// Init must remain a no-op on top of the applied migrations.
 	s := postgres.New(db)
 	if err := s.Init(ctx); err != nil {
-		t.Errorf("init after ddl: should not have returned an error: %v", err)
+		t.Errorf("init after up: should not have returned an error: %v", err)
+	}
+
+	// The store must be functional on the migrated schema.
+	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
+		floor, err := s.Floor(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if floor != 0 {
+			t.Errorf("got floor %d; want 0", floor)
+		}
+		return nil
+	})
+
+	// The down migration must revert cleanly.
+	if err := m.Down(ctx); err != nil {
+		t.Errorf("down: should not have returned an error: %v", err)
 	}
 }
 
 func TestStore_ExecRollback(t *testing.T) {
 	_, s := setupStore(t)
 
-	user := uuid.NewV7()
+	user := uuid.NewV7().String()
 	id := uuid.NewV7()
 	boom := errors.New("boom")
 
@@ -195,7 +225,7 @@ func TestStore_ExecRollback(t *testing.T) {
 func TestStore_Claim(t *testing.T) {
 	_, s := setupStore(t)
 
-	user := uuid.NewV7()
+	user := uuid.NewV7().String()
 	a, b, c := uuid.NewV7(), uuid.NewV7(), uuid.NewV7()
 
 	// Duplicates within one call claim once.
@@ -244,7 +274,7 @@ func TestStore_Claim(t *testing.T) {
 func TestStore_Claim_Concurrent(t *testing.T) {
 	_, s := setupStore(t)
 
-	user := uuid.NewV7()
+	user := uuid.NewV7().String()
 	ids := make([]uuid.UUID, 5)
 	for i := range ids {
 		ids[i] = uuid.NewV7()
@@ -343,9 +373,9 @@ func TestStore_Sequence(t *testing.T) {
 func TestStore_Lock_Concurrent(t *testing.T) {
 	_, s := setupStore(t)
 
-	keys := make([]uuid.UUID, 5)
+	keys := make([]string, 5)
 	for i := range keys {
-		keys[i] = uuid.NewV7()
+		keys[i] = uuid.NewV7().String()
 	}
 	reversed := slices.Clone(keys)
 	slices.Reverse(reversed)
@@ -353,8 +383,8 @@ func TestStore_Lock_Concurrent(t *testing.T) {
 	// Overlapping lock sets acquired in opposite order must serialize
 	// without deadlocking, because Lock sorts the derived keys internally.
 	errs := make(chan error, 2)
-	for _, set := range [][]uuid.UUID{keys, reversed} {
-		go func(set []uuid.UUID) {
+	for _, set := range [][]string{keys, reversed} {
+		go func(set []string) {
 			errs <- s.Exec(context.Background(),
 				func(ctx context.Context, tx *sql.Tx) error {
 					if err := s.Lock(ctx, tx, set); err != nil {
@@ -376,7 +406,7 @@ func TestStore_Lock_Concurrent(t *testing.T) {
 func TestStore_Mutate(t *testing.T) {
 	_, s := setupStore(t)
 
-	scope := scopeOf(uuid.NewV7(), uuid.NewV7())
+	scope := scopeOf(uuid.NewV7().String(), uuid.NewV7().String())
 
 	called := false
 	err := s.Mutate(context.Background(), scope,
@@ -405,7 +435,7 @@ func TestStore_Mutate(t *testing.T) {
 func TestStore_PruneMutations(t *testing.T) {
 	_, s := setupStore(t)
 
-	user := uuid.NewV7()
+	user := uuid.NewV7().String()
 	ids := []uuid.UUID{uuid.NewV7(), uuid.NewV7(), uuid.NewV7()}
 	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
 		_, err := s.Claim(ctx, tx, user, ids)

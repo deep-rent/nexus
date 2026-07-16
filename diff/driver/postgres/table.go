@@ -319,7 +319,7 @@ func (t *Table) Upsert(
 	datas := make([]string, n)
 	for i, op := range ops {
 		ids[i] = op.Meta.ID.String()
-		users[i] = op.Meta.UserID.String()
+		users[i] = op.Meta.UserID
 		teams[i] = teamString(op.Meta.TeamID)
 		hlcs[i] = int64(op.Time)
 		datas[i] = string(op.Data)
@@ -338,7 +338,7 @@ func (t *Table) Upsert(
 
 	rows, err := tx.QueryContext(ctx, t.upsertSQL,
 		ids, users, teams, hlcs, datas,
-		t.typ, scope.UserID.String(), toStrings(scope.Teams),
+		t.typ, scope.UserID, scope.Teams,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to upsert documents: %w", err)
@@ -432,13 +432,13 @@ func (t *Table) Delete(
 	for i, op := range ops {
 		ids[i] = op.Meta.ID.String()
 		hlcs[i] = int64(op.Time)
-		users[i] = op.Meta.UserID.String()
+		users[i] = op.Meta.UserID
 		teams[i] = teamString(op.Meta.TeamID)
 	}
 
 	rows, err := tx.QueryContext(ctx, t.deleteSQL,
 		ids, hlcs, users, teams,
-		scope.UserID.String(), toStrings(scope.Teams), t.typ,
+		scope.UserID, scope.Teams, t.typ,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete documents: %w", err)
@@ -492,8 +492,8 @@ func (t *Table) Fetch(
 	w diff.Window,
 ) ([]diff.Version, error) {
 	rows, err := tx.QueryContext(ctx, t.fetchSQL,
-		scope.UserID.String(),
-		toStrings(scope.Teams),
+		scope.UserID,
+		scope.Teams,
 		w.Since,
 		w.Until,
 		t.typ,
