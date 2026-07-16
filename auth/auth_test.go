@@ -411,6 +411,54 @@ func TestContextExtraction(t *testing.T) {
 	}
 }
 
+func TestMust(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		want := &auth.Claims{Roles: []string{"tester"}}
+		v := &mockVerifier[*auth.Claims]{
+			verify: func(in []byte) (*auth.Claims, error) {
+				return want, nil
+			},
+		}
+
+		guard := auth.NewGuard(v)
+		handler := guard.Secure()(
+			router.HandlerFunc(func(e *router.Exchange) error {
+				got := auth.Must[*auth.Claims](e)
+				if got != want {
+					t.Errorf("got %v; want %v", got, want)
+				}
+				e.Status(http.StatusOK)
+				return nil
+			}),
+		)
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer valid")
+		res := router.NewResponseWriter(httptest.NewRecorder())
+		e := &router.Exchange{R: req, W: res}
+
+		if err := handler.ServeHTTP(e); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+	})
+
+	t.Run("panic", func(t *testing.T) {
+		t.Parallel()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("expected panic, got none")
+			}
+		}()
+		e := &router.Exchange{
+			R: httptest.NewRequest(http.MethodGet, "/", nil),
+		}
+		_ = auth.Must[*auth.Claims](e)
+	})
+}
+
 func TestGuard_CustomExtractor(t *testing.T) {
 	t.Parallel()
 

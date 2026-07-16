@@ -117,6 +117,17 @@ func From[T jwt.Claims](e *router.Exchange) (T, bool) {
 	return FromContext[T](e.Context())
 }
 
+// Must retrieves the parsed claims from a [*router.Exchange].
+// It panics if the claims are not present in the exchange. This is useful
+// when the route is guaranteed to have claims injected by middleware.
+func Must[T jwt.Claims](e *router.Exchange) T {
+	claims, ok := From[T](e)
+	if !ok {
+		panic("claims missing from exchange")
+	}
+	return claims
+}
+
 // AccessClaims defines an interface for JWT claims that support role-based,
 // scope-based, and team-based access control checks.
 type AccessClaims interface {
