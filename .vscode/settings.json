@@ -29,20 +29,8 @@
   "[yaml]": {
     "editor.defaultFormatter": "redhat.vscode-yaml"
   },
-  "go.alternateTools": {
-    "customFormatter": "golangci-lint"
-  },
-  "go.formatTool": "custom",
-  "go.formatFlags": [
-    "fmt",
-    "--stdin",
-    "-c",
-    "${workspaceFolder}/.golangci.yml"
-  ],
-  "go.lintFlags": [
-    "--fast"
-  ],
-  "go.lintTool": "golangci-lint-v2",
+  "go.lintTool": "golangci-lint",
+  "go.formatTool": "gofumpt",
   "go.toolsManagement.autoUpdate": true,
   "search.exclude": {
     "**/coverage.out": true,
