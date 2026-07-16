@@ -78,9 +78,11 @@ type Strategy interface {
 	// Done resets the strategy's internal state, such as its attempt counter.
 	// This must be called after the retried operation succeeds or is abandoned.
 	Done()
-	// MinDelay returns the lower bound for the backoff duration returned by Next.
+	// MinDelay returns the lower bound for the backoff duration returned by
+	// [Strategy.Next].
 	MinDelay() time.Duration
-	// MaxDelay returns the upper bound for the backoff duration returned by Next.
+	// MaxDelay returns the upper bound for the backoff duration returned by
+	// [Strategy.Next].
 	MaxDelay() time.Duration
 }
 
@@ -144,7 +146,8 @@ func (l *linear) MaxDelay() time.Duration { return l.maxDelay }
 
 var _ Strategy = (*linear)(nil)
 
-// exponential is a [Strategy] implementation that increases delay exponentially.
+// exponential is a [Strategy] implementation that increases delay
+// exponentially.
 type exponential struct {
 	// minDelay is the initial base duration before growth.
 	minDelay time.Duration
@@ -159,17 +162,19 @@ type exponential struct {
 // Next returns the backoff duration for the upcoming retry attempt.
 func (e *exponential) Next() time.Duration {
 	n := e.attempts.Add(1)
-	d := time.Duration(float64(e.minDelay) * math.Pow(e.growthFactor, float64(n)))
-	return max(e.minDelay, min(e.maxDelay, d))
+	d := float64(e.minDelay) * math.Pow(e.growthFactor, float64(n))
+	return max(e.minDelay, min(e.maxDelay, time.Duration(d)))
 }
 
 // Done resets the attempt counter for the [exponential] strategy.
 func (e *exponential) Done() { e.attempts.Store(0) }
 
-// MinDelay returns the minimum delay configured for this [exponential] strategy.
+// MinDelay returns the minimum delay configured for this [exponential]
+// strategy.
 func (e *exponential) MinDelay() time.Duration { return e.minDelay }
 
-// MaxDelay returns the maximum delay configured for this [exponential] strategy.
+// MaxDelay returns the maximum delay configured for this [exponential]
+// strategy.
 func (e *exponential) MaxDelay() time.Duration { return e.maxDelay }
 
 var _ Strategy = (*exponential)(nil)
