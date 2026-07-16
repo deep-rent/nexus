@@ -13,25 +13,26 @@ run:
 linters:
   default: none
   enable:
+    - copyloopvar
     - errcheck
     - errname
     - errorlint
-    - copyloopvar
     - gocritic
     - goheader
     - gosec
     - govet
     - ineffassign
-    - unused
     - makezero
     - misspell
     - nilerr
-    - perfsprint
-    - typecheck
     - nolintlint
+    - perfsprint
     - prealloc
     - revive
     - staticcheck
+    - typecheck
+    - unused
+    - usestdlibvars
 
   settings:
     goheader:
