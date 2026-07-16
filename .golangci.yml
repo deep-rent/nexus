@@ -8,7 +8,7 @@ run:
     - jsonv2
   modules-download-mode: readonly
   allow-parallel-runners: true
-  timeout: 3m
+  timeout: 5m
 
 linters:
   default: none
@@ -51,12 +51,12 @@ linters:
         See the License for the specific language governing permissions and
         limitations under the License.
 
-    revive:
-      enable-all-rules: true
-
     gosec:
       excludes:
         - G104
+
+    revive:
+      enable-all-rules: true
 
 formatters:
   enable:
