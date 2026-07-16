@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package push
+package apns
 
 import (
 	"bytes"
@@ -30,19 +30,20 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
+	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
 )
 
 const (
-	// APNSProductionURL is the production endpoint for APNs.
-	APNSProductionURL = "https://api.push.apple.com"
-	// APNSSandboxURL is the sandbox endpoint for APNs.
-	APNSSandboxURL = "https://api.sandbox.push.apple.com"
+	// ProductionURL is the production endpoint for APNs.
+	ProductionURL = "https://api.push.apple.com"
+	// SandboxURL is the sandbox endpoint for APNs.
+	SandboxURL = "https://api.sandbox.push.apple.com"
 )
 
-type apns struct {
+type Sender struct {
 	source *token.Source
 	url    string
 	client *http.Client
@@ -50,63 +51,71 @@ type apns struct {
 	retry  []retry.Option
 }
 
-var _ Sender = (*apns)(nil)
+var _ push.Sender = (*Sender)(nil)
 
-type apnsConfig struct {
+type config struct {
 	client  *http.Client
 	baseURL string
 	timeout time.Duration
 	retry   []retry.Option
 	logger  *slog.Logger
+	clock   func() time.Time
 }
 
-// APNSOption defines the functional option pattern for configuring the APNs sender.
-type APNSOption func(*apnsConfig)
+// Option defines the functional option pattern for configuring the APNs sender.
+type Option func(*config)
 
-// WithAPNSClient allows passing a custom [http.Client] to the sender.
-func WithAPNSClient(c *http.Client) APNSOption {
-	return func(cfg *apnsConfig) {
+// WithClient allows passing a custom [http.Client] to the sender.
+func WithClient(c *http.Client) Option {
+	return func(cfg *config) {
 		if c != nil {
 			cfg.client = c
 		}
 	}
 }
 
-// WithAPNSBaseURL allows overriding the APNs API base URL.
-// Useful for switching to [APNSSandboxURL] or mocking.
-func WithAPNSBaseURL(url string) APNSOption {
-	return func(cfg *apnsConfig) {
+// WithBaseURL allows overriding the APNs API base URL.
+// Useful for switching to [SandboxURL] or mocking.
+func WithBaseURL(url string) Option {
+	return func(cfg *config) {
 		cfg.baseURL = url
 	}
 }
 
-// WithAPNSTimeout configures the timeout for the default HTTP client.
-func WithAPNSTimeout(d time.Duration) APNSOption {
-	return func(cfg *apnsConfig) {
+// WithTimeout configures the timeout for the default HTTP client.
+func WithTimeout(d time.Duration) Option {
+	return func(cfg *config) {
 		cfg.timeout = d
 	}
 }
 
-// WithAPNSRetryOptions configures the retry mechanism for the default HTTP client.
-func WithAPNSRetryOptions(opts ...retry.Option) APNSOption {
-	return func(cfg *apnsConfig) {
+// WithRetryOptions configures the retry mechanism for the default HTTP client.
+func WithRetryOptions(opts ...retry.Option) Option {
+	return func(cfg *config) {
 		cfg.retry = append(cfg.retry, opts...)
 	}
 }
 
-// WithAPNSLogger injects a structured [slog.Logger] into the sender.
-func WithAPNSLogger(logger *slog.Logger) APNSOption {
-	return func(cfg *apnsConfig) {
+// WithLogger injects a structured [slog.Logger] into the sender.
+func WithLogger(logger *slog.Logger) Option {
+	return func(cfg *config) {
 		if logger != nil {
 			cfg.logger = logger
 		}
 	}
 }
 
-// APNS creates a configured Apple Push Notification Service client implementing
-// the [Sender] interface. It requires the ES256 keyID, your Apple teamID, and
+// WithClock injects a custom clock function for JWT generation and caching.
+func WithClock(clock func() time.Time) Option {
+	return func(cfg *config) {
+		cfg.clock = clock
+	}
+}
+
+// New creates a configured Apple Push Notification Service client implementing
+// the [push.Sender] interface. It requires the ES256 keyID, your Apple teamID, and
 // the PEM-encoded PKCS#8 private key contents.
-func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender {
+func New(keyID, teamID string, privateKeyPEM []byte, opts ...Option) push.Sender {
 	if keyID == "" || teamID == "" {
 		panic("keyID and teamID are required")
 	}
@@ -117,10 +126,11 @@ func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender
 
 	keyPair := jwk.NewKeyPair(jwa.ES256, keyID, signer)
 
-	cfg := apnsConfig{
-		baseURL: APNSProductionURL,
+	cfg := config{
+		baseURL: ProductionURL,
 		timeout: 5 * time.Second,
 		logger:  slog.Default(),
+		clock:   time.Now,
 	}
 
 	for _, opt := range opts {
@@ -133,7 +143,7 @@ func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender
 		}{
 			Reserved: jwt.Reserved{
 				Iss: teamID,
-				Iat: time.Now(),
+				Iat: cfg.clock(),
 			},
 		}
 		tok, err := jwt.Sign(ctx, keyPair, claims)
@@ -141,12 +151,16 @@ func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender
 			return "", time.Time{}, err
 		}
 		// Apple allows tokens to be used between 20 and 60 minutes.
-		return string(tok), time.Now().Add(45 * time.Minute), nil
+		return string(tok), cfg.clock().Add(45 * time.Minute), nil
 	}
 
-	source := token.NewSource(fetch, token.WithBufferTime(5*time.Minute))
+	source := token.NewSource(
+		fetch,
+		token.WithBufferTime(5*time.Minute),
+		token.WithClock(cfg.clock),
+	)
 
-	s := &apns{
+	s := &Sender{
 		source: source,
 		url:    cfg.baseURL,
 		logger: cfg.logger,
@@ -182,7 +196,7 @@ func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender
 }
 
 // Send dispatches the HTTP/2 request to the APNs API.
-func (s *apns) Send(ctx context.Context, msg *Message) error {
+func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
 	}
@@ -246,7 +260,7 @@ func (s *apns) Send(ctx context.Context, msg *Message) error {
 
 	if res.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-		return &APIError{
+		return &push.APIError{
 			Status: res.StatusCode,
 			Body:   string(body),
 		}

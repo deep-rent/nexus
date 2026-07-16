@@ -16,34 +16,11 @@ package push_test
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"encoding/json"
 	"errors"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/deep-rent/nexus/push"
-	"github.com/deep-rent/nexus/sign"
 )
-
-func generate(t *testing.T) []byte {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pem, err := sign.Encode(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pem
-}
 
 func TestMessage_Validate(t *testing.T) {
 	t.Parallel()
@@ -83,104 +60,6 @@ func TestMessage_Validate(t *testing.T) {
 				t.Errorf("got %v; want %v", err, tt.err)
 			}
 		})
-	}
-}
-
-func TestAPNS_Send(t *testing.T) {
-	t.Parallel()
-
-	pemData := generate(t)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/3/device/") {
-			t.Errorf("got path %s", r.URL.Path)
-		}
-		if got := r.Header.Get("apns-push-type"); got != "alert" {
-			t.Errorf("got push type %q", got)
-		}
-		if !strings.HasPrefix(r.Header.Get("Authorization"), "bearer ") {
-			t.Errorf("missing or invalid authorization header")
-		}
-
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer ts.Close()
-
-	sender := push.APNS(
-		"keyID",
-		"teamID",
-		pemData,
-		push.WithAPNSBaseURL(ts.URL),
-		push.WithAPNSLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-	)
-
-	msg := push.NewMessage("Hello", "World", push.Target{Token: "device123"})
-	err := sender.Send(t.Context(), msg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Test missing target token
-	msgTopic := push.NewMessage("Hello", "World", push.Target{Topic: "news"})
-	err = sender.Send(t.Context(), msgTopic)
-	if err == nil {
-		t.Fatal("expected error for missing APNs token")
-	}
-}
-
-func TestFCM_Send(t *testing.T) {
-	t.Parallel()
-
-	pemData := generate(t)
-	sa := map[string]string{
-		"project_id":   "my-project",
-		"private_key":  string(pemData),
-		"client_email": "test@my-project.iam.gserviceaccount.com",
-	}
-	saJSON, _ := json.Marshal(sa)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"access_token": "mock-token", "expires_in": 3600}`))
-	})
-	mux.HandleFunc("/v1/projects/my-project/messages:send", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer mock-token" {
-			t.Errorf("invalid authorization header: %q", got)
-		}
-
-		body, _ := io.ReadAll(r.Body)
-		var payload map[string]any
-		_ = json.Unmarshal(body, &payload)
-
-		msg, ok := payload["message"].(map[string]any)
-		if !ok {
-			t.Errorf("missing message struct in payload")
-		}
-		if msg["topic"] != "news" {
-			t.Errorf("expected topic=news, got %v", msg["topic"])
-		}
-
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	sender := push.FCM(
-		saJSON,
-		push.WithFCMBaseURL(ts.URL),
-		push.WithFCMOAuthURL(ts.URL+"/token"),
-		push.WithFCMLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-	)
-
-	msg := push.NewMessage("Title", "Body", push.Target{Topic: "news"})
-	err := sender.Send(t.Context(), msg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

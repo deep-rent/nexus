@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package push
+package fcm
 
 import (
 	"bytes"
@@ -32,17 +32,18 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
+	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
 )
 
 const (
-	fcmBaseURL    = "https://fcm.googleapis.com"
-	fcmScope      = "https://www.googleapis.com/auth/firebase.messaging"
+	fcmScope   = "https://www.googleapis.com/auth/firebase.messaging"
+	fcmBaseURL = "https://fcm.googleapis.com/v1"
 )
 
-type fcm struct {
+type Sender struct {
 	projectID string
 	source    *token.Source
 	url       string
@@ -50,63 +51,73 @@ type fcm struct {
 	logger    *slog.Logger
 }
 
-var _ Sender = (*fcm)(nil)
+var _ push.Sender = (*Sender)(nil)
 
-type fcmConfig struct {
+type config struct {
 	client   *http.Client
 	baseURL  string
 	oauthURL string
 	timeout  time.Duration
-	retry   []retry.Option
-	logger  *slog.Logger
+	retry    []retry.Option
+	logger   *slog.Logger
+	clock    func() time.Time
 }
 
-// FCMOption defines the functional option pattern for configuring the FCM sender.
-type FCMOption func(*fcmConfig)
+// Option defines the functional option pattern for configuring the FCM sender.
+type Option func(*config)
 
-// WithFCMClient allows passing a custom [http.Client] to the sender.
-func WithFCMClient(c *http.Client) FCMOption {
-	return func(cfg *fcmConfig) {
+// WithClient allows passing a custom [http.Client] to the sender.
+func WithClient(c *http.Client) Option {
+	return func(cfg *config) {
 		if c != nil {
 			cfg.client = c
 		}
 	}
 }
 
-// WithFCMBaseURL allows overriding the FCM API base URL.
-func WithFCMBaseURL(url string) FCMOption {
-	return func(cfg *fcmConfig) {
+// WithBaseURL allows overriding the FCM API base URL.
+// Useful for mocking.
+func WithBaseURL(url string) Option {
+	return func(cfg *config) {
 		cfg.baseURL = url
 	}
 }
 
-// WithFCMOAuthURL allows overriding the Google OAuth2 token URL for testing.
-func WithFCMOAuthURL(url string) FCMOption {
-	return func(cfg *fcmConfig) {
+// WithOAuthURL allows overriding the Google OAuth 2.0 token endpoint.
+// Useful for mocking.
+func WithOAuthURL(url string) Option {
+	return func(cfg *config) {
 		cfg.oauthURL = url
 	}
 }
 
-// WithFCMTimeout configures the timeout for the default HTTP client.
-func WithFCMTimeout(d time.Duration) FCMOption {
-	return func(cfg *fcmConfig) {
+// WithTimeout configures the timeout for the default HTTP client.
+func WithTimeout(d time.Duration) Option {
+	return func(cfg *config) {
 		cfg.timeout = d
 	}
 }
 
-// WithFCMRetryOptions configures the retry mechanism for the default HTTP client.
-func WithFCMRetryOptions(opts ...retry.Option) FCMOption {
-	return func(cfg *fcmConfig) {
+// WithRetryOptions configures the retry mechanism for the default HTTP client.
+func WithRetryOptions(opts ...retry.Option) Option {
+	return func(cfg *config) {
 		cfg.retry = append(cfg.retry, opts...)
 	}
 }
 
-// WithFCMLogger injects a structured [slog.Logger] into the sender.
-func WithFCMLogger(logger *slog.Logger) FCMOption {
-	return func(cfg *fcmConfig) {
+// WithLogger injects a structured [slog.Logger] into the sender.
+func WithLogger(logger *slog.Logger) Option {
+	return func(cfg *config) {
 		if logger != nil {
 			cfg.logger = logger
 		}
+	}
+}
+
+// WithClock injects a custom clock function for JWT generation and caching.
+func WithClock(clock func() time.Time) Option {
+	return func(cfg *config) {
+		cfg.clock = clock
 	}
 }
 
@@ -117,10 +128,10 @@ type serviceAccount struct {
 	ClientEmail string `json:"client_email"`
 }
 
-// FCM creates a configured Firebase Cloud Messaging client implementing the
-// [Sender] interface. It requires the raw contents of the Google Service Account
+// New creates a configured Firebase Cloud Messaging client implementing the
+// [push.Sender] interface. It requires the raw contents of the Google Service Account
 // JSON credentials file.
-func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
+func New(credentialsJSON []byte, opts ...Option) push.Sender {
 	var sa serviceAccount
 	if err := json.Unmarshal(credentialsJSON, &sa); err != nil {
 		panic(fmt.Errorf("failed to parse FCM credentials JSON: %w", err))
@@ -143,18 +154,19 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 		panic("unsupported private key type for FCM")
 	}
 
-	cfg := fcmConfig{
+	cfg := config{
 		baseURL:  fcmBaseURL,
 		oauthURL: "https://oauth2.googleapis.com/token",
 		timeout:  5 * time.Second,
 		logger:   slog.Default(),
+		clock:    time.Now,
 	}
 
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	s := &fcm{
+	s := &Sender{
 		projectID: sa.ProjectID,
 		url:       cfg.baseURL,
 		logger:    cfg.logger,
@@ -196,8 +208,8 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 			Iss:   sa.ClientEmail,
 			Scope: fcmScope,
 			Aud:   cfg.oauthURL,
-			Iat:   time.Now().Unix(),
-			Exp:   time.Now().Add(time.Hour).Unix(),
+			Iat:   cfg.clock().Unix(),
+			Exp:   cfg.clock().Add(time.Hour).Unix(),
 		}
 
 		assertion, err := jwt.Sign(ctx, keyPair, claims)
@@ -239,15 +251,19 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 			return "", time.Time{}, fmt.Errorf("failed to decode oauth response: %w", err)
 		}
 
-		return authRes.AccessToken, time.Now().Add(time.Duration(authRes.ExpiresIn) * time.Second), nil
+		return authRes.AccessToken, cfg.clock().Add(time.Duration(authRes.ExpiresIn) * time.Second), nil
 	}
-	s.source = token.NewSource(fetch, token.WithBufferTime(60*time.Second))
+	s.source = token.NewSource(
+		fetch,
+		token.WithBufferTime(60*time.Second),
+		token.WithClock(cfg.clock),
+	)
 
 	return s
 }
 
 // Send dispatches the HTTP request to the FCM v1 API.
-func (s *fcm) Send(ctx context.Context, msg *Message) error {
+func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
 	}
@@ -257,32 +273,32 @@ func (s *fcm) Send(ctx context.Context, msg *Message) error {
 		return fmt.Errorf("failed to obtain oauth token: %w", err)
 	}
 
-	fcmMsg := map[string]any{
-		"notification": map[string]any{
-			"title": msg.Title,
-			"body":  msg.Body,
-		},
-	}
+	fcmMsg := map[string]any{}
 	if msg.Target.Token != "" {
 		fcmMsg["token"] = msg.Target.Token
 	} else if msg.Target.Topic != "" {
 		fcmMsg["topic"] = msg.Target.Topic
 	}
-	if len(msg.Data) > 0 {
-		data := make(map[string]string)
-		for k, v := range msg.Data {
-			data[k] = fmt.Sprintf("%v", v)
-		}
-		fcmMsg["data"] = data
+
+	fcmMsg["notification"] = map[string]any{
+		"title": msg.Title,
+		"body":  msg.Body,
 	}
 
-	payload := map[string]any{"message": fcmMsg}
+	if len(msg.Data) > 0 {
+		fcmMsg["data"] = msg.Data
+	}
+
+	payload := map[string]any{
+		"message": fcmMsg,
+	}
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
 		return fmt.Errorf("failed to encode FCM payload: %w", err)
 	}
 
-	endpoint, err := url.JoinPath(s.url, "v1/projects", s.projectID, "messages:send")
+	endpoint, err := url.JoinPath(s.url, "projects", s.projectID, "messages:send")
 	if err != nil {
 		return fmt.Errorf("invalid endpoint: %w", err)
 	}
@@ -296,8 +312,8 @@ func (s *fcm) Send(ctx context.Context, msg *Message) error {
 	req.Header.Set("Content-Type", "application/json")
 
 	s.logger.DebugContext(ctx, "Dispatching FCM message",
-		slog.String("token", msg.Target.Token),
-		slog.String("topic", msg.Target.Topic),
+		slog.String("project", s.projectID),
+		slog.Any("target", msg.Target),
 	)
 
 	start := time.Now()
@@ -316,7 +332,7 @@ func (s *fcm) Send(ctx context.Context, msg *Message) error {
 
 	if res.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-		return &APIError{
+		return &push.APIError{
 			Status: res.StatusCode,
 			Body:   string(body),
 		}
