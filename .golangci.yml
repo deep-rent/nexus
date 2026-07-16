@@ -47,7 +47,7 @@ linters:
         limitations under the License.
 
     revive:
-      confidence: 0.8
+      enable-all-rules: true
 
     gosec:
       excludes:
