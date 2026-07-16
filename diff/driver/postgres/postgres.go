@@ -548,7 +548,7 @@ func (s *Store) Touch(
 ) error {
 	for _, t := range s.order {
 		query := "UPDATE " + t.ident + " SET seq = " + s.nextval +
-			" WHERE " + t.ownerCol + " = $1::uuid" +
+			" WHERE " + t.userCol + " = $1::uuid" +
 			" AND " + t.teamCol + " IS NULL"
 		if _, err := tx.ExecContext(ctx, query, ownerID.String()); err != nil {
 			return fmt.Errorf("failed to touch table %q: %w", t.name, err)

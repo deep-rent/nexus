@@ -125,10 +125,10 @@ type Table struct {
 	ref string
 	// children lists the tables registered with this table as parent.
 	children []*Table
-	// ownerCol and teamCol name the identity columns: user_id/team_id on
+	// userCol and teamCol name the identity columns: user_id/team_id on
 	// roots and root_user_id/root_team_id on children.
-	ownerCol string
-	teamCol  string
+	userCol string
+	teamCol string
 	// Precomputed SQL statements.
 	upsertSQL   string
 	deleteSQL   string
@@ -179,9 +179,9 @@ func NewTable(s *Store, typ, table string, opts ...TableOption) *Table {
 		t.ref = cfg.ref
 	}
 	if t.parent == nil {
-		t.ownerCol, t.teamCol = "user_id", "team_id"
+		t.userCol, t.teamCol = "user_id", "team_id"
 	} else {
-		t.ownerCol, t.teamCol = "root_user_id", "root_team_id"
+		t.userCol, t.teamCol = "root_user_id", "root_team_id"
 	}
 	t.buildSQL()
 
@@ -202,13 +202,13 @@ func (t *Table) buildSQL() {
 	// between root and child tables: children additionally extract the
 	// parent reference from the JSON payload, and their identity columns
 	// carry the denormalized root identity.
-	cols := "id, " + t.ownerCol + ", " + t.teamCol + ", hlc, seq, data"
+	cols := "id, " + t.userCol + ", " + t.teamCol + ", hlc, seq, data"
 	sel := "a.id, a.user_id, a.team_id, a.hlc, " + s.nextval + ", a.data"
 	set := t.teamCol + " = EXCLUDED." + t.teamCol + "," +
 		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq, data = EXCLUDED.data"
 	if t.parent != nil {
 		refCol := escape(t.ref)
-		cols = "id, " + t.ownerCol + ", " + t.teamCol + ", " + refCol +
+		cols = "id, " + t.userCol + ", " + t.teamCol + ", " + refCol +
 			", hlc, seq, data"
 		sel = "a.id, a.user_id, a.team_id, (a.data ->> " + literal(t.ref) +
 			")::uuid, a.hlc, " + s.nextval + ", a.data"
@@ -216,7 +216,7 @@ func (t *Table) buildSQL() {
 			" " + refCol + " = EXCLUDED." + refCol + "," +
 			" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq, data = EXCLUDED.data"
 	}
-	guard := "(d." + t.ownerCol + " = $7::uuid" +
+	guard := "(d." + t.userCol + " = $7::uuid" +
 		" OR d." + t.teamCol + " = ANY($8::uuid[]))"
 
 	t.upsertSQL = "WITH incoming AS (" +
@@ -244,9 +244,9 @@ func (t *Table) buildSQL() {
 		"), victims AS (" +
 		" DELETE FROM " + t.ident + " a USING incoming i" +
 		" WHERE a.id = i.id AND a.hlc < i.hlc" +
-		" AND (a." + t.ownerCol + " = $5::uuid" +
+		" AND (a." + t.userCol + " = $5::uuid" +
 		" OR a." + t.teamCol + " = ANY($6::uuid[]))" +
-		" RETURNING a.id, a." + t.ownerCol + " AS user_id," +
+		" RETURNING a.id, a." + t.userCol + " AS user_id," +
 		" a." + t.teamCol + " AS team_id, i.hlc" +
 		"), scoped AS (" +
 		" SELECT id, user_id, team_id, hlc FROM victims" +
@@ -268,10 +268,10 @@ func (t *Table) buildSQL() {
 	// grants issued to any of the caller's teams.
 	granted := "SELECT user_id FROM " + s.identShares +
 		" WHERE team_id = ANY($2::uuid[])"
-	visible := "(" + t.ownerCol + " = $1::uuid" +
+	visible := "(" + t.userCol + " = $1::uuid" +
 		" OR " + t.teamCol + " = ANY($2::uuid[])" +
 		" OR (" + t.teamCol + " IS NULL" +
-		" AND " + t.ownerCol + " IN (" + granted + ")))"
+		" AND " + t.userCol + " IN (" + granted + ")))"
 	buried := "(user_id = $1::uuid" +
 		" OR team_id = ANY($2::uuid[])" +
 		" OR (team_id IS NULL AND user_id IN (" + granted + ")))"
@@ -286,7 +286,7 @@ func (t *Table) buildSQL() {
 		" AND seq > $3 AND seq < $4" +
 		") ORDER BY seq LIMIT $6"
 
-	t.resolveSQL = "SELECT id::text, " + t.ownerCol + "::text," +
+	t.resolveSQL = "SELECT id::text, " + t.userCol + "::text," +
 		" " + t.teamCol + "::text FROM " + t.ident +
 		" WHERE id = ANY($1::uuid[])"
 
