@@ -15,7 +15,9 @@
 // Package graph provides a generic directed acyclic graph (DAG) implementation.
 //
 // It is used to determine topological orderings of elements, making it ideal
-// for resolving dependency treees.
+// for resolving dependency trees. The ordering is canonical: among all valid
+// topological orders, [Graph.Sort] always yields the one that lists
+// unconstrained nodes in their natural order, independent of insertion order.
 //
 // # Usage
 //
@@ -31,11 +33,13 @@
 //	if err != nil {
 //		// Handle cycle detection error
 //	}
-//	// sorted: []string{"foo", "bar", "baz"}
+//	// sorted: []string{"bar", "baz", "foo"}
 package graph
 
 import (
+	"cmp"
 	"errors"
+	"slices"
 )
 
 // ErrCycleDetected is returned when a cyclic dependency prevents a valid
@@ -45,15 +49,14 @@ var ErrCycleDetected = errors.New("cycle detected in dependency graph")
 // Graph represents a directed acyclic graph (DAG).
 // It is used to determine the correct topological order for processing
 // dependencies.
-type Graph[T comparable] struct {
+type Graph[T cmp.Ordered] struct {
 	nodes  map[T]struct{}
 	edges  map[T][]T
 	degree map[T]int
-	order  []T
 }
 
 // New initializes an empty directed acyclic graph.
-func New[T comparable]() *Graph[T] {
+func New[T cmp.Ordered]() *Graph[T] {
 	return &Graph[T]{
 		nodes:  make(map[T]struct{}),
 		edges:  make(map[T][]T),
@@ -61,15 +64,11 @@ func New[T comparable]() *Graph[T] {
 	}
 }
 
-// AddNode registers a node in the graph. Nodes added without edges will be
-// returned in the sorted output; independent nodes retain their insertion
-// order, making [Graph.Sort] fully deterministic for a fixed sequence of
-// [Graph.AddNode] and [Graph.AddEdge] calls.
+// AddNode registers a node in the graph (idempotent).
 func (g *Graph[T]) AddNode(v T) {
 	if _, exists := g.nodes[v]; !exists {
 		g.nodes[v] = struct{}{}
 		g.degree[v] = 0
-		g.order = append(g.order, v)
 	}
 }
 
@@ -85,26 +84,27 @@ func (g *Graph[T]) AddEdge(child, parent T) {
 	g.degree[child]++
 }
 
-// Sort resolves the dependency graph and returns the nodes in topological
-// order (i.e., parents first, followed by their children). The order is
-// deterministic: nodes that are not constrained relative to each other appear
-// in insertion order. It returns [ErrCycleDetected] if a cyclic dependency
-// prevents a valid sorting.
+// Sort resolves the dependency graph and returns the nodes in canonical
+// topological order: parents strictly precede their children, and nodes not
+// constrained relative to each other appear in their natural order. The
+// result is therefore a pure function of the graph's nodes and edges. It
+// returns [ErrCycleDetected] if a cyclic dependency prevents a valid
+// sorting.
 func (g *Graph[T]) Sort() ([]T, error) {
 	var zero []T
 
 	deg := make(map[T]int, len(g.degree))
-	for _, v := range g.order {
-		d := g.degree[v]
+	for v, d := range g.degree {
 		deg[v] = d
 		if d == 0 {
 			zero = append(zero, v)
 		}
 	}
+	slices.Sort(zero)
 
 	var sorted []T
 	for len(zero) > 0 {
-		// Pop a node with 0 in-degree.
+		// Pop the smallest node with 0 in-degree.
 		curr := zero[0]
 		zero = zero[1:]
 
@@ -113,11 +113,13 @@ func (g *Graph[T]) Sort() ([]T, error) {
 		sorted = append(sorted, curr)
 
 		// For each child depending on the resolved parent, reduce its
-		// in-degree.
+		// in-degree; nodes becoming available are merged into the queue at
+		// their sorted position to keep the order canonical.
 		for _, child := range g.edges[curr] {
 			deg[child]--
 			if deg[child] == 0 {
-				zero = append(zero, child)
+				at, _ := slices.BinarySearch(zero, child)
+				zero = slices.Insert(zero, at, child)
 			}
 		}
 	}

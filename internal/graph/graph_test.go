@@ -16,6 +16,7 @@ package graph_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/deep-rent/nexus/internal/graph"
@@ -79,39 +80,39 @@ func TestGraph_Sort(t *testing.T) {
 		}
 	})
 
-	t.Run("Deterministic Order", func(t *testing.T) {
+	t.Run("Canonical Order", func(t *testing.T) {
 		t.Parallel()
 
-		build := func() *graph.Graph[string] {
-			g := graph.New[string]()
-			g.AddNode("delta")
-			g.AddNode("alpha")
-			g.AddEdge("omega", "delta")
-			g.AddNode("gamma")
-			g.AddNode("beta")
-			return g
+		// The same node/edge set built in shuffled insertion orders must
+		// always yield the identical canonical order: topological, with
+		// unconstrained nodes in natural order.
+		builds := []func() *graph.Graph[string]{
+			func() *graph.Graph[string] {
+				g := graph.New[string]()
+				g.AddNode("delta")
+				g.AddNode("alpha")
+				g.AddEdge("omega", "delta")
+				g.AddNode("beta")
+				return g
+			},
+			func() *graph.Graph[string] {
+				g := graph.New[string]()
+				g.AddNode("beta")
+				g.AddEdge("omega", "delta")
+				g.AddNode("alpha")
+				g.AddNode("delta")
+				return g
+			},
 		}
 
-		want, err := build().Sort()
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-
-		// Independent nodes must appear in insertion order, and repeated
-		// sorts of identically built graphs must agree exactly.
-		if want[0] != "delta" || want[1] != "alpha" {
-			t.Errorf("got %v; want insertion order starting [delta alpha]",
-				want)
-		}
-		for range 25 {
+		want := []string{"alpha", "beta", "delta", "omega"}
+		for i, build := range builds {
 			got, err := build().Sort()
 			if err != nil {
 				t.Fatalf("should not have returned an error: %v", err)
 			}
-			for i := range want {
-				if got[i] != want[i] {
-					t.Fatalf("at index %d: got %q; want %q", i, got[i], want[i])
-				}
+			if !slices.Equal(got, want) {
+				t.Errorf("for build %d: got %v; want %v", i, got, want)
 			}
 		}
 	})
