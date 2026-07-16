@@ -53,6 +53,27 @@ func TestClaims_HasRole(t *testing.T) {
 	}
 }
 
+func TestClaims_Memberships(t *testing.T) {
+	t.Parallel()
+
+	teams := []string{"team-a", "team-b"}
+	c := &auth.Claims{Teams: teams}
+
+	got := c.Memberships()
+	if len(got) != len(teams) {
+		t.Fatalf("got %d memberships; want %d", len(got), len(teams))
+	}
+	for i, team := range teams {
+		if got[i] != team {
+			t.Errorf("at index %d: got %q; want %q", i, got[i], team)
+		}
+	}
+
+	if got := (&auth.Claims{}).Memberships(); len(got) != 0 {
+		t.Errorf("without teams: got %v; want none", got)
+	}
+}
+
 func TestScope(t *testing.T) {
 	t.Parallel()
 

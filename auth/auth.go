@@ -117,14 +117,20 @@ func From[T jwt.Claims](e *router.Exchange) (T, bool) {
 	return FromContext[T](e.Context())
 }
 
-// AccessClaims defines an interface for JWT claims that support role-based
-// and scope-based access control checks.
+// AccessClaims defines an interface for JWT claims that support role-based,
+// scope-based, and team-based access control checks.
 type AccessClaims interface {
 	jwt.Claims
 	// HasRole checks if the provided role exists within the claims.
 	HasRole(name string) bool
 	// HasScope checks if the provided scope exists within the claims.
 	HasScope(name string) bool
+	// Memberships returns the identifiers of all teams the subject belongs
+	// to, taken from the "teams" claim.
+	Memberships() []string
+	// Delegated reports whether the token was issued to a client acting on
+	// behalf of an end user rather than to the client itself.
+	Delegated() bool
 }
 
 // Scope represents the "scope" claim of a JWT as defined in RFC 6749.
@@ -165,6 +171,8 @@ type Claims struct {
 	// Scope represents the set of granted OAuth2/OIDC scopes as defined in
 	// RFC 6749, typically used for delegated authorization.
 	Scope Scope `json:"scope,omitempty"`
+	// Teams lists the identifiers of all teams the subject is a member of.
+	Teams []string `json:"teams,omitempty"`
 }
 
 // HasRole implements the [AccessClaims] interface.
@@ -175,6 +183,11 @@ func (c *Claims) HasRole(name string) bool {
 // HasScope implements the [AccessClaims] interface.
 func (c *Claims) HasScope(name string) bool {
 	return slices.Contains(c.Scope, name)
+}
+
+// Memberships implements the [AccessClaims] interface.
+func (c *Claims) Memberships() []string {
+	return c.Teams
 }
 
 // Delegated returns true if the token was issued to an authorized party (azp)
