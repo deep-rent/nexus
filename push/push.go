@@ -16,6 +16,20 @@
 //
 // It defines a generic payload model ([Message]) and a common [Sender]
 // interface for delivery via APNs (Apple) or FCM (Firebase/Android).
+//
+// # Usage
+//
+// Create messages with [NewMessage], optionally attach custom key-value pairs
+// via [Message.WithData], and dispatch them through your concrete [Sender]
+// implementation.
+//
+//	msg := push.NewMessage(
+//		"New Match!",
+//		"Someone liked your profile.",
+//		push.Target{Token: "device_token_here"},
+//	).WithData(map[string]any{"match_id": 123})
+//
+//	err := sender.Send(ctx, msg)
 package push
 
 import (
