@@ -58,6 +58,9 @@ const (
 	DefaultBaseURL = "https://fcm.googleapis.com/v1"
 )
 
+// Sender implements the [push.Sender] interface for Firebase Cloud Messaging
+// (FCM). It handles authentication, payload construction, and dispatching of
+// push notifications to FCM endpoints.
 type Sender struct {
 	projectID string
 	source    *token.Source

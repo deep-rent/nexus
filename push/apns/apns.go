@@ -61,6 +61,9 @@ const (
 	SandboxBaseURL = "https://api.sandbox.push.apple.com"
 )
 
+// Sender implements the [push.Sender] interface for the Apple Push Notification
+// service (APNs). It handles authentication, payload construction, and
+// dispatching of push notifications to APNs endpoints.
 type Sender struct {
 	source *token.Source
 	url    string
