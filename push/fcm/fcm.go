@@ -307,13 +307,49 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		fcmMsg["topic"] = msg.Target.Topic
 	}
 
-	fcmMsg["notification"] = map[string]any{
-		"title": msg.Title,
-		"body":  msg.Body,
+	if !msg.Silent {
+		fcmMsg["notification"] = map[string]any{
+			"title": msg.Title,
+			"body":  msg.Body,
+		}
 	}
 
 	if len(msg.Data) > 0 {
 		fcmMsg["data"] = msg.Data
+	}
+
+	android := map[string]any{}
+	apnsHdrs := map[string]string{}
+
+	if msg.Silent {
+		android["priority"] = "NORMAL"
+		apnsHdrs["apns-priority"] = "5"
+	} else if msg.Priority == push.PriorityNormal {
+		android["priority"] = "NORMAL"
+		apnsHdrs["apns-priority"] = "5"
+	} else if msg.Priority == push.PriorityHigh {
+		android["priority"] = "HIGH"
+		apnsHdrs["apns-priority"] = "10"
+	}
+
+	if msg.CollapseID != "" {
+		android["collapse_key"] = msg.CollapseID
+		apnsHdrs["apns-collapse-id"] = msg.CollapseID
+	}
+
+	if msg.TTL > 0 {
+		android["ttl"] = fmt.Sprintf("%ds", int(msg.TTL.Seconds()))
+		exp := time.Now().Add(msg.TTL).Unix()
+		apnsHdrs["apns-expiration"] = fmt.Sprintf("%d", exp)
+	}
+
+	if len(android) > 0 {
+		fcmMsg["android"] = android
+	}
+	if len(apnsHdrs) > 0 {
+		fcmMsg["apns"] = map[string]any{
+			"headers": apnsHdrs,
+		}
 	}
 
 	payload := map[string]any{

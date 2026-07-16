@@ -238,12 +238,16 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 
 	payload := make(map[string]any)
 	maps.Copy(payload, msg.Data)
-	payload["aps"] = map[string]any{
-		"alert": map[string]any{
+	aps := make(map[string]any)
+	if msg.Silent {
+		aps["content-available"] = 1
+	} else {
+		aps["alert"] = map[string]any{
 			"title": msg.Title,
 			"body":  msg.Body,
-		},
+		}
 	}
+	payload["aps"] = aps
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
@@ -265,7 +269,29 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	if msg.Target.Topic != "" {
 		req.Header.Set("apns-topic", msg.Target.Topic)
 	}
-	req.Header.Set("apns-push-type", "alert")
+
+	if msg.Silent {
+		req.Header.Set("apns-push-type", "background")
+		req.Header.Set("apns-priority", "5")
+	} else {
+		req.Header.Set("apns-push-type", "alert")
+		if msg.Priority == push.PriorityNormal {
+			req.Header.Set("apns-priority", "5")
+		} else {
+			req.Header.Set("apns-priority", "10") // Default for alert
+		}
+	}
+
+	if msg.CollapseID != "" {
+		req.Header.Set("apns-collapse-id", msg.CollapseID)
+	}
+
+	if msg.TTL > 0 {
+		exp := time.Now().Add(msg.TTL).Unix()
+		req.Header.Set("apns-expiration", fmt.Sprintf("%d", exp))
+	} else {
+		req.Header.Set("apns-expiration", "0")
+	}
 
 	s.logger.DebugContext(ctx, "Dispatching APNs message", slog.String("token", msg.Target.Token))
 

@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 var (
@@ -78,6 +79,16 @@ type Target struct {
 	Topic string
 }
 
+// Priority indicates the delivery priority of a message.
+type Priority string
+
+const (
+	// PriorityNormal indicates the message is delivered when the device is awake.
+	PriorityNormal Priority = "normal"
+	// PriorityHigh indicates the message should be delivered immediately.
+	PriorityHigh Priority = "high"
+)
+
 // Message represents a generic push notification payload.
 type Message struct {
 	// Title is the short heading of the notification.
@@ -88,6 +99,14 @@ type Message struct {
 	Data map[string]any
 	// Target is the destination of the message.
 	Target Target
+	// Priority is the delivery urgency of the message.
+	Priority Priority
+	// CollapseID is an identifier used to replace existing notifications.
+	CollapseID string
+	// TTL is the time-to-live for the message.
+	TTL time.Duration
+	// Silent indicates whether the message is a background push.
+	Silent bool
 }
 
 // NewMessage creates a new [Message] with the required fields.
@@ -102,6 +121,30 @@ func NewMessage(title, body string, target Target) *Message {
 // WithData adds custom data to the [Message].
 func (m *Message) WithData(data map[string]any) *Message {
 	m.Data = data
+	return m
+}
+
+// WithPriority sets the delivery priority.
+func (m *Message) WithPriority(p Priority) *Message {
+	m.Priority = p
+	return m
+}
+
+// WithCollapseID sets the collapse identifier.
+func (m *Message) WithCollapseID(id string) *Message {
+	m.CollapseID = id
+	return m
+}
+
+// WithTTL sets the message expiration duration.
+func (m *Message) WithTTL(ttl time.Duration) *Message {
+	m.TTL = ttl
+	return m
+}
+
+// AsSilent marks the message as a background push.
+func (m *Message) AsSilent() *Message {
+	m.Silent = true
 	return m
 }
 
