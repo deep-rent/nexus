@@ -27,9 +27,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/deep-rent/nexus/sign"
-
 	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/sign"
 )
 
 var mockMsg = []byte("payload")

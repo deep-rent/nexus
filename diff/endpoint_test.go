@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"

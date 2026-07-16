@@ -64,9 +64,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"uuid"
 
 	"golang.org/x/mod/semver"
+	"uuid"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )

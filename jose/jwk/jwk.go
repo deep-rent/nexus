@@ -85,12 +85,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/sign"
-
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/schedule"
+	"github.com/deep-rent/nexus/sign"
 )
 
 // Media types as registered in RFC 7517.

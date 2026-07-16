@@ -23,12 +23,12 @@ import (
 	"slices"
 	"testing"
 	"time"
-	"uuid"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
 	testpg "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"uuid"
 
 	"github.com/deep-rent/nexus/diff/driver/postgres"
 	"github.com/deep-rent/nexus/internal/schema"

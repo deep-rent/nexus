@@ -28,11 +28,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/router"
-	"github.com/deep-rent/nexus/sign"
-
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
+	"github.com/deep-rent/nexus/router"
+	"github.com/deep-rent/nexus/sign"
 )
 
 type mockKey struct {

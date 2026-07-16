@@ -16,6 +16,7 @@ package diff
 
 import (
 	"encoding/json/jsontext"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/internal/hlc"
