@@ -23,13 +23,15 @@
 // its exact expiration time. A buffer duration can be specified to preemptively
 // refresh the token before it expires.
 //
+// Example:
+//
 //	fetch := func(ctx context.Context) (string, time.Time, error) {
 //		// Generate or fetch the token...
 //		return "token_string", time.Now().Add(1 * time.Hour), nil
 //	}
 //
 //	// Create a source that refreshes tokens 5 minutes before expiration.
-//	source := token.NewSource(fetch, 5*time.Minute)
+//	source := token.NewSource(fetch, token.WithBufferTime(5*time.Minute))
 //
 //	// Retrieve the token. The fetcher is called only if the cached token is
 //	// missing or expired (within the buffer window).
@@ -42,16 +44,44 @@ import (
 	"time"
 )
 
+// DefaultBufferTime is the default duration to preemptively refresh tokens.
+const DefaultBufferTime = 1 * time.Minute
+
 // Fetcher is a function that generates or retrieves a new token and its exact
 // expiration time. It is called by the [Source] when a token is missing or
 // expired.
 type Fetcher func(ctx context.Context) (string, time.Time, error)
 
+// config defines the configuration options for a [Source].
+type config struct {
+	buf   time.Duration
+	clock func() time.Time
+}
+
+// Option modifies the token cache configuration.
+type Option func(*config)
+
+// WithBufferTime sets a custom buffer time for proactive token refreshing.
+// If not specified, DefaultBufferTime is used.
+func WithBufferTime(d time.Duration) Option {
+	return func(c *config) {
+		c.buf = d
+	}
+}
+
+// WithClock injects a custom clock function, primarily used for testing.
+func WithClock(clock func() time.Time) Option {
+	return func(c *config) {
+		c.clock = clock
+	}
+}
+
 // Source manages a lazy-loaded, automatically refreshing token cache.
 // It is safe for concurrent use by multiple goroutines.
 type Source struct {
-	fetch  Fetcher
-	buffer time.Duration
+	fetch Fetcher
+	buf   time.Duration
+	clock func() time.Time
 
 	mu  sync.Mutex
 	tok string
@@ -61,10 +91,19 @@ type Source struct {
 // NewSource creates a new token cache. The provided buffer duration is
 // subtracted from the token's actual expiration time to proactively trigger a
 // refresh before the token is rejected by the server.
-func NewSource(fetch Fetcher, buffer time.Duration) *Source {
+func NewSource(fetch Fetcher, opts ...Option) *Source {
+	cfg := config{
+		buf:   DefaultBufferTime,
+		clock: time.Now,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	return &Source{
-		fetch:  fetch,
-		buffer: buffer,
+		fetch: fetch,
+		buf:   cfg.buf,
+		clock: cfg.clock,
 	}
 }
 
@@ -75,7 +114,7 @@ func (s *Source) Get(ctx context.Context) (string, error) {
 	defer s.mu.Unlock()
 
 	// Consider the token expired if we are within the buffer window.
-	if s.tok != "" && time.Now().Add(s.buffer).Before(s.exp) {
+	if s.tok != "" && s.clock().Add(s.buf).Before(s.exp) {
 		return s.tok, nil
 	}
 

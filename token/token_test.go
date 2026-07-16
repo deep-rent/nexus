@@ -34,7 +34,7 @@ func TestSource_Get_Success(t *testing.T) {
 		return "foobar", time.Now().Add(1 * time.Hour), nil
 	}
 
-	source := token.NewSource(fetch, 5*time.Minute)
+	source := token.NewSource(fetch, token.WithBufferTime(5*time.Minute))
 
 	// First fetch
 	tok, err := source.Get(t.Context())
@@ -71,7 +71,7 @@ func TestSource_Get_Concurrency(t *testing.T) {
 		return "foobar", time.Now().Add(1 * time.Hour), nil
 	}
 
-	source := token.NewSource(fetch, 5*time.Minute)
+	source := token.NewSource(fetch, token.WithBufferTime(5*time.Minute))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
@@ -99,7 +99,7 @@ func TestSource_Get_ExpirationBuffer(t *testing.T) {
 	}
 
 	// Buffer is 2 minutes, so it should always be considered expired.
-	source := token.NewSource(fetch, 2*time.Minute)
+	source := token.NewSource(fetch, token.WithBufferTime(2*time.Minute))
 
 	_, _ = source.Get(t.Context())
 	_, _ = source.Get(t.Context())
@@ -121,7 +121,7 @@ func TestSource_Get_Error(t *testing.T) {
 		return "", time.Time{}, wantErr
 	}
 
-	source := token.NewSource(fetch, 1*time.Minute)
+	source := token.NewSource(fetch, token.WithBufferTime(1*time.Minute))
 
 	_, err := source.Get(t.Context())
 	if !errors.Is(err, wantErr) {

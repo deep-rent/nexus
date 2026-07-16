@@ -241,7 +241,7 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 
 		return authRes.AccessToken, time.Now().Add(time.Duration(authRes.ExpiresIn) * time.Second), nil
 	}
-	s.source = token.NewSource(fetch, 60*time.Second)
+	s.source = token.NewSource(fetch, token.WithBufferTime(60*time.Second))
 
 	return s
 }

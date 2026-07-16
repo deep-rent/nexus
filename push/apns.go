@@ -144,7 +144,7 @@ func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender
 		return string(tok), time.Now().Add(45 * time.Minute), nil
 	}
 
-	source := token.NewSource(fetch, 5*time.Minute)
+	source := token.NewSource(fetch, token.WithBufferTime(5*time.Minute))
 
 	s := &apns{
 		source: source,
