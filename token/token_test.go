@@ -42,7 +42,7 @@ func TestSource_Get_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if exp, act := "foobar", tok; exp != act {
-		t.Errorf("got %q, want %s", act, exp)
+		t.Errorf("got %q, want %q", act, exp)
 	}
 	if exp, act := int32(1), fetches.Load(); exp != act {
 		t.Errorf("expected %d fetches, got %d", exp, act)
@@ -53,8 +53,8 @@ func TestSource_Get_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if tok != "foobar" {
-		t.Errorf("got %q, want foobar", tok)
+	if exp, act := "foobar", tok; exp != act {
+		t.Errorf("got %q, want %q", act, exp)
 	}
 	if exp, act := int32(1), fetches.Load(); exp != act {
 		t.Errorf("expected %d fetches after cache hit, got %d", exp, act)
@@ -64,9 +64,9 @@ func TestSource_Get_Success(t *testing.T) {
 func TestSource_Get_Concurrency(t *testing.T) {
 	t.Parallel()
 
-	var fetches int32
+	var fetches atomic.Int32
 	fetch := func(ctx context.Context) (string, time.Time, error) {
-		atomic.AddInt32(&fetches, 1)
+		fetches.Add(1)
 		time.Sleep(50 * time.Millisecond) // Simulate slow fetch
 		return "foobar", time.Now().Add(1 * time.Hour), nil
 	}
@@ -74,17 +74,15 @@ func TestSource_Get_Concurrency(t *testing.T) {
 	source := token.NewSource(fetch, token.WithBufferTime(5*time.Minute))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			_, _ = source.Get(t.Context())
-		}()
+		})
 	}
 	wg.Wait()
 
-	if atomic.LoadInt32(&fetches) != 1 {
-		t.Errorf("expected exactly 1 fetch due to mutex lock, got %d", fetches)
+	if exp, act := int32(1), fetches.Load(); exp != act {
+		t.Errorf("expected %d fetch due to mutex lock, got %d", exp, act)
 	}
 }
 
