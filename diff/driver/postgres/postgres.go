@@ -682,9 +682,10 @@ func (h *shares) Upsert(
 		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
 		" WHERE EXCLUDED.hlc > ts.hlc"
 
-	// Last-write-wins upsert honoring tombstones. The insert is suppressed
-	// while a newer duplicate grant holds the (user, team) pair, and the
-	// conflict update only applies when the caller owns the existing row.
+	// Last-write-wins upsert honoring tombstones. The whole operation is
+	// suppressed (including tombstone clearing) while a surviving duplicate
+	// grant still holds the (user, team) pair, and the conflict update only
+	// applies when the caller owns the existing row.
 	upsert := "WITH incoming AS (" +
 		" SELECT $1::uuid AS id, $2::uuid AS user_id," +
 		" $3::uuid AS team_id, $4::bigint AS hlc" +
@@ -692,7 +693,12 @@ func (h *shares) Upsert(
 		" SELECT i.* FROM incoming i" +
 		" LEFT JOIN " + s.identTombstones + " ts" +
 		" ON ts.type = $6::text AND ts.id = i.id" +
-		" WHERE ts.id IS NULL OR i.hlc > ts.hlc" +
+		" WHERE (ts.id IS NULL OR i.hlc > ts.hlc)" +
+		" AND NOT EXISTS (" +
+		" SELECT 1 FROM " + s.identShares + " x" +
+		" WHERE x.user_id = i.user_id AND x.team_id = i.team_id" +
+		" AND x.id <> i.id" +
+		")" +
 		"), cleared AS (" +
 		" DELETE FROM " + s.identTombstones + " ts USING alive a" +
 		" WHERE ts.type = $6::text AND ts.id = a.id" +
@@ -700,11 +706,6 @@ func (h *shares) Upsert(
 		" (id, user_id, team_id, hlc, seq)" +
 		" SELECT a.id, a.user_id, a.team_id, a.hlc, " + s.nextval +
 		" FROM alive a" +
-		" WHERE NOT EXISTS (" +
-		" SELECT 1 FROM " + s.identShares + " x" +
-		" WHERE x.user_id = a.user_id AND x.team_id = a.team_id" +
-		" AND x.id <> a.id" +
-		")" +
 		" ON CONFLICT (id) DO UPDATE SET" +
 		" team_id = EXCLUDED.team_id, hlc = EXCLUDED.hlc," +
 		" seq = EXCLUDED.seq" +
