@@ -30,7 +30,6 @@
     "editor.defaultFormatter": "redhat.vscode-yaml"
   },
   "go.lintTool": "golangci-lint-v2",
-  "go.formatTool": "gofumpt",
   "go.toolsManagement.autoUpdate": true,
   "search.exclude": {
     "**/coverage.out": true,
