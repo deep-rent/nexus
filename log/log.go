@@ -94,6 +94,32 @@ func (f Format) String() string {
 	}
 }
 
+// MarshalText implements encoding.TextMarshaler.
+func (f Format) MarshalText() ([]byte, error) {
+	switch f {
+	case FormatText:
+		return []byte("text"), nil
+	case FormatJSON:
+		return []byte("json"), nil
+	default:
+		return nil, fmt.Errorf("invalid log format %d", f)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (f *Format) UnmarshalText(text []byte) error {
+	switch strings.ToLower(string(text)) {
+	case "json":
+		*f = FormatJSON
+		return nil
+	case "text":
+		*f = FormatText
+		return nil
+	default:
+		return fmt.Errorf("invalid log format %q", text)
+	}
+}
+
 // New creates and configures a new [slog.Logger]. By default, it logs at
 // [slog.LevelInfo] in plain text to [os.Stdout], without source information.
 // These defaults can be overridden by passing in one or more [Option] functions.
@@ -153,39 +179,17 @@ type config struct {
 // Option defines a function that modifies the logger configuration.
 type Option func(*config)
 
-// WithLevel sets the minimum log level. It accepts either a [slog.Level]
-// constant (e.g., [slog.LevelDebug]) or a case-insensitive string (e.g.,
-// "debug") as handled by [ParseLevel]. If an invalid string or type is
-// provided, the option is a no-op.
-func WithLevel(v any) Option {
+// WithLevel sets the minimum log level.
+func WithLevel(level slog.Level) Option {
 	return func(c *config) {
-		switch t := v.(type) {
-		case slog.Level:
-			c.Level = t
-		case string:
-			level, err := ParseLevel(t)
-			if err == nil {
-				c.Level = level
-			}
-		}
+		c.Level = level
 	}
 }
 
-// WithFormat sets the log output format. It accepts either a [Format] constant
-// ([FormatText] or [FormatJSON]) or a case-insensitive string ("text" or
-// "json") as handled by [ParseFormat]. If an invalid string or type is
-// provided, the option is a no-op.
-func WithFormat(v any) Option {
+// WithFormat sets the log output format.
+func WithFormat(format Format) Option {
 	return func(c *config) {
-		switch t := v.(type) {
-		case Format:
-			c.Format = t
-		case string:
-			format, err := ParseFormat(t)
-			if err == nil {
-				c.Format = format
-			}
-		}
+		c.Format = format
 	}
 }
 
@@ -223,17 +227,8 @@ func ParseLevel(s string) (level slog.Level, err error) {
 // ParseFormat converts a case-insensitive string into a [Format].
 // Valid inputs are "text" and "json". It returns an error for any other value.
 func ParseFormat(s string) (format Format, err error) {
-	switch strings.ToLower(s) {
-	case "json":
-		format = FormatJSON
-		return format, err
-	case "text":
-		format = FormatText
-		return format, err
-	default:
-		err = fmt.Errorf("invalid log format %q", s)
-		return format, err
-	}
+	err = format.UnmarshalText([]byte(s))
+	return format, err
 }
 
 // Silent creates a logger that discards all output.

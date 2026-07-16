@@ -35,16 +35,8 @@ func TestNew(t *testing.T) {
 			opts: []log.Option{},
 		},
 		{
-			name: "with level string",
-			opts: []log.Option{log.WithLevel("debug")},
-		},
-		{
 			name: "with level const",
 			opts: []log.Option{log.WithLevel(slog.LevelError)},
-		},
-		{
-			name: "with format string",
-			opts: []log.Option{log.WithFormat("json")},
 		},
 		{
 			name: "with format const",
@@ -65,19 +57,11 @@ func TestNew(t *testing.T) {
 		{
 			name: "all options",
 			opts: []log.Option{
-				log.WithLevel("debug"),
-				log.WithFormat("json"),
+				log.WithLevel(slog.LevelDebug),
+				log.WithFormat(log.FormatJSON),
 				log.WithAddSource(true),
 				log.WithWriter(new(bytes.Buffer)),
 			},
-		},
-		{
-			name: "invalid level",
-			opts: []log.Option{log.WithLevel("foo")},
-		},
-		{
-			name: "invalid format",
-			opts: []log.Option{log.WithFormat("bar")},
 		},
 	}
 
@@ -179,6 +163,63 @@ func TestFormat_String(t *testing.T) {
 			t.Parallel()
 			if got := tt.in.String(); got != tt.want {
 				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormat_MarshalText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in      log.Format
+		want    []byte
+		wantErr bool
+	}{
+		{log.FormatText, []byte("text"), false},
+		{log.FormatJSON, []byte("json"), false},
+		{log.Format(255), nil, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.want), func(t *testing.T) {
+			t.Parallel()
+			got, err := tt.in.MarshalText()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("got err %v, wantErr %v", err, tt.wantErr)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormat_UnmarshalText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in      []byte
+		want    log.Format
+		wantErr bool
+	}{
+		{[]byte("text"), log.FormatText, false},
+		{[]byte("json"), log.FormatJSON, false},
+		{[]byte("TEXT"), log.FormatText, false},
+		{[]byte("JSON"), log.FormatJSON, false},
+		{[]byte("invalid"), 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.in), func(t *testing.T) {
+			t.Parallel()
+			var got log.Format
+			err := got.UnmarshalText(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("got err %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}
