@@ -78,4 +78,41 @@ func TestGraph_Sort(t *testing.T) {
 			t.Fatalf("got error %v; want ErrCycleDetected", err)
 		}
 	})
+
+	t.Run("Deterministic Order", func(t *testing.T) {
+		t.Parallel()
+
+		build := func() *graph.Graph[string] {
+			g := graph.New[string]()
+			g.AddNode("delta")
+			g.AddNode("alpha")
+			g.AddEdge("omega", "delta")
+			g.AddNode("gamma")
+			g.AddNode("beta")
+			return g
+		}
+
+		want, err := build().Sort()
+		if err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+
+		// Independent nodes must appear in insertion order, and repeated
+		// sorts of identically built graphs must agree exactly.
+		if want[0] != "delta" || want[1] != "alpha" {
+			t.Errorf("got %v; want insertion order starting [delta alpha]",
+				want)
+		}
+		for range 25 {
+			got, err := build().Sort()
+			if err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("at index %d: got %q; want %q", i, got[i], want[i])
+				}
+			}
+		}
+	})
 }

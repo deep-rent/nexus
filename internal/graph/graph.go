@@ -49,6 +49,7 @@ type Graph[T comparable] struct {
 	nodes  map[T]struct{}
 	edges  map[T][]T
 	degree map[T]int
+	order  []T
 }
 
 // New initializes an empty directed acyclic graph.
@@ -61,12 +62,14 @@ func New[T comparable]() *Graph[T] {
 }
 
 // AddNode registers a node in the graph. Nodes added without edges will be
-// returned in the sorted output, but their relative order to disconnected nodes
-// is undefined.
+// returned in the sorted output; independent nodes retain their insertion
+// order, making [Graph.Sort] fully deterministic for a fixed sequence of
+// [Graph.AddNode] and [Graph.AddEdge] calls.
 func (g *Graph[T]) AddNode(v T) {
 	if _, exists := g.nodes[v]; !exists {
 		g.nodes[v] = struct{}{}
 		g.degree[v] = 0
+		g.order = append(g.order, v)
 	}
 }
 
@@ -83,13 +86,16 @@ func (g *Graph[T]) AddEdge(child, parent T) {
 }
 
 // Sort resolves the dependency graph and returns the nodes in topological
-// order (i.e., parents first, followed by their children). It returns
-// [ErrCycleDetected] if a cyclic dependency prevents a valid sorting.
+// order (i.e., parents first, followed by their children). The order is
+// deterministic: nodes that are not constrained relative to each other appear
+// in insertion order. It returns [ErrCycleDetected] if a cyclic dependency
+// prevents a valid sorting.
 func (g *Graph[T]) Sort() ([]T, error) {
 	var zero []T
 
 	deg := make(map[T]int, len(g.degree))
-	for v, d := range g.degree {
+	for _, v := range g.order {
+		d := g.degree[v]
 		deg[v] = d
 		if d == 0 {
 			zero = append(zero, v)
