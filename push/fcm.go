@@ -17,6 +17,8 @@ package push
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -131,7 +133,15 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 	if err != nil {
 		panic(fmt.Errorf("failed to parse FCM private key: %w", err))
 	}
-	keyPair := jwk.NewKeyPair(jwa.RS256, "", signer)
+	var keyPair jwk.KeyPair
+	switch signer.Public().(type) {
+	case *rsa.PublicKey:
+		keyPair = jwk.NewKeyPair(jwa.RS256, "", signer)
+	case *ecdsa.PublicKey:
+		keyPair = jwk.NewKeyPair(jwa.ES256, "", signer)
+	default:
+		panic("unsupported private key type for FCM")
+	}
 
 	cfg := fcmConfig{
 		baseURL:  fcmBaseURL,

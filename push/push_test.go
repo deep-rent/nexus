@@ -19,7 +19,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"io"
@@ -33,7 +32,7 @@ import (
 	"github.com/deep-rent/nexus/sign"
 )
 
-func generateECDSAPEM(t *testing.T) []byte {
+func generate(t *testing.T) []byte {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -44,19 +43,6 @@ func generateECDSAPEM(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return pem
-}
-
-func generateRSAPEM(t *testing.T) string {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pem, err := sign.Encode(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(pem)
 }
 
 func TestMessage_Validate(t *testing.T) {
@@ -103,7 +89,7 @@ func TestMessage_Validate(t *testing.T) {
 func TestAPNS_Send(t *testing.T) {
 	t.Parallel()
 
-	pemData := generateECDSAPEM(t)
+	pemData := generate(t)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/3/device/") {
@@ -146,10 +132,10 @@ func TestAPNS_Send(t *testing.T) {
 func TestFCM_Send(t *testing.T) {
 	t.Parallel()
 
-	rsaPEM := generateRSAPEM(t)
+	pemData := generate(t)
 	sa := map[string]string{
 		"project_id":   "my-project",
-		"private_key":  rsaPEM,
+		"private_key":  string(pemData),
 		"client_email": "test@my-project.iam.gserviceaccount.com",
 	}
 	saJSON, _ := json.Marshal(sa)
