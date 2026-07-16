@@ -37,7 +37,7 @@ func TestNew(t *testing.T) {
 		}{
 			{
 				name: "owner is required",
-				give: &update.Config{Repository: "r", Current: "v1.0.0"},
+				give: &update.Config{Repo: "r", Current: "v1.0.0"},
 				want: "owner is required",
 			},
 			{
@@ -47,7 +47,7 @@ func TestNew(t *testing.T) {
 			},
 			{
 				name: "current version is required",
-				give: &update.Config{Owner: "o", Repository: "r"},
+				give: &update.Config{Owner: "o", Repo: "r"},
 				want: "current version is required",
 			},
 		}
@@ -74,9 +74,9 @@ func TestNew(t *testing.T) {
 				}
 			}()
 			update.New(&update.Config{
-				Owner:      "o",
-				Repository: "r",
-				Current:    "invalid",
+				Owner:   "o",
+				Repo:    "r",
+				Current: "invalid",
 			})
 		})
 	})
@@ -85,9 +85,9 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		u := update.New(&update.Config{
-			Owner:      "o",
-			Repository: "r",
-			Current:    "1.0.0",
+			Owner:   "o",
+			Repo:    "r",
+			Current: "1.0.0",
 		})
 		if u == nil {
 			t.Fatal("updater should not be nil")
@@ -177,10 +177,10 @@ func TestCheck(t *testing.T) {
 			defer server.Close()
 
 			cfg := &update.Config{
-				BaseURL:    server.URL,
-				Owner:      "owner",
-				Repository: "repo",
-				Current:    tt.current,
+				BaseURL: server.URL,
+				Owner:   "owner",
+				Repo:    "repo",
+				Current: tt.current,
 			}
 
 			got, err := update.Check(t.Context(), cfg)
@@ -191,8 +191,8 @@ func TestCheck(t *testing.T) {
 						"should have returned an error matching %q", tt.wantErr,
 					)
 				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("want match for %q; got %q", tt.wantErr, err.Error())
+				if msg := err.Error(); !strings.Contains(msg, tt.wantErr) {
+					t.Errorf("want match for %q; got %q", tt.wantErr, msg)
 				}
 				return
 			}
@@ -224,11 +224,11 @@ func TestCheck_NetworkError(t *testing.T) {
 	server.Close()
 
 	cfg := &update.Config{
-		BaseURL:    server.URL,
-		Owner:      "o",
-		Repository: "r",
-		Current:    "v1.0.0",
-		Timeout:    100 * time.Millisecond,
+		BaseURL: server.URL,
+		Owner:   "o",
+		Repo:    "r",
+		Current: "v1.0.0",
+		Timeout: 100 * time.Millisecond,
 	}
 
 	_, err := update.Check(t.Context(), cfg)
@@ -255,11 +255,11 @@ func TestCheck_UserAgent(t *testing.T) {
 	defer server.Close()
 
 	cfg := &update.Config{
-		BaseURL:    server.URL,
-		Owner:      "o",
-		Repository: "r",
-		Current:    "v1.0.0",
-		UserAgent:  want,
+		BaseURL:   server.URL,
+		Owner:     "o",
+		Repo:      "r",
+		Current:   "v1.0.0",
+		UserAgent: want,
 	}
 
 	if _, err := update.Check(t.Context(), cfg); err != nil {
@@ -282,11 +282,11 @@ func TestCheck_Token(t *testing.T) {
 	defer server.Close()
 
 	cfg := &update.Config{
-		BaseURL:    server.URL,
-		Owner:      "o",
-		Repository: "r",
-		Current:    "v1.0.0",
-		Token:      "my-secret-token",
+		BaseURL: server.URL,
+		Owner:   "o",
+		Repo:    "r",
+		Current: "v1.0.0",
+		Token:   "my-secret-token",
 	}
 
 	if _, err := update.Check(t.Context(), cfg); err != nil {

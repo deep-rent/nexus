@@ -79,8 +79,8 @@ type Config struct {
 	BaseURL string
 	// Owner is the GitHub repository owner (required).
 	Owner string
-	// Repository is the name of the GitHub repository (required).
-	Repository string
+	// Repo is the name of the GitHub repository (required).
+	Repo string
 	// Current is the current version string of the application (required).
 	Current string
 	// UserAgent is the value for the User-Agent header sent with requests.
@@ -99,8 +99,8 @@ type Updater struct {
 	baseURL string
 	// owner is the GitHub user or organization.
 	owner string
-	// repository is the GitHub project name.
-	repository string
+	// repo is the GitHub project name.
+	repo string
 	// current is the normalized current version of the application.
 	current string
 	// userAgent is the identifying string sent in the HTTP header.
@@ -120,7 +120,7 @@ func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
 		panic("owner is required")
 	}
-	if cfg.Repository == "" {
+	if cfg.Repo == "" {
 		panic("repository is required")
 	}
 	if cfg.Current == "" {
@@ -143,12 +143,12 @@ func New(cfg *Config) *Updater {
 		timeout = DefaultTimeout
 	}
 	return &Updater{
-		baseURL:    baseURL,
-		owner:      cfg.Owner,
-		repository: cfg.Repository,
-		current:    current,
-		userAgent:  cfg.UserAgent,
-		token:      cfg.Token,
+		baseURL:   baseURL,
+		owner:     cfg.Owner,
+		repo:      cfg.Repo,
+		current:   current,
+		userAgent: cfg.UserAgent,
+		token:     cfg.Token,
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -166,7 +166,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 		u.baseURL,
 		"repos",
 		u.owner,
-		u.repository,
+		u.repo,
 		"releases",
 		"latest",
 	)
