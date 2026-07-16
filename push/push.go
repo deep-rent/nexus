@@ -44,7 +44,8 @@ var (
 	ErrNilMessage = errors.New("message cannot be nil")
 	// ErrMissingTarget is returned when a push notification has no destination.
 	ErrMissingTarget = errors.New("a target (token or topic) is needed")
-	// ErrDispatchFailed is returned when the underlying provider rejects the payload.
+	// ErrDispatchFailed is returned when the underlying provider rejects the
+	// payload.
 	ErrDispatchFailed = errors.New("dispatching failed")
 )
 
@@ -137,26 +138,23 @@ func BatchSend(
 	msgs []*Message,
 	workers int,
 ) []error {
-	if len(msgs) == 0 {
+	n := len(msgs)
+	if n == 0 {
 		return nil
 	}
-	if workers <= 0 || workers > len(msgs) {
-		workers = len(msgs)
-	}
+	workers = max(1, min(workers, n))
 
-	errs := make([]error, len(msgs))
+	errs := make([]error, n)
 	var wg sync.WaitGroup
 
-	jobs := make(chan int, len(msgs))
+	jobs := make(chan int, n)
 	for i := range msgs {
 		jobs <- i
 	}
 	close(jobs)
 
 	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range jobs {
 				if err := ctx.Err(); err != nil {
 					errs[i] = err
@@ -164,7 +162,7 @@ func BatchSend(
 				}
 				errs[i] = sender.Send(ctx, msgs[i])
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
