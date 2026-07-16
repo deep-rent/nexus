@@ -83,7 +83,8 @@ type Target struct {
 type Priority string
 
 const (
-	// PriorityNormal indicates the message is delivered when the device is awake.
+	// PriorityNormal indicates the message is delivered when the device is
+	// awake.
 	PriorityNormal Priority = "normal"
 	// PriorityHigh indicates the message should be delivered immediately.
 	PriorityHigh Priority = "high"

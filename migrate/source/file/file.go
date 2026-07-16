@@ -218,7 +218,8 @@ func (s *Source) Parse(name string) (
 		return 0, "", 0, false, ErrMissingSeparator
 	}
 
-	// Ensure neither the version nor the description segments are empty strings.
+	// Ensure neither the version nor the description segments are empty
+	// strings.
 	if s0 == "" {
 		return 0, "", 0, false, ErrInvalidVersion
 	}
@@ -281,7 +282,10 @@ func (s *Source) List() ([]migrate.SourceScript, error) {
 
 	err := fs.WalkDir(s.dir, ".", fn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to traverse migration directory: %w", err)
+		return nil, fmt.Errorf(
+			"failed to traverse migration directory: %w",
+			err,
+		)
 	}
 
 	return scripts, nil

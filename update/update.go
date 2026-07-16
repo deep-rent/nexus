@@ -87,7 +87,8 @@ type Config struct {
 	Current string
 	// UserAgent is the value for the User-Agent header sent with requests.
 	UserAgent string
-	// Token is the GitHub Personal Access Token used for authenticating requests,
+	// Token is the GitHub Personal Access Token used for authenticating
+	// requests,
 	// allowing access to private repositories.
 	Token string
 	// Timeout is the time limit for requests made by the updater. It defaults

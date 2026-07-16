@@ -429,7 +429,10 @@ func (v *Validator) Match(field, val string, rx *regexp.Regexp) {
 // Before asserts that a time is before a specific threshold.
 func (v *Validator) Before(field string, val, max time.Time) {
 	if !val.Before(max) {
-		v.Fail(field, fmt.Sprintf("must be before %v", max.Format(time.RFC3339)))
+		v.Fail(
+			field,
+			fmt.Sprintf("must be before %v", max.Format(time.RFC3339)),
+		)
 	}
 }
 

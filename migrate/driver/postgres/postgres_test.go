@@ -209,7 +209,10 @@ func TestDriver_ExecuteAndApplied(t *testing.T) {
 
 	applied, err = drv.Applied(ctx)
 	if err != nil {
-		t.Fatalf("applied after down: should not have returned an error: %v", err)
+		t.Fatalf(
+			"applied after down: should not have returned an error: %v",
+			err,
+		)
 	}
 	if len(applied) != 0 {
 		t.Errorf("after down: got applied size %d; want 0", len(applied))

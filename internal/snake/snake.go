@@ -67,7 +67,8 @@ func transform(s string, toCase func(rune) rune) string {
 		if i != 0 {
 			q := rune(s[i-1])
 			if (ascii.IsLower(q) &&
-				// Case 1: Lowercase to uppercase/digit transition ("myVar", "myVar1").
+				// Case 1: Lowercase to uppercase/digit transition ("myVar",
+				// "myVar1").
 				(ascii.IsUpper(r) || ascii.IsDigit(r))) ||
 				(ascii.IsUpper(q) &&
 					// Case 2: Acronym to new word transition ("MYVar").

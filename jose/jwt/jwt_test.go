@@ -303,10 +303,26 @@ func TestParse_Errors(t *testing.T) {
 		{"not enough segments", "a.b", "expected three dot-separated segments"},
 		{"bad header base64", "!!!.b.c", "failed to decode header"},
 		{"bad header json", "dGVzdA.b.c", "failed to unmarshal header"},
-		{"bad typ", "eyJ0eXAiOiJmb28ifQ.e30.c", "unexpected token type \"foo\""},
-		{"bad claims base64", "eyJ0eXAiOiJKV1QifQ.!!!.c", "failed to decode claims"},
-		{"bad claims json", "eyJ0eXAiOiJKV1QifQ.dGVzdA.c", "failed to unmarshal claims"},
-		{"bad sig base64", "eyJ0eXAiOiJKV1QifQ.e30.!!!", "failed to decode signature"},
+		{
+			"bad typ",
+			"eyJ0eXAiOiJmb28ifQ.e30.c",
+			"unexpected token type \"foo\"",
+		},
+		{
+			"bad claims base64",
+			"eyJ0eXAiOiJKV1QifQ.!!!.c",
+			"failed to decode claims",
+		},
+		{
+			"bad claims json",
+			"eyJ0eXAiOiJKV1QifQ.dGVzdA.c",
+			"failed to unmarshal claims",
+		},
+		{
+			"bad sig base64",
+			"eyJ0eXAiOiJKV1QifQ.e30.!!!",
+			"failed to decode signature",
+		},
 	}
 
 	for _, tt := range tests {

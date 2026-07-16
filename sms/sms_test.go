@@ -166,7 +166,9 @@ func TestSender_Send(t *testing.T) {
 					t.Errorf("invalid basic auth")
 				}
 
-				if got := r.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
+				if got := r.Header.Get(
+					"Content-Type",
+				); got != "application/x-www-form-urlencoded" {
 					t.Errorf("got Content-Type %q", got)
 				}
 				if got := r.Header.Get("User-Agent"); got != "TestAgent" {

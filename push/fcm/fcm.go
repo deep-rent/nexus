@@ -148,7 +148,8 @@ func WithClock(clock func() time.Time) Option {
 	}
 }
 
-// serviceAccount represents the structure of a Google Service Account JSON file.
+// serviceAccount represents the structure of a Google Service Account JSON
+// file.
 type serviceAccount struct {
 	ProjectID   string `json:"project_id"`
 	PrivateKey  string `json:"private_key"`
@@ -156,7 +157,8 @@ type serviceAccount struct {
 }
 
 // New creates a configured Firebase Cloud Messaging client implementing the
-// [push.Sender] interface. It requires the raw contents of the Google Service Account
+// [push.Sender] interface. It requires the raw contents of the Google Service
+// Account
 // JSON credentials file.
 func New(credentialsJSON []byte, opts ...Option) push.Sender {
 	var sa serviceAccount
@@ -164,7 +166,9 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 		panic(fmt.Errorf("failed to parse FCM credentials JSON: %w", err))
 	}
 	if sa.ProjectID == "" || sa.PrivateKey == "" || sa.ClientEmail == "" {
-		panic("credentials JSON is missing project_id, private_key, or client_email")
+		panic(
+			"credentials JSON is missing project_id, private_key, or client_email",
+		)
 	}
 
 	signer, err := sign.Decode([]byte(sa.PrivateKey))
@@ -207,7 +211,9 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 		})
 	} else {
 		if len(cfg.retry) != 0 {
-			s.logger.Warn("Custom client provided; retry options will be ignored")
+			s.logger.Warn(
+				"Custom client provided; retry options will be ignored",
+			)
 		}
 		s.client = cfg.client
 	}
@@ -229,7 +235,10 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 
 		assertion, err := jwt.Sign(ctx, keyPair, claims)
 		if err != nil {
-			return "", time.Time{}, fmt.Errorf("failed to sign oauth assertion: %w", err)
+			return "", time.Time{}, fmt.Errorf(
+				"failed to sign oauth assertion: %w",
+				err,
+			)
 		}
 
 		data := url.Values{}
@@ -243,7 +252,10 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 			strings.NewReader(data.Encode()),
 		)
 		if err != nil {
-			return "", time.Time{}, fmt.Errorf("failed to create oauth request: %w", err)
+			return "", time.Time{}, fmt.Errorf(
+				"failed to create oauth request: %w",
+				err,
+			)
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -255,7 +267,11 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 
 		if res.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(res.Body)
-			return "", time.Time{}, fmt.Errorf("oauth failed with status %d: %s", res.StatusCode, string(body))
+			return "", time.Time{}, fmt.Errorf(
+				"oauth failed with status %d: %s",
+				res.StatusCode,
+				string(body),
+			)
 		}
 
 		var authRes struct {
@@ -263,10 +279,15 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 			ExpiresIn   int    `json:"expires_in"`
 		}
 		if err := json.NewDecoder(res.Body).Decode(&authRes); err != nil {
-			return "", time.Time{}, fmt.Errorf("failed to decode oauth response: %w", err)
+			return "", time.Time{}, fmt.Errorf(
+				"failed to decode oauth response: %w",
+				err,
+			)
 		}
 
-		return authRes.AccessToken, cfg.clock().Add(time.Duration(authRes.ExpiresIn) * time.Second), nil
+		return authRes.AccessToken, cfg.clock().
+				Add(time.Duration(authRes.ExpiresIn) * time.Second),
+			nil
 	}
 	s.source = token.NewSource(
 		fetch,
@@ -349,7 +370,12 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		return fmt.Errorf("failed to encode FCM payload: %w", err)
 	}
 
-	endpoint, err := url.JoinPath(s.url, "projects", s.projectID, "messages:send")
+	endpoint, err := url.JoinPath(
+		s.url,
+		"projects",
+		s.projectID,
+		"messages:send",
+	)
 	if err != nil {
 		return fmt.Errorf("invalid endpoint: %w", err)
 	}
@@ -377,7 +403,11 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	defer func() {
 		_, _ = io.Copy(io.Discard, res.Body)
 		if err := res.Body.Close(); err != nil {
-			s.logger.WarnContext(ctx, "Failed to close response body", slog.Any("error", err))
+			s.logger.WarnContext(
+				ctx,
+				"Failed to close response body",
+				slog.Any("error", err),
+			)
 		}
 	}()
 
@@ -389,6 +419,10 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		}
 	}
 
-	s.logger.DebugContext(ctx, "FCM message dispatched", slog.Duration("duration", delta))
+	s.logger.DebugContext(
+		ctx,
+		"FCM message dispatched",
+		slog.Duration("duration", delta),
+	)
 	return nil
 }

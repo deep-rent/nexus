@@ -141,7 +141,10 @@ func TestClaims_Delegated(t *testing.T) {
 
 func TestRules(t *testing.T) {
 	t.Parallel()
-	c := &auth.Claims{Roles: []string{"a", "b"}, Scope: auth.Scope{"read", "write"}}
+	c := &auth.Claims{
+		Roles: []string{"a", "b"},
+		Scope: auth.Scope{"read", "write"},
+	}
 
 	tests := []struct {
 		name    string
@@ -154,12 +157,48 @@ func TestRules(t *testing.T) {
 		{"HasRole multi failure", auth.HasRole[*auth.Claims]("a", "c"), true},
 		{"HasScope success", auth.HasScope[*auth.Claims]("read"), false},
 		{"HasScope failure", auth.HasScope[*auth.Claims]("delete"), true},
-		{"HasScope multi success", auth.HasScope[*auth.Claims]("read", "write"), false},
-		{"HasScope multi failure", auth.HasScope[*auth.Claims]("read", "delete"), true},
-		{"Any success", auth.Any(auth.HasRole[*auth.Claims]("c"), auth.HasRole[*auth.Claims]("a")), false},
-		{"Any failure", auth.Any(auth.HasRole[*auth.Claims]("c"), auth.HasRole[*auth.Claims]("d")), true},
-		{"All success", auth.All(auth.HasRole[*auth.Claims]("a"), auth.HasScope[*auth.Claims]("read")), false},
-		{"All failure", auth.All(auth.HasRole[*auth.Claims]("a"), auth.HasScope[*auth.Claims]("delete")), true},
+		{
+			"HasScope multi success",
+			auth.HasScope[*auth.Claims]("read", "write"),
+			false,
+		},
+		{
+			"HasScope multi failure",
+			auth.HasScope[*auth.Claims]("read", "delete"),
+			true,
+		},
+		{
+			"Any success",
+			auth.Any(
+				auth.HasRole[*auth.Claims]("c"),
+				auth.HasRole[*auth.Claims]("a"),
+			),
+			false,
+		},
+		{
+			"Any failure",
+			auth.Any(
+				auth.HasRole[*auth.Claims]("c"),
+				auth.HasRole[*auth.Claims]("d"),
+			),
+			true,
+		},
+		{
+			"All success",
+			auth.All(
+				auth.HasRole[*auth.Claims]("a"),
+				auth.HasScope[*auth.Claims]("read"),
+			),
+			false,
+		},
+		{
+			"All failure",
+			auth.All(
+				auth.HasRole[*auth.Claims]("a"),
+				auth.HasScope[*auth.Claims]("delete"),
+			),
+			true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -209,9 +248,11 @@ func TestGuard_Secure(t *testing.T) {
 			wantReason: auth.ReasonInvalidToken,
 		},
 		{
-			name:       "insufficient privileges",
-			token:      "Bearer valid",
-			rules:      []auth.Rule[*auth.Claims]{auth.HasRole[*auth.Claims]("a")},
+			name:  "insufficient privileges",
+			token: "Bearer valid",
+			rules: []auth.Rule[*auth.Claims]{
+				auth.HasRole[*auth.Claims]("a"),
+			},
 			wantStatus: http.StatusForbidden,
 			wantReason: auth.ReasonInsufficientPrivileges,
 		},
@@ -219,17 +260,21 @@ func TestGuard_Secure(t *testing.T) {
 			name:  "rule error pass-through",
 			token: "Bearer valid",
 			rules: []auth.Rule[*auth.Claims]{
-				auth.RuleFunc[*auth.Claims](func(context.Context, *auth.Claims) error {
-					return teapotErr
-				}),
+				auth.RuleFunc[*auth.Claims](
+					func(context.Context, *auth.Claims) error {
+						return teapotErr
+					},
+				),
 			},
 			wantStatus: http.StatusTeapot,
 			wantReason: "teapot",
 		},
 		{
-			name:       "success",
-			token:      "Bearer valid",
-			rules:      []auth.Rule[*auth.Claims]{auth.HasRole[*auth.Claims]("b")},
+			name:  "success",
+			token: "Bearer valid",
+			rules: []auth.Rule[*auth.Claims]{
+				auth.HasRole[*auth.Claims]("b"),
+			},
 			wantStatus: http.StatusOK,
 		},
 	}
@@ -312,46 +357,48 @@ func TestContextExtraction(t *testing.T) {
 
 	guard := auth.NewGuard(v)
 
-	handler := guard.Secure()(router.HandlerFunc(func(e *router.Exchange) error {
-		c1, ok1 := auth.From[*auth.Claims](e)
-		if !ok1 {
-			t.Errorf(
-				"from exchange: got ok %t; want %t", ok1, true,
-			)
-		}
-		if c1 != want {
-			t.Errorf(
-				"from exchange: got claims %v; want %v", c1, want,
-			)
-		}
+	handler := guard.Secure()(
+		router.HandlerFunc(func(e *router.Exchange) error {
+			c1, ok1 := auth.From[*auth.Claims](e)
+			if !ok1 {
+				t.Errorf(
+					"from exchange: got ok %t; want %t", ok1, true,
+				)
+			}
+			if c1 != want {
+				t.Errorf(
+					"from exchange: got claims %v; want %v", c1, want,
+				)
+			}
 
-		c2, ok2 := auth.FromRequest[*auth.Claims](e.R)
-		if !ok2 {
-			t.Errorf(
-				"from request: got ok %t; want %t", ok2, true,
-			)
-		}
-		if c2 != want {
-			t.Errorf(
-				"from request: got claims %v; want %v", c2, want,
-			)
-		}
+			c2, ok2 := auth.FromRequest[*auth.Claims](e.R)
+			if !ok2 {
+				t.Errorf(
+					"from request: got ok %t; want %t", ok2, true,
+				)
+			}
+			if c2 != want {
+				t.Errorf(
+					"from request: got claims %v; want %v", c2, want,
+				)
+			}
 
-		c3, ok3 := auth.FromContext[*auth.Claims](e.Context())
-		if !ok3 {
-			t.Errorf(
-				"from context: got ok %t; want %t", ok3, true,
-			)
-		}
-		if c3 != want {
-			t.Errorf(
-				"from context: got claims %v; want %v", c3, want,
-			)
-		}
+			c3, ok3 := auth.FromContext[*auth.Claims](e.Context())
+			if !ok3 {
+				t.Errorf(
+					"from context: got ok %t; want %t", ok3, true,
+				)
+			}
+			if c3 != want {
+				t.Errorf(
+					"from context: got claims %v; want %v", c3, want,
+				)
+			}
 
-		e.Status(http.StatusOK)
-		return nil
-	}))
+			e.Status(http.StatusOK)
+			return nil
+		}),
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer valid")
@@ -381,10 +428,12 @@ func TestGuard_CustomExtractor(t *testing.T) {
 	}
 
 	guard := auth.NewGuard(v, customExt)
-	handler := guard.Secure()(router.HandlerFunc(func(e *router.Exchange) error {
-		e.Status(http.StatusOK)
-		return nil
-	}))
+	handler := guard.Secure()(
+		router.HandlerFunc(func(e *router.Exchange) error {
+			e.Status(http.StatusOK)
+			return nil
+		}),
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/?token=custom-token", nil)
 	rec := httptest.NewRecorder()

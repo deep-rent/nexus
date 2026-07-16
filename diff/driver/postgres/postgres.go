@@ -288,7 +288,10 @@ func (s *Store) Exec(
 
 	defer func() {
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
-			s.logger.Error("Failed to rollback transaction", slog.Any("error", e))
+			s.logger.Error(
+				"Failed to rollback transaction",
+				slog.Any("error", e),
+			)
 		}
 	}()
 
@@ -308,7 +311,11 @@ func (s *Store) Exec(
 // both sets is locked exclusively. All keys are deduplicated and acquired
 // in one global ascending order, regardless of mode, so concurrent callers
 // never deadlock.
-func (s *Store) Lock(ctx context.Context, tx *sql.Tx, shared, exclusive []string) error {
+func (s *Store) Lock(
+	ctx context.Context,
+	tx *sql.Tx,
+	shared, exclusive []string,
+) error {
 	// Fold both sets into one mode map; exclusive wins on overlap.
 	modes := make(map[int64]bool, len(shared)+len(exclusive))
 	for _, key := range shared {
@@ -512,15 +519,17 @@ func (s *Store) Touch(
 // deletions go through [Table.Bury]:
 //
 //	now := engine.Now()
-//	err := store.Mutate(ctx, scope, func(ctx context.Context, tx *sql.Tx) error {
-//	    if _, err := tx.ExecContext(ctx,
-//	        "UPDATE assets SET data = $2, hlc = $3 WHERE id = $1",
-//	        id, data, int64(now),
-//	    ); err != nil {
-//	        return err
-//	    }
-//	    return assets.Reseq(ctx, tx, []uuid.UUID{id})
-//	})
+//	err := store.Mutate(ctx, scope, func(ctx context.Context, tx *sql.Tx) error
+//
+//	{
+//		    if _, err := tx.ExecContext(ctx,
+//		        "UPDATE assets SET data = $2, hlc = $3 WHERE id = $1",
+//		        id, data, int64(now),
+//		    ); err != nil {
+//		        return err
+//		    }
+//		    return assets.Reseq(ctx, tx, []uuid.UUID{id})
+//		})
 //
 // Flows inserting rows directly may instead allocate sequence values
 // themselves: [Store.Barrier] doubles as a seq allocator, returning one
@@ -1039,7 +1048,12 @@ func collect(rows *sql.Rows, logger *slog.Logger) ([]diff.Version, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse document id: %w", err)
 		}
-		v := diff.Version{ID: id, Seq: seq, Time: hlc.Time(ts), Deleted: deleted}
+		v := diff.Version{
+			ID:      id,
+			Seq:     seq,
+			Time:    hlc.Time(ts),
+			Deleted: deleted,
+		}
 		if !deleted {
 			v.Data = jsontext.Value(data)
 		}

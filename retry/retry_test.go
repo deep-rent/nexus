@@ -201,8 +201,10 @@ func TestDefaultPolicy(t *testing.T) {
 		{
 			name: "idempotent and temporary",
 			attempt: retry.Attempt{
-				Request:  &http.Request{Method: http.MethodGet},
-				Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
+				Request: &http.Request{Method: http.MethodGet},
+				Response: &http.Response{
+					StatusCode: http.StatusServiceUnavailable,
+				},
 			},
 			want: true,
 		},
@@ -217,8 +219,10 @@ func TestDefaultPolicy(t *testing.T) {
 		{
 			name: "non-idempotent",
 			attempt: retry.Attempt{
-				Request:  &http.Request{Method: http.MethodPost},
-				Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
+				Request: &http.Request{Method: http.MethodPost},
+				Response: &http.Response{
+					StatusCode: http.StatusServiceUnavailable,
+				},
 			},
 			want: false,
 		},

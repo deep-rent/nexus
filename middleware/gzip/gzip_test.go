@@ -115,9 +115,11 @@ func TestMiddleware(t *testing.T) {
 			mediaType: "application/json",
 			preEnc:    "",
 			body:      payload,
-			opts:      []gzip.Option{gzip.WithExcludeMimeTypes("application/json")},
-			wantEnc:   "",
-			wantZip:   false,
+			opts: []gzip.Option{
+				gzip.WithExcludeMimeTypes("application/json"),
+			},
+			wantEnc: "",
+			wantZip: false,
 		},
 		{
 			name:      "no compress on custom excluded prefix",
@@ -167,12 +169,16 @@ func TestMiddleware(t *testing.T) {
 
 			hdr := w.Header()
 
-			if got, want := hdr.Get("Content-Encoding"), tt.wantEnc; got != want {
+			if got, want := hdr.Get(
+				"Content-Encoding",
+			), tt.wantEnc; got != want {
 				t.Errorf("content-encoding header: got %q; want %q", got, want)
 			}
 
 			if tt.wantEnc == "gzip" {
-				if got, want := hdr.Get("Vary"), "Accept-Encoding"; got != want {
+				if got, want := hdr.Get(
+					"Vary",
+				), "Accept-Encoding"; got != want {
 					t.Errorf("vary header: got %q; want %q", got, want)
 				}
 				if got := hdr.Get("Content-Length"); len(got) != 0 {

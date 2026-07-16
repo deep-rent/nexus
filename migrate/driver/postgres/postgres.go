@@ -352,7 +352,10 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 
 	defer func() {
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
-			d.logger.Error("Failed to rollback transaction", slog.Any("error", e))
+			d.logger.Error(
+				"Failed to rollback transaction",
+				slog.Any("error", e),
+			)
 		}
 	}()
 
@@ -480,7 +483,10 @@ func (d *Driver) setDirty(
 	direction migrate.Direction,
 	checksum [32]byte,
 ) error {
-	d.logger.Debug("Marking migration as dirty", slog.Uint64("version", version))
+	d.logger.Debug(
+		"Marking migration as dirty",
+		slog.Uint64("version", version),
+	)
 
 	switch direction {
 	case migrate.Up:

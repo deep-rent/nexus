@@ -570,7 +570,10 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 		t.Errorf("applied size: got %d; want 1", len(applied))
 	}
 	if applied[0].Version != 1 {
-		t.Errorf("applied at index 0: got version %d; want 1", applied[0].Version)
+		t.Errorf(
+			"applied at index 0: got version %d; want 1",
+			applied[0].Version,
+		)
 	}
 }
 
@@ -648,7 +651,10 @@ func TestMigrator_Integration(t *testing.T) {
 	var count int
 	query := "SELECT count(*) FROM integration_users"
 	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		t.Fatalf("querying after up: should not have returned an error: %v", err)
+		t.Fatalf(
+			"querying after up: should not have returned an error: %v",
+			err,
+		)
 	}
 	if count != 2 {
 		t.Errorf("after up: got count %d; want 2", count)
@@ -667,7 +673,10 @@ func TestMigrator_Integration(t *testing.T) {
 	}
 
 	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		t.Fatalf("querying after down: should not have returned an error: %v", err)
+		t.Fatalf(
+			"querying after down: should not have returned an error: %v",
+			err,
+		)
 	}
 	if count != 0 {
 		t.Errorf("after down: got count %d; want 0", count)

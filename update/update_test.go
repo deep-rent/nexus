@@ -235,7 +235,10 @@ func TestCheck_NetworkError(t *testing.T) {
 	if err == nil {
 		t.Fatal("should have returned a network error")
 	}
-	if got, want := err.Error(), "failed to fetch"; !strings.Contains(got, want) {
+	if got, want := err.Error(), "failed to fetch"; !strings.Contains(
+		got,
+		want,
+	) {
 		t.Errorf("want match for %q; got %q", want, got)
 	}
 }

@@ -92,23 +92,25 @@ func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 // effectiveness, this should be the first (outermost) middleware in the chain.
 func Recover(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-			defer func() {
-				if r := recover(); r != nil {
-					method, url := req.Method, req.URL.String()
-					logger.Error(
-						"Panic caught by middleware",
-						slog.String("method", method),
-						slog.String("url", url),
-						slog.Any("panic", r),
-						slog.String("stack", string(debug.Stack())),
-					)
-					res.WriteHeader(http.StatusInternalServerError)
-				}
-			}()
+		return http.HandlerFunc(
+			func(res http.ResponseWriter, req *http.Request) {
+				defer func() {
+					if r := recover(); r != nil {
+						method, url := req.Method, req.URL.String()
+						logger.Error(
+							"Panic caught by middleware",
+							slog.String("method", method),
+							slog.String("url", url),
+							slog.Any("panic", r),
+							slog.String("stack", string(debug.Stack())),
+						)
+						res.WriteHeader(http.StatusInternalServerError)
+					}
+				}()
 
-			next.ServeHTTP(res, req)
-		})
+				next.ServeHTTP(res, req)
+			},
+		)
 	}
 }
 
@@ -317,12 +319,18 @@ func Secure(cfg SecurityConfig) Pipe {
 
 			// 8. Cross-Origin-Embedder-Policy
 			if cfg.CrossOriginEmbedderPolicy != "" {
-				h.Set("Cross-Origin-Embedder-Policy", cfg.CrossOriginEmbedderPolicy)
+				h.Set(
+					"Cross-Origin-Embedder-Policy",
+					cfg.CrossOriginEmbedderPolicy,
+				)
 			}
 
 			// 9. Cross-Origin-Resource-Policy
 			if cfg.CrossOriginResourcePolicy != "" {
-				h.Set("Cross-Origin-Resource-Policy", cfg.CrossOriginResourcePolicy)
+				h.Set(
+					"Cross-Origin-Resource-Policy",
+					cfg.CrossOriginResourcePolicy,
+				)
 			}
 
 			// 10. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)

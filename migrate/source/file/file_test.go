@@ -192,7 +192,12 @@ func TestSource_Parse(t *testing.T) {
 			v, desc, dir, tx, err := s.Parse(tt.give)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("for %q: got error %v; want %v", tt.give, err, tt.wantErr)
+					t.Errorf(
+						"for %q: got error %v; want %v",
+						tt.give,
+						err,
+						tt.wantErr,
+					)
 				}
 				return
 			}

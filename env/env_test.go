@@ -173,7 +173,11 @@ func TestExpand(t *testing.T) {
 		},
 		{
 			name: "complex string",
-			vars: map[string]string{"USER": "foo", "HOST": "bar", "PORT": "8080"},
+			vars: map[string]string{
+				"USER": "foo",
+				"HOST": "bar",
+				"PORT": "8080",
+			},
 			give: "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}",
 			want: "user=foo, pass=$ECRET, dsn=foo@bar:8080",
 		},

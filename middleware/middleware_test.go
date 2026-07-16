@@ -46,15 +46,20 @@ func TestChain(t *testing.T) {
 		var order []string
 		rec := func(id string) mw.Pipe {
 			return func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					order = append(order, id)
-					next.ServeHTTP(w, r)
-				})
+				return http.HandlerFunc(
+					func(w http.ResponseWriter, r *http.Request) {
+						order = append(order, id)
+						next.ServeHTTP(w, r)
+					},
+				)
 			}
 		}
 
 		h := mw.Chain(mockHandler, rec("a"), rec("b"), rec("c"))
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(
+			httptest.NewRecorder(),
+			httptest.NewRequest("GET", "/", nil),
+		)
 
 		want := "a,b,c"
 		if got := strings.Join(order, ","); got != want {
@@ -66,14 +71,19 @@ func TestChain(t *testing.T) {
 		t.Parallel()
 		var called bool
 		p := func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				called = true
-				next.ServeHTTP(w, r)
-			})
+			return http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					called = true
+					next.ServeHTTP(w, r)
+				},
+			)
 		}
 
 		h := mw.Chain(mockHandler, nil, p, nil)
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(
+			httptest.NewRecorder(),
+			httptest.NewRequest("GET", "/", nil),
+		)
 
 		if !called {
 			t.Errorf("got %v; want true", called)
@@ -303,10 +313,18 @@ func TestSecure(t *testing.T) {
 
 		hsts := rr.Header().Get("Strict-Transport-Security")
 		if !strings.Contains(hsts, "max-age=31536000") {
-			t.Errorf("hsts: want match for %q; got %q", "max-age=31536000", hsts)
+			t.Errorf(
+				"hsts: want match for %q; got %q",
+				"max-age=31536000",
+				hsts,
+			)
 		}
 		if !strings.Contains(hsts, "includeSubDomains") {
-			t.Errorf("hsts: want match for %q; got %q", "includeSubDomains", hsts)
+			t.Errorf(
+				"hsts: want match for %q; got %q",
+				"includeSubDomains",
+				hsts,
+			)
 		}
 
 		tests := []struct {

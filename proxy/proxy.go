@@ -47,9 +47,11 @@ import (
 )
 
 const (
-	// DefaultMinBufferSize is the default minimum size of pooled buffers (32 KiB).
+	// DefaultMinBufferSize is the default minimum size of pooled buffers (32
+	// KiB).
 	DefaultMinBufferSize = 32 << 10
-	// DefaultMaxBufferSize is the default maximum size of pooled buffers (256 KiB).
+	// DefaultMaxBufferSize is the default maximum size of pooled buffers (256
+	// KiB).
 	DefaultMaxBufferSize = 256 << 10
 )
 
@@ -134,7 +136,8 @@ type ErrorHandlerFactory = func(*slog.Logger) ErrorHandler
 func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if errors.Is(err, context.Canceled) {
-			// Silence client-initiated disconnects; there's nothing useful to send
+			// Silence client-initiated disconnects; there's nothing useful to
+			// send
 			return
 		}
 

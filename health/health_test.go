@@ -136,7 +136,10 @@ func TestMonitor_Ready(t *testing.T) {
 			now := time.Now()
 			for name, res := range rep.Checks {
 				if res.Timestamp.Time.IsZero() {
-					t.Errorf("timestamp for check %q is zero; want non-zero", name)
+					t.Errorf(
+						"timestamp for check %q is zero; want non-zero",
+						name,
+					)
 				}
 
 				diff := now.Sub(res.Timestamp.Time)
@@ -144,8 +147,12 @@ func TestMonitor_Ready(t *testing.T) {
 					diff = -diff
 				}
 				if diff > 2*time.Second {
-					t.Errorf("for check %q: got timestamp %v; want within 2s of %v",
-						name, res.Timestamp.Time, now)
+					t.Errorf(
+						"for check %q: got timestamp %v; want within 2s of %v",
+						name,
+						res.Timestamp.Time,
+						now,
+					)
 				}
 			}
 		})
@@ -174,7 +181,10 @@ func TestMonitor_Live(t *testing.T) {
 
 	var rep health.Report
 	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
-		t.Fatalf("unmarshaling body: should not have returned an error: %v", err)
+		t.Fatalf(
+			"unmarshaling body: should not have returned an error: %v",
+			err,
+		)
 	}
 
 	if got, want := rep.Status, health.StatusHealthy; got != want {

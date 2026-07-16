@@ -484,7 +484,10 @@ func TestStore_Lock_SharedExclusive(t *testing.T) {
 	select {
 	case err := <-writer:
 		if err != nil {
-			t.Fatalf("exclusive lock: should not have returned an error: %v", err)
+			t.Fatalf(
+				"exclusive lock: should not have returned an error: %v",
+				err,
+			)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("exclusive lock: should have completed after release")

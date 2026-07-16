@@ -95,7 +95,8 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 
 		// If the client has no timeout set, we enforce a fallback timeout
 		// specifically for this check execution using the context.
-		// We only do this if the incoming context doesn't already have a deadline.
+		// We only do this if the incoming context doesn't already have a
+		// deadline.
 		if _, deadline := ctx.Deadline(); !deadline && client.Timeout == 0 {
 			var cancel context.CancelFunc
 			child, cancel = context.WithTimeout(ctx, defaultTimeout)
@@ -104,7 +105,11 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 
 		req, err := http.NewRequestWithContext(child, http.MethodGet, url, nil)
 		if err != nil {
-			return health.StatusSick, fmt.Errorf("http request %s: %w", url, err)
+			return health.StatusSick, fmt.Errorf(
+				"http request %s: %w",
+				url,
+				err,
+			)
 		}
 
 		res, err := client.Do(req)

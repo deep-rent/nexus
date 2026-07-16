@@ -29,7 +29,7 @@ import (
 	"github.com/deep-rent/nexus/internal/pointer"
 )
 
-// setValues assigns values to a reflect.Value based on its type.
+// setValues assigns values to a [reflect.Value] based on its type.
 func setValues(rv reflect.Value, vals []string, f *Flags) error {
 	rv = pointer.Deref(rv)
 	if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() != reflect.Uint8 {
@@ -236,8 +236,9 @@ func setBytes(rv reflect.Value, v string, f *Flags) error {
 }
 
 // setSlice parses and sets a slice value by parsing each element.
-// If exactly one value is provided and a f.Split delimiter is present,
-// it will optionally split that single string to maintain backwards compatibility
+// If exactly one value is provided and a delimiter (split flag) is present,
+// it will optionally split that single string to maintain backwards
+// compatibility
 // with environment variable formats.
 func setSlice(rv reflect.Value, vals []string, f *Flags) error {
 	if len(vals) == 1 && f.Split != "" {

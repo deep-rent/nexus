@@ -72,7 +72,8 @@ const (
 
 var (
 	// ErrInvalidLength indicates that the requested verifier length is outside
-	// the RFC 7636 bounds defined by [MinVerifierLength] and [MaxVerifierLength].
+	// the RFC 7636 bounds defined by [MinVerifierLength] and
+	// [MaxVerifierLength].
 	ErrInvalidLength = fmt.Errorf(
 		"verifier length must be between %d and %d characters",
 		MinVerifierLength,
@@ -111,7 +112,8 @@ func Verifier(length int) (string, error) {
 
 	result := make([]byte, length)
 
-	// Pre-allocate a buffer of random bytes. Since about 22.6% (58/256) of bytes
+	// Pre-allocate a buffer of random bytes. Since about 22.6% (58/256) of
+	// bytes
 	// are discarded to avoid modulo bias, allocating 1.4x of length is highly
 	// likely to be sufficient to fill the result slice in a single call.
 	buf := make([]byte, max((length*14)/10, 32))
@@ -192,7 +194,8 @@ func Verify(verifier, challenge, method string) bool {
 		// Hash the verifier.
 		sum := sha256.Sum256(explode(verifier))
 
-		// Decode the challenge into a stack-allocated buffer to avoid allocations.
+		// Decode the challenge into a stack-allocated buffer to avoid
+		// allocations.
 		var decoded [32]byte
 		n, err := base64.RawURLEncoding.Decode(decoded[:], explode(challenge))
 		if err != nil || n != 32 {
@@ -211,7 +214,8 @@ func Verify(verifier, challenge, method string) bool {
 		}
 
 		// Hash both values to ensure equal-length comparison inputs,
-		// mitigating length-based timing leaks during the constant-time comparison.
+		// mitigating length-based timing leaks during the constant-time
+		// comparison.
 		h1 := sha256.Sum256(explode(verifier))
 		h2 := sha256.Sum256(explode(challenge))
 

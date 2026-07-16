@@ -128,7 +128,8 @@ type blockingWait struct {
 	sem chan struct{}
 }
 
-// Snooze parks the goroutine until a value is received on the semaphore channel.
+// Snooze parks the goroutine until a value is received on the semaphore
+// channel.
 func (w *blockingWait) Snooze(_ int) { <-w.sem }
 
 // Signal attempts to send a wakeup token. If the channel already has a token,
@@ -342,7 +343,8 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 		wait: cfg.wait,
 	}
 
-	// Seed the atomic pointer with an empty slice to avoid nil pointer panics on
+	// Seed the atomic pointer with an empty slice to avoid nil pointer panics
+	// on
 	// first load.
 	empty := make([]handler[T], 0)
 	bus.subs.Store(&empty)

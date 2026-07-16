@@ -198,7 +198,11 @@ func TestEndpoint_Errors(t *testing.T) {
 				`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"asset","data":%s,"time":%d}]}`,
 				uuid.NewV7(),
-				assetDoc(uuid.NewV7(), uuid.NewV7().String(), nil), // foreign owner
+				assetDoc(
+					uuid.NewV7(),
+					uuid.NewV7().String(),
+					nil,
+				), // foreign owner
 				stamp(1),
 			),
 			wantStatus: http.StatusForbidden,

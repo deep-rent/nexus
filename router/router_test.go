@@ -136,11 +136,17 @@ func TestExchange_BindJSON(t *testing.T) {
 					}
 					verrs, ok := err.Context.(valid.Error)
 					if !ok {
-						t.Fatalf("context: got %T; want valid.Error", err.Context)
+						t.Fatalf(
+							"context: got %T; want valid.Error",
+							err.Context,
+						)
 					}
 					msgs := verrs["name"]
 					if len(msgs) == 0 || msgs[0] != "must not be empty" {
-						t.Errorf("name messages: got %v; want [\"must not be empty\"]", msgs)
+						t.Errorf(
+							"name messages: got %v; want [\"must not be empty\"]",
+							msgs,
+						)
 					}
 				}
 				return
@@ -410,7 +416,11 @@ func TestExchange_ReadForm(t *testing.T) {
 			}
 			if tt.missingKey != "" {
 				if got := vals.Get(tt.missingKey); got != "" {
-					t.Errorf("for key %q: got %q; want empty", tt.missingKey, got)
+					t.Errorf(
+						"for key %q: got %q; want empty",
+						tt.missingKey,
+						got,
+					)
 				}
 			}
 		})
@@ -812,9 +822,12 @@ func TestRouter_MountMux(t *testing.T) {
 
 	r := router.New()
 	subMux := http.NewServeMux()
-	subMux.HandleFunc("/mnt/check", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
-	})
+	subMux.HandleFunc(
+		"/mnt/check",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		},
+	)
 
 	r.Mount("/mnt/", subMux)
 
@@ -893,10 +906,12 @@ func TestHandler_ChainMiddleware(t *testing.T) {
 func TestHandler_WrapStd(t *testing.T) {
 	t.Parallel()
 
-	stdHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Wrapped", "true")
-		w.WriteHeader(http.StatusAccepted)
-	})
+	stdHandler := http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Wrapped", "true")
+			w.WriteHeader(http.StatusAccepted)
+		},
+	)
 
 	r := router.New()
 	r.Handle("GET /wrap", router.Wrap(stdHandler))

@@ -125,7 +125,11 @@ type Engine[Tx any] struct {
 // It panics if store or registry is nil, no models are registered,
 // or their declared relationships are cyclic or dangling (programmer
 // error).
-func New[Tx any](store Store[Tx], reg *Registry[Tx], opts ...Option) *Engine[Tx] {
+func New[Tx any](
+	store Store[Tx],
+	reg *Registry[Tx],
+	opts ...Option,
+) *Engine[Tx] {
 	if store == nil {
 		panic("store is required")
 	}
@@ -343,18 +347,24 @@ func (e *Engine[Tx]) screen(
 			var meta Meta
 			if err := json.Unmarshal(in.Data, &meta); err != nil ||
 				meta.ID == uuid.Nil() {
-				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
-					"data": {"must carry a valid document envelope"},
-				}})
+				rejected.reject(
+					in.ID,
+					Cause{Code: CodeInvalid, Fields: valid.Error{
+						"data": {"must carry a valid document envelope"},
+					}},
+				)
 				continue
 			}
 			// Owner and team identifiers must be well-formed UUIDs before
 			// they participate in scope checks or lock derivation.
 			if !valid.UUID(meta.UserID) ||
 				(meta.TeamID != nil && !valid.UUID(*meta.TeamID)) {
-				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
-					"data": {"owner and team must be valid UUIDs"},
-				}})
+				rejected.reject(
+					in.ID,
+					Cause{Code: CodeInvalid, Fields: valid.Error{
+						"data": {"owner and team must be valid UUIDs"},
+					}},
+				)
 				continue
 			}
 			c.Meta = meta
@@ -370,21 +380,27 @@ func (e *Engine[Tx]) screen(
 		} else {
 			id, parent, err := envelope(in.Data, entry.ownerVia)
 			if err != nil {
-				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
-					"data": {"must carry a valid document envelope"},
-				}})
+				rejected.reject(
+					in.ID,
+					Cause{Code: CodeInvalid, Fields: valid.Error{
+						"data": {"must carry a valid document envelope"},
+					}},
+				)
 				continue
 			}
 			c.Meta.ID = id
 			c.parent = parent
 			c.child = true
 			if in.Action == ActionUpsert && parent == uuid.Nil() {
-				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
-					"data": {fmt.Sprintf(
-						"must reference a parent document via %q",
-						entry.ownerVia,
-					)},
-				}})
+				rejected.reject(
+					in.ID,
+					Cause{Code: CodeInvalid, Fields: valid.Error{
+						"data": {fmt.Sprintf(
+							"must reference a parent document via %q",
+							entry.ownerVia,
+						)},
+					}},
+				)
 				continue
 			}
 		}
@@ -486,7 +502,9 @@ func (e *Engine[Tx]) assemble(
 	}
 
 	write := make(map[string]struct{})
-	owners := make(map[string]struct{}) // owners whose personal docs are written
+	owners := make(
+		map[string]struct{},
+	) // owners whose personal docs are written
 	include := func(userID string, teamID *string) {
 		write[userID] = struct{}{}
 		if teamID != nil {

@@ -321,7 +321,12 @@ func TestCredentials(t *testing.T) {
 			t.Parallel()
 
 			if got := header.Credentials(tt.h, tt.scheme); got != tt.want {
-				t.Errorf("for scheme %q: got %q; want %q", tt.scheme, got, tt.want)
+				t.Errorf(
+					"for scheme %q: got %q; want %q",
+					tt.scheme,
+					got,
+					tt.want,
+				)
 			}
 		})
 	}
@@ -494,7 +499,9 @@ func TestMediaType(t *testing.T) {
 	}{
 		{
 			name: "basic",
-			h:    http.Header{"Content-Type": {"application/json; charset=utf-8"}},
+			h: http.Header{
+				"Content-Type": {"application/json; charset=utf-8"},
+			},
 			want: "application/json",
 		},
 		{
@@ -683,7 +690,12 @@ func TestLinks(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("for input %q: got %v; want %v", tt.value, got, tt.want)
+				t.Errorf(
+					"for input %q: got %v; want %v",
+					tt.value,
+					got,
+					tt.want,
+				)
 			}
 		})
 	}
@@ -700,7 +712,9 @@ func TestFilename(t *testing.T) {
 		{
 			name: "standard filename",
 			h: http.Header{
-				"Content-Disposition": []string{`attachment; filename="foo.pdf"`},
+				"Content-Disposition": []string{
+					`attachment; filename="foo.pdf"`,
+				},
 			},
 			want: "foo.pdf",
 		},
@@ -845,7 +859,10 @@ func TestNewTransport(t *testing.T) {
 			nil,
 		)
 		if err != nil {
-			t.Fatalf("creating request: should not have returned an error: %v", err)
+			t.Fatalf(
+				"creating request: should not have returned an error: %v",
+				err,
+			)
 		}
 
 		originalHeader := req.Header.Clone()

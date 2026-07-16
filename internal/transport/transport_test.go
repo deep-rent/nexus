@@ -33,7 +33,10 @@ func TestNewClient_Defaults(t *testing.T) {
 
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", client.Transport)
+		t.Fatalf(
+			"expected transport to be *http.Transport, got %T",
+			client.Transport,
+		)
 	}
 
 	if transport.DisableKeepAlives {
@@ -65,7 +68,10 @@ func TestNewClient_WithOptions(t *testing.T) {
 
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", client.Transport)
+		t.Fatalf(
+			"expected transport to be *http.Transport, got %T",
+			client.Transport,
+		)
 	}
 
 	if !transport.DisableKeepAlives {
@@ -88,7 +94,8 @@ func TestNewClient_WithHeadersAndRetry(t *testing.T) {
 	})
 
 	// The transport should be wrapped by retry, and then header.
-	// Since we don't expose internal wrappers easily, we just ensure it's not the base transport.
+	// Since we don't expose internal wrappers easily, we just ensure it's not
+	// the base transport.
 	if _, ok := client.Transport.(*http.Transport); ok {
 		t.Error("expected transport to be wrapped by middlewares")
 	}

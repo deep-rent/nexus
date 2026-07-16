@@ -37,8 +37,10 @@ func TestMiddleware(t *testing.T) {
 		wantNextCalled bool
 	}{
 		{
-			name:           "non-cors request without origin header",
-			opts:           []cors.Option{cors.WithAllowedOrigins("http://a.com")},
+			name: "non-cors request without origin header",
+			opts: []cors.Option{
+				cors.WithAllowedOrigins("http://a.com"),
+			},
 			reqMethod:      http.MethodGet,
 			reqHeaders:     nil,
 			wantStatusCode: http.StatusOK,
@@ -157,10 +159,12 @@ func TestMiddleware(t *testing.T) {
 			t.Parallel()
 
 			var called bool
-			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				called = true
-				w.WriteHeader(http.StatusOK)
-			})
+			next := http.HandlerFunc(
+				func(w http.ResponseWriter, _ *http.Request) {
+					called = true
+					w.WriteHeader(http.StatusOK)
+				},
+			)
 
 			handler := cors.New(tt.opts...)(next)
 			r := httptest.NewRequest(tt.reqMethod, "/", nil)

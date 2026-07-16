@@ -122,20 +122,23 @@ func (f *Format) UnmarshalText(text []byte) error {
 
 // New creates and configures a new [slog.Logger]. By default, it logs at
 // [slog.LevelInfo] in plain text to [os.Stdout], without source information.
-// These defaults can be overridden by passing in one or more [Option] functions.
+// These defaults can be overridden by passing in one or more [Option]
+// functions.
 func New(opts ...Option) *slog.Logger {
 	return slog.New(NewHandler(opts...))
 }
 
 // Combine creates a new [slog.Logger] that broadcasts log records to multiple
-// provided [slog.Handler] instances simultaneously using [slog.NewMultiHandler].
+// provided [slog.Handler] instances simultaneously using
+// [slog.NewMultiHandler].
 func Combine(handlers ...slog.Handler) *slog.Logger {
 	return slog.New(slog.NewMultiHandler(handlers...))
 }
 
 // NewHandler creates and configures a new [slog.Handler]. By default, it
 // sets up a text handler logging at [slog.LevelInfo] to [os.Stdout].
-// These defaults can be overridden by passing in one or more [Option] functions.
+// These defaults can be overridden by passing in one or more [Option]
+// functions.
 func NewHandler(opts ...Option) slog.Handler {
 	c := config{
 		Level:     DefaultLevel,

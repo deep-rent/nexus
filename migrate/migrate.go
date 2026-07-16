@@ -57,7 +57,8 @@ type Direction int
 const (
 	// Up indicates a migration that applies changes to the database schema.
 	Up Direction = iota
-	// Down indicates a migration that undoes changes made by an Up migration.
+	// Down indicates a migration that undoes changes made by an upward
+	// migration.
 	Down
 )
 
@@ -405,7 +406,8 @@ func (m *Migrator) down(ctx context.Context) error {
 	// 3. Isolate the target version to rollback (the last one applied).
 	last := applied[len(applied)-1]
 
-	// 4. Load all parsed files from the source to find the matching down script.
+	// 4. Load all parsed files from the source to find the matching down
+	// script.
 	files, err := m.files()
 	if err != nil {
 		return err

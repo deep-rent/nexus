@@ -28,7 +28,10 @@
 // Example:
 //
 //	scripts := []migrate.SourceScript{
-//	    {Version: 1, Description: "init", Direction: migrate.Up, Content: []byte("...")},
+//	    {Version: 1, Description: "init", Direction: migrate.Up, Content:
+//
+// []byte("...")},
+//
 //	}
 //	src := mock.New(scripts...)
 package mock

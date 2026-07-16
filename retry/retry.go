@@ -218,7 +218,8 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		// Check if the request body is rewindable. If not, we must stop here.
-		// This is checked after the policy to ensure the policy still gets notified
+		// This is checked after the policy to ensure the policy still gets
+		// notified
 		// of the attempt.
 		if req.Body != nil && !rewindable {
 			break
@@ -227,10 +228,16 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// If retrying, drain and close the previous response body.
 		if res != nil && res.Body != nil {
 			if _, err := io.Copy(io.Discard, res.Body); err != nil {
-				t.logger.Warn("Failed to drain response body", slog.Any("error", err))
+				t.logger.Warn(
+					"Failed to drain response body",
+					slog.Any("error", err),
+				)
 			}
 			if err := res.Body.Close(); err != nil {
-				t.logger.Warn("Failed to close response body", slog.Any("error", err))
+				t.logger.Warn(
+					"Failed to close response body",
+					slog.Any("error", err),
+				)
 			}
 		}
 
@@ -257,7 +264,10 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				attrs = append(attrs, slog.Int("status", res.StatusCode))
 			}
 
-			t.logger.DebugContext(ctx, "Request attempt failed, retrying", attrs...)
+			t.logger.DebugContext(
+				ctx,
+				"Request attempt failed, retrying",
+				attrs...)
 		}
 
 		if delay <= 0 {

@@ -154,7 +154,10 @@ type SubjectStore interface {
 	// If authentication fails (e.g., wrong password), it must return nil and
 	// nil. It should return an error only if the underlying storage lookup
 	// fails.
-	Authenticate(ctx context.Context, username, password string) (Subject, error)
+	Authenticate(
+		ctx context.Context,
+		username, password string,
+	) (Subject, error)
 	// GetSubject retrieves a subject by their unique ID.
 	//
 	// If the user is found, it must return the subject and nil.
@@ -348,7 +351,8 @@ const (
 	ErrorCodeUnauthorizedClient = "unauthorized_client"
 	// ErrorCodeUnsupportedGrantType indicates grant type is not supported.
 	ErrorCodeUnsupportedGrantType = "unsupported_grant_type"
-	// ErrorCodeUnsupportedResponseType indicates response type is not supported.
+	// ErrorCodeUnsupportedResponseType indicates response type is not
+	// supported.
 	ErrorCodeUnsupportedResponseType = "unsupported_response_type"
 	// ErrorCodeAuthorizationPending indicates the user hasn't authorized yet.
 	ErrorCodeAuthorizationPending = "authorization_pending"
@@ -438,7 +442,8 @@ type Grant interface {
 	//
 	// If the credentials are valid, it returns a result object containing the
 	// subject and scope. If validation fails due to invalid credentials,
-	// expired codes, or insufficient permissions, it returns nil and an [Error].
+	// expired codes, or insufficient permissions, it returns nil and an
+	// [Error].
 	// Other types of errors will be handled as unexpected failures.
 	Authorize(ctx context.Context, pro *Proposal) (*Issuance, error)
 }
@@ -636,7 +641,8 @@ func matchRedirectURI(uri, pattern string) bool {
 		return false
 	}
 
-	// Dynamically isolate the host block to safely replace :* without corrupting
+	// Dynamically isolate the host block to safely replace :* without
+	// corrupting
 	// query parameters or paths.
 	end := strings.Index(pattern, "://")
 	if end == -1 {

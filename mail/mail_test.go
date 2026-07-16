@@ -345,7 +345,10 @@ func TestSender_Send(t *testing.T) {
 			}
 
 			if err == nil {
-				t.Fatalf("should have returned an error matching %v", tt.wantErr)
+				t.Fatalf(
+					"should have returned an error matching %v",
+					tt.wantErr,
+				)
 			}
 
 			if !errors.Is(err, tt.wantErr) &&

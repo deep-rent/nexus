@@ -100,7 +100,11 @@ func (s *Store) Exec(
 }
 
 // Lock implements the [diff.Store] interface.
-func (s *Store) Lock(_ context.Context, _ *Tx, shared, exclusive []string) error {
+func (s *Store) Lock(
+	_ context.Context,
+	_ *Tx,
+	shared, exclusive []string,
+) error {
 	if s.ErrLock != nil {
 		return s.ErrLock
 	}

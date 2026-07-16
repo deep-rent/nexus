@@ -86,7 +86,8 @@ func TestAlgorithm_ECDSASignVerify(t *testing.T) {
 			k, err := ecdsa.GenerateKey(tt.curve, rand.Reader)
 			if err != nil {
 				t.Fatalf(
-					"key generation: should not have returned an error: %v", err,
+					"key generation: should not have returned an error: %v",
+					err,
 				)
 			}
 

@@ -34,7 +34,11 @@ func TestVerifier(t *testing.T) {
 		{"valid min length", pkce.MinVerifierLength, nil},
 		{"valid mid length", 80, nil},
 		{"valid max length", pkce.MaxVerifierLength, nil},
-		{"invalid too short", pkce.MinVerifierLength - 1, pkce.ErrInvalidLength},
+		{
+			"invalid too short",
+			pkce.MinVerifierLength - 1,
+			pkce.ErrInvalidLength,
+		},
 		{"invalid too long", pkce.MaxVerifierLength + 1, pkce.ErrInvalidLength},
 	}
 

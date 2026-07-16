@@ -245,7 +245,9 @@ func (t *Table) buildSQL() {
 		refCol := quote.Escape(t.ref)
 		cols = "id, " + t.userCol + ", " + t.teamCol + ", " + refCol +
 			", hlc, seq, data"
-		sel = "a.id, a.user_id, a.team_id, (a.data ->> " + quote.Literal(t.ref) +
+		sel = "a.id, a.user_id, a.team_id, (a.data ->> " + quote.Literal(
+			t.ref,
+		) +
 			")::uuid, a.hlc, " + s.nextval + ", a.data"
 		set = t.teamCol + " = EXCLUDED." + t.teamCol + "," +
 			" " + refCol + " = EXCLUDED." + refCol + "," +

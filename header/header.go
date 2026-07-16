@@ -195,7 +195,8 @@ func Accepts(s, key string) bool {
 		}
 	}
 
-	// It is accepted if we found a valid match and its q-value is greater than 0.
+	// It is accepted if we found a valid match and its q-value is greater than
+	// 0.
 	return maxP > 0 && maxQ > 0
 }
 

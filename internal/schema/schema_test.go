@@ -109,12 +109,16 @@ func TestPostgres(t *testing.T) {
 		{
 			name:   "complex nested quote strings inside dollar quotes",
 			script: "CREATE FUNCTION foo() RETURNS void AS $$ BEGIN SELECT 'some ; string'; END; $$ LANGUAGE plpgsql;",
-			want:   []string{"CREATE FUNCTION foo() RETURNS void AS $$ BEGIN SELECT 'some ; string'; END; $$ LANGUAGE plpgsql"},
+			want: []string{
+				"CREATE FUNCTION foo() RETURNS void AS $$ BEGIN SELECT 'some ; string'; END; $$ LANGUAGE plpgsql",
+			},
 		},
 		{
 			name:   "comments inside strings",
 			script: "SELECT '-- not a comment ;', '/* not a comment ; */';",
-			want:   []string{"SELECT '-- not a comment ;', '/* not a comment ; */'"},
+			want: []string{
+				"SELECT '-- not a comment ;', '/* not a comment ; */'",
+			},
 		},
 	}
 

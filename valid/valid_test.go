@@ -493,7 +493,12 @@ func TestLon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := valid.Lon(tt.give), tt.want; got != want {
-				t.Errorf("for longitude %f: got %v; want %v", tt.give, got, want)
+				t.Errorf(
+					"for longitude %f: got %v; want %v",
+					tt.give,
+					got,
+					want,
+				)
 			}
 		})
 	}

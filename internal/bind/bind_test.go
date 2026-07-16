@@ -824,7 +824,9 @@ func TestBinder_TypeTests(t *testing.T) {
 			name: "double pointer",
 			vars: map[string]string{"V": "42"},
 			give: &mockTPtrPtrInt{},
-			want: &mockTPtrPtrInt{(func() **int { i := 42; p := &i; return &p }())},
+			want: &mockTPtrPtrInt{
+				(func() **int { i := 42; p := &i; return &p }()),
+			},
 		},
 		{
 			name: "nested struct",
@@ -935,19 +937,25 @@ func TestBinder_TypeTests(t *testing.T) {
 			name: "time with format date",
 			vars: map[string]string{"V": "2025-10-08"},
 			give: &mockTTimeFormatDate{},
-			want: &mockTTimeFormatDate{time.Date(2025, 10, 8, 0, 0, 0, 0, time.UTC)},
+			want: &mockTTimeFormatDate{
+				time.Date(2025, 10, 8, 0, 0, 0, 0, time.UTC),
+			},
 		},
 		{
 			name: "time with format datetime",
 			vars: map[string]string{"V": "2025-09-14 06:45:00"},
 			give: &mockTTimeFormatDateTime{},
-			want: &mockTTimeFormatDateTime{time.Date(2025, 9, 14, 6, 45, 0, 0, time.UTC)},
+			want: &mockTTimeFormatDateTime{
+				time.Date(2025, 9, 14, 6, 45, 0, 0, time.UTC),
+			},
 		},
 		{
 			name: "time with format time",
 			vars: map[string]string{"V": "22:13:00"},
 			give: &mockTTimeFormatTime{},
-			want: &mockTTimeFormatTime{time.Date(0, 1, 1, 22, 13, 0, 0, time.UTC)},
+			want: &mockTTimeFormatTime{
+				time.Date(0, 1, 1, 22, 13, 0, 0, time.UTC),
+			},
 		},
 		{
 			name: "time unix seconds",
@@ -977,7 +985,9 @@ func TestBinder_TypeTests(t *testing.T) {
 			name: "time unix microseconds (μs)",
 			vars: map[string]string{"V": "1760000000000000"},
 			give: &mockTTimeFormatUnixUnitMicro{},
-			want: &mockTTimeFormatUnixUnitMicro{time.UnixMicro(1760000000000000)},
+			want: &mockTTimeFormatUnixUnitMicro{
+				time.UnixMicro(1760000000000000),
+			},
 		},
 		{
 			name:    "time unix invalid unit",

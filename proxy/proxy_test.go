@@ -253,7 +253,11 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 		return func(w http.ResponseWriter, r *http.Request, err error) {
 			called = true
 			if !errors.Is(err, wantErr) {
-				t.Errorf("error passed to handler: got %v; want %v", err, wantErr)
+				t.Errorf(
+					"error passed to handler: got %v; want %v",
+					err,
+					wantErr,
+				)
 			}
 			w.WriteHeader(http.StatusTeapot)
 		}

@@ -64,7 +64,8 @@ type config struct {
 	allowedMethods string
 	// allowedHeaders is the pre-joined string for Access-Control-Allow-Headers.
 	allowedHeaders string
-	// exposedHeaders is the pre-joined string for Access-Control-Expose-Headers.
+	// exposedHeaders is the pre-joined string for
+	// Access-Control-Expose-Headers.
 	exposedHeaders string
 	// allowCredentials maps to the Access-Control-Allow-Credentials header.
 	allowCredentials bool
@@ -134,7 +135,8 @@ func WithExposedHeaders(headers ...string) Option {
 	}
 }
 
-// WithAllowCredentials indicates if the response can be exposed with credentials.
+// WithAllowCredentials indicates if the response can be exposed with
+// credentials.
 //
 // When used as part of a response to a preflight request, it indicates that the
 // actual request can include cookies and other user credentials. This option

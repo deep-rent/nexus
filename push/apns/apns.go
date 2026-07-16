@@ -142,9 +142,14 @@ func WithClock(clock func() time.Time) Option {
 }
 
 // New creates a configured Apple Push Notification Service client implementing
-// the [push.Sender] interface. It requires the ES256 keyID, your Apple teamID, and
+// the [push.Sender] interface. It requires the ES256 keyID, your Apple teamID,
+// and
 // the PEM-encoded PKCS#8 private key contents.
-func New(keyID, teamID string, privateKeyPEM []byte, opts ...Option) push.Sender {
+func New(
+	keyID, teamID string,
+	privateKeyPEM []byte,
+	opts ...Option,
+) push.Sender {
 	if keyID == "" || teamID == "" {
 		panic("keyID and teamID are required")
 	}
@@ -202,7 +207,9 @@ func New(keyID, teamID string, privateKeyPEM []byte, opts ...Option) push.Sender
 		})
 	} else {
 		if len(cfg.retry) != 0 {
-			s.logger.Warn("Custom client provided; retry options will be ignored")
+			s.logger.Warn(
+				"Custom client provided; retry options will be ignored",
+			)
 		}
 		s.client = cfg.client
 	}
@@ -281,7 +288,11 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		req.Header.Set("apns-expiration", "0")
 	}
 
-	s.logger.DebugContext(ctx, "Dispatching APNs message", slog.String("token", msg.Target.Token))
+	s.logger.DebugContext(
+		ctx,
+		"Dispatching APNs message",
+		slog.String("token", msg.Target.Token),
+	)
 
 	start := time.Now()
 	res, err := s.client.Do(req)
@@ -293,7 +304,11 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	defer func() {
 		_, _ = io.Copy(io.Discard, res.Body)
 		if err := res.Body.Close(); err != nil {
-			s.logger.WarnContext(ctx, "Failed to close response body", slog.Any("error", err))
+			s.logger.WarnContext(
+				ctx,
+				"Failed to close response body",
+				slog.Any("error", err),
+			)
 		}
 	}()
 
@@ -305,6 +320,10 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		}
 	}
 
-	s.logger.DebugContext(ctx, "APNs message dispatched", slog.Duration("duration", delta))
+	s.logger.DebugContext(
+		ctx,
+		"APNs message dispatched",
+		slog.Duration("duration", delta),
+	)
 	return nil
 }

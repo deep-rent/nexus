@@ -48,20 +48,22 @@ func TestAPNS_Send(t *testing.T) {
 
 	pemData := generate(t)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/3/device/") {
-			t.Errorf("got path %s", r.URL.Path)
-		}
-		if got := r.Header.Get("apns-push-type"); got != "alert" {
-			t.Errorf("got push type %q", got)
-		}
-		if !strings.HasPrefix(r.Header.Get("Authorization"), "bearer ") {
-			t.Errorf("missing or invalid authorization header")
-		}
+	ts := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, "/3/device/") {
+				t.Errorf("got path %s", r.URL.Path)
+			}
+			if got := r.Header.Get("apns-push-type"); got != "alert" {
+				t.Errorf("got push type %q", got)
+			}
+			if !strings.HasPrefix(r.Header.Get("Authorization"), "bearer ") {
+				t.Errorf("missing or invalid authorization header")
+			}
 
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
-	}))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		}),
+	)
 	defer ts.Close()
 
 	sender := apns.New(
