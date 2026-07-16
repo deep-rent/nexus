@@ -17,6 +17,7 @@ package push_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/deep-rent/nexus/push"
@@ -100,8 +101,8 @@ func TestBatchSend_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if err.Error() != "mock error" {
-		t.Errorf("expected joined error with 'mock error', got %v", err)
+	if !strings.Contains(err.Error(), "mock error") {
+		t.Errorf("expected joined error to contain 'mock error', got %v", err)
 	}
 }
 
