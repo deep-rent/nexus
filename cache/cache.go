@@ -74,12 +74,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/deep-rent/nexus/header"
+	"github.com/deep-rent/nexus/internal/transport"
 	"github.com/deep-rent/nexus/retry"
 	schedule "github.com/deep-rent/nexus/schedule"
 )
@@ -150,25 +150,13 @@ func NewController[T any](
 
 	client := cfg.client
 	if client == nil {
-		d := &net.Dialer{
-			Timeout:   cfg.timeout / 3,
-			KeepAlive: 0,
-		}
-		var t http.RoundTripper = &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           d.DialContext,
-			TLSClientConfig:       cfg.tls,
-			TLSHandshakeTimeout:   cfg.timeout / 3,
-			ResponseHeaderTimeout: cfg.timeout * 9 / 10,
-			ExpectContinueTimeout: 1 * time.Second,
-			DisableKeepAlives:     true,
-		}
-
-		t = header.NewTransport(t, cfg.headers...)
-		client = &http.Client{
-			Timeout:   cfg.timeout,
-			Transport: retry.NewTransport(t, cfg.retry...),
-		}
+		client = transport.NewClient(transport.Options{
+			Timeout:           cfg.timeout,
+			TLSConfig:         cfg.tls,
+			DisableKeepAlives: true,
+			Headers:           cfg.headers,
+			Retry:             cfg.retry,
+		})
 	}
 
 	return &controller[T]{

@@ -49,6 +49,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/transport"
 	"golang.org/x/mod/semver"
 )
 
@@ -149,9 +150,9 @@ func New(cfg *Config) *Updater {
 		current:   current,
 		userAgent: cfg.UserAgent,
 		token:     cfg.Token,
-		client: &http.Client{
+		client: transport.NewClient(transport.Options{
 			Timeout: timeout,
-		},
+		}),
 	}
 }
 

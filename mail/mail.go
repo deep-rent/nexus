@@ -50,11 +50,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/transport"
 	"github.com/deep-rent/nexus/retry"
 )
 
@@ -386,24 +386,10 @@ func NewSender(apiKey string, opts ...Option) Sender {
 
 	// Initialize the default HTTP client if a custom one wasn't provided.
 	if cfg.client == nil {
-		d := &net.Dialer{
-			Timeout: cfg.timeout / 3,
-		}
-		var t http.RoundTripper = &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           d.DialContext,
-			TLSHandshakeTimeout:   cfg.timeout / 3,
-			ResponseHeaderTimeout: cfg.timeout * 9 / 10,
-			ExpectContinueTimeout: 1 * time.Second,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   100,
-			IdleConnTimeout:       90 * time.Second,
-		}
-		t = retry.NewTransport(t, cfg.retry...)
-		s.client = &http.Client{
-			Timeout:   cfg.timeout,
-			Transport: t,
-		}
+		s.client = transport.NewClient(transport.Options{
+			Timeout: cfg.timeout,
+			Retry:   cfg.retry,
+		})
 	} else {
 		if len(cfg.retry) > 0 {
 			s.logger.Warn(

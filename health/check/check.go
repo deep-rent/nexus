@@ -53,6 +53,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/health"
+	"github.com/deep-rent/nexus/internal/transport"
 )
 
 // TCP returns a health check that attempts to establish a TCP connection
@@ -86,7 +87,7 @@ func HTTP(client *http.Client, url string) health.CheckFunc {
 	const defaultTimeout = 10 * time.Second
 
 	if client == nil {
-		client = http.DefaultClient
+		client = transport.NewClient(transport.Options{})
 	}
 
 	return func(ctx context.Context) (health.Status, error) {
