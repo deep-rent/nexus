@@ -48,12 +48,12 @@ type Store struct {
 	// Grants maps document owners to the teams granted access to their
 	// personal documents. It emulates the driver-side share lookup and may
 	// be populated directly by tests.
-	Grants map[uuid.UUID][]uuid.UUID
+	Grants map[string][]string
 
 	// Locked records the deduplicated, sorted lock set of every Lock call.
-	Locked [][]uuid.UUID
+	Locked [][]string
 	// Touched records every owner passed to Touch.
-	Touched []uuid.UUID
+	Touched []string
 
 	// Error injection: when set, the corresponding method fails.
 	ErrExec      error
@@ -69,7 +69,7 @@ type Store struct {
 func New() *Store {
 	return &Store{
 		claimed: make(map[uuid.UUID]struct{}),
-		Grants:  make(map[uuid.UUID][]uuid.UUID),
+		Grants:  make(map[string][]string),
 	}
 }
 
@@ -92,12 +92,12 @@ func (s *Store) Exec(
 }
 
 // Lock implements the [diff.Store] interface.
-func (s *Store) Lock(_ context.Context, _ *Tx, keys []uuid.UUID) error {
+func (s *Store) Lock(_ context.Context, _ *Tx, keys []string) error {
 	if s.ErrLock != nil {
 		return s.ErrLock
 	}
 	set := slices.Clone(keys)
-	slices.SortFunc(set, func(a, b uuid.UUID) int { return a.Compare(b) })
+	slices.Sort(set)
 	set = slices.Compact(set)
 
 	s.mu.Lock()
@@ -141,7 +141,7 @@ func (s *Store) Watermark(_ context.Context, _ *Tx) (int64, error) {
 func (s *Store) Claim(
 	_ context.Context,
 	_ *Tx,
-	_ uuid.UUID,
+	_ string,
 	ids []uuid.UUID,
 ) ([]uuid.UUID, error) {
 	if s.ErrClaim != nil {
@@ -162,7 +162,7 @@ func (s *Store) Claim(
 
 // Touch implements the [diff.Store] interface. It re-sequences all personal
 // documents of the given owner across every registered handler.
-func (s *Store) Touch(_ context.Context, _ *Tx, ownerID uuid.UUID) error {
+func (s *Store) Touch(_ context.Context, _ *Tx, ownerID string) error {
 	if s.ErrTouch != nil {
 		return s.ErrTouch
 	}
@@ -191,7 +191,7 @@ func (s *Store) next() int64 {
 
 // grants reports whether a personal document of the given owner is visible
 // to any of the given teams.
-func (s *Store) granted(owner uuid.UUID, teams []uuid.UUID) bool {
+func (s *Store) granted(owner string, teams []string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, team := range s.Grants[owner] {

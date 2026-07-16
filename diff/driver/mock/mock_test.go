@@ -26,8 +26,8 @@ import (
 
 func op(
 	id uuid.UUID,
-	owner uuid.UUID,
-	team *uuid.UUID,
+	owner string,
+	team *string,
 	time diff.Stamp,
 ) diff.Op {
 	return diff.Op{
@@ -44,7 +44,7 @@ func TestHandler_LWW(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	scope := diff.Scope{UserID: owner}
 	id := uuid.NewV7()
 	ctx := t.Context()
@@ -106,8 +106,8 @@ func TestHandler_HijackGuard(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7()
-	attacker := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	attacker := uuid.NewV7().String()
 	id := uuid.NewV7()
 	ctx := t.Context()
 
@@ -146,7 +146,7 @@ func TestHandler_Fetch_Window(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	scope := diff.Scope{UserID: owner}
 	ctx := t.Context()
 
@@ -187,9 +187,9 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7()
-	team := uuid.NewV7()
-	member := uuid.NewV7()
+	owner := uuid.NewV7().String()
+	team := uuid.NewV7().String()
+	member := uuid.NewV7().String()
 	ctx := t.Context()
 
 	id := uuid.NewV7()
@@ -199,7 +199,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 	}
 
 	window := diff.Window{Since: 0, Until: 1 << 60, Limit: 10}
-	memberScope := diff.Scope{UserID: member, Teams: []uuid.UUID{team}}
+	memberScope := diff.Scope{UserID: member, Teams: []string{team}}
 
 	got, err := h.Fetch(ctx, &mock.Tx{}, memberScope, window)
 	if err != nil {
@@ -209,7 +209,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 		t.Fatal("personal document should be invisible before the grant")
 	}
 
-	store.Grants[owner] = []uuid.UUID{team}
+	store.Grants[owner] = []string{team}
 
 	got, err = h.Fetch(ctx, &mock.Tx{}, memberScope, window)
 	if err != nil {

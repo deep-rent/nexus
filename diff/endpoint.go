@@ -17,11 +17,11 @@ package diff
 import (
 	"errors"
 	"net/http"
-	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
+	"github.com/deep-rent/nexus/valid"
 )
 
 // Error reasons emitted by the sync endpoint, complementing the reasons
@@ -57,7 +57,7 @@ const (
 type TeamClaims interface {
 	jwt.Claims
 	// TeamIDs returns the identifiers of all teams the subject belongs to.
-	TeamIDs() []uuid.UUID
+	TeamIDs() []string
 	// Delegated reports whether the token was issued to a client acting on
 	// behalf of an end user rather than to the client itself.
 	Delegated() bool
@@ -68,11 +68,11 @@ type TeamClaims interface {
 type Claims struct {
 	auth.Claims
 	// Teams lists the identifiers of the subject's teams.
-	Teams []uuid.UUID `json:"teams,omitempty"`
+	Teams []string `json:"teams,omitempty"`
 }
 
 // TeamIDs implements the [TeamClaims] interface.
-func (c *Claims) TeamIDs() []uuid.UUID {
+func (c *Claims) TeamIDs() []string {
 	return c.Teams
 }
 
@@ -106,8 +106,8 @@ func Endpoint[C TeamClaims, Tx any](eng *Engine[Tx]) router.HandlerFunc {
 					"machine tokens cannot sync documents.",
 			}
 		}
-		sub, err := uuid.Parse(claims.Subject())
-		if err != nil {
+		sub := claims.Subject()
+		if !valid.UUID(sub) {
 			return &router.Error{
 				Status:      http.StatusUnauthorized,
 				Reason:      auth.ReasonInvalidToken,

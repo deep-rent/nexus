@@ -60,16 +60,16 @@ func TestRegistry_Types_Deterministic(t *testing.T) {
 		for _, name := range order {
 			switch name {
 			case "asset":
-				diff.Register[struct{}, doc](r, name, noop{},
+				r.Register[doc](name, noop{},
 					diff.WithRootMeta(), diff.WithParents("address"))
 			case "contract":
-				diff.Register[struct{}, doc](r, name, noop{},
+				r.Register[doc](name, noop{},
 					diff.WithOwner("asset", "asset_id"))
 			case "address":
-				diff.Register[struct{}, doc](r, name, noop{},
+				r.Register[doc](name, noop{},
 					diff.WithRootMeta())
 			default:
-				diff.Register[struct{}, doc](r, name, noop{},
+				r.Register[doc](name, noop{},
 					diff.WithRootMeta())
 			}
 		}
@@ -111,7 +111,7 @@ func TestRegister_Panics(t *testing.T) {
 			name: "empty name",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "", noop{},
+				r.Register[doc]("", noop{},
 					diff.WithRootMeta())
 			},
 		},
@@ -119,7 +119,7 @@ func TestRegister_Panics(t *testing.T) {
 			name: "reserved name",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, diff.TypeShare, noop{},
+				r.Register[doc](diff.TypeShare, noop{},
 					diff.WithRootMeta())
 			},
 		},
@@ -127,7 +127,7 @@ func TestRegister_Panics(t *testing.T) {
 			name: "nil handler",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "asset", nil,
+				r.Register[doc]("asset", nil,
 					diff.WithRootMeta())
 			},
 		},
@@ -135,9 +135,9 @@ func TestRegister_Panics(t *testing.T) {
 			name: "duplicate name",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "asset", noop{},
+				r.Register[doc]("asset", noop{},
 					diff.WithRootMeta())
-				diff.Register[struct{}, doc](r, "asset", noop{},
+				r.Register[doc]("asset", noop{},
 					diff.WithRootMeta())
 			},
 		},
@@ -145,14 +145,14 @@ func TestRegister_Panics(t *testing.T) {
 			name: "missing ownership mode",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "asset", noop{})
+				r.Register[doc]("asset", noop{})
 			},
 		},
 		{
 			name: "conflicting ownership modes",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "asset", noop{},
+				r.Register[doc]("asset", noop{},
 					diff.WithRootMeta(), diff.WithOwner("other", "other_id"))
 			},
 		},
@@ -160,7 +160,7 @@ func TestRegister_Panics(t *testing.T) {
 			name: "unknown parent",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "asset", noop{},
+				r.Register[doc]("asset", noop{},
 					diff.WithRootMeta(), diff.WithParents("missing"))
 				r.Types()
 			},
@@ -169,9 +169,9 @@ func TestRegister_Panics(t *testing.T) {
 			name: "dependency cycle",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				diff.Register[struct{}, doc](r, "a", noop{},
+				r.Register[doc]("a", noop{},
 					diff.WithRootMeta(), diff.WithParents("b"))
-				diff.Register[struct{}, doc](r, "b", noop{},
+				r.Register[doc]("b", noop{},
 					diff.WithRootMeta(), diff.WithParents("a"))
 				r.Types()
 			},

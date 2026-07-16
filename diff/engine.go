@@ -219,7 +219,7 @@ func (e *Engine[Tx]) Sync(
 	// resolve, lock, then re-verify; on drift, retry once with the union of
 	// both lock sets before giving up.
 	var resp *Response
-	extra := make(map[uuid.UUID]struct{})
+	extra := make(map[string]struct{})
 	for attempt := 0; ; attempt++ {
 		err := e.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
 			keys, err := e.assemble(ctx, tx, scope, winners, extra)
@@ -236,7 +236,7 @@ func (e *Engine[Tx]) Sync(
 			if err != nil {
 				return err
 			}
-			held := make(map[uuid.UUID]struct{}, len(keys))
+			held := make(map[string]struct{}, len(keys))
 			for _, k := range keys {
 				held[k] = struct{}{}
 			}
@@ -269,7 +269,7 @@ func (e *Engine[Tx]) Sync(
 	}
 
 	e.cfg.logger.Info("sync completed",
-		slog.String("user", scope.UserID.String()),
+		slog.String("user", scope.UserID),
 		slog.Int("received", len(req.Changes)),
 		slog.Int("applied", len(winners)),
 		slog.Int("patches", len(resp.Patches)),
@@ -323,6 +323,15 @@ func (e *Engine[Tx]) screen(
 				meta.ID == uuid.Nil() {
 				invalid[in.ID] = valid.Error{
 					"data": {"must carry a valid document envelope"},
+				}
+				continue
+			}
+			// Owner and team identifiers must be well-formed UUIDs before
+			// they participate in scope checks or lock derivation.
+			if !valid.UUID(meta.UserID) ||
+				(meta.TeamID != nil && !valid.UUID(*meta.TeamID)) {
+				invalid[in.ID] = valid.Error{
+					"data": {"owner and team must be valid UUIDs"},
 				}
 				continue
 			}
@@ -450,13 +459,13 @@ func (e *Engine[Tx]) assemble(
 	tx Tx,
 	scope Scope,
 	winners []*change,
-	extra map[uuid.UUID]struct{},
-) ([]uuid.UUID, error) {
+	extra map[string]struct{},
+) ([]string, error) {
 	if err := e.resolve(ctx, tx, winners); err != nil {
 		return nil, err
 	}
 
-	set := make(map[uuid.UUID]struct{})
+	set := make(map[string]struct{})
 	set[scope.UserID] = struct{}{}
 	for _, team := range scope.Teams {
 		set[team] = struct{}{}
@@ -474,11 +483,11 @@ func (e *Engine[Tx]) assemble(
 		set[k] = struct{}{}
 	}
 
-	keys := make([]uuid.UUID, 0, len(set))
+	keys := make([]string, 0, len(set))
 	for k := range set {
 		keys = append(keys, k)
 	}
-	slices.SortFunc(keys, func(a, b uuid.UUID) int { return a.Compare(b) })
+	slices.Sort(keys)
 	return keys, nil
 }
 
@@ -496,7 +505,7 @@ func (e *Engine[Tx]) resolve(
 	for _, c := range winners {
 		if c.child {
 			c.resolved = false
-			c.Meta.UserID = uuid.Nil()
+			c.Meta.UserID = ""
 			c.Meta.TeamID = nil
 		}
 	}

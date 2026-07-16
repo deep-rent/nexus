@@ -56,9 +56,9 @@ func serve(
 }
 
 // claimsFor builds delegated end-user claims for the given user.
-func claimsFor(userID uuid.UUID, teams ...uuid.UUID) *diff.Claims {
+func claimsFor(userID string, teams ...string) *diff.Claims {
 	c := &diff.Claims{Teams: teams}
-	c.Sub = userID.String()
+	c.Sub = userID
 	c.Azp = "test-client" // azp != sub: acting on behalf of the user
 	return c
 }
@@ -95,7 +95,7 @@ func TestEndpoint_Sync(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 	srv := serve(t, f, claimsFor(owner))
 
 	doc := assetDoc(uuid.NewV7(), owner, nil)
@@ -120,7 +120,7 @@ func TestEndpoint_Sync(t *testing.T) {
 func TestEndpoint_Errors(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7()
+	owner := uuid.NewV7().String()
 
 	valid := func() string {
 		return fmt.Sprintf(
@@ -197,7 +197,7 @@ func TestEndpoint_Errors(t *testing.T) {
 				`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"asset","data":%s,"time":%d}]}`,
 				uuid.NewV7(),
-				assetDoc(uuid.NewV7(), uuid.NewV7(), nil), // foreign owner
+				assetDoc(uuid.NewV7(), uuid.NewV7().String(), nil), // foreign owner
 				stamp(1),
 			),
 			wantStatus: http.StatusForbidden,

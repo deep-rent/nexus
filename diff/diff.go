@@ -38,7 +38,7 @@
 //	assets := postgres.NewTable(store, "asset", "assets")
 //
 //	reg := diff.NewRegistry[*sql.Tx]()
-//	diff.Register[*sql.Tx, Asset](reg, "asset", assets, diff.WithRootMeta())
+//	reg.Register[Asset]("asset", assets, diff.WithRootMeta())
 //
 //	engine := diff.New(store, reg)
 //	diff.Mount[*diff.Claims](r, engine, guard.Secure())
@@ -83,19 +83,21 @@ import (
 )
 
 // Scope is the authorization boundary of a single sync call: the
-// authenticated user and the teams they belong to.
+// authenticated user and the teams they belong to. Identifiers are opaque
+// strings taken from the verified token; payload identifiers are validated
+// to be UUIDs at ingestion before they are compared against the scope.
 type Scope struct {
 	// UserID identifies the authenticated user.
-	UserID uuid.UUID
+	UserID string
 	// Teams lists the identifiers of all teams the user is a member of.
-	Teams []uuid.UUID
+	Teams []string
 }
 
 // Allows reports whether a document owned by userID and assigned to teamID
 // (nil for personal documents) is directly accessible within the scope.
 // Grant-based visibility of foreign personal documents is evaluated by the
 // store, not here.
-func (s Scope) Allows(userID uuid.UUID, teamID *uuid.UUID) bool {
+func (s Scope) Allows(userID string, teamID *string) bool {
 	if userID == s.UserID {
 		return true
 	}
@@ -104,14 +106,15 @@ func (s Scope) Allows(userID uuid.UUID, teamID *uuid.UUID) bool {
 
 // Meta is the identifying envelope of a root document payload. Child
 // documents carry only their ID; their ownership is inferred from the parent
-// chain.
+// chain. User and team identifiers are strings, validated to be UUIDs at
+// ingestion.
 type Meta struct {
 	// ID is the document identifier (UUIDv7).
 	ID uuid.UUID `json:"id"`
 	// UserID is the immutable owner of the document.
-	UserID uuid.UUID `json:"user_id"`
+	UserID string `json:"user_id"`
 	// TeamID optionally assigns the document to a team.
-	TeamID *uuid.UUID `json:"team_id,omitzero"`
+	TeamID *string `json:"team_id,omitzero"`
 }
 
 // Op is a single compacted, validated, and authorized operation passed to a
@@ -182,7 +185,7 @@ type Store[Tx any] interface {
 	// Lock acquires exclusive, transaction-scoped locks on the given keys.
 	// Implementations must sort the keys internally so concurrent callers
 	// acquire them in the same order.
-	Lock(ctx context.Context, tx Tx, keys []uuid.UUID) error
+	Lock(ctx context.Context, tx Tx, keys []string) error
 	// Floor returns the minimum valid cursor. Requests starting below it
 	// must trigger a full resync.
 	Floor(ctx context.Context, tx Tx) (int64, error)
@@ -196,13 +199,13 @@ type Store[Tx any] interface {
 	Claim(
 		ctx context.Context,
 		tx Tx,
-		userID uuid.UUID,
+		userID string,
 		ids []uuid.UUID,
 	) ([]uuid.UUID, error)
 	// Touch re-sequences all personal documents (and their descendants) of
 	// the given owner so they re-enter the patch feed. It is invoked after
 	// the owner grants a team access to their personal documents.
-	Touch(ctx context.Context, tx Tx, ownerID uuid.UUID) error
+	Touch(ctx context.Context, tx Tx, ownerID string) error
 }
 
 // Prefilter is an optional fast-path duplicate filter (e.g. backed by
