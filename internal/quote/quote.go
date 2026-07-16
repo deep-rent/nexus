@@ -33,7 +33,15 @@
 //
 //	// Wrap content
 //	s = quote.Double("content") // returns: "content"
+//
+// It also provides SQL quoting helpers that escape embedded quotes:
+//
+//	// Quote SQL identifiers and literals
+//	s = quote.Ident("public", "users") // returns: "public"."users"
+//	s = quote.Literal("it's")          // returns: 'it''s'
 package quote
+
+import "strings"
 
 // Remove strips a single layer of surrounding single or double quotes from a
 // string.
@@ -105,3 +113,29 @@ func Single(s string) string { return Wrap(s, '\'') }
 
 // Is checks if the given rune is a single or double quote character.
 func Is(c rune) bool { return c == '"' || c == '\'' }
+
+// Escape safely quotes a SQL identifier: embedded double quotes are doubled
+// and the result is wrapped in double quotes using [Double].
+func Escape(s string) string {
+	return Double(strings.ReplaceAll(s, `"`, `""`))
+}
+
+// Ident assembles a fully qualified SQL identifier by escaping each part
+// with [Escape] and joining the parts with dots (e.g., "schema"."table").
+// It panics if no parts are given (programmer error).
+func Ident(parts ...string) string {
+	if len(parts) == 0 {
+		panic("at least one part is required")
+	}
+	escaped := make([]string, len(parts))
+	for i, part := range parts {
+		escaped[i] = Escape(part)
+	}
+	return strings.Join(escaped, ".")
+}
+
+// Literal safely quotes a SQL string literal: embedded single quotes are
+// doubled and the result is wrapped in single quotes using [Single].
+func Literal(s string) string {
+	return Single(strings.ReplaceAll(s, "'", "''"))
+}

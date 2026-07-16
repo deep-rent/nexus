@@ -189,6 +189,101 @@ func TestSingle(t *testing.T) {
 	}
 }
 
+func TestEscape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give string
+		want string
+	}{
+		{"plain identifier", "users", `"users"`},
+		{"empty string", "", `""`},
+		{"embedded double quote", `we"ird`, `"we""ird"`},
+		{"only double quotes", `""`, `""""""`},
+		{"single quote untouched", "it's", `"it's"`},
+		{"spaces preserved", "my table", `"my table"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Escape(tt.give); got != tt.want {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIdent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give []string
+		want string
+	}{
+		{"single part", []string{"users"}, `"users"`},
+		{"schema and table", []string{"public", "users"}, `"public"."users"`},
+		{
+			"three parts",
+			[]string{"db", "public", "users"},
+			`"db"."public"."users"`,
+		},
+		{
+			"embedded double quote",
+			[]string{`pub"lic`, "users"},
+			`"pub""lic"."users"`,
+		},
+		{"empty part", []string{"public", ""}, `"public".""`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Ident(tt.give...); got != tt.want {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIdent_PanicsOnEmptyParts(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Error("ident without parts: should have panicked")
+		}
+	}()
+	quote.Ident()
+}
+
+func TestLiteral(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give string
+		want string
+	}{
+		{"plain string", "hello", `'hello'`},
+		{"empty string", "", `''`},
+		{"embedded single quote", "it's", `'it''s'`},
+		{"only single quotes", `''`, `''''''`},
+		{"double quote untouched", `he said "hi"`, `'he said "hi"'`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quote.Literal(tt.give); got != tt.want {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIs(t *testing.T) {
 	t.Parallel()
 
