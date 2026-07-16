@@ -56,9 +56,11 @@ const (
 	// mismatch persists.
 	CodeForbidden Code = "forbidden"
 
-	// CodeDrift marks changes stamped too far in the future, usually due to
-	// a wrong device clock. The client should re-stamp its pending changes
-	// with fresh HLC timestamps after correcting the clock, then retry.
+	// CodeDrift marks changes the server clock could not accept: a timestamp
+	// too far in the future (usually a wrong device clock), or too many
+	// mutations sharing one second (logical counter exhaustion). The client
+	// should re-stamp its pending changes with fresh HLC timestamps after
+	// correcting the clock, then retry.
 	CodeDrift Code = "drift"
 
 	// CodeOrphaned marks child changes referencing a parent document that

@@ -95,12 +95,27 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 			}
 		}
 
+		// Team memberships flow into ::uuid casts throughout the store, so
+		// a single malformed value would fail the whole transaction as a
+		// raw 500. Reject the token cleanly instead, symmetric with the
+		// subject check above.
+		teams := claims.Memberships()
+		for _, team := range teams {
+			if !valid.UUID(team) {
+				return &router.Error{
+					Status:      http.StatusUnauthorized,
+					Reason:      auth.ReasonInvalidToken,
+					Description: "A team membership is not a valid identifier.",
+				}
+			}
+		}
+
 		var req Request
 		if aerr := e.BindJSON(&req); aerr != nil {
 			return aerr
 		}
 
-		scope := Scope{UserID: sub, Teams: claims.Memberships()}
+		scope := Scope{UserID: sub, Teams: teams}
 		resp, err := s.Sync(e.Context(), scope, &req)
 		if err != nil {
 			return translate(err)

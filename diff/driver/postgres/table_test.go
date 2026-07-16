@@ -1240,6 +1240,137 @@ func TestTable_FetchVisibility(t *testing.T) {
 	}
 }
 
+func TestTable_FetchMultiTeamBranches(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+	shares := s.Shares()
+
+	caller := newUser(t, db)
+	mateA := newUser(t, db)
+	mateB := newUser(t, db)
+	granter := newUser(t, db)
+	outsider := newUser(t, db)
+	teamA := newTeam(t, db)
+	teamB := newTeam(t, db)
+	teamC := newTeam(t, db)
+	scope := scopeOf(caller, teamA, teamB)
+
+	// One document per visibility class, plus two that must stay invisible.
+	own := uuid.NewV7()
+	applyUpserts(t, s, assets, scope,
+		upsertOp(own, caller, nil, 10, assetDoc(own, 1)))
+	inA := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(mateA, teamA),
+		upsertOp(inA, mateA, &teamA, 11, assetDoc(inA, 2)))
+	inB := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(mateB, teamB),
+		upsertOp(inB, mateB, &teamB, 12, assetDoc(inB, 3)))
+	granted := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(granter),
+		upsertOp(granted, granter, nil, 13, assetDoc(granted, 4)))
+	// A document in a team the caller does not belong to, and a stranger's
+	// personal document: both invisible across every branch.
+	hiddenTeam := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(outsider, teamC),
+		upsertOp(hiddenTeam, outsider, &teamC, 14, assetDoc(hiddenTeam, 5)))
+	hiddenPersonal := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(outsider),
+		upsertOp(hiddenPersonal, outsider, nil, 15, assetDoc(hiddenPersonal, 6)))
+
+	ascending := func(vs []diff.Version) bool {
+		for i := 1; i < len(vs); i++ {
+			if vs[i].Seq <= vs[i-1].Seq {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Before any grant: the caller's own document plus BOTH of their teams'
+	// documents, in ascending sequence order, and nothing else. Exercising
+	// two teams proves each per-team UNION arm contributes independently.
+	got := fetchAll(t, s, assets, scope)
+	if ids, want := versionIDs(got), []uuid.UUID{own, inA, inB}; !slices.Equal(
+		ids, want,
+	) {
+		t.Fatalf("before grant: got %v; want %v", ids, want)
+	}
+	if !ascending(got) {
+		t.Errorf("before grant: versions not ascending by seq: %v",
+			versionIDs(got))
+	}
+
+	// Granting teamA access to the granter's personal documents exposes them
+	// through the granted-owner branch (resolved once via the shared CTE).
+	applyUpserts(t, s, shares, scopeOf(granter),
+		upsertOp(uuid.NewV7(), granter, &teamA, 16, "{}"))
+	got = fetchAll(t, s, assets, scope)
+	if ids, want := versionIDs(got), []uuid.UUID{
+		own, inA, inB, granted,
+	}; !slices.Equal(ids, want) {
+		t.Fatalf("after grant: got %v; want %v", ids, want)
+	}
+	if !ascending(got) {
+		t.Errorf("after grant: versions not ascending by seq: %v",
+			versionIDs(got))
+	}
+
+	// The limit caps the page at the lowest sequences, honoring the ordering
+	// across the merged branches.
+	var limited []diff.Version
+	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		limited, err = assets.Fetch(ctx, tx, scope, diff.Window{
+			Since: 0,
+			Until: 1 << 60,
+			Limit: 2,
+		})
+		return err
+	})
+	if ids, want := versionIDs(limited), []uuid.UUID{own, inA}; !slices.Equal(
+		ids, want,
+	) {
+		t.Errorf("limited: got %v; want %v", ids, want)
+	}
+}
+
+func TestShares_TouchSkipsRefresh(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+	shares := s.Shares()
+
+	owner := newUser(t, db)
+	team := newTeam(t, db)
+	scope := scopeOf(owner)
+
+	x := uuid.NewV7()
+	applyUpserts(t, s, assets, scope, upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+
+	// The first grant lands and re-feeds the owner's personal documents.
+	g := uuid.NewV7()
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 20, "{}"))
+	seq1, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
+
+	// Re-pushing the SAME grant (same id, same team) under a NEWER timestamp
+	// lands (its hlc bumps) but grants no new audience: the team already had
+	// access, so the owner's documents must NOT be re-sequenced. Skipping the
+	// owner-wide Touch here avoids re-delivering every personal document to
+	// already-granted teams.
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 30, "{}"))
+	seq2, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
+	if seq2 != seq1 {
+		t.Errorf("got asset seq %d; want %d (a refresh must not re-feed)",
+			seq2, seq1)
+	}
+
+	// The grant itself truly landed: its stored timestamp advanced.
+	if hlc, _ := rowInt(t, db,
+		"SELECT hlc FROM document_shares WHERE id = $1::uuid", g.String(),
+	); hlc != 30 {
+		t.Errorf("got grant hlc %d; want 30 (the grant should have landed)", hlc)
+	}
+}
+
 func TestTable_Reseq(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 

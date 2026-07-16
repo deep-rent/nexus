@@ -191,3 +191,102 @@ func TestRegister_Panics(t *testing.T) {
 		})
 	}
 }
+
+// describer is a handler that also reports its structural expectations,
+// used to exercise the engine's startup cross-check.
+type describer struct {
+	noop
+	model string
+	via   string
+	child bool
+}
+
+func (d describer) Model() string { return d.model }
+
+func (d describer) Parent() (string, bool) {
+	if d.child {
+		return d.via, true
+	}
+	return "", false
+}
+
+var _ diff.Describer = describer{}
+
+func TestNew_ChecksHandlerDescription(t *testing.T) {
+	t.Parallel()
+
+	build := func(h diff.Handler[struct{}], opts ...diff.Constraint) func() {
+		return func() {
+			r := diff.NewRegistry[struct{}]()
+			r.Register[doc]("asset", h, opts...)
+			diff.New[struct{}](stubStore{}, r)
+		}
+	}
+
+	t.Run("matching description is accepted", func(t *testing.T) {
+		t.Parallel()
+		build(describer{model: "asset"}, diff.Root())()
+	})
+
+	tests := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "model name mismatch",
+			fn:   build(describer{model: "assets"}, diff.Root()),
+		},
+		{
+			name: "root handler declares a parent",
+			fn: build(describer{model: "asset", child: true, via: "x_id"},
+				diff.Root()),
+		},
+		{
+			name: "parent field mismatch",
+			fn: build(describer{model: "asset", child: true, via: "wrong_id"},
+				diff.Owner("other", "asset_id")),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if recover() == nil {
+					t.Error("should have panicked")
+				}
+			}()
+			tt.fn()
+		})
+	}
+}
+
+// stubStore is a minimal no-op diff.Store for construction tests.
+type stubStore struct{}
+
+func (stubStore) Exec(
+	context.Context, func(context.Context, struct{}) error,
+) error {
+	return nil
+}
+func (stubStore) Lock(context.Context, struct{}, []string, []string) error {
+	return nil
+}
+func (stubStore) Floor(context.Context, struct{}) (int64, error) { return 0, nil }
+func (stubStore) Barrier(context.Context, struct{}) (int64, error) {
+	return 0, nil
+}
+func (stubStore) Watermark(context.Context, struct{}) (int64, error) {
+	return 0, nil
+}
+func (stubStore) Claim(
+	context.Context, struct{}, string, []uuid.UUID,
+) ([]uuid.UUID, error) {
+	return nil, nil
+}
+func (stubStore) Grants(
+	context.Context, struct{}, []string,
+) (map[string][]string, error) {
+	return nil, nil
+}
+
+var _ diff.Store[struct{}] = stubStore{}

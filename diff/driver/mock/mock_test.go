@@ -15,7 +15,9 @@
 package mock_test
 
 import (
+	"context"
 	"encoding/json/jsontext"
+	"errors"
 	"slices"
 	"testing"
 
@@ -219,4 +221,131 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatal("personal document should be visible after the grant")
 	}
+}
+
+func shareOp(id uuid.UUID, owner, team string, time diff.Stamp) diff.Op {
+	return diff.Op{
+		Meta:   diff.Meta{ID: id, UserID: owner, TeamID: &team},
+		Action: diff.ActionUpsert,
+		Time:   time,
+		Data:   jsontext.Value(`{}`),
+	}
+}
+
+func TestShares_WriteThrough(t *testing.T) {
+	t.Parallel()
+
+	store := mock.New()
+	shares := mock.NewShares(store)
+	// A personal document to be re-sequenced when a grant lands.
+	docs := mock.NewHandler(store)
+
+	owner := uuid.NewV7().String()
+	team := uuid.NewV7().String()
+	ctx := t.Context()
+
+	docID := uuid.NewV7()
+	if err := docs.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
+		[]diff.Op{op(docID, owner, nil, 1)}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	seqBefore := docs.Rows()[docID].Seq
+
+	// A landing grant writes through to Granted and re-sequences the owner's
+	// personal documents (Touch).
+	shareID := uuid.NewV7()
+	scope := diff.Scope{UserID: owner, Teams: []string{team}}
+	if err := shares.Upsert(ctx, &mock.Tx{}, scope,
+		[]diff.Op{shareOp(shareID, owner, team, 10)}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	granted, err := store.Grants(ctx, &mock.Tx{}, []string{owner})
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if !slices.Contains(granted[owner], team) {
+		t.Errorf("grants: got %v; want team %v", granted[owner], team)
+	}
+	if !slices.Contains(store.Touched, owner) {
+		t.Error("landing grant should have touched the owner")
+	}
+	if got := docs.Rows()[docID].Seq; got <= seqBefore {
+		t.Errorf("personal doc seq: got %d; want > %d (re-sequenced)",
+			got, seqBefore)
+	}
+
+	// Re-applying the identical grant does not land again (no new Touch).
+	touchedBefore := len(store.Touched)
+	if err := shares.Upsert(ctx, &mock.Tx{}, scope,
+		[]diff.Op{shareOp(shareID, owner, team, 10)}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if len(store.Touched) != touchedBefore {
+		t.Error("stale re-grant should not have touched the owner again")
+	}
+
+	// Revoking the grant clears it from the lookup.
+	del := shareOp(shareID, owner, team, 20)
+	del.Action = diff.ActionDelete
+	del.Data = nil
+	if err := shares.Delete(ctx, &mock.Tx{}, scope, []diff.Op{del}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	granted, err = store.Grants(ctx, &mock.Tx{}, []string{owner})
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if slices.Contains(granted[owner], team) {
+		t.Errorf("grants after revoke: got %v; want team %v absent",
+			granted[owner], team)
+	}
+}
+
+func TestStore_ErrorInjection(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("boom")
+	ctx := t.Context()
+	tx := &mock.Tx{}
+
+	t.Run("store methods", func(t *testing.T) {
+		t.Parallel()
+		s := mock.New()
+		s.ErrExec = boom
+		if err := s.Exec(ctx, func(context.Context, *mock.Tx) error {
+			return nil
+		}); !errors.Is(err, boom) {
+			t.Errorf("exec: got %v; want %v", err, boom)
+		}
+		s = mock.New()
+		s.ErrLock = boom
+		if err := s.Lock(ctx, tx, nil, []string{"k"}); !errors.Is(err, boom) {
+			t.Errorf("lock: got %v; want %v", err, boom)
+		}
+		s = mock.New()
+		s.ErrGrants = boom
+		if _, err := s.Grants(ctx, tx, []string{"o"}); !errors.Is(err, boom) {
+			t.Errorf("grants: got %v; want %v", err, boom)
+		}
+	})
+
+	t.Run("handler methods", func(t *testing.T) {
+		t.Parallel()
+		s := mock.New()
+		h := mock.NewHandler(s)
+		h.ErrUpsert = boom
+		if err := h.Upsert(ctx, tx, diff.Scope{}, nil); !errors.Is(err, boom) {
+			t.Errorf("upsert: got %v; want %v", err, boom)
+		}
+		h.ErrDelete = boom
+		if err := h.Delete(ctx, tx, diff.Scope{}, nil); !errors.Is(err, boom) {
+			t.Errorf("delete: got %v; want %v", err, boom)
+		}
+		h.ErrFetch = boom
+		if _, err := h.Fetch(
+			ctx, tx, diff.Scope{}, diff.Window{}); !errors.Is(err, boom) {
+			t.Errorf("fetch: got %v; want %v", err, boom)
+		}
+	})
 }

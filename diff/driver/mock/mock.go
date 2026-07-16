@@ -71,6 +71,11 @@ type Store struct {
 	ErrClaim     error
 	ErrGrants    error
 	ErrTouch     error
+
+	// OnLock, if set, is invoked at the end of every [Store.Lock] call. It
+	// lets a test simulate a concurrent ownership change landing during the
+	// engine's resolve/lock/verify window, exercising the drift-retry path.
+	OnLock func()
 }
 
 // New initializes an empty in-memory store.
@@ -116,9 +121,14 @@ func (s *Store) Lock(
 	write = slices.Compact(write)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.Locked = append(s.Locked, all)
 	s.Exclusive = append(s.Exclusive, write)
+	hook := s.OnLock
+	s.mu.Unlock()
+
+	if hook != nil {
+		hook()
+	}
 	return nil
 }
 
@@ -264,6 +274,11 @@ type Handler struct {
 	ErrUpsert error
 	ErrDelete error
 	ErrFetch  error
+
+	// OnFetch, if set, is invoked at the start of every [Handler.Fetch]
+	// call. It lets a test simulate a concurrent tombstone prune advancing
+	// the retention floor mid-scan, exercising the post-feed resync recheck.
+	OnFetch func()
 }
 
 // NewHandler initializes an in-memory handler and registers it with the
@@ -309,7 +324,9 @@ func (h *Handler) Upsert(
 		if cur, exists := h.rows[id]; exists {
 			// Row-level last-write-wins with hijack guard: the existing
 			// row must be inside the caller's scope, and the owner is
-			// immutable.
+			// immutable. Note: unlike the reference driver, this flat
+			// handler models neither team-move departure tombstones nor
+			// parent/child cascades (see driver/drivertest capabilities).
 			if op.Time <= cur.hlc {
 				continue
 			}
@@ -377,6 +394,9 @@ func (h *Handler) Fetch(
 	w diff.Window,
 ) ([]diff.Version, error) {
 	h.Calls = append(h.Calls, "fetch")
+	if h.OnFetch != nil {
+		h.OnFetch()
+	}
 	if h.ErrFetch != nil {
 		return nil, h.ErrFetch
 	}

@@ -266,12 +266,13 @@ func TestEngine_Sync_IdempotentReplay(t *testing.T) {
 func TestEngine_Sync_Compaction(t *testing.T) {
 	t.Parallel()
 
-	f := setup()
-	owner := uuid.NewV7().String()
-	scope := diff.Scope{UserID: owner}
-
+	// Each parallel subtest gets its own fixture: the mock driver is not
+	// safe for concurrent use.
 	t.Run("upsert then delete", func(t *testing.T) {
 		t.Parallel()
+		f := setup()
+		owner := uuid.NewV7().String()
+		scope := diff.Scope{UserID: owner}
 		id := uuid.NewV7()
 		doc := assetDoc(id, owner, nil)
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
@@ -288,6 +289,9 @@ func TestEngine_Sync_Compaction(t *testing.T) {
 
 	t.Run("delete then newer upsert", func(t *testing.T) {
 		t.Parallel()
+		f := setup()
+		owner := uuid.NewV7().String()
+		scope := diff.Scope{UserID: owner}
 		id := uuid.NewV7()
 		doc := assetDoc(id, owner, nil)
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
@@ -738,6 +742,126 @@ func TestEngine_Sync_ApplyOrder(t *testing.T) {
 	}
 	if !slices.Equal(log, want) {
 		t.Errorf("got call order %v; want %v", log, want)
+	}
+}
+
+func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
+	t.Parallel()
+
+	f := setup()
+	owner := uuid.NewV7().String()
+	scope := diff.Scope{UserID: owner}
+
+	// Seed one document so the sequence has advanced past zero.
+	sync(t, f, scope, &diff.Request{Changes: []diff.Change{
+		upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(1)),
+	}})
+
+	before, err := f.store.Watermark(t.Context(), &mock.Tx{})
+	if err != nil {
+		t.Fatalf("watermark: should not have returned an error: %v", err)
+	}
+
+	// A poll that applies zero writes must not consume a barrier: the global
+	// sequence stays exactly where it was, yet the poll still delivers the
+	// document the device is missing.
+	resp := sync(t, f, scope, &diff.Request{Since: 0})
+	after, err := f.store.Watermark(t.Context(), &mock.Tx{})
+	if err != nil {
+		t.Fatalf("watermark: should not have returned an error: %v", err)
+	}
+	if after != before {
+		t.Errorf("got sequence %d; want %d (a no-op poll must not advance it)",
+			after, before)
+	}
+	if len(resp.Patches) != 1 {
+		t.Errorf("got %d patches; want 1 (the missed document)",
+			len(resp.Patches))
+	}
+
+	// A pure replay (all mutation ids already claimed) is likewise a zero-
+	// write request and must not advance the sequence either.
+	replay := &diff.Request{Changes: []diff.Change{
+		upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(2)),
+	}}
+	sync(t, f, scope, replay)
+	seeded, err := f.store.Watermark(t.Context(), &mock.Tx{})
+	if err != nil {
+		t.Fatalf("watermark: should not have returned an error: %v", err)
+	}
+	sync(t, f, scope, replay) // identical resend
+	replayed, err := f.store.Watermark(t.Context(), &mock.Tx{})
+	if err != nil {
+		t.Fatalf("watermark: should not have returned an error: %v", err)
+	}
+	if replayed != seeded {
+		t.Errorf("got sequence %d; want %d (a replay must not advance it)",
+			replayed, seeded)
+	}
+}
+
+// countingStore wraps the mock store to count [diff.Store.Grants] calls,
+// proving the engine resolves the granted-owner set once per Sync rather
+// than once per assemble pass.
+type countingStore struct {
+	*mock.Store
+	grants int
+}
+
+func (c *countingStore) Grants(
+	ctx context.Context,
+	tx *mock.Tx,
+	owners []string,
+) (map[string][]string, error) {
+	c.grants++
+	return c.Store.Grants(ctx, tx, owners)
+}
+
+func TestEngine_Sync_GrantsResolvedOncePerSync(t *testing.T) {
+	t.Parallel()
+
+	inner := mock.New()
+	cs := &countingStore{Store: inner}
+	assets := mock.NewHandler(inner)
+
+	reg := diff.NewRegistry[*mock.Tx]()
+	reg.Register[asset]("asset", assets, diff.Root())
+	engine := diff.New[*mock.Tx](cs, reg)
+
+	owner := uuid.NewV7().String()
+	team := uuid.NewV7().String()
+	scope := diff.Scope{UserID: owner}
+
+	// The owner has already granted a team access to their personal
+	// documents.
+	inner.Granted[owner] = []string{team}
+
+	// Writing a personal document folds the granted team into the lock set.
+	// assemble runs twice (pre-lock and post-lock verify), but the grant set
+	// is resolved only on the pre-lock pass: the verify pass reuses the
+	// result, which cannot have changed because the owner is exclusively
+	// held.
+	if _, err := engine.Sync(t.Context(), scope, &diff.Request{
+		Changes: []diff.Change{
+			upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(1)),
+		},
+	}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if cs.grants != 1 {
+		t.Errorf("got %d Grants calls; want 1 (verify pass must skip it)",
+			cs.grants)
+	}
+
+	// The fence is still intact: the granted team was locked exclusively.
+	if len(inner.Exclusive) == 0 {
+		t.Fatal("sync should have acquired exclusive locks")
+	}
+	excl := inner.Exclusive[len(inner.Exclusive)-1]
+	if !slices.Contains(excl, team) {
+		t.Errorf("exclusive lock set %v should contain granted team %v",
+			excl, team)
 	}
 }
 

@@ -279,3 +279,26 @@ func TestEndpoint_Errors(t *testing.T) {
 		}
 	})
 }
+
+func TestEndpoint_MalformedMembership(t *testing.T) {
+	t.Parallel()
+
+	owner := uuid.NewV7().String()
+	// A token carrying a non-UUID team membership must be rejected cleanly
+	// as an invalid token, never reaching the store as a broken ::uuid cast.
+	claims := claimsFor(owner, "not-a-uuid")
+	srv := serve(t, setup(), claims)
+
+	code, body := post(t, srv, fmt.Sprintf(
+		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
+			`"data":%s,"time":%d}]}`,
+		uuid.NewV7(), assetDoc(uuid.NewV7(), owner, nil), stamp(1),
+	))
+	if code != http.StatusUnauthorized {
+		t.Errorf("status: got %d; want %d (body %v)",
+			code, http.StatusUnauthorized, body)
+	}
+	if got := body["reason"]; got != auth.ReasonInvalidToken {
+		t.Errorf("reason: got %v; want %q", got, auth.ReasonInvalidToken)
+	}
+}

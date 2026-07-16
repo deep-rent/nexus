@@ -162,6 +162,12 @@ func register[Tx any, T any](
 			"model %q needs exactly one of Root or Owner", name,
 		))
 	}
+	if e.owner == name {
+		panic(fmt.Sprintf("model %q cannot own itself", name))
+	}
+	if slices.Contains(e.parents, name) {
+		panic(fmt.Sprintf("model %q cannot be its own parent", name))
+	}
 
 	e.check = func(data jsontext.Value) valid.Error {
 		var v T
@@ -218,6 +224,34 @@ func (r *Registry[Tx]) order() []string {
 // unregistered models.
 func (r *Registry[Tx]) Models() []string {
 	return slices.Clone(r.order())
+}
+
+// checkHandlers cross-checks each handler that implements [Describer]
+// against its registry entry, panicking on a mismatch. This catches, at
+// construction time, a handler configured with a different model name or
+// parent reference than the entry it is registered under — a
+// misconfiguration that would otherwise silently corrupt the patch feed.
+func (r *Registry[Tx]) checkHandlers() {
+	for name, e := range r.entries {
+		d, ok := e.handler.(Describer)
+		if !ok {
+			continue
+		}
+		if got := d.Model(); got != name {
+			panic(fmt.Sprintf(
+				"handler for %q reports model %q; names must match",
+				name, got,
+			))
+		}
+		via, hasParent := d.Parent()
+		if hasParent != (e.owner != "") || via != e.ownerVia {
+			panic(fmt.Sprintf(
+				"handler for %q references parent field %q; "+
+					"registry declares %q",
+				name, via, e.ownerVia,
+			))
+		}
+	}
 }
 
 // lookup returns the entry registered under the given model name.

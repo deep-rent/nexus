@@ -23,6 +23,9 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
+	"strings"
+	"sync"
 
 	"uuid"
 
@@ -163,10 +166,14 @@ type Table struct {
 	upsertSQL   string
 	deleteSQL   string
 	burySQL     string
-	fetchSQL    string
 	resolveSQL  string
 	snapshotSQL string
 	reseqSQL    string
+	// fetchCache memoizes the feed scan SQL keyed by the number of teams in
+	// the caller's scope. The scan expands one indexable UNION ALL arm per
+	// team, so its shape depends on the team count and cannot be a single
+	// precomputed string (see fetchQuery).
+	fetchCache sync.Map
 }
 
 // NewTable registers a declarative table handler for one document model
@@ -324,40 +331,6 @@ func (t *Table) buildSQL() {
 		"$7",
 	)
 	t.burySQL = remove("", "$5")
-
-	// The feed scan unions independently indexable visibility branches: the
-	// caller's own documents, their teams' documents, and foreign personal
-	// documents shared with any of their teams through live grants. The
-	// tombstone half mirrors the same three branches.
-	granted := "SELECT user_id FROM " + s.identShares +
-		" WHERE team_id = ANY($2::uuid[])"
-	live := func(cond string) string {
-		return "SELECT id::text, seq, hlc, FALSE AS deleted, data" +
-			" FROM " + t.ident +
-			" WHERE " + cond + " AND seq > $3 AND seq < $4"
-	}
-	dead := func(cond string) string {
-		return "SELECT id::text, seq, hlc, TRUE AS deleted, NULL::jsonb AS data" +
-			" FROM " + tomb +
-			" WHERE type = $5::text AND " + cond +
-			" AND seq > $3 AND seq < $4"
-	}
-	t.fetchSQL = "(" +
-		live(t.userCol+" = $1::uuid") +
-		" UNION ALL " +
-		live(t.teamCol+" = ANY($2::uuid[])"+
-			" AND "+t.userCol+" <> $1::uuid") +
-		" UNION ALL " +
-		live(t.teamCol+" IS NULL AND "+t.userCol+" <> $1::uuid"+
-			" AND "+t.userCol+" IN ("+granted+")") +
-		" UNION ALL " +
-		dead("user_id = $1::uuid") +
-		" UNION ALL " +
-		dead("team_id = ANY($2::uuid[]) AND user_id <> $1::uuid") +
-		" UNION ALL " +
-		dead("team_id IS NULL AND user_id <> $1::uuid"+
-			" AND user_id IN ("+granted+")") +
-		") ORDER BY seq LIMIT $6"
 
 	t.resolveSQL = "SELECT id::text, " + t.userCol + "::text," +
 		" " + t.teamCol + "::text FROM " + t.ident +
@@ -595,6 +568,78 @@ func (t *Table) Reseq(
 	return nil
 }
 
+// fetchQuery builds (and memoizes) the feed scan SQL for a scope holding n
+// teams. The scan unions independently indexable visibility branches: the
+// caller's own documents, each team's documents, and foreign personal
+// documents shared with any of their teams through live grants. The
+// tombstone half mirrors the same branches.
+//
+// The team-visibility branch is expanded into ONE arm per team —
+// team_col = $k rather than team_col = ANY($teams) — so each arm streams
+// from the (team, seq) index already in sequence order. The planner can
+// then MergeAppend the arms under ORDER BY seq LIMIT and stop as soon as
+// the page fills, instead of sorting the whole (since, until) window on
+// every page (a btree on (team, seq) groups rows by team, not by global
+// seq, so ANY(array) forces a blocking Sort that defeats the LIMIT). Team
+// counts per scope are small and stable, so the per-team fan-out is cheap
+// and the memoized SQL is reused across requests with the same team count.
+//
+// The granted-owner set is resolved ONCE per fetch through a single CTE
+// referenced by both the live and dead personal arms, replacing the two
+// identical share subqueries the branch inlined before. (Cross-model
+// dedup — resolving it once per feed rather than once per model — is left
+// on the table: it would require threading the set through the Fetch
+// signature, which the diff.Handler contract does not expose.)
+//
+// Parameter layout: $1 user, $2 teams array (granted CTE only), $3 since,
+// $4 until, $5 model, $6 limit, $7.. the individual team keys.
+func (t *Table) fetchQuery(n int) string {
+	if q, ok := t.fetchCache.Load(n); ok {
+		return q.(string)
+	}
+
+	s := t.store
+	tomb := s.identTombstones
+	live := func(cond string) string {
+		return "SELECT id::text, seq, hlc, FALSE AS deleted, data" +
+			" FROM " + t.ident +
+			" WHERE " + cond + " AND seq > $3 AND seq < $4"
+	}
+	dead := func(cond string) string {
+		return "SELECT id::text, seq, hlc, TRUE AS deleted, NULL::jsonb AS data" +
+			" FROM " + tomb +
+			" WHERE type = $5::text AND " + cond +
+			" AND seq > $3 AND seq < $4"
+	}
+
+	var b strings.Builder
+	b.WriteString("WITH granted AS (SELECT user_id FROM " + s.identShares +
+		" WHERE team_id = ANY($2::uuid[])) (")
+	b.WriteString(live(t.userCol + " = $1::uuid"))
+	for i := range n {
+		p := "$" + strconv.Itoa(7+i)
+		b.WriteString(" UNION ALL " +
+			live(t.teamCol+" = "+p+"::uuid AND "+t.userCol+" <> $1::uuid"))
+	}
+	b.WriteString(" UNION ALL " +
+		live(t.teamCol+" IS NULL AND "+t.userCol+" <> $1::uuid"+
+			" AND "+t.userCol+" IN (SELECT user_id FROM granted)"))
+	b.WriteString(" UNION ALL " + dead("user_id = $1::uuid"))
+	for i := range n {
+		p := "$" + strconv.Itoa(7+i)
+		b.WriteString(" UNION ALL " +
+			dead("team_id = "+p+"::uuid AND user_id <> $1::uuid"))
+	}
+	b.WriteString(" UNION ALL " +
+		dead("team_id IS NULL AND user_id <> $1::uuid"+
+			" AND user_id IN (SELECT user_id FROM granted)"))
+	b.WriteString(") ORDER BY seq LIMIT $6")
+
+	q := b.String()
+	t.fetchCache.Store(n, q)
+	return q
+}
+
 // Fetch implements the [diff.Handler] interface. It returns live versions
 // and tombstones visible to the scope within the window, in ascending
 // sequence order: the caller's own documents, their teams' documents, and
@@ -605,14 +650,13 @@ func (t *Table) Fetch(
 	scope diff.Scope,
 	w diff.Window,
 ) ([]diff.Version, error) {
-	rows, err := tx.QueryContext(ctx, t.fetchSQL,
-		scope.UserID,
-		scope.Teams,
-		w.Since,
-		w.Until,
-		t.model,
-		w.Limit,
-	)
+	args := make([]any, 0, 6+len(scope.Teams))
+	args = append(args,
+		scope.UserID, scope.Teams, w.Since, w.Until, t.model, w.Limit)
+	for _, team := range scope.Teams {
+		args = append(args, team)
+	}
+	rows, err := tx.QueryContext(ctx, t.fetchQuery(len(scope.Teams)), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch documents: %w", err)
 	}
@@ -768,4 +812,18 @@ func (t *Table) cascadeDelete(
 	return nil
 }
 
-var _ diff.Handler[*sql.Tx] = (*Table)(nil)
+// Model implements the [diff.Describer] interface.
+func (t *Table) Model() string { return t.model }
+
+// Parent implements the [diff.Describer] interface.
+func (t *Table) Parent() (via string, ok bool) {
+	if t.parent == nil {
+		return "", false
+	}
+	return t.ref, true
+}
+
+var (
+	_ diff.Handler[*sql.Tx] = (*Table)(nil)
+	_ diff.Describer        = (*Table)(nil)
+)

@@ -60,6 +60,8 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"uuid"
@@ -543,6 +545,17 @@ func (s *Store) Mutate(
 		keys := make([]string, 0, len(scope.Teams)+1)
 		keys = append(keys, scope.UserID)
 		keys = append(keys, scope.Teams...)
+
+		// Personal documents of the acting user may be visible to teams
+		// through live grants; those teams' members read under a shared
+		// lock on the team key, so a backend write must hold it exclusively
+		// too. This mirrors the engine's fence (see Engine.assemble).
+		grants, err := s.Grants(ctx, tx, []string{scope.UserID})
+		if err != nil {
+			return err
+		}
+		keys = append(keys, grants[scope.UserID]...)
+
 		if err := s.Lock(ctx, tx, nil, keys); err != nil {
 			return err
 		}
@@ -793,10 +806,25 @@ func (h *shares) Upsert(
 		return err
 	}
 
-	// A landing grant re-feeds the owner's personal documents to the newly
-	// granted team members.
+	// A grant re-feeds the owner's personal documents only when it genuinely
+	// WIDENS visibility — a brand-new grant id (a fresh insert) or a grant
+	// whose team changed (a move exposing a NEW team). A landed grant that
+	// merely refreshed an existing (id, team) pair under a newer timestamp
+	// grants no new audience, so the full owner-wide re-seq of Touch would
+	// be pure write amplification, re-delivering every personal document to
+	// teams that already had it. Skip it in that case.
+	//
+	// This never under-touches: any team newly gaining access does so via a
+	// fresh grant id or a team change, both caught below. (Superseding a
+	// duplicate grant under a new id still touches — the pair was already
+	// visible, so this over-touches, but it is safe.)
 	if len(landed) > 0 {
-		return s.Touch(ctx, tx, scope.UserID)
+		for _, l := range landed {
+			old, existed := before[l.id]
+			if !existed || old != l.team {
+				return s.Touch(ctx, tx, scope.UserID)
+			}
+		}
 	}
 	return nil
 }
@@ -885,8 +913,17 @@ func (h *shares) Delete(
 
 // Fetch implements the [diff.Handler] interface. Grants are visible to
 // their owner and to members of the granted team; payloads are
-// reconstructed from the row columns. The query is a union of
-// independently indexable branches, merged in sequence order.
+// reconstructed from the row columns.
+//
+// The team-visibility branch is expanded into ONE indexable arm per team
+// (team_id = $k rather than team_id = ANY($teams)), so each arm streams
+// from the (team_id, seq) index already in sequence order and the planner
+// can MergeAppend the arms under ORDER BY seq LIMIT and stop early, instead
+// of sorting the whole window on every page. Team counts are small, so the
+// query shape (rebuilt per call from the team count) stays cheap.
+//
+// Parameter layout: $1 user, $2 since, $3 until, $4 model, $5 limit, and
+// $6.. the individual team keys.
 func (h *shares) Fetch(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -894,38 +931,45 @@ func (h *shares) Fetch(
 	w diff.Window,
 ) ([]diff.Version, error) {
 	s := h.store
+	n := len(scope.Teams)
 
 	data := "jsonb_build_object(" +
 		"'id', id, 'user_id', user_id, 'team_id', team_id" +
 		") AS data"
-	query := "(SELECT id::text, seq, hlc, FALSE AS deleted, " + data +
-		" FROM " + s.identShares +
-		" WHERE user_id = $1::uuid AND seq > $3 AND seq < $4" +
-		" UNION ALL" +
-		" SELECT id::text, seq, hlc, FALSE, " + data +
-		" FROM " + s.identShares +
-		" WHERE team_id = ANY($2::uuid[]) AND user_id <> $1::uuid" +
-		" AND seq > $3 AND seq < $4" +
-		" UNION ALL" +
-		" SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
-		" FROM " + s.identTombstones +
-		" WHERE type = $5::text AND user_id = $1::uuid" +
-		" AND seq > $3 AND seq < $4" +
-		" UNION ALL" +
-		" SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
-		" FROM " + s.identTombstones +
-		" WHERE type = $5::text AND team_id = ANY($2::uuid[])" +
-		" AND user_id <> $1::uuid AND seq > $3 AND seq < $4" +
-		") ORDER BY seq LIMIT $6"
+	live := func(cond string) string {
+		return "SELECT id::text, seq, hlc, FALSE AS deleted, " + data +
+			" FROM " + s.identShares +
+			" WHERE " + cond + " AND seq > $2 AND seq < $3"
+	}
+	dead := func(cond string) string {
+		return "SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
+			" FROM " + s.identTombstones +
+			" WHERE type = $4::text AND " + cond +
+			" AND seq > $2 AND seq < $3"
+	}
 
-	rows, err := tx.QueryContext(ctx, query,
-		scope.UserID,
-		scope.Teams,
-		w.Since,
-		w.Until,
-		diff.ModelShare,
-		w.Limit,
-	)
+	var b strings.Builder
+	b.WriteString("(")
+	b.WriteString(live("user_id = $1::uuid"))
+	for i := range n {
+		p := "$" + strconv.Itoa(6+i)
+		b.WriteString(" UNION ALL " +
+			live("team_id = "+p+"::uuid AND user_id <> $1::uuid"))
+	}
+	b.WriteString(" UNION ALL " + dead("user_id = $1::uuid"))
+	for i := range n {
+		p := "$" + strconv.Itoa(6+i)
+		b.WriteString(" UNION ALL " +
+			dead("team_id = "+p+"::uuid AND user_id <> $1::uuid"))
+	}
+	b.WriteString(") ORDER BY seq LIMIT $5")
+
+	args := make([]any, 0, 5+n)
+	args = append(args, scope.UserID, w.Since, w.Until, diff.ModelShare, w.Limit)
+	for _, team := range scope.Teams {
+		args = append(args, team)
+	}
+	rows, err := tx.QueryContext(ctx, b.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch shares: %w", err)
 	}

@@ -136,7 +136,8 @@ func New[Tx any](
 	if reg == nil || len(reg.entries) == 0 {
 		panic("registry with at least one model is required")
 	}
-	reg.order() // surface cycles and dangling references now
+	reg.order()         // surface cycles and dangling references now
+	reg.checkHandlers() // surface handler/registry misconfiguration now
 
 	cfg := config{
 		logger:     slog.Default(),
@@ -228,7 +229,9 @@ func (e *Engine[Tx]) Sync(
 	extra := make(map[string]struct{})
 	for attempt := 0; ; attempt++ {
 		err := e.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
-			shared, exclusive, err := e.assemble(ctx, tx, scope, winners, extra)
+			shared, exclusive, err := e.assemble(
+				ctx, tx, scope, winners, extra, true,
+			)
 			if err != nil {
 				return err
 			}
@@ -238,8 +241,14 @@ func (e *Engine[Tx]) Sync(
 
 			// Re-resolve under the locks; any WRITE key outside the held
 			// exclusive set means a concurrent ownership change slipped in
-			// between resolution and locking.
-			_, verify, err := e.assemble(ctx, tx, scope, winners, extra)
+			// between resolution and locking. The verify pass re-derives the
+			// mutable inputs (stored identities and child ownership chains)
+			// that could still point outside the held set, but skips the
+			// grant resolution: its owners are already exclusively held, so
+			// their grants cannot change under the lock (see assemble).
+			_, verify, err := e.assemble(
+				ctx, tx, scope, winners, extra, false,
+			)
 			if err != nil {
 				return err
 			}
@@ -296,6 +305,11 @@ func (e *Engine[Tx]) screen(
 ) ([]*change, error) {
 	rejected := &Error{}
 
+	// Mutation IDs must be unique within a request: idempotent dedup keys on
+	// the mutation ID, so a reused ID would let two documents share one
+	// dedup record. A duplicate is a client contract violation.
+	seen := make(map[uuid.UUID]struct{}, len(raw))
+
 	changes := make([]*change, 0, len(raw))
 	for i := range raw {
 		in := &raw[i]
@@ -308,6 +322,13 @@ func (e *Engine[Tx]) screen(
 			}})
 			continue
 		}
+		if _, dup := seen[in.ID]; dup {
+			rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
+				"id": {"must be unique within the request"},
+			}})
+			continue
+		}
+		seen[in.ID] = struct{}{}
 		if in.Action != ActionUpsert && in.Action != ActionDelete {
 			rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
 				"action": {"must be one of upsert, delete"},
@@ -413,11 +434,12 @@ func (e *Engine[Tx]) screen(
 		}
 
 		if _, err := e.cfg.clock.Update(hlc.Time(in.Time)); err != nil {
-			if errors.Is(err, hlc.ErrClockDriftTooLarge) {
-				rejected.reject(in.ID, Cause{Code: CodeDrift})
-				continue
-			}
-			return nil, err
+			// Both clock failures are attributable to this one change's
+			// timestamp, so they degrade to a per-mutation rejection rather
+			// than failing the whole request: drift means the stamp is too
+			// far ahead, overflow means too many same-second mutations.
+			rejected.reject(in.ID, Cause{Code: CodeDrift})
+			continue
 		}
 
 		changes = append(changes, c)
@@ -496,6 +518,7 @@ func (e *Engine[Tx]) assemble(
 	scope Scope,
 	winners []*change,
 	extra map[string]struct{},
+	grants bool,
 ) (shared, exclusive []string, err error) {
 	if err := e.resolve(ctx, tx, winners); err != nil {
 		return nil, nil, err
@@ -529,17 +552,27 @@ func (e *Engine[Tx]) assemble(
 
 	// Personal documents may be visible to teams through live grants; their
 	// members' feeds fence on the team key, so writers must hold it too.
-	if len(owners) > 0 {
+	//
+	// The verify pass (grants == false) skips this resolution entirely. Every
+	// owner in this set writes a personal document, so it is already in the
+	// exclusive set the pass-1 lock holds; a concurrent grant change for such
+	// an owner would itself need that owner's exclusive key and therefore
+	// cannot land under our lock, freezing the owner's grants for the txn.
+	// The grant-derived team keys resolved by pass 1 thus stay complete and
+	// valid, and re-deriving them here would only repeat the shares scan. Any
+	// owner that newly appears under the lock is caught by its own key in the
+	// drift check below, before its grants could ever matter.
+	if grants && len(owners) > 0 {
 		ids := make([]string, 0, len(owners))
 		for owner := range owners {
 			ids = append(ids, owner)
 		}
 		slices.Sort(ids)
-		grants, err := e.store.Grants(ctx, tx, ids)
+		granted, err := e.store.Grants(ctx, tx, ids)
 		if err != nil {
 			return nil, nil, err
 		}
-		for _, teams := range grants {
+		for _, teams := range granted {
 			for _, team := range teams {
 				write[team] = struct{}{}
 			}
@@ -728,11 +761,6 @@ func (e *Engine[Tx]) sync(
 		return nil, &ResyncError{Floor: Cursor(floor)}
 	}
 
-	barrier, err := e.store.Barrier(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-
 	// Authorize resolved child identities: the root a child hangs off must
 	// itself be accessible to the caller.
 	rejected := &Error{}
@@ -758,6 +786,7 @@ func (e *Engine[Tx]) sync(
 
 	upserts := make(map[string][]Op)
 	deletes := make(map[string][]Op)
+	writes := false
 	for _, c := range winners {
 		if _, ok := fresh[c.mutation]; !ok {
 			continue
@@ -768,9 +797,37 @@ func (e *Engine[Tx]) sync(
 		switch c.Action {
 		case ActionUpsert:
 			upserts[c.model] = append(upserts[c.model], c.Op)
+			writes = true
 		case ActionDelete:
 			deletes[c.model] = append(deletes[c.model], c.Op)
+			writes = true
 		}
+	}
+
+	// The feed window ceiling. When this request applies at least one write,
+	// the Barrier consumes one sequence value up front: every row this
+	// request writes then takes a sequence strictly above it, so scanning
+	// below it fences the request's own writes out of its feed. When there
+	// is genuinely nothing to write (an empty push, or a pure replay whose
+	// claims all lost), that fence is moot, so we spend no sequence value
+	// and use the Watermark (the highest sequence assigned so far) as the
+	// ceiling instead — a no-op poll must not advance the global sequence.
+	// The exclusive upper bound is watermark + 1 so the scan still includes
+	// the row sitting at the watermark. Concurrent in-scope writers hold the
+	// scope keys we lock, so no visible row can appear past the watermark
+	// while we read.
+	var barrier int64
+	if writes {
+		barrier, err = e.store.Barrier(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		mark, err := e.store.Watermark(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		barrier = mark + 1
 	}
 
 	order := e.reg.order()

@@ -12,93 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package diff provides a bidirectional, offline-first synchronization engine
-// for replicating documents between a backend store and mobile, web, or
-// desktop clients.
-//
-// A single HTTP endpoint accepts a client's pending changes (push) and
-// returns the patches it missed (pull) within one database transaction.
-// Conflicts resolve deterministically via row-level last-write-wins over
-// Hybrid Logical Clock timestamps; deletions leave tombstones; idempotency
-// is guaranteed by transactional mutation deduplication; and related entity
-// types apply in dependency order on both server and client.
-//
-// Documents are isolated per user and team: every document belongs to a user
-// (its immutable owner) and optionally to a team. Owners may share their
-// personal documents with teams through the built-in "share" model.
-//
-// # Usage
-//
-// Register one handler per document model, declare the relationships
-// between models, construct an engine around a store, and mount the
-// endpoint on a router. Roots carry ownership metadata; children declare
-// the parent they inherit ownership from, and additional foreign key
-// dependencies order the patch feed for the client.
-//
-// Example:
-//
-//	store := postgres.New(db)
-//	addresses := postgres.NewTable(store, "address", "addresses")
-//	assets := postgres.NewTable(store, "asset", "assets")
-//	contracts := postgres.NewTable(store, "contract", "contracts",
-//		postgres.WithParent("assets", "asset_id"))
-//
-//	reg := diff.NewRegistry[*sql.Tx]()
-//
-//	// Roots carry id, user_id, and team_id in their payloads.
-//	reg.Register[Address]("address", addresses, diff.Root())
-//	reg.Register[Asset]("asset", assets, diff.Root(),
-//		diff.Parents("address")) // assets reference an address (FK order)
-//
-//	// Children inherit ownership from their parent document, referenced
-//	// by the "asset_id" field of the contract payload.
-//	reg.Register[Contract]("contract", contracts,
-//		diff.Owner("asset", "asset_id"))
-//
-//	// Enable personal-document sharing.
-//	reg.RegisterShares(store.Shares())
-//
-//	engine := diff.New(store, reg)
-//	diff.Mount[*auth.Claims](r, engine, guard.Secure())
-//
-// # Client Contract
-//
-// Clients must follow these rules to preserve the engine's guarantees:
-//
-//   - Timestamps and cursors are plain JSON integers that never exceed
-//     2^53 - 1; store them as 64-bit integers (e.g. a Kotlin Long or an
-//     SQLite INTEGER). The cursor is opaque: persist [Response.Next]
-//     verbatim and echo it as [Request.Since] on the next sync. Never
-//     derive, compare, or arithmetically adjust cursors.
-//   - Stamp every local mutation with a Hybrid Logical Clock timestamp
-//     (33-bit Unix seconds shifted left by 20 bits, plus a 20-bit logical
-//     counter), and merge every received timestamp into the local clock.
-//   - Assign a fresh UUIDv7 to each mutation and keep it stable across
-//     retries; the server deduplicates by mutation ID, so resending a
-//     change set after a network failure is always safe.
-//   - Apply each response page in one local transaction: patches carry
-//     updates in parents-first order and must be applied in patch order;
-//     deletions must be applied in reverse patch order (children first).
-//   - Apply incoming rows with last-write-wins: an update wins against any
-//     local state whose timestamp is less than OR EQUAL to the row's time —
-//     a pending local edit with an equal timestamp lost the conflict on the
-//     server and must be discarded, or replicas diverge. A deletion wins
-//     against local state with a lower or equal timestamp, except when the
-//     same page carries an update for the same document at an equal or
-//     higher timestamp (the document moved audiences rather than dying).
-//     Echoes of the device's own writes are harmless under these rules.
-//   - When [Response.More] is true, immediately sync again from
-//     [Response.Next] before processing user activity.
-//   - On a "resync_required" error, clear the local cursor and sync from
-//     zero; local pending mutations are preserved and re-pushed as usual.
-//   - Deleting a share implies losing access: when a share tombstone
-//     arrives, purge the granting owner's personal documents locally.
-//   - A "changes_rejected" error is atomic: nothing from the request was
-//     applied. Its context maps each rejected mutation ID to a [Cause];
-//     handle each code as documented on the [Code] constants, repair or
-//     drop the offending changes, and resend the remainder.
-//   - On "conflict_retry", resend the identical request (dedup makes this
-//     safe); on "too_many_changes", split the queue into smaller batches.
+// The package overview, usage example, model narrative, and client
+// contract live in doc.go.
 package diff
 
 import (
@@ -205,6 +120,23 @@ type Handler[Tx any] interface {
 		tx Tx,
 		ids []uuid.UUID,
 	) (map[uuid.UUID]Meta, error)
+}
+
+// Describer is an optional interface a [Handler] may implement to declare
+// the structural expectations it was built with. When a registered handler
+// implements it, [New] cross-checks those expectations against the
+// registry and panics on any mismatch — catching, at startup, the class of
+// bug where a handler and its registry entry are configured with different
+// model names or parent references (which would otherwise silently break
+// the patch feed). The reference driver/postgres.Table implements it.
+type Describer interface {
+	// Model reports the model name the handler was built for. It must equal
+	// the name the handler is registered under.
+	Model() string
+	// Parent reports the ownership parent field the handler persists a
+	// child's reference from, or ("", false) for a root handler. The field
+	// must equal the one declared with [Owner].
+	Parent() (via string, ok bool)
 }
 
 // Store provides the shared transactional machinery the engine builds on.
