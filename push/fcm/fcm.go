@@ -34,7 +34,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rsa"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -278,7 +278,7 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 			AccessToken string `json:"access_token"`
 			ExpiresIn   int    `json:"expires_in"`
 		}
-		if err := json.NewDecoder(res.Body).Decode(&authRes); err != nil {
+		if err := json.UnmarshalRead(res.Body, &authRes); err != nil {
 			return "", time.Time{}, fmt.Errorf(
 				"failed to decode oauth response: %w",
 				err,
@@ -366,7 +366,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	}
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
+	if err := json.MarshalWrite(&buf, payload); err != nil {
 		return fmt.Errorf("failed to encode FCM payload: %w", err)
 	}
 

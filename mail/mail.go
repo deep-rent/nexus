@@ -45,7 +45,7 @@ package mail
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -415,7 +415,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	}
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(msg); err != nil {
+	if err := json.MarshalWrite(&buf, msg); err != nil {
 		return fmt.Errorf("failed to encode payload: %w", err)
 	}
 	req, err := http.NewRequestWithContext(

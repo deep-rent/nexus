@@ -34,7 +34,7 @@ package apns
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -245,7 +245,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	payload["aps"] = aps
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
+	if err := json.MarshalWrite(&buf, payload); err != nil {
 		return fmt.Errorf("failed to encode APNs payload: %w", err)
 	}
 
