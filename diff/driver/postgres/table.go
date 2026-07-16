@@ -145,18 +145,18 @@ type Table struct {
 // NewTable panics on missing arguments, duplicate registrations, or
 // unregistered parent tables (programmer error). Registration is not safe
 // for concurrent use; register all tables during startup.
-func NewTable(s *Store, typ, table string, opts ...TableOption) *Table {
+func NewTable(s *Store, typ, name string, opts ...TableOption) *Table {
 	if s == nil {
 		panic("store is required")
 	}
 	if typ == "" {
 		panic("entity type name is required")
 	}
-	if table == "" {
+	if name == "" {
 		panic("table name is required")
 	}
-	if _, exists := s.tables[table]; exists {
-		panic(fmt.Sprintf("table %q is already registered", table))
+	if _, exists := s.tables[name]; exists {
+		panic(fmt.Sprintf("table %q is already registered", name))
 	}
 
 	cfg := &tableConfig{schema: s.schema}
@@ -167,8 +167,8 @@ func NewTable(s *Store, typ, table string, opts ...TableOption) *Table {
 	t := &Table{
 		store: s,
 		typ:   typ,
-		name:  table,
-		ident: ident(cfg.schema, table),
+		name:  name,
+		ident: ident(cfg.schema, name),
 	}
 	if cfg.parent != "" {
 		p, ok := s.tables[cfg.parent]
@@ -185,7 +185,7 @@ func NewTable(s *Store, typ, table string, opts ...TableOption) *Table {
 	}
 	t.buildSQL()
 
-	s.tables[table] = t
+	s.tables[name] = t
 	s.order = append(s.order, t)
 	if t.parent != nil {
 		t.parent.children = append(t.parent.children, t)
