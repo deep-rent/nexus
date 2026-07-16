@@ -12,6 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package fcm provides a Firebase Cloud Messaging (FCM) v1 provider.
+//
+// It implements the [push.Sender] interface for delivering remote
+// notifications to Android devices using OAuth 2.0 authentication.
+//
+// # Usage
+//
+// Create a sender by providing the raw contents of your Google Service Account
+// JSON credentials file.
+//
+//	sender := fcm.New(
+//		credentials, // Google Service Account JSON
+//		fcm.WithTimeout(10 * time.Second),
+//	)
+//	err := sender.Send(ctx, msg)
 package fcm
 
 import (
@@ -39,8 +54,8 @@ import (
 )
 
 const (
-	fcmScope   = "https://www.googleapis.com/auth/firebase.messaging"
-	fcmBaseURL = "https://fcm.googleapis.com/v1"
+	DefaultScope   = "https://www.googleapis.com/auth/firebase.messaging"
+	DefaultBaseURL = "https://fcm.googleapis.com/v1"
 )
 
 type Sender struct {
@@ -67,6 +82,7 @@ type config struct {
 type Option func(*config)
 
 // WithClient allows passing a custom [http.Client] to the sender.
+// Nil values are ignored.
 func WithClient(c *http.Client) Option {
 	return func(cfg *config) {
 		if c != nil {
@@ -76,25 +92,32 @@ func WithClient(c *http.Client) Option {
 }
 
 // WithBaseURL allows overriding the FCM API base URL.
-// Useful for mocking.
+// Useful for mocking. Empty string values are ignored.
 func WithBaseURL(url string) Option {
 	return func(cfg *config) {
-		cfg.baseURL = url
+		if url != "" {
+			cfg.baseURL = url
+		}
 	}
 }
 
 // WithOAuthURL allows overriding the Google OAuth 2.0 token endpoint.
-// Useful for mocking.
+// Useful for mocking. Empty string values are ignored.
 func WithOAuthURL(url string) Option {
 	return func(cfg *config) {
-		cfg.oauthURL = url
+		if url != "" {
+			cfg.oauthURL = url
+		}
 	}
 }
 
 // WithTimeout configures the timeout for the default HTTP client.
+// Zero values are ignored.
 func WithTimeout(d time.Duration) Option {
 	return func(cfg *config) {
-		cfg.timeout = d
+		if d != 0 {
+			cfg.timeout = d
+		}
 	}
 }
 
@@ -106,6 +129,7 @@ func WithRetryOptions(opts ...retry.Option) Option {
 }
 
 // WithLogger injects a structured [slog.Logger] into the sender.
+// Nil values are ignored.
 func WithLogger(logger *slog.Logger) Option {
 	return func(cfg *config) {
 		if logger != nil {
@@ -115,9 +139,12 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // WithClock injects a custom clock function for JWT generation and caching.
+// Nil values are ignored.
 func WithClock(clock func() time.Time) Option {
 	return func(cfg *config) {
-		cfg.clock = clock
+		if clock != nil {
+			cfg.clock = clock
+		}
 	}
 }
 
@@ -155,7 +182,7 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 	}
 
 	cfg := config{
-		baseURL:  fcmBaseURL,
+		baseURL:  DefaultBaseURL,
 		oauthURL: "https://oauth2.googleapis.com/token",
 		timeout:  5 * time.Second,
 		logger:   slog.Default(),
@@ -206,7 +233,7 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 			Exp   int64  `json:"exp"`
 		}{
 			Iss:   sa.ClientEmail,
-			Scope: fcmScope,
+			Scope: DefaultScope,
 			Aud:   cfg.oauthURL,
 			Iat:   cfg.clock().Unix(),
 			Exp:   cfg.clock().Add(time.Hour).Unix(),

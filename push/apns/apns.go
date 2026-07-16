@@ -12,6 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package apns provides an Apple Push Notification service (APNs) provider.
+//
+// It implements the [push.Sender] interface for delivering remote
+// notifications to Apple devices using HTTP/2 and JWT authentication.
+//
+// # Usage
+//
+// Create a sender by providing your ES256 key ID, Apple team ID, and the
+// PEM-encoded PKCS#8 private key contents.
+//
+//	sender := apns.New(
+//		"ABC123DEFG",
+//		"DEF123GHIJ",
+//		key, // PEM format
+//		apns.WithBaseURL(apns.SandboxBaseURL),
+//	)
+//	err := sender.Send(ctx, msg)
 package apns
 
 import (
@@ -37,10 +54,10 @@ import (
 )
 
 const (
-	// DefaultURL is the production endpoint for APNs.
-	DefaultURL = "https://api.push.apple.com"
-	// SandboxURL is the sandbox endpoint for APNs.
-	SandboxURL = "https://api.sandbox.push.apple.com"
+	// DefaultBaseURL is the production endpoint for APNs.
+	DefaultBaseURL = "https://api.push.apple.com"
+	// SandboxBaseURL is the sandbox endpoint for APNs.
+	SandboxBaseURL = "https://api.sandbox.push.apple.com"
 )
 
 type Sender struct {
@@ -66,6 +83,7 @@ type config struct {
 type Option func(*config)
 
 // WithClient allows passing a custom [http.Client] to the sender.
+// Nil values are ignored.
 func WithClient(c *http.Client) Option {
 	return func(cfg *config) {
 		if c != nil {
@@ -75,17 +93,23 @@ func WithClient(c *http.Client) Option {
 }
 
 // WithBaseURL allows overriding the APNs API base URL.
-// Useful for switching to [SandboxURL] or mocking.
+// Useful for switching to [SandboxBaseURL] or mocking.
+// Empty string values are ignored.
 func WithBaseURL(url string) Option {
 	return func(cfg *config) {
-		cfg.baseURL = url
+		if url != "" {
+			cfg.baseURL = url
+		}
 	}
 }
 
 // WithTimeout configures the timeout for the default HTTP client.
+// Zero values are ignored.
 func WithTimeout(d time.Duration) Option {
 	return func(cfg *config) {
-		cfg.timeout = d
+		if d != 0 {
+			cfg.timeout = d
+		}
 	}
 }
 
@@ -97,6 +121,7 @@ func WithRetryOptions(opts ...retry.Option) Option {
 }
 
 // WithLogger injects a structured [slog.Logger] into the sender.
+// Nil values are ignored.
 func WithLogger(logger *slog.Logger) Option {
 	return func(cfg *config) {
 		if logger != nil {
@@ -106,9 +131,12 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // WithClock injects a custom clock function for JWT generation and caching.
+// Nil values are ignored.
 func WithClock(clock func() time.Time) Option {
 	return func(cfg *config) {
-		cfg.clock = clock
+		if clock != nil {
+			cfg.clock = clock
+		}
 	}
 }
 
@@ -127,7 +155,7 @@ func New(keyID, teamID string, privateKeyPEM []byte, opts ...Option) push.Sender
 	keyPair := jwk.NewKeyPair(jwa.ES256, keyID, signer)
 
 	cfg := config{
-		baseURL: DefaultURL,
+		baseURL: DefaultBaseURL,
 		timeout: 5 * time.Second,
 		logger:  slog.Default(),
 		clock:   time.Now,
