@@ -17,6 +17,20 @@
 // It defines a generic payload model ([Message]) and a common [Sender]
 // interface for SMS delivery, decoupling business logic from the underlying
 // mechanism.
+//
+// # Usage
+//
+// Create messages with [NewMessage] and dispatch them through your concrete
+// [Sender] implementation.
+//
+//	msg := sms.NewMessage(
+//		"+15558675309",
+//		"+15551234567",
+//		"Your verification code is 123456.",
+//	)
+//
+//	sender := sms.NewSender("twilio_sid", "twilio_auth_token")
+//	err := sender.Send(ctx, msg)
 package sms
 
 import (
@@ -174,24 +188,32 @@ func WithClient(client *http.Client) Option {
 }
 
 // WithBaseURL allows overriding the Twilio API base URL for testing or mocking.
+// Empty string values are ignored.
 func WithBaseURL(url string) Option {
 	return func(c *config) {
-		c.baseURL = url
+		if url != "" {
+			c.baseURL = url
+		}
 	}
 }
 
 // WithUserAgent configures a custom User-Agent header for the outbound API
-// requests.
+// requests. Empty string values are ignored.
 func WithUserAgent(v string) Option {
 	return func(c *config) {
-		c.userAgent = v
+		if v != "" {
+			c.userAgent = v
+		}
 	}
 }
 
 // WithTimeout configures the timeout for the default [http.Client].
+// Zero values are ignored.
 func WithTimeout(d time.Duration) Option {
 	return func(c *config) {
-		c.timeout = d
+		if d != 0 {
+			c.timeout = d
+		}
 	}
 }
 
@@ -203,6 +225,7 @@ func WithRetryOptions(opts ...retry.Option) Option {
 }
 
 // WithLogger injects a structured [slog.Logger] into the sender.
+// Nil values are ignored.
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
