@@ -26,6 +26,7 @@ linters:
     - makezero
     - misspell
     - nilerr
+    - perfsprint
     - typecheck
     - nolintlint
     - prealloc
