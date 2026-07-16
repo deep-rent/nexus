@@ -37,8 +37,8 @@ import (
 )
 
 const (
-	// ProductionURL is the production endpoint for APNs.
-	ProductionURL = "https://api.push.apple.com"
+	// DefaultURL is the production endpoint for APNs.
+	DefaultURL = "https://api.push.apple.com"
 	// SandboxURL is the sandbox endpoint for APNs.
 	SandboxURL = "https://api.sandbox.push.apple.com"
 )
@@ -127,7 +127,7 @@ func New(keyID, teamID string, privateKeyPEM []byte, opts ...Option) push.Sender
 	keyPair := jwk.NewKeyPair(jwa.ES256, keyID, signer)
 
 	cfg := config{
-		baseURL: ProductionURL,
+		baseURL: DefaultURL,
 		timeout: 5 * time.Second,
 		logger:  slog.Default(),
 		clock:   time.Now,
