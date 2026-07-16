@@ -50,7 +50,7 @@ var _ diff.Handler[struct{}] = (*noop)(nil)
 
 type doc struct{}
 
-func TestRegistry_Types_Deterministic(t *testing.T) {
+func TestRegistry_Models_Deterministic(t *testing.T) {
 	t.Parallel()
 
 	names := []string{"asset", "address", "contract", "party", "sector"}
@@ -61,22 +61,22 @@ func TestRegistry_Types_Deterministic(t *testing.T) {
 			switch name {
 			case "asset":
 				r.Register[doc](name, noop{},
-					diff.WithRootMeta(), diff.WithParents("address"))
+					diff.Root(), diff.Parents("address"))
 			case "contract":
 				r.Register[doc](name, noop{},
-					diff.WithOwner("asset", "asset_id"))
+					diff.Owner("asset", "asset_id"))
 			case "address":
 				r.Register[doc](name, noop{},
-					diff.WithRootMeta())
+					diff.Root())
 			default:
 				r.Register[doc](name, noop{},
-					diff.WithRootMeta())
+					diff.Root())
 			}
 		}
 		return r
 	}
 
-	want := build(names).Types()
+	want := build(names).Models()
 
 	pos := make(map[string]int)
 	for i, name := range want {
@@ -93,7 +93,7 @@ func TestRegistry_Types_Deterministic(t *testing.T) {
 	shuffled := slices.Clone(names)
 	for range 20 {
 		shuffled = append(shuffled[1:], shuffled[0])
-		if got := build(shuffled).Types(); !slices.Equal(got, want) {
+		if got := build(shuffled).Models(); !slices.Equal(got, want) {
 			t.Fatalf("for registration order %v: got %v; want %v",
 				shuffled, got, want)
 		}
@@ -112,15 +112,15 @@ func TestRegister_Panics(t *testing.T) {
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
 				r.Register[doc]("", noop{},
-					diff.WithRootMeta())
+					diff.Root())
 			},
 		},
 		{
 			name: "reserved name",
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
-				r.Register[doc](diff.TypeShare, noop{},
-					diff.WithRootMeta())
+				r.Register[doc](diff.ModelShare, noop{},
+					diff.Root())
 			},
 		},
 		{
@@ -128,7 +128,7 @@ func TestRegister_Panics(t *testing.T) {
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
 				r.Register[doc]("asset", nil,
-					diff.WithRootMeta())
+					diff.Root())
 			},
 		},
 		{
@@ -136,9 +136,9 @@ func TestRegister_Panics(t *testing.T) {
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
 				r.Register[doc]("asset", noop{},
-					diff.WithRootMeta())
+					diff.Root())
 				r.Register[doc]("asset", noop{},
-					diff.WithRootMeta())
+					diff.Root())
 			},
 		},
 		{
@@ -153,7 +153,7 @@ func TestRegister_Panics(t *testing.T) {
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
 				r.Register[doc]("asset", noop{},
-					diff.WithRootMeta(), diff.WithOwner("other", "other_id"))
+					diff.Root(), diff.Owner("other", "other_id"))
 			},
 		},
 		{
@@ -161,8 +161,8 @@ func TestRegister_Panics(t *testing.T) {
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
 				r.Register[doc]("asset", noop{},
-					diff.WithRootMeta(), diff.WithParents("missing"))
-				r.Types()
+					diff.Root(), diff.Parents("missing"))
+				r.Models()
 			},
 		},
 		{
@@ -170,10 +170,10 @@ func TestRegister_Panics(t *testing.T) {
 			fn: func() {
 				r := diff.NewRegistry[struct{}]()
 				r.Register[doc]("a", noop{},
-					diff.WithRootMeta(), diff.WithParents("b"))
+					diff.Root(), diff.Parents("b"))
 				r.Register[doc]("b", noop{},
-					diff.WithRootMeta(), diff.WithParents("a"))
-				r.Types()
+					diff.Root(), diff.Parents("a"))
+				r.Models()
 			},
 		},
 	}

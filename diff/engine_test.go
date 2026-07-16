@@ -77,7 +77,7 @@ type fixture struct {
 	store     *mock.Store
 	assets    *mock.Handler
 	contracts *mock.Handler
-	shares    *mock.Handler
+	shares    *mock.Shares
 	engine    *diff.Engine[*mock.Tx]
 }
 
@@ -85,12 +85,12 @@ func setup(opts ...diff.Option) *fixture {
 	f := &fixture{store: mock.New()}
 	f.assets = mock.NewHandler(f.store)
 	f.contracts = mock.NewHandler(f.store)
-	f.shares = mock.NewHandler(f.store)
+	f.shares = mock.NewShares(f.store)
 
 	reg := diff.NewRegistry[*mock.Tx]()
-	reg.Register[asset]("asset", f.assets, diff.WithRootMeta())
+	reg.Register[asset]("asset", f.assets, diff.Root())
 	reg.Register[contract]("contract", f.contracts,
-		diff.WithOwner("asset", "asset_id"))
+		diff.Owner("asset", "asset_id"))
 	reg.RegisterShares(f.shares)
 
 	f.engine = diff.New(f.store, reg, opts...)
@@ -124,21 +124,21 @@ func contractDoc(id, assetID uuid.UUID) jsontext.Value {
 	))
 }
 
-func upsert(typ string, data jsontext.Value, at diff.Stamp) diff.Change {
+func upsert(model string, data jsontext.Value, at diff.Stamp) diff.Change {
 	return diff.Change{
 		ID:     uuid.NewV7(),
 		Action: diff.ActionUpsert,
-		Type:   typ,
+		Model:  model,
 		Data:   data,
 		Time:   at,
 	}
 }
 
-func remove(typ string, data jsontext.Value, at diff.Stamp) diff.Change {
+func remove(model string, data jsontext.Value, at diff.Stamp) diff.Change {
 	return diff.Change{
 		ID:     uuid.NewV7(),
 		Action: diff.ActionDelete,
-		Type:   typ,
+		Model:  model,
 		Data:   data,
 		Time:   at,
 	}
@@ -156,6 +156,30 @@ func sync(
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	return resp
+}
+
+// rejectedWith asserts that err is a *diff.Error carrying the given code
+// for the given mutation ID, and returns the recorded cause.
+func rejectedWith(
+	t *testing.T,
+	err error,
+	id uuid.UUID,
+	code diff.Code,
+) diff.Cause {
+	t.Helper()
+	rejected, ok := errors.AsType[*diff.Error](err)
+	if !ok {
+		t.Fatalf("got error %v; want *diff.Error", err)
+	}
+	cause, found := rejected.Causes[id]
+	if !found {
+		t.Fatalf("got causes %v; want entry for mutation %v",
+			rejected.Causes, id)
+	}
+	if cause.Code != code {
+		t.Fatalf("cause: got %q; want %q", cause.Code, code)
+	}
+	return cause
 }
 
 func TestEngine_Sync_PushPull(t *testing.T) {
@@ -195,8 +219,8 @@ func TestEngine_Sync_PushPull(t *testing.T) {
 		t.Fatalf("fresh sync: got %d patches; want 1", len(fresh.Patches))
 	}
 	p := fresh.Patches[0]
-	if p.Type != "asset" {
-		t.Errorf("patch type: got %q; want %q", p.Type, "asset")
+	if p.Model != "asset" {
+		t.Errorf("patch model: got %q; want %q", p.Model, "asset")
 	}
 	if len(p.Update) != 1 || len(p.Delete) != 0 {
 		t.Errorf("patch shape: got %d updates, %d deletes; want 1, 0",
@@ -303,12 +327,15 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 	for range 20 {
 		resp := sync(t, f, scope, &diff.Request{Since: since, Limit: 3})
 		for _, p := range resp.Patches {
-			for _, doc := range p.Update {
+			for _, row := range p.Update {
 				var meta struct {
 					ID uuid.UUID `json:"id"`
 				}
-				if err := json.Unmarshal(doc, &meta); err != nil {
+				if err := json.Unmarshal(row.Data, &meta); err != nil {
 					t.Fatalf("should not have returned an error: %v", err)
+				}
+				if row.Time == 0 {
+					t.Error("update rows should carry their timestamp")
 				}
 				got[meta.ID]++
 			}
@@ -446,13 +473,7 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
-		var perr *diff.PayloadError
-		if !errors.As(err, &perr) {
-			t.Fatalf("got error %v; want PayloadError", err)
-		}
-		if _, found := perr.Errors[c.ID]; !found {
-			t.Errorf("got %v; want entry for mutation %v", perr.Errors, c.ID)
-		}
+		rejectedWith(t, err, c.ID, diff.CodeOrphaned)
 	})
 
 	t.Run("foreign root", func(t *testing.T) {
@@ -469,15 +490,11 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 		})
 
 		// An outsider references the foreign asset as parent: denied.
+		c := upsert("contract", contractDoc(uuid.NewV7(), assetID), stamp(2))
 		_, err := f.engine.Sync(t.Context(), diff.Scope{UserID: outsider},
-			&diff.Request{Changes: []diff.Change{
-				upsert("contract",
-					contractDoc(uuid.NewV7(), assetID), stamp(2)),
-			}})
+			&diff.Request{Changes: []diff.Change{c}})
 
-		if _, ok := errors.AsType[*diff.AuthzError](err); !ok {
-			t.Fatalf("got error %v; want AuthzError", err)
-		}
+		rejectedWith(t, err, c.ID, diff.CodeForbidden)
 	})
 }
 
@@ -496,7 +513,7 @@ func TestEngine_Sync_Shares(t *testing.T) {
 			uuid.NewV7(), owner, team,
 		))
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-			upsert(diff.TypeShare, share, stamp(1)),
+			upsert(diff.ModelShare, share, stamp(1)),
 		}})
 
 		if !slices.Contains(f.store.Touched, owner) {
@@ -519,13 +536,12 @@ func TestEngine_Sync_Shares(t *testing.T) {
 			`{"id":%q,"user_id":%q,"team_id":%q}`,
 			uuid.NewV7(), owner, team,
 		))
+		c := upsert(diff.ModelShare, share, stamp(1))
 		_, err := f.engine.Sync(t.Context(), scope, &diff.Request{
-			Changes: []diff.Change{upsert(diff.TypeShare, share, stamp(1))},
+			Changes: []diff.Change{c},
 		})
 
-		if _, ok := errors.AsType[*diff.AuthzError](err); !ok {
-			t.Fatalf("got error %v; want AuthzError", err)
-		}
+		rejectedWith(t, err, c.ID, diff.CodeForbidden)
 	})
 }
 
@@ -580,16 +596,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
-		var terr *diff.TypeError
-		if !errors.As(err, &terr) {
-			t.Fatalf("got error %v; want TypeError", err)
-		}
-		if !slices.Contains(terr.IDs, c.ID) {
-			t.Errorf("got ids %v; want %v included", terr.IDs, c.ID)
-		}
-		if !slices.Contains(terr.Types, "vehicle") {
-			t.Errorf("got types %v; want %v included", terr.Types, "vehicle")
-		}
+		rejectedWith(t, err, c.ID, diff.CodeUnknownModel)
 	})
 
 	t.Run("scope violation", func(t *testing.T) {
@@ -600,13 +607,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
-		var aerr *diff.AuthzError
-		if !errors.As(err, &aerr) {
-			t.Fatalf("got error %v; want AuthzError", err)
-		}
-		if !slices.Contains(aerr.IDs, c.ID) {
-			t.Errorf("got ids %v; want %v included", aerr.IDs, c.ID)
-		}
+		rejectedWith(t, err, c.ID, diff.CodeForbidden)
 	})
 
 	t.Run("invalid payload", func(t *testing.T) {
@@ -620,12 +621,44 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
-		var perr *diff.PayloadError
-		if !errors.As(err, &perr) {
-			t.Fatalf("got error %v; want PayloadError", err)
+		cause := rejectedWith(t, err, c.ID, diff.CodeInvalid)
+		if _, found := cause.Fields["name"]; !found {
+			t.Errorf("got fields %v; want failure on %q", cause.Fields, "name")
 		}
-		if _, found := perr.Errors[c.ID]["name"]; !found {
-			t.Errorf("got %v; want failure on field %q", perr.Errors, "name")
+	})
+
+	t.Run("malformed changes", func(t *testing.T) {
+		t.Parallel()
+		f := setup()
+
+		doc := assetDoc(uuid.NewV7(), owner, nil)
+		badID := upsert("asset", doc, stamp(1))
+		badID.ID = uuid.NewV4() // not a UUIDv7
+		badAction := upsert("asset", doc, stamp(2))
+		badAction.Action = "replace"
+		badData := upsert("asset", nil, stamp(3))
+		badTime := upsert("asset", doc, 0)
+
+		_, err := f.engine.Sync(t.Context(), scope, &diff.Request{
+			Changes: []diff.Change{badID, badAction, badData, badTime},
+		})
+
+		// All four rejections must be reported together, keyed by mutation
+		// ID, each naming the offending field.
+		for _, tt := range []struct {
+			id    uuid.UUID
+			field string
+		}{
+			{badID.ID, "id"},
+			{badAction.ID, "action"},
+			{badData.ID, "data"},
+			{badTime.ID, "time"},
+		} {
+			cause := rejectedWith(t, err, tt.id, diff.CodeInvalid)
+			if _, found := cause.Fields[tt.field]; !found {
+				t.Errorf("got fields %v; want failure on %q",
+					cause.Fields, tt.field)
+			}
 		}
 	})
 
@@ -637,9 +670,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
-		if _, ok := errors.AsType[*diff.DriftError](err); !ok {
-			t.Fatalf("got error %v; want DriftError", err)
-		}
+		rejectedWith(t, err, c.ID, diff.CodeDrift)
 	})
 
 	t.Run("resync required", func(t *testing.T) {
@@ -671,9 +702,9 @@ func TestEngine_Sync_ApplyOrder(t *testing.T) {
 	}
 
 	reg := diff.NewRegistry[*mock.Tx]()
-	reg.Register[asset]("asset", assets, diff.WithRootMeta())
+	reg.Register[asset]("asset", assets, diff.Root())
 	reg.Register[contract]("contract", contracts,
-		diff.WithOwner("asset", "asset_id"))
+		diff.Owner("asset", "asset_id"))
 	engine := diff.New[*mock.Tx](store, reg)
 
 	owner := uuid.NewV7().String()
@@ -721,7 +752,7 @@ func TestNew_Panics(t *testing.T) {
 		}()
 		reg := diff.NewRegistry[*mock.Tx]()
 		reg.Register[asset]("asset",
-			mock.NewHandler(mock.New()), diff.WithRootMeta())
+			mock.NewHandler(mock.New()), diff.Root())
 		diff.New[*mock.Tx](nil, reg)
 	})
 

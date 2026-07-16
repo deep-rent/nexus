@@ -25,23 +25,41 @@
 //
 // Documents are isolated per user and team: every document belongs to a user
 // (its immutable owner) and optionally to a team. Owners may share their
-// personal documents with teams through the built-in "share" entity type.
+// personal documents with teams through the built-in "share" model.
 //
 // # Usage
 //
-// Register one handler per entity type, construct an engine around a store,
-// and mount the endpoint on a router.
+// Register one handler per document model, declare the relationships
+// between models, construct an engine around a store, and mount the
+// endpoint on a router. Roots carry ownership metadata; children declare
+// the parent they inherit ownership from, and additional foreign key
+// dependencies order the patch feed for the client.
 //
 // Example:
 //
 //	store := postgres.New(db)
+//	addresses := postgres.NewTable(store, "address", "addresses")
 //	assets := postgres.NewTable(store, "asset", "assets")
+//	contracts := postgres.NewTable(store, "contract", "contracts",
+//		postgres.WithParent("assets", "asset_id"))
 //
 //	reg := diff.NewRegistry[*sql.Tx]()
-//	reg.Register[Asset]("asset", assets, diff.WithRootMeta())
+//
+//	// Roots carry id, user_id, and team_id in their payloads.
+//	reg.Register[Address]("address", addresses, diff.Root())
+//	reg.Register[Asset]("asset", assets, diff.Root(),
+//		diff.Parents("address")) // assets reference an address (FK order)
+//
+//	// Children inherit ownership from their parent document, referenced
+//	// by the "asset_id" field of the contract payload.
+//	reg.Register[Contract]("contract", contracts,
+//		diff.Owner("asset", "asset_id"))
+//
+//	// Enable personal-document sharing.
+//	reg.RegisterShares(store.Shares())
 //
 //	engine := diff.New(store, reg)
-//	diff.Mount[*diff.Claims](r, engine, guard.Secure())
+//	diff.Mount[*auth.Claims](r, engine, guard.Secure())
 //
 // # Client Contract
 //
@@ -61,16 +79,26 @@
 //   - Apply each response page in one local transaction: patches carry
 //     updates in parents-first order and must be applied in patch order;
 //     deletions must be applied in reverse patch order (children first).
+//   - Apply incoming rows with last-write-wins: an update wins against any
+//     local state whose timestamp is less than OR EQUAL to the row's time —
+//     a pending local edit with an equal timestamp lost the conflict on the
+//     server and must be discarded, or replicas diverge. A deletion wins
+//     against local state with a lower or equal timestamp, except when the
+//     same page carries an update for the same document at an equal or
+//     higher timestamp (the document moved audiences rather than dying).
+//     Echoes of the device's own writes are harmless under these rules.
 //   - When [Response.More] is true, immediately sync again from
 //     [Response.Next] before processing user activity.
-//   - A push may echo back documents the device itself just wrote when it
-//     coincides with a paged backlog or a retried request. Echoes are
-//     harmless; devices may drop incoming documents whose (id, time) pair
-//     matches a change they pushed.
 //   - On a "resync_required" error, clear the local cursor and sync from
 //     zero; local pending mutations are preserved and re-pushed as usual.
 //   - Deleting a share implies losing access: when a share tombstone
 //     arrives, purge the granting owner's personal documents locally.
+//   - A "changes_rejected" error is atomic: nothing from the request was
+//     applied. Its context maps each rejected mutation ID to a [Cause];
+//     handle each code as documented on the [Code] constants, repair or
+//     drop the offending changes, and resend the remainder.
+//   - On "conflict_retry", resend the identical request (dedup makes this
+//     safe); on "too_many_changes", split the queue into smaller batches.
 package diff
 
 import (
@@ -147,13 +175,16 @@ type Version struct {
 	ID uuid.UUID
 	// Seq is the storage sequence at which this version was recorded.
 	Seq int64
+	// Time is the HLC timestamp of this version, driving client-side
+	// last-write-wins application.
+	Time hlc.Time
 	// Deleted marks tombstones.
 	Deleted bool
 	// Data is the full document payload; nil when Deleted.
 	Data jsontext.Value
 }
 
-// Handler applies and reads changes for one entity type. Implementations
+// Handler applies and reads changes for one document model. Implementations
 // must enforce row-level last-write-wins, honor tombstones, and verify that
 // existing rows targeted by an operation lie within the caller's scope (see
 // the reference implementation in driver/postgres).
@@ -182,10 +213,12 @@ type Store[Tx any] interface {
 	// Exec runs fn within a single transaction, committing on nil and
 	// rolling back on error.
 	Exec(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
-	// Lock acquires exclusive, transaction-scoped locks on the given keys.
-	// Implementations must sort the keys internally so concurrent callers
-	// acquire them in the same order.
-	Lock(ctx context.Context, tx Tx, keys []string) error
+	// Lock acquires transaction-scoped advisory locks: shared for keys the
+	// request only reads (feed visibility), exclusive for keys it writes.
+	// Writers and readers of a key serialize; concurrent readers do not.
+	// Implementations must acquire all keys in one global sort order,
+	// regardless of mode, to stay deadlock-free.
+	Lock(ctx context.Context, tx Tx, shared, exclusive []string) error
 	// Floor returns the minimum valid cursor. Requests starting below it
 	// must trigger a full resync.
 	Floor(ctx context.Context, tx Tx) (int64, error)
@@ -202,10 +235,16 @@ type Store[Tx any] interface {
 		userID string,
 		ids []uuid.UUID,
 	) ([]uuid.UUID, error)
-	// Touch re-sequences all personal documents (and their descendants) of
-	// the given owner so they re-enter the patch feed. It is invoked after
-	// the owner grants a team access to their personal documents.
-	Touch(ctx context.Context, tx Tx, ownerID string) error
+	// Grants returns, for each of the given owners, the identifiers of
+	// the teams currently granted access to their personal documents. The
+	// engine folds these into the lock set whenever a request writes
+	// personal documents, keeping grant-based readers inside the lock
+	// fence.
+	Grants(
+		ctx context.Context,
+		tx Tx,
+		owners []string,
+	) (map[string][]string, error)
 }
 
 // Prefilter is an optional fast-path duplicate filter (e.g. backed by

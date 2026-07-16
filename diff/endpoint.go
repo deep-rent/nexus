@@ -15,79 +15,59 @@
 package diff
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/deep-rent/nexus/auth"
-	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/valid"
 )
 
 // Error reasons emitted by the sync endpoint, complementing the reasons
-// defined by the router and auth packages.
+// defined by the router and auth packages. The per-change rejection codes
+// accompanying ReasonChangesRejected are documented on the [Code]
+// constants, including the appropriate client reaction for each.
 const (
-	// ReasonUnknownType indicates changes referencing unregistered entity
-	// types.
-	ReasonUnknownType = "unknown_type"
-	// ReasonBadPayload indicates document payloads that failed validation.
-	ReasonBadPayload = "invalid_payload"
-	// ReasonClockDrift indicates change timestamps too far in the future.
-	ReasonClockDrift = "clock_drift"
-	// ReasonScopeViolation indicates changes touching documents outside the
-	// authenticated scope.
-	ReasonScopeViolation = "scope_violation"
+	// ReasonChangesRejected indicates that one or more changes were
+	// rejected; the response context maps each rejected mutation ID to its
+	// [Cause]. No change from the request was applied.
+	ReasonChangesRejected = "changes_rejected"
 	// ReasonDelegationRequired indicates a machine token where an end-user
 	// context was required.
 	ReasonDelegationRequired = "delegation_required"
 	// ReasonConflict indicates a concurrent ownership change; the client
-	// should retry the sync.
+	// should retry the identical request.
 	ReasonConflict = "conflict_retry"
 	// ReasonResyncRequired indicates a cursor below the retention floor;
 	// the client must restart from cursor zero.
 	ReasonResyncRequired = "resync_required"
 	// ReasonTooManyChanges indicates a change set above the configured
-	// maximum size.
+	// maximum size; the client should split its queue into smaller batches.
 	ReasonTooManyChanges = "too_many_changes"
 )
 
-// TeamClaims is the minimal claim surface the sync endpoint requires: a
-// verified JWT identity carrying team memberships and an authorized-party
-// distinction.
-type TeamClaims interface {
-	jwt.Claims
-	// TeamIDs returns the identifiers of all teams the subject belongs to.
-	TeamIDs() []string
-	// Delegated reports whether the token was issued to a client acting on
-	// behalf of an end user rather than to the client itself.
-	Delegated() bool
+// Syncer is the engine capability the HTTP layer builds on. It is
+// implemented by [Engine] and decouples the endpoint from the storage
+// transaction type.
+type Syncer interface {
+	// Sync ingests a change set and compiles the missed patch feed.
+	Sync(ctx context.Context, scope Scope, req *Request) (*Response, error)
 }
-
-// Claims is a ready-made [TeamClaims] implementation carrying team
-// memberships in a custom "teams" JWT claim.
-type Claims struct {
-	auth.Claims
-	// Teams lists the identifiers of the subject's teams.
-	Teams []string `json:"teams,omitempty"`
-}
-
-// TeamIDs implements the [TeamClaims] interface.
-func (c *Claims) TeamIDs() []string {
-	return c.Teams
-}
-
-var _ TeamClaims = (*Claims)(nil)
 
 // Endpoint builds the unified sync handler around the engine. Requests
 // must carry claims verified and injected by an [auth.Guard] middleware
 // generic over C, e.g.:
 //
-//	guard := auth.NewGuard[*diff.Claims](verifier)
-//	r.HandleFunc("POST /sync", diff.Endpoint[*diff.Claims](engine),
+//	guard := auth.NewGuard[*auth.Claims](verifier)
+//	r.HandleFunc("POST /sync", diff.Endpoint[*auth.Claims](engine),
 //		guard.Secure())
-func Endpoint[C TeamClaims, Tx any](eng *Engine[Tx]) router.HandlerFunc {
-	if eng == nil {
-		panic("engine is required")
+//
+// The subject claim identifies the syncing user and the "teams" claim
+// (via [auth.AccessClaims.Memberships]) carries their team memberships.
+func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
+	if s == nil {
+		panic("syncer is required")
 	}
 	return func(e *router.Exchange) error {
 		claims, ok := auth.From[C](e)
@@ -120,8 +100,8 @@ func Endpoint[C TeamClaims, Tx any](eng *Engine[Tx]) router.HandlerFunc {
 			return aerr
 		}
 
-		scope := Scope{UserID: sub, Teams: claims.TeamIDs()}
-		resp, err := eng.Sync(e.Context(), scope, &req)
+		scope := Scope{UserID: sub, Teams: claims.Memberships()}
+		resp, err := s.Sync(e.Context(), scope, &req)
 		if err != nil {
 			return translate(err)
 		}
@@ -131,55 +111,30 @@ func Endpoint[C TeamClaims, Tx any](eng *Engine[Tx]) router.HandlerFunc {
 
 // Mount registers the sync endpoint as "POST /sync" following the mount
 // convention of this framework. Pass the auth guard (and any additional
-// route middleware) as mws. For a custom pattern, register
-// [Endpoint] with [router.Router.HandleFunc] directly.
-func Mount[C TeamClaims, Tx any](
+// route middleware) as mws. For a custom pattern, register [Endpoint] with
+// [router.Router.HandleFunc] directly.
+func Mount[C auth.AccessClaims](
 	r *router.Router,
-	eng *Engine[Tx],
+	s Syncer,
 	mws ...router.Middleware,
 ) {
-	r.HandleFunc("POST /sync", Endpoint[C](eng), mws...)
+	r.HandleFunc("POST /sync", Endpoint[C](s), mws...)
 }
 
 // translate maps the engine's typed errors onto HTTP error responses.
 func translate(err error) error {
-	if terr, ok := errors.AsType[*TypeError](err); ok {
-		return &router.Error{
-			Status:      http.StatusBadRequest,
-			Reason:      ReasonUnknownType,
-			Description: "The change set references unknown entity types.",
-			Context: map[string]any{
-				"ids":   terr.IDs,
-				"types": terr.Types,
-			},
-			Cause: err,
+	if rejected, ok := errors.AsType[*Error](err); ok {
+		status := http.StatusBadRequest
+		if rejected.Forbidden() {
+			status = http.StatusForbidden
 		}
-	}
-	if perr, ok := errors.AsType[*PayloadError](err); ok {
 		return &router.Error{
-			Status:      http.StatusBadRequest,
-			Reason:      ReasonBadPayload,
-			Description: "Some document payloads failed validation.",
-			Context:     perr.Errors,
-			Cause:       err,
-		}
-	}
-	if derr, ok := errors.AsType[*DriftError](err); ok {
-		return &router.Error{
-			Status:      http.StatusBadRequest,
-			Reason:      ReasonClockDrift,
-			Description: "Some change timestamps are too far in the future.",
-			Context:     map[string]any{"ids": derr.IDs},
-			Cause:       err,
-		}
-	}
-	if aerr, ok := errors.AsType[*AuthzError](err); ok {
-		return &router.Error{
-			Status:      http.StatusForbidden,
-			Reason:      ReasonScopeViolation,
-			Description: "Some changes touch documents outside your scope.",
-			Context:     map[string]any{"ids": aerr.IDs},
-			Cause:       err,
+			Status: status,
+			Reason: ReasonChangesRejected,
+			Description: "Some changes were rejected; " +
+				"no change from this request was applied.",
+			Context: rejected.Causes,
+			Cause:   err,
 		}
 	}
 	if rerr, ok := errors.AsType[*ResyncError](err); ok {

@@ -30,34 +30,34 @@ import (
 )
 
 type mockVerifier struct {
-	claims *diff.Claims
+	claims *auth.Claims
 }
 
-func (m *mockVerifier) Verify([]byte) (*diff.Claims, error) {
+func (m *mockVerifier) Verify([]byte) (*auth.Claims, error) {
 	return m.claims, nil
 }
 
-var _ jwt.Verifier[*diff.Claims] = (*mockVerifier)(nil)
+var _ jwt.Verifier[*auth.Claims] = (*mockVerifier)(nil)
 
 // serve mounts the sync endpoint of a fresh fixture behind an auth guard
 // that accepts any bearer token as the given claims.
 func serve(
 	t *testing.T,
 	f *fixture,
-	claims *diff.Claims,
+	claims *auth.Claims,
 ) *httptest.Server {
 	t.Helper()
 	r := router.New()
 	guard := auth.NewGuard(&mockVerifier{claims: claims})
-	diff.Mount[*diff.Claims](r, f.engine, guard.Secure())
+	diff.Mount[*auth.Claims](r, f.engine, guard.Secure())
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return srv
 }
 
 // claimsFor builds delegated end-user claims for the given user.
-func claimsFor(userID string, teams ...string) *diff.Claims {
-	c := &diff.Claims{Teams: teams}
+func claimsFor(userID string, teams ...string) *auth.Claims {
+	c := &auth.Claims{Teams: teams}
 	c.Sub = userID
 	c.Azp = "test-client" // azp != sub: acting on behalf of the user
 	return c
@@ -132,15 +132,15 @@ func TestEndpoint_Errors(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		claims     *diff.Claims
+		claims     *auth.Claims
 		body       string
 		wantStatus int
 		wantReason string
 	}{
 		{
 			name: "machine token",
-			claims: func() *diff.Claims {
-				c := &diff.Claims{}
+			claims: func() *auth.Claims {
+				c := &auth.Claims{}
 				c.Sub = "svc-account"
 				c.Azp = "svc-account" // azp == sub: not delegated
 				return c
@@ -151,8 +151,8 @@ func TestEndpoint_Errors(t *testing.T) {
 		},
 		{
 			name: "non-uuid subject",
-			claims: func() *diff.Claims {
-				c := &diff.Claims{}
+			claims: func() *auth.Claims {
+				c := &auth.Claims{}
 				c.Sub = "not-a-uuid"
 				c.Azp = "test-client"
 				return c
@@ -188,7 +188,7 @@ func TestEndpoint_Errors(t *testing.T) {
 				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, nil), stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
-			wantReason: diff.ReasonUnknownType,
+			wantReason: diff.ReasonChangesRejected,
 		},
 		{
 			name:   "scope violation",
@@ -201,7 +201,7 @@ func TestEndpoint_Errors(t *testing.T) {
 				stamp(1),
 			),
 			wantStatus: http.StatusForbidden,
-			wantReason: diff.ReasonScopeViolation,
+			wantReason: diff.ReasonChangesRejected,
 		},
 		{
 			name:   "invalid payload",
@@ -213,7 +213,7 @@ func TestEndpoint_Errors(t *testing.T) {
 				uuid.NewV7(), uuid.NewV7(), owner, stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
-			wantReason: diff.ReasonBadPayload,
+			wantReason: diff.ReasonChangesRejected,
 		},
 	}
 

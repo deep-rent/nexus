@@ -50,35 +50,14 @@ type Change struct {
 	ID uuid.UUID `json:"id"`
 	// Action specifies whether the document is upserted or deleted.
 	Action Action `json:"action"`
-	// Type names the registered entity type the change applies to.
-	Type string `json:"type"`
+	// Model names the registered document model the change applies to.
+	Model string `json:"type"`
 	// Data carries the document payload. Upserts provide the full document;
 	// deletes provide at least the identifying envelope.
 	Data jsontext.Value `json:"data,omitzero"`
 	// Time is the HLC timestamp of the mutation on the producing device.
 	Time Stamp `json:"time"`
 }
-
-// Validate implements the [valid.Validatable] interface.
-func (c *Change) Validate(v *valid.Validator) {
-	if c.ID == uuid.Nil() {
-		v.Fail("id", "must not be empty")
-	} else if c.ID[6]>>4 != 7 {
-		v.Fail("id", "must be a valid UUIDv7")
-	}
-	v.Whitelist("action", c.Action, ActionUpsert, ActionDelete)
-	v.NotEmpty("type", c.Type)
-	if len(c.Data) == 0 {
-		v.Fail("data", "must not be empty")
-	}
-	if c.Time == 0 {
-		v.Fail("time", "must not be zero")
-	} else if c.Time > hlc.Max {
-		v.Fail("time", "must not exceed 2^53 - 1")
-	}
-}
-
-var _ valid.Validatable = (*Change)(nil)
 
 // Request is the unified sync payload: it pushes the client's pending
 // changes and requests the patch feed accumulated since its last sync.
@@ -93,30 +72,49 @@ type Request struct {
 	Changes []Change `json:"changes,omitempty"`
 }
 
-// Validate implements the [valid.Validatable] interface.
+// Validate implements the [valid.Validatable] interface. Only the request
+// envelope is validated here; per-change problems are reported through the
+// unified [Error] with per-mutation causes instead.
 func (r *Request) Validate(v *valid.Validator) {
-	if r.Since < 0 {
-		v.Fail("since", "must not be negative")
-	}
+	v.MinInt64("since", int64(r.Since), 0)
 	v.MinInt("limit", r.Limit, 0)
-	v.Each("changes", r.Changes)
 }
 
 var _ valid.Validatable = (*Request)(nil)
 
-// Patch groups the feed output for a single entity type.
+// Row is one document version delivered in a patch. Clients apply it with
+// last-write-wins semantics: an incoming row wins against any local state
+// whose timestamp is less than or equal to the row's time.
+type Row struct {
+	// Time is the HLC timestamp of this document version.
+	Time Stamp `json:"time"`
+	// Data is the full document payload.
+	Data jsontext.Value `json:"data"`
+}
+
+// Deletion is one removed (or no longer visible) document delivered in a
+// patch. Clients delete the document unless they hold a strictly newer
+// version: at equal timestamps, an update in the same page wins over the
+// deletion.
+type Deletion struct {
+	// ID is the identifier of the removed document.
+	ID uuid.UUID `json:"id"`
+	// Time is the HLC timestamp of the removal.
+	Time Stamp `json:"time"`
+}
+
+// Patch groups the feed output for a single document model.
 type Patch struct {
 	// ID identifies this patch envelope. It carries no synchronization
 	// semantics and exists purely as a tracing key for client pipelines.
 	ID uuid.UUID `json:"id"`
-	// Type names the entity type all documents in this patch belong to.
-	Type string `json:"type"`
-	// Delete lists identifiers of deleted documents. Patches are emitted in
-	// an order safe for client-side foreign keys: deletions arrive
-	// children-first.
-	Delete []uuid.UUID `json:"delete,omitempty"`
-	// Update lists full documents to be upserted, parents-first.
-	Update []jsontext.Value `json:"update,omitempty"`
+	// Model names the document model all entries in this patch belong to.
+	Model string `json:"type"`
+	// Delete lists removed documents. Patches are emitted in an order safe
+	// for client-side foreign keys: deletions arrive children-first.
+	Delete []Deletion `json:"delete,omitempty"`
+	// Update lists full document versions to be upserted, parents-first.
+	Update []Row `json:"update,omitempty"`
 }
 
 // Response is the outcome of a sync round-trip.

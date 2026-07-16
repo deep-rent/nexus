@@ -16,66 +16,109 @@ package diff
 
 import (
 	"errors"
+	"fmt"
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"
 )
 
 // ErrTooManyChanges is returned when a request exceeds the configured
-// maximum change set size.
+// maximum change set size. Clients should split their pending queue into
+// smaller batches and sync each in turn.
 var ErrTooManyChanges = errors.New("change set exceeds maximum size")
 
-// ErrConflict is returned when the lock set could not be stabilized across
-// the configured number of transaction attempts; the client should retry.
+// ErrConflict is returned when a concurrent ownership change interfered
+// with the sync. The condition is transient; clients should simply retry
+// the identical request (idempotency makes this safe).
 var ErrConflict = errors.New("concurrent ownership change, retry sync")
 
-// TypeError reports changes referencing entity types that are not
-// registered.
-type TypeError struct {
-	// IDs lists the offending mutation identifiers.
-	IDs []uuid.UUID
-	// Types lists the distinct unknown type names.
-	Types []string
+// Code classifies why an individual change was rejected. Every code implies
+// a specific client reaction, documented on the respective constant.
+type Code string
+
+const (
+	// CodeUnknownModel marks changes referencing a model the server does
+	// not know. This indicates a schema mismatch between client and server;
+	// the client should keep the change queued and prompt for an app
+	// update, or drop it if the model was intentionally removed.
+	CodeUnknownModel Code = "unknown_model"
+
+	// CodeInvalid marks changes whose payload failed validation (malformed
+	// envelope, missing fields, or model-specific rules; details in
+	// [Cause.Fields]). Retrying unchanged will fail forever: the client
+	// must repair the document locally or drop the change.
+	CodeInvalid Code = "invalid"
+
+	// CodeForbidden marks changes touching documents outside the caller's
+	// scope. The client should drop the change, refresh its token (team
+	// memberships may have changed), and perform a full resync if the
+	// mismatch persists.
+	CodeForbidden Code = "forbidden"
+
+	// CodeDrift marks changes stamped too far in the future, usually due to
+	// a wrong device clock. The client should re-stamp its pending changes
+	// with fresh HLC timestamps after correcting the clock, then retry.
+	CodeDrift Code = "drift"
+
+	// CodeOrphaned marks child changes referencing a parent document that
+	// does not exist. The client should push the parent first (fix queue
+	// ordering) or drop the change if the parent was deleted meanwhile.
+	CodeOrphaned Code = "orphaned"
+)
+
+// Cause explains the rejection of a single change.
+type Cause struct {
+	// Code classifies the rejection.
+	Code Code `json:"code"`
+	// Fields details validation failures per document field. It is only
+	// populated for [CodeInvalid].
+	Fields valid.Error `json:"fields,omitzero"`
 }
 
-func (e *TypeError) Error() string {
-	return "change set references unknown entity types"
+// Error reports rejected changes of a sync request, keyed by mutation ID.
+// Requests are atomic: if any change is rejected, no change from the
+// request is applied. Causes are collected per pipeline stage, so repairing
+// one round of causes may surface further rejections on the next attempt.
+type Error struct {
+	// Causes maps each rejected mutation ID to the reason for rejection.
+	Causes map[uuid.UUID]Cause
 }
 
-// AuthzError reports changes whose payload identity lies outside the
-// caller's scope.
-type AuthzError struct {
-	// IDs lists the offending mutation identifiers.
-	IDs []uuid.UUID
+func (e *Error) Error() string {
+	return fmt.Sprintf("%d changes rejected", len(e.Causes))
 }
 
-func (e *AuthzError) Error() string {
-	return "change set violates the authorized scope"
+// Forbidden reports whether any change was rejected as [CodeForbidden],
+// which upgrades the HTTP response from 400 to 403.
+func (e *Error) Forbidden() bool {
+	for _, cause := range e.Causes {
+		if cause.Code == CodeForbidden {
+			return true
+		}
+	}
+	return false
 }
 
-// DriftError reports changes carrying HLC timestamps too far in the future.
-type DriftError struct {
-	// IDs lists the offending mutation identifiers.
-	IDs []uuid.UUID
+// reject records a rejection cause, initializing the map on first use.
+func (e *Error) reject(id uuid.UUID, cause Cause) {
+	if e.Causes == nil {
+		e.Causes = make(map[uuid.UUID]Cause)
+	}
+	e.Causes[id] = cause
 }
 
-func (e *DriftError) Error() string {
-	return "change timestamps exceed the maximum clock drift"
+// or returns nil (as error) when no change was rejected, and e otherwise.
+// It avoids the classic non-nil interface around a nil pointer.
+func (e *Error) or() error {
+	if len(e.Causes) == 0 {
+		return nil
+	}
+	return e
 }
 
-// PayloadError reports document payloads that failed validation, keyed by
-// mutation identifier.
-type PayloadError struct {
-	// Errors maps each offending mutation ID to its validation failures.
-	Errors map[uuid.UUID]valid.Error
-}
-
-func (e *PayloadError) Error() string {
-	return "change payloads failed validation"
-}
-
-// ResyncError reports that the requested cursor predates the retention
-// floor; the client must perform a full resync from cursor zero.
+// ResyncError is returned when the requested cursor predates the retention
+// floor. The client must clear its cursor and perform a full resync from
+// zero; locally queued mutations are preserved and re-pushed as usual.
 type ResyncError struct {
 	// Floor is the minimum valid cursor.
 	Floor Cursor

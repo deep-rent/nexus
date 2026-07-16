@@ -120,8 +120,8 @@ type Engine[Tx any] struct {
 	cfg   config
 }
 
-// New creates a sync engine around the given store and type registry.
-// It panics if store or registry is nil, no entity types are registered,
+// New creates a sync engine around the given store and model registry.
+// It panics if store or registry is nil, no models are registered,
 // or their declared relationships are cyclic or dangling (programmer
 // error).
 func New[Tx any](store Store[Tx], reg *Registry[Tx], opts ...Option) *Engine[Tx] {
@@ -129,7 +129,7 @@ func New[Tx any](store Store[Tx], reg *Registry[Tx], opts ...Option) *Engine[Tx]
 		panic("store is required")
 	}
 	if reg == nil || len(reg.entries) == 0 {
-		panic("registry with at least one entity type is required")
+		panic("registry with at least one model is required")
 	}
 	reg.order() // surface cycles and dangling references now
 
@@ -156,11 +156,12 @@ func (e *Engine[Tx]) Now() hlc.Time {
 // change extends Op with ingestion bookkeeping.
 type change struct {
 	Op
-	typ      string
+	model    string
 	mutation uuid.UUID // client-assigned mutation id
 	parent   uuid.UUID // referenced ownership parent (child types only)
 	child    bool      // identity derives from the parent chain
 	resolved bool      // identity in Meta is final
+	stored   *Meta     // identity of the targeted stored row, if any
 }
 
 // errRetry signals that the lock set drifted between resolution and lock
@@ -222,22 +223,23 @@ func (e *Engine[Tx]) Sync(
 	extra := make(map[string]struct{})
 	for attempt := 0; ; attempt++ {
 		err := e.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
-			keys, err := e.assemble(ctx, tx, scope, winners, extra)
+			shared, exclusive, err := e.assemble(ctx, tx, scope, winners, extra)
 			if err != nil {
 				return err
 			}
-			if err := e.store.Lock(ctx, tx, keys); err != nil {
+			if err := e.store.Lock(ctx, tx, shared, exclusive); err != nil {
 				return err
 			}
 
-			// Re-resolve under the locks; anything outside the held set
-			// means a concurrent ownership change slipped in between.
-			verify, err := e.assemble(ctx, tx, scope, winners, extra)
+			// Re-resolve under the locks; any WRITE key outside the held
+			// exclusive set means a concurrent ownership change slipped in
+			// between resolution and locking.
+			_, verify, err := e.assemble(ctx, tx, scope, winners, extra)
 			if err != nil {
 				return err
 			}
-			held := make(map[string]struct{}, len(keys))
-			for _, k := range keys {
+			held := make(map[string]struct{}, len(exclusive))
+			for _, k := range exclusive {
 				held[k] = struct{}{}
 			}
 			for _, k := range verify {
@@ -281,36 +283,55 @@ func (e *Engine[Tx]) Sync(
 // screen validates and authorizes the raw changes without touching storage.
 // It decodes each payload envelope, enforces scope on root identities,
 // validates document payloads, and merges every timestamp into the engine
-// clock. Violations are collected per class and returned as typed errors,
-// most severe class first.
+// clock. All rejections are collected into a single [Error], keyed by
+// mutation ID, so the client can repair its queue in one pass.
 func (e *Engine[Tx]) screen(
 	scope Scope,
 	raw []Change,
 ) ([]*change, error) {
-	var (
-		unknownIDs   []uuid.UUID
-		unknownTypes []string
-		denied       []uuid.UUID
-		drifted      []uuid.UUID
-		invalid      = make(map[uuid.UUID]valid.Error)
-	)
+	rejected := &Error{}
 
 	changes := make([]*change, 0, len(raw))
 	for i := range raw {
 		in := &raw[i]
-		entry, known := e.reg.lookup(in.Type)
+
+		// Structural sanity first, so every per-change failure funnels
+		// through the same per-mutation rejection format.
+		if in.ID == uuid.Nil() || in.ID[6]>>4 != 7 {
+			rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
+				"id": {"must be a valid UUIDv7"},
+			}})
+			continue
+		}
+		if in.Action != ActionUpsert && in.Action != ActionDelete {
+			rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
+				"action": {"must be one of upsert, delete"},
+			}})
+			continue
+		}
+		if len(in.Data) == 0 {
+			rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
+				"data": {"must not be empty"},
+			}})
+			continue
+		}
+		if in.Time == 0 || in.Time > hlc.Max {
+			rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
+				"time": {"must be between 1 and 2^53 - 1"},
+			}})
+			continue
+		}
+
+		entry, known := e.reg.lookup(in.Model)
 		if !known {
-			unknownIDs = append(unknownIDs, in.ID)
-			if !slices.Contains(unknownTypes, in.Type) {
-				unknownTypes = append(unknownTypes, in.Type)
-			}
+			rejected.reject(in.ID, Cause{Code: CodeUnknownModel})
 			continue
 		}
 
 		c := &change{
 			Action:   in.Action,
 			Time:     hlc.Time(in.Time),
-			typ:      in.Type,
+			model:    in.Model,
 			mutation: in.ID,
 		}
 		if in.Action == ActionUpsert {
@@ -321,18 +342,18 @@ func (e *Engine[Tx]) screen(
 			var meta Meta
 			if err := json.Unmarshal(in.Data, &meta); err != nil ||
 				meta.ID == uuid.Nil() {
-				invalid[in.ID] = valid.Error{
+				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
 					"data": {"must carry a valid document envelope"},
-				}
+				}})
 				continue
 			}
 			// Owner and team identifiers must be well-formed UUIDs before
 			// they participate in scope checks or lock derivation.
 			if !valid.UUID(meta.UserID) ||
 				(meta.TeamID != nil && !valid.UUID(*meta.TeamID)) {
-				invalid[in.ID] = valid.Error{
+				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
 					"data": {"owner and team must be valid UUIDs"},
-				}
+				}})
 				continue
 			}
 			c.Meta = meta
@@ -341,42 +362,42 @@ func (e *Engine[Tx]) screen(
 			// Payload identity is never trusted: it must lie inside the
 			// caller's scope, and shares may only be issued by their owner.
 			if !scope.Allows(meta.UserID, meta.TeamID) ||
-				(in.Type == TypeShare && meta.UserID != scope.UserID) {
-				denied = append(denied, in.ID)
+				(in.Model == ModelShare && meta.UserID != scope.UserID) {
+				rejected.reject(in.ID, Cause{Code: CodeForbidden})
 				continue
 			}
 		} else {
 			id, parent, err := envelope(in.Data, entry.ownerVia)
 			if err != nil {
-				invalid[in.ID] = valid.Error{
+				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
 					"data": {"must carry a valid document envelope"},
-				}
+				}})
 				continue
 			}
 			c.Meta.ID = id
 			c.parent = parent
 			c.child = true
 			if in.Action == ActionUpsert && parent == uuid.Nil() {
-				invalid[in.ID] = valid.Error{
+				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: valid.Error{
 					"data": {fmt.Sprintf(
 						"must reference a parent document via %q",
 						entry.ownerVia,
 					)},
-				}
+				}})
 				continue
 			}
 		}
 
 		if in.Action == ActionUpsert {
 			if verr := entry.check(in.Data); verr != nil {
-				invalid[in.ID] = verr
+				rejected.reject(in.ID, Cause{Code: CodeInvalid, Fields: verr})
 				continue
 			}
 		}
 
 		if _, err := e.cfg.clock.Update(hlc.Time(in.Time)); err != nil {
 			if errors.Is(err, hlc.ErrClockDriftTooLarge) {
-				drifted = append(drifted, in.ID)
+				rejected.reject(in.ID, Cause{Code: CodeDrift})
 				continue
 			}
 			return nil, err
@@ -385,15 +406,8 @@ func (e *Engine[Tx]) screen(
 		changes = append(changes, c)
 	}
 
-	switch {
-	case len(unknownIDs) > 0:
-		return nil, &TypeError{IDs: unknownIDs, Types: unknownTypes}
-	case len(denied) > 0:
-		return nil, &AuthzError{IDs: denied}
-	case len(invalid) > 0:
-		return nil, &PayloadError{Errors: invalid}
-	case len(drifted) > 0:
-		return nil, &DriftError{IDs: drifted}
+	if err := rejected.or(); err != nil {
+		return nil, err
 	}
 	return changes, nil
 }
@@ -429,12 +443,12 @@ func envelope(data jsontext.Value, via string) (uuid.UUID, uuid.UUID, error) {
 // their intermediate states unobservable, so they are never applied.
 func compact(changes []*change) []*change {
 	type key struct {
-		typ string
-		id  uuid.UUID
+		model string
+		id    uuid.UUID
 	}
 	best := make(map[key]*change, len(changes))
 	for _, c := range changes {
-		k := key{typ: c.typ, id: c.Meta.ID}
+		k := key{model: c.model, id: c.Meta.ID}
 		cur, exists := best[k]
 		if !exists || c.Time > cur.Time ||
 			(c.Time == cur.Time && c.mutation.Compare(cur.mutation) > 0) {
@@ -444,51 +458,100 @@ func compact(changes []*change) []*change {
 
 	winners := make([]*change, 0, len(best))
 	for _, c := range changes { // preserve request order for determinism
-		if best[key{typ: c.typ, id: c.Meta.ID}] == c {
+		if best[key{model: c.model, id: c.Meta.ID}] == c {
 			winners = append(winners, c)
 		}
 	}
 	return winners
 }
 
-// assemble resolves child ownership chains and returns the full lock set:
-// the caller's scope, every resolved root identity, and any extra keys
-// carried over from a drifted previous attempt.
+// assemble computes the lock set of the request. Shared keys cover what the
+// request only reads (the caller's scope, for feed visibility); exclusive
+// keys cover everything it writes: payload identities, stored identities of
+// targeted rows (a delete or team move must fence the row's PREVIOUS
+// audience too), resolved child roots, and — for writes touching personal
+// documents — the teams currently granted by the owning user, keeping
+// grant-based readers inside the fence. Extra keys carry over from a
+// drifted previous attempt.
 func (e *Engine[Tx]) assemble(
 	ctx context.Context,
 	tx Tx,
 	scope Scope,
 	winners []*change,
 	extra map[string]struct{},
-) ([]string, error) {
+) (shared, exclusive []string, err error) {
 	if err := e.resolve(ctx, tx, winners); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	set := make(map[string]struct{})
-	set[scope.UserID] = struct{}{}
-	for _, team := range scope.Teams {
-		set[team] = struct{}{}
+	write := make(map[string]struct{})
+	owners := make(map[string]struct{}) // owners whose personal docs are written
+	include := func(userID string, teamID *string) {
+		write[userID] = struct{}{}
+		if teamID != nil {
+			write[*teamID] = struct{}{}
+		} else {
+			owners[userID] = struct{}{}
+		}
 	}
 	for _, c := range winners {
-		if !c.resolved {
-			continue // unresolvable delete, dropped later
+		if c.resolved {
+			include(c.Meta.UserID, c.Meta.TeamID)
 		}
-		set[c.Meta.UserID] = struct{}{}
-		if c.Meta.TeamID != nil {
-			set[*c.Meta.TeamID] = struct{}{}
+		if c.stored != nil {
+			include(c.stored.UserID, c.stored.TeamID)
 		}
-	}
-	for k := range extra {
-		set[k] = struct{}{}
+		// A landing grant re-sequences the owner's personal documents, so
+		// share writes fence like personal-document writes of the owner.
+		if c.model == ModelShare && c.resolved {
+			owners[c.Meta.UserID] = struct{}{}
+		}
 	}
 
-	keys := make([]string, 0, len(set))
-	for k := range set {
-		keys = append(keys, k)
+	// Personal documents may be visible to teams through live grants; their
+	// members' feeds fence on the team key, so writers must hold it too.
+	if len(owners) > 0 {
+		ids := make([]string, 0, len(owners))
+		for owner := range owners {
+			ids = append(ids, owner)
+		}
+		slices.Sort(ids)
+		grants, err := e.store.Grants(ctx, tx, ids)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, teams := range grants {
+			for _, team := range teams {
+				write[team] = struct{}{}
+			}
+		}
 	}
-	slices.Sort(keys)
-	return keys, nil
+
+	for k := range extra {
+		write[k] = struct{}{}
+	}
+
+	read := make(map[string]struct{})
+	if _, ok := write[scope.UserID]; !ok {
+		read[scope.UserID] = struct{}{}
+	}
+	for _, team := range scope.Teams {
+		if _, ok := write[team]; !ok {
+			read[team] = struct{}{}
+		}
+	}
+
+	shared = make([]string, 0, len(read))
+	for k := range read {
+		shared = append(shared, k)
+	}
+	exclusive = make([]string, 0, len(write))
+	for k := range write {
+		exclusive = append(exclusive, k)
+	}
+	slices.Sort(shared)
+	slices.Sort(exclusive)
+	return shared, exclusive, nil
 }
 
 // resolve walks child ownership chains until every change carries its root
@@ -499,14 +562,46 @@ func (e *Engine[Tx]) resolve(
 	tx Tx,
 	winners []*change,
 ) error {
-	// Child identities derive from mutable rows and may drift between
-	// attempts, so they are re-derived on every call; root identities come
-	// from the (immutable) payload and stay final.
+	// Stored and child-derived identities come from mutable rows and may
+	// drift between attempts, so they are re-derived on every call; root
+	// payload identities are immutable and stay final.
 	for _, c := range winners {
+		c.stored = nil
 		if c.child {
 			c.resolved = false
 			c.Meta.UserID = ""
 			c.Meta.TeamID = nil
+		}
+	}
+
+	// Resolve the stored identity of every targeted row. Deletes and team
+	// moves must fence the row's previous audience, so its current identity
+	// belongs to the lock set even when the payload says otherwise.
+	targets := make(map[string][]uuid.UUID)
+	for _, c := range winners {
+		targets[c.model] = append(targets[c.model], c.Meta.ID)
+	}
+	for model, ids := range targets {
+		entry, _ := e.reg.lookup(model)
+		metas, err := entry.handler.Resolve(ctx, tx, ids)
+		if err != nil {
+			return err
+		}
+		for _, c := range winners {
+			if c.model != model {
+				continue
+			}
+			if meta, ok := metas[c.Meta.ID]; ok {
+				c.stored = &meta
+
+				// A child delete's identity is the stored row itself.
+				if c.child && c.Action == ActionDelete &&
+					c.parent == uuid.Nil() {
+					c.Meta.UserID = meta.UserID
+					c.Meta.TeamID = meta.TeamID
+					c.resolved = true
+				}
+			}
 		}
 	}
 
@@ -517,10 +612,10 @@ func (e *Engine[Tx]) resolve(
 		if c.Action != ActionUpsert {
 			continue
 		}
-		if batch[c.typ] == nil {
-			batch[c.typ] = make(map[uuid.UUID]*change)
+		if batch[c.model] == nil {
+			batch[c.model] = make(map[uuid.UUID]*change)
 		}
-		batch[c.typ][c.Meta.ID] = c
+		batch[c.model][c.Meta.ID] = c
 	}
 
 	// Chains are acyclic and shallow (validated at registration), so a
@@ -533,12 +628,10 @@ func (e *Engine[Tx]) resolve(
 			if c.resolved {
 				continue
 			}
-			entry, _ := e.reg.lookup(c.typ)
+			entry, _ := e.reg.lookup(c.model)
 
 			if c.Action == ActionDelete && c.parent == uuid.Nil() {
-				// Child deletes resolve through the stored row itself.
-				pending[c.typ] = append(pending[c.typ], c.Meta.ID)
-				continue
+				continue // never-seen child delete: dropped later
 			}
 
 			if p, ok := batch[entry.owner][c.parent]; ok {
@@ -557,8 +650,8 @@ func (e *Engine[Tx]) resolve(
 		}
 
 		found := make(map[string]map[uuid.UUID]Meta, len(pending))
-		for typ, ids := range pending {
-			entry, ok := e.reg.lookup(typ)
+		for model, ids := range pending {
+			entry, ok := e.reg.lookup(model)
 			if !ok {
 				continue
 			}
@@ -566,21 +659,16 @@ func (e *Engine[Tx]) resolve(
 			if err != nil {
 				return err
 			}
-			found[typ] = metas
+			found[model] = metas
 		}
 
 		for _, c := range winners {
 			if c.resolved {
 				continue
 			}
-			entry, _ := e.reg.lookup(c.typ)
+			entry, _ := e.reg.lookup(c.model)
 
 			if c.Action == ActionDelete && c.parent == uuid.Nil() {
-				if meta, ok := found[c.typ][c.Meta.ID]; ok {
-					c.Meta.UserID = meta.UserID
-					c.Meta.TeamID = meta.TeamID
-					c.resolved = true
-				}
 				continue
 			}
 			if meta, ok := found[entry.owner][c.parent]; ok {
@@ -594,18 +682,13 @@ func (e *Engine[Tx]) resolve(
 	// Upserts must resolve; deletes of never-seen children are dropped
 	// silently later. An unresolvable upsert means the referenced parent
 	// document does not exist.
-	invalid := make(map[uuid.UUID]valid.Error)
+	rejected := &Error{}
 	for _, c := range winners {
 		if !c.resolved && c.Action == ActionUpsert {
-			invalid[c.mutation] = valid.Error{
-				"data": {"references a missing parent document"},
-			}
+			rejected.reject(c.mutation, Cause{Code: CodeOrphaned})
 		}
 	}
-	if len(invalid) > 0 {
-		return &PayloadError{Errors: invalid}
-	}
-	return nil
+	return rejected.or()
 }
 
 // sync runs the transactional core: claim, apply, and feed.
@@ -633,14 +716,14 @@ func (e *Engine[Tx]) sync(
 
 	// Authorize resolved child identities: the root a child hangs off must
 	// itself be accessible to the caller.
-	var denied []uuid.UUID
+	rejected := &Error{}
 	for _, c := range winners {
 		if c.resolved && !scope.Allows(c.Meta.UserID, c.Meta.TeamID) {
-			denied = append(denied, c.mutation)
+			rejected.reject(c.mutation, Cause{Code: CodeForbidden})
 		}
 	}
-	if len(denied) > 0 {
-		return nil, &AuthzError{IDs: denied}
+	if err := rejected.or(); err != nil {
+		return nil, err
 	}
 
 	// Claim every mutation id; only winners whose own claim is fresh are
@@ -656,7 +739,6 @@ func (e *Engine[Tx]) sync(
 
 	upserts := make(map[string][]Op)
 	deletes := make(map[string][]Op)
-	shared := false
 	for _, c := range winners {
 		if _, ok := fresh[c.mutation]; !ok {
 			continue
@@ -666,12 +748,9 @@ func (e *Engine[Tx]) sync(
 		}
 		switch c.Action {
 		case ActionUpsert:
-			upserts[c.typ] = append(upserts[c.typ], c.Op)
-			if c.typ == TypeShare {
-				shared = true
-			}
+			upserts[c.model] = append(upserts[c.model], c.Op)
 		case ActionDelete:
-			deletes[c.typ] = append(deletes[c.typ], c.Op)
+			deletes[c.model] = append(deletes[c.model], c.Op)
 		}
 	}
 
@@ -679,38 +758,47 @@ func (e *Engine[Tx]) sync(
 
 	// Parents before children for upserts, children before parents for
 	// deletes: mirrors client-side foreign key constraints.
-	for _, typ := range order {
-		if ops := upserts[typ]; len(ops) > 0 {
-			entry, _ := e.reg.lookup(typ)
+	for _, model := range order {
+		if ops := upserts[model]; len(ops) > 0 {
+			entry, _ := e.reg.lookup(model)
 			if err := entry.handler.Upsert(ctx, tx, scope, ops); err != nil {
 				return nil, err
 			}
 		}
 	}
-	for _, typ := range slices.Backward(order) {
-		if ops := deletes[typ]; len(ops) > 0 {
-			entry, _ := e.reg.lookup(typ)
+	for _, model := range slices.Backward(order) {
+		if ops := deletes[model]; len(ops) > 0 {
+			entry, _ := e.reg.lookup(model)
 			if err := entry.handler.Delete(ctx, tx, scope, ops); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	// A fresh grant re-feeds the owner's personal documents to the newly
-	// granted team members.
-	if shared {
-		if err := e.store.Touch(ctx, tx, scope.UserID); err != nil {
-			return nil, err
-		}
+	resp, err := e.feed(ctx, tx, scope, req.Since, barrier, limit)
+	if err != nil {
+		return nil, err
 	}
 
-	return e.feed(ctx, tx, scope, req.Since, barrier, limit)
+	// Tombstone pruning runs outside the advisory locks and may advance the
+	// floor while this transaction scans (read committed: every statement
+	// sees a fresh snapshot). Re-checking after the scan guarantees the page
+	// missed no pruned deletion: had pruning removed a tombstone from the
+	// window, the floor now lies above since.
+	floor, err = e.store.Floor(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Since > 0 && int64(req.Since) < floor {
+		return nil, &ResyncError{Floor: Cursor(floor)}
+	}
+	return resp, nil
 }
 
-// version tags a fetched row with its entity type during feed assembly.
+// version tags a fetched row with its model during feed assembly.
 type version struct {
 	Version
-	typ string
+	model string
 }
 
 // feed compiles the patch feed for the window (since, barrier).
@@ -724,19 +812,32 @@ func (e *Engine[Tx]) feed(
 ) (*Response, error) {
 	order := e.reg.order()
 
+	// Each model contributes at most limit+1 rows; after every fetch the
+	// merged set is pruned back to the limit+1 lowest sequences and the
+	// window ceiling tightened, so memory stays bounded at ~2x limit and
+	// later scans shrink. Rows above the (limit+1)-th sequence can never
+	// appear in this page nor affect More.
 	var merged []version
-	for _, typ := range order {
-		entry, _ := e.reg.lookup(typ)
+	until := barrier
+	for _, model := range order {
+		entry, _ := e.reg.lookup(model)
 		rows, err := entry.handler.Fetch(ctx, tx, scope, Window{
 			Since: int64(since),
-			Until: barrier,
+			Until: until,
 			Limit: limit + 1,
 		})
 		if err != nil {
 			return nil, err
 		}
 		for _, row := range rows {
-			merged = append(merged, version{Version: row, typ: typ})
+			merged = append(merged, version{Version: row, model: model})
+		}
+		if len(merged) > limit+1 {
+			slices.SortFunc(merged, func(a, b version) int {
+				return cmp.Compare(a.Seq, b.Seq)
+			})
+			merged = merged[:limit+1]
+			until = merged[limit].Seq + 1
 		}
 	}
 
@@ -765,21 +866,27 @@ func (e *Engine[Tx]) feed(
 	// order to respect their local foreign keys.
 	grouped := make(map[string]*Patch)
 	for _, row := range merged {
-		p, exists := grouped[row.typ]
+		p, exists := grouped[row.model]
 		if !exists {
-			p = &Patch{ID: uuid.NewV7(), Type: row.typ}
-			grouped[row.typ] = p
+			p = &Patch{ID: uuid.NewV7(), Model: row.model}
+			grouped[row.model] = p
 		}
 		if row.Deleted {
-			p.Delete = append(p.Delete, row.ID)
+			p.Delete = append(p.Delete, Deletion{
+				ID:   row.ID,
+				Time: Stamp(row.Time),
+			})
 		} else {
-			p.Update = append(p.Update, row.Data)
+			p.Update = append(p.Update, Row{
+				Time: Stamp(row.Time),
+				Data: row.Data,
+			})
 		}
 	}
 
 	patches := make([]Patch, 0, len(grouped))
-	for _, typ := range order {
-		if p, exists := grouped[typ]; exists {
+	for _, model := range order {
+		if p, exists := grouped[model]; exists {
 			patches = append(patches, *p)
 		}
 	}

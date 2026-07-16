@@ -15,11 +15,8 @@
 package diff_test
 
 import (
-	"encoding/json/jsontext"
 	"encoding/json/v2"
-	"strings"
 	"testing"
-	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
 	"github.com/deep-rent/nexus/internal/hlc"
@@ -67,83 +64,6 @@ func TestCursor_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestChange_Validate(t *testing.T) {
-	t.Parallel()
-
-	doc := jsontext.Value(`{"id":"019f66c1-7949-77ea-93bd-0d45df4542ee"}`)
-
-	ok := diff.Change{
-		ID:     uuid.NewV7(),
-		Action: diff.ActionUpsert,
-		Type:   "asset",
-		Data:   doc,
-		Time:   1,
-	}
-
-	tests := []struct {
-		name   string
-		mutate func(c *diff.Change)
-		field  string
-	}{
-		{
-			name:   "nil mutation id",
-			mutate: func(c *diff.Change) { c.ID = uuid.Nil() },
-			field:  "id",
-		},
-		{
-			name:   "non-v7 mutation id",
-			mutate: func(c *diff.Change) { c.ID = uuid.NewV4() },
-			field:  "id",
-		},
-		{
-			name:   "unknown action",
-			mutate: func(c *diff.Change) { c.Action = "replace" },
-			field:  "action",
-		},
-		{
-			name:   "empty type",
-			mutate: func(c *diff.Change) { c.Type = "" },
-			field:  "type",
-		},
-		{
-			name:   "missing data",
-			mutate: func(c *diff.Change) { c.Data = nil },
-			field:  "data",
-		},
-		{
-			name:   "zero time",
-			mutate: func(c *diff.Change) { c.Time = 0 },
-			field:  "time",
-		},
-		{
-			name:   "oversized time",
-			mutate: func(c *diff.Change) { c.Time = hlc.Max + 1 },
-			field:  "time",
-		},
-	}
-
-	if err := valid.Test(&ok); err != nil {
-		t.Fatalf("for a valid change: should not have returned an error: %v",
-			err)
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			c := ok
-			tt.mutate(&c)
-
-			err := valid.Test(&c)
-			if err == nil {
-				t.Fatal("should have returned a validation error")
-			}
-			if _, found := err[tt.field]; !found {
-				t.Errorf("got error for %v; want field %q", err, tt.field)
-			}
-		})
-	}
-}
-
 func TestRequest_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -173,30 +93,6 @@ func TestRequest_Validate(t *testing.T) {
 		}
 	})
 
-	t.Run("nested change paths", func(t *testing.T) {
-		t.Parallel()
-		r := diff.Request{
-			Changes: []diff.Change{{
-				ID:     uuid.NewV7(),
-				Action: diff.ActionUpsert,
-				Type:   "asset",
-				Data:   jsontext.Value(`{}`),
-				Time:   1,
-			}, {
-				// Invalid: missing everything.
-			}},
-		}
-
-		err := valid.Test(&r)
-		if err == nil {
-			t.Fatal("should have returned a validation error")
-		}
-		for path := range err {
-			if !strings.HasPrefix(path, "changes[1].") {
-				t.Errorf("got path %q; want prefix %q", path, "changes[1].")
-			}
-		}
-	})
 }
 
 func TestRequest_Decode(t *testing.T) {
