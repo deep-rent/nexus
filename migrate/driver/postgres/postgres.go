@@ -45,7 +45,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/deep-rent/nexus/internal/quote"
@@ -186,7 +185,7 @@ func New(db *sql.DB, opts ...Option) *Driver {
 		db:          db,
 		table:       cfg.table,
 		schema:      cfg.schema,
-		ident:       ident(cfg.schema, cfg.table),
+		ident:       quote.Ident(cfg.schema, cfg.table),
 		lockTimeout: cfg.lockTimeout,
 		stmtTimeout: cfg.stmtTimeout,
 		logger:      cfg.logger,
@@ -547,15 +546,4 @@ func (d *Driver) setClean(
 func (d *Driver) Close() error {
 	d.logger.Debug("Closing database driver")
 	return d.db.Close()
-}
-
-// ident assembles a fully qualified, safely quoted PostgreSQL identifier.
-func ident(schema, table string) string {
-	// Example output: "public"."migrations"
-	return fmt.Sprintf("%s.%s", escape(schema), escape(table))
-}
-
-// escape safely wraps PostgreSQL identifiers in double quotes.
-func escape(s string) string {
-	return quote.Double(strings.ReplaceAll(s, `"`, `""`))
 }
