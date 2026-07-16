@@ -45,14 +45,20 @@ type Store struct {
 	claimed  map[uuid.UUID]struct{}
 	handlers []*Handler
 
-	// Grants maps document owners to the teams granted access to their
-	// personal documents. It emulates the driver-side share lookup and may
-	// be populated directly by tests.
-	Grants map[string][]string
+	// Granted maps document owners to the teams granted access to their
+	// personal documents. It emulates the driver-side share lookup; the
+	// shares handler writes through to it, and tests may also populate it
+	// directly.
+	Granted map[string][]string
 
-	// Locked records the deduplicated, sorted lock set of every Lock call.
+	// Locked records the deduplicated, sorted union of shared and
+	// exclusive keys of every Lock call.
 	Locked [][]string
-	// Touched records every owner passed to Touch.
+	// Exclusive records the deduplicated, sorted exclusive keys of every
+	// Lock call.
+	Exclusive [][]string
+	// Touched records every owner whose personal documents were
+	// re-sequenced by a landing share grant.
 	Touched []string
 
 	// Error injection: when set, the corresponding method fails.
@@ -62,6 +68,7 @@ type Store struct {
 	ErrBarrier   error
 	ErrWatermark error
 	ErrClaim     error
+	ErrGrants    error
 	ErrTouch     error
 }
 
@@ -69,7 +76,7 @@ type Store struct {
 func New() *Store {
 	return &Store{
 		claimed: make(map[uuid.UUID]struct{}),
-		Grants:  make(map[string][]string),
+		Granted: make(map[string][]string),
 	}
 }
 
@@ -92,17 +99,21 @@ func (s *Store) Exec(
 }
 
 // Lock implements the [diff.Store] interface.
-func (s *Store) Lock(_ context.Context, _ *Tx, keys []string) error {
+func (s *Store) Lock(_ context.Context, _ *Tx, shared, exclusive []string) error {
 	if s.ErrLock != nil {
 		return s.ErrLock
 	}
-	set := slices.Clone(keys)
-	slices.Sort(set)
-	set = slices.Compact(set)
+	all := slices.Concat(shared, exclusive)
+	slices.Sort(all)
+	all = slices.Compact(all)
+	write := slices.Clone(exclusive)
+	slices.Sort(write)
+	write = slices.Compact(write)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Locked = append(s.Locked, set)
+	s.Locked = append(s.Locked, all)
+	s.Exclusive = append(s.Exclusive, write)
 	return nil
 }
 
@@ -160,9 +171,31 @@ func (s *Store) Claim(
 	return fresh, nil
 }
 
-// Touch implements the [diff.Store] interface. It re-sequences all personal
-// documents of the given owner across every registered handler.
-func (s *Store) Touch(_ context.Context, _ *Tx, ownerID string) error {
+// Grants implements the [diff.Store] interface.
+func (s *Store) Grants(
+	_ context.Context,
+	_ *Tx,
+	owners []string,
+) (map[string][]string, error) {
+	if s.ErrGrants != nil {
+		return nil, s.ErrGrants
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make(map[string][]string, len(owners))
+	for _, owner := range owners {
+		if teams := s.Granted[owner]; len(teams) > 0 {
+			out[owner] = slices.Clone(teams)
+		}
+	}
+	return out, nil
+}
+
+// touch re-sequences all personal documents of the given owner across
+// every registered handler. The shares handler invokes it when a grant
+// lands.
+func (s *Store) touch(ownerID string) error {
 	if s.ErrTouch != nil {
 		return s.ErrTouch
 	}
@@ -194,7 +227,7 @@ func (s *Store) next() int64 {
 func (s *Store) granted(owner string, teams []string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, team := range s.Grants[owner] {
+	for _, team := range s.Granted[owner] {
 		if slices.Contains(teams, team) {
 			return true
 		}
@@ -229,7 +262,7 @@ type Handler struct {
 }
 
 // NewHandler initializes an in-memory handler and registers it with the
-// store so [Store.Touch] can reach its rows.
+// store so grant-triggered re-sequencing can reach its rows.
 func NewHandler(s *Store) *Handler {
 	if s == nil {
 		panic("store is required")
@@ -357,6 +390,7 @@ func (h *Handler) Fetch(
 			out = append(out, diff.Version{
 				ID:   id,
 				Seq:  r.seq,
+				Time: r.hlc,
 				Data: r.data,
 			})
 		}
@@ -366,6 +400,7 @@ func (h *Handler) Fetch(
 			out = append(out, diff.Version{
 				ID:      id,
 				Seq:     ts.seq,
+				Time:    ts.hlc,
 				Deleted: true,
 			})
 		}
@@ -418,3 +453,80 @@ var (
 	_ diff.Store[*Tx]   = (*Store)(nil)
 	_ diff.Handler[*Tx] = (*Handler)(nil)
 )
+
+// Shares is the in-memory handler for the reserved share model. It applies
+// last-write-wins like [Handler], writes grants through to
+// [Store.Granted], and re-sequences the owner's personal documents when a
+// grant lands. Construct instances with [NewShares].
+type Shares struct {
+	*Handler
+}
+
+// NewShares initializes the shares handler backed by the given store.
+func NewShares(s *Store) *Shares {
+	return &Shares{Handler: NewHandler(s)}
+}
+
+// Upsert implements the [diff.Handler] interface.
+func (h *Shares) Upsert(
+	ctx context.Context,
+	tx *Tx,
+	scope diff.Scope,
+	ops []diff.Op,
+) error {
+	before := len(h.rows)
+	changed := make(map[uuid.UUID]hlc.Time, len(ops))
+	for _, op := range ops {
+		if r, ok := h.rows[op.Meta.ID]; ok {
+			changed[op.Meta.ID] = r.hlc
+		}
+	}
+	if err := h.Handler.Upsert(ctx, tx, scope, ops); err != nil {
+		return err
+	}
+
+	landed := len(h.rows) > before
+	for id, prev := range changed {
+		if r, ok := h.rows[id]; ok && r.hlc != prev {
+			landed = true
+		}
+	}
+	h.sync()
+
+	// A landing grant re-feeds the owner's personal documents to the newly
+	// granted team members.
+	if landed {
+		return h.store.touch(scope.UserID)
+	}
+	return nil
+}
+
+// Delete implements the [diff.Handler] interface.
+func (h *Shares) Delete(
+	ctx context.Context,
+	tx *Tx,
+	scope diff.Scope,
+	ops []diff.Op,
+) error {
+	if err := h.Handler.Delete(ctx, tx, scope, ops); err != nil {
+		return err
+	}
+	h.sync()
+	return nil
+}
+
+// sync rebuilds the store's grant lookup from the live share rows.
+func (h *Shares) sync() {
+	h.store.mu.Lock()
+	defer h.store.mu.Unlock()
+	clear(h.store.Granted)
+	for _, r := range h.rows {
+		if r.meta.TeamID != nil {
+			h.store.Granted[r.meta.UserID] = append(
+				h.store.Granted[r.meta.UserID], *r.meta.TeamID,
+			)
+		}
+	}
+}
+
+var _ diff.Handler[*Tx] = (*Shares)(nil)

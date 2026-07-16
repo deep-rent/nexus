@@ -209,7 +209,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 		t.Fatal("personal document should be invisible before the grant")
 	}
 
-	store.Grants[owner] = []string{team}
+	store.Granted[owner] = []string{team}
 
 	got, err = h.Fetch(ctx, &mock.Tx{}, memberScope, window)
 	if err != nil {

@@ -20,61 +20,53 @@
 //
 // The [Store] implements the shared transactional machinery of
 // [diff.Store]: sequencing, advisory locking, mutation deduplication, and
-// tombstone retention. Entity types are backed by declarative [Table]
-// handlers created with [NewTable], and the reserved "share" type is served
-// by the built-in [Store.Shares] handler.
+// tombstone retention. Models are backed by declarative [Table] handlers
+// created with [NewTable], and the reserved "share" model is served by the
+// built-in [Store.Shares] handler.
 //
 // # Usage
 //
-// Initialize the store with an existing [*sql.DB] connection, create its
-// bookkeeping objects, and register one table per entity type.
+// Initialize the store with an existing [*sql.DB] connection and register
+// one table per model.
 //
 // Example:
 //
 //	store := postgres.New(db)
-//	if err := store.Init(ctx); err != nil {
-//	    return err
-//	}
 //
 //	assets := postgres.NewTable(store, "asset", "assets")
 //	files := postgres.NewTable(store, "file", "files",
 //	    postgres.WithParent("assets", "asset_id"))
 //
 //	reg := diff.NewRegistry[*sql.Tx]()
-//	reg.Register[Asset]("asset", assets, diff.WithRootMeta())
-//	reg.Register[File]("file", files, diff.WithOwner("asset", "asset_id"))
+//	reg.Register[Asset]("asset", assets, diff.Root())
+//	reg.Register[File]("file", files, diff.Owner("asset", "asset_id"))
 //	reg.RegisterShares(store.Shares())
 //
 //	engine := diff.New(store, reg)
 //
-// Applications managing their schema through the migrate package feed the
-// embedded migration files returned by [Migrations] through their pipeline
-// instead of calling [Store.Init].
+// The bookkeeping objects (and the document tables) are owned by the
+// application: provision them through your own schema migrations before
+// serving. The SQL files under migrations/ document the expected shape of
+// the bookkeeping objects and serve as reference material.
 package postgres
 
 import (
-	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"embed"
 	"encoding/binary"
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"path"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
+	"github.com/deep-rent/nexus/internal/hlc"
 	"github.com/deep-rent/nexus/internal/pointer"
 	"github.com/deep-rent/nexus/internal/quote"
-	"github.com/deep-rent/nexus/internal/schema"
 )
 
 // Default names for the store's bookkeeping objects.
@@ -83,44 +75,17 @@ const (
 	DefaultSchema = "public"
 	// DefaultMutationsTable is the default name of the mutation
 	// deduplication table.
-	DefaultMutationsTable = "diff_mutations"
+	DefaultMutationsTable = "document_mutations"
 	// DefaultTombstonesTable is the default name of the tombstone table.
-	DefaultTombstonesTable = "diff_tombstones"
+	DefaultTombstonesTable = "document_tombstones"
 	// DefaultStateTable is the default name of the state table holding the
 	// retention floor.
-	DefaultStateTable = "diff_state"
+	DefaultStateTable = "document_state"
 	// DefaultSharesTable is the default name of the share grants table.
-	DefaultSharesTable = "diff_shares"
+	DefaultSharesTable = "document_shares"
 	// DefaultSequence is the default name of the global feed sequence.
-	DefaultSequence = "diff_seq"
+	DefaultSequence = "document_seq"
 )
-
-// migrations embeds the SQL migration files creating the store's
-// bookkeeping objects under their default names.
-//
-//go:embed migrations/*.sql
-var migrations embed.FS
-
-// Migrations returns the embedded SQL migration files creating the store's
-// bookkeeping objects. The files follow the naming convention of the
-// migrate/source/file package and use the default object names in the
-// default schema.
-//
-// Feed them through a migrate pipeline instead of calling [Store.Init] when
-// schema changes are managed through migrations:
-//
-//	m := migrate.New(
-//	    migrate.WithSource(file.New(postgres.Migrations())),
-//	    migrate.WithDriver(driver.New(db)),
-//	)
-//	err := m.Up(ctx)
-func Migrations() fs.FS {
-	sub, err := fs.Sub(migrations, "migrations")
-	if err != nil {
-		panic(err) // unreachable: the embedded directory always exists
-	}
-	return sub
-}
 
 // config holds the internal configuration options for the PostgreSQL store.
 type config struct {
@@ -145,8 +110,8 @@ type Option func(*config)
 
 // WithSchema sets a custom database schema for the bookkeeping objects.
 //
-// Customized names are not covered by the embedded [Migrations]; the caller
-// must create the objects themselves and [Store.Init] returns an error.
+// The reference SQL files under migrations/ only cover the default names;
+// adjust the application's schema migrations accordingly.
 //
 // Empty string values are ignored.
 func WithSchema(name string) Option {
@@ -160,8 +125,8 @@ func WithSchema(name string) Option {
 // WithMutationsTable sets a custom name for the mutation deduplication
 // table.
 //
-// Customized names are not covered by the embedded [Migrations]; the caller
-// must create the objects themselves and [Store.Init] returns an error.
+// The reference SQL files under migrations/ only cover the default names;
+// adjust the application's schema migrations accordingly.
 //
 // Empty string values are ignored.
 func WithMutationsTable(name string) Option {
@@ -174,8 +139,8 @@ func WithMutationsTable(name string) Option {
 
 // WithTombstonesTable sets a custom name for the tombstone table.
 //
-// Customized names are not covered by the embedded [Migrations]; the caller
-// must create the objects themselves and [Store.Init] returns an error.
+// The reference SQL files under migrations/ only cover the default names;
+// adjust the application's schema migrations accordingly.
 //
 // Empty string values are ignored.
 func WithTombstonesTable(name string) Option {
@@ -188,8 +153,8 @@ func WithTombstonesTable(name string) Option {
 
 // WithStateTable sets a custom name for the state table.
 //
-// Customized names are not covered by the embedded [Migrations]; the caller
-// must create the objects themselves and [Store.Init] returns an error.
+// The reference SQL files under migrations/ only cover the default names;
+// adjust the application's schema migrations accordingly.
 //
 // Empty string values are ignored.
 func WithStateTable(name string) Option {
@@ -202,8 +167,8 @@ func WithStateTable(name string) Option {
 
 // WithSharesTable sets a custom name for the share grants table.
 //
-// Customized names are not covered by the embedded [Migrations]; the caller
-// must create the objects themselves and [Store.Init] returns an error.
+// The reference SQL files under migrations/ only cover the default names;
+// adjust the application's schema migrations accordingly.
 //
 // Empty string values are ignored.
 func WithSharesTable(name string) Option {
@@ -216,8 +181,8 @@ func WithSharesTable(name string) Option {
 
 // WithSequence sets a custom name for the global feed sequence.
 //
-// Customized names are not covered by the embedded [Migrations]; the caller
-// must create the objects themselves and [Store.Init] returns an error.
+// The reference SQL files under migrations/ only cover the default names;
+// adjust the application's schema migrations accordingly.
 //
 // Empty string values are ignored.
 func WithSequence(name string) Option {
@@ -243,20 +208,17 @@ func WithLogger(logger *slog.Logger) Option {
 //
 // It provides the shared transactional machinery of the sync engine and
 // acts as the registration hub for the [Table] handlers of the individual
-// entity types. Table registration via [NewTable] is not safe for
-// concurrent use; register all tables during startup, before serving.
+// models. Table registration via [NewTable] is not safe for concurrent
+// use; register all tables during startup, before serving.
+//
+// The bookkeeping schema must be provisioned by the application before the
+// store is used; the SQL files under migrations/ document the expected
+// shape and serve as reference material.
 type Store struct {
 	// db is the underlying database connection pool.
 	db *sql.DB
 	// schema is the unquoted default schema.
 	schema string
-	// mutations, tombstones, state, shares, and sequence are the unquoted
-	// object names.
-	mutations  string
-	tombstones string
-	state      string
-	shares     string
-	sequence   string
 	// identMutations etc. are the precomputed, safely quoted identifiers.
 	identMutations  string
 	identTombstones string
@@ -297,107 +259,17 @@ func New(db *sql.DB, opts ...Option) *Store {
 	s := &Store{
 		db:              db,
 		schema:          cfg.schema,
-		mutations:       cfg.mutations,
-		tombstones:      cfg.tombstones,
-		state:           cfg.state,
-		shares:          cfg.shares,
-		sequence:        cfg.sequence,
-		identMutations:  ident(cfg.schema, cfg.mutations),
-		identTombstones: ident(cfg.schema, cfg.tombstones),
-		identState:      ident(cfg.schema, cfg.state),
-		identShares:     ident(cfg.schema, cfg.shares),
-		identSequence:   ident(cfg.schema, cfg.sequence),
+		identMutations:  quote.Ident(cfg.schema, cfg.mutations),
+		identTombstones: quote.Ident(cfg.schema, cfg.tombstones),
+		identState:      quote.Ident(cfg.schema, cfg.state),
+		identShares:     quote.Ident(cfg.schema, cfg.shares),
+		identSequence:   quote.Ident(cfg.schema, cfg.sequence),
 		logger:          cfg.logger,
 		tables:          make(map[string]*Table),
 	}
-	s.nextval = "nextval(" + literal(s.identSequence) + ")"
+	s.nextval = "nextval(" + quote.Literal(s.identSequence) + ")"
 
 	return s
-}
-
-// Init ensures that all bookkeeping objects exist by executing the embedded
-// up migration files (see [Migrations]) in ascending version order. All
-// statements are idempotent, so Init may be called on every startup.
-//
-// The migration files are static and only cover the default object names in
-// the default schema: when any custom name is configured, Init returns an
-// error and the caller must manage the schema themselves, e.g. by feeding
-// [Migrations] through a migrate pipeline against adjusted files.
-func (s *Store) Init(ctx context.Context) error {
-	if s.customized() {
-		return errors.New(
-			"init only supports the default object names;" +
-				" custom names require caller-managed schema migrations",
-		)
-	}
-
-	s.logger.Debug(
-		"Initializing sync store objects if missing",
-		slog.String("schema", s.schema),
-	)
-
-	scripts, err := upScripts()
-	if err != nil {
-		return err
-	}
-	for _, script := range scripts {
-		for _, stmt := range schema.Postgres(script) {
-			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("failed to initialize store: %w", err)
-			}
-		}
-	}
-	return nil
-}
-
-// customized reports whether any bookkeeping object name deviates from the
-// defaults baked into the embedded migration files.
-func (s *Store) customized() bool {
-	return s.schema != DefaultSchema ||
-		s.mutations != DefaultMutationsTable ||
-		s.tombstones != DefaultTombstonesTable ||
-		s.state != DefaultStateTable ||
-		s.shares != DefaultSharesTable ||
-		s.sequence != DefaultSequence
-}
-
-// upScripts returns the contents of the embedded up migration files, sorted
-// by ascending version.
-func upScripts() ([][]byte, error) {
-	names, err := fs.Glob(migrations, "migrations/*.up.sql")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list embedded migrations: %w", err)
-	}
-
-	type script struct {
-		version uint64
-		content []byte
-	}
-	scripts := make([]script, 0, len(names))
-	for _, name := range names {
-		raw, _, ok := strings.Cut(path.Base(name), "_")
-		if !ok {
-			return nil, fmt.Errorf("malformed migration filename %q", name)
-		}
-		version, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("malformed migration filename %q", name)
-		}
-		content, err := fs.ReadFile(migrations, name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read migration %q: %w", name, err)
-		}
-		scripts = append(scripts, script{version: version, content: content})
-	}
-	slices.SortFunc(scripts, func(a, b script) int {
-		return cmp.Compare(a.version, b.version)
-	})
-
-	out := make([][]byte, len(scripts))
-	for i, sc := range scripts {
-		out[i] = sc.content
-	}
-	return out, nil
 }
 
 // Exec implements the [diff.Store] interface. It runs fn within a single
@@ -430,33 +302,53 @@ func (s *Store) Exec(
 }
 
 // Lock implements the [diff.Store] interface. It acquires transaction-
-// scoped advisory locks on the given keys, deduplicated and sorted in
-// ascending order so concurrent callers never deadlock.
-func (s *Store) Lock(ctx context.Context, tx *sql.Tx, keys []string) error {
-	if len(keys) == 0 {
+// scoped advisory locks on the given keys: shared locks for keys the
+// request only reads, exclusive locks for keys it writes. A key listed in
+// both sets is locked exclusively. All keys are deduplicated and acquired
+// in one global ascending order, regardless of mode, so concurrent callers
+// never deadlock.
+func (s *Store) Lock(ctx context.Context, tx *sql.Tx, shared, exclusive []string) error {
+	// Fold both sets into one mode map; exclusive wins on overlap.
+	modes := make(map[int64]bool, len(shared)+len(exclusive))
+	for _, key := range shared {
+		k := lockKey(key)
+		if _, exists := modes[k]; !exists {
+			modes[k] = false
+		}
+	}
+	for _, key := range exclusive {
+		modes[lockKey(key)] = true
+	}
+	if len(modes) == 0 {
 		return nil
 	}
 
-	locks := make([]int64, 0, len(keys))
-	seen := make(map[int64]struct{}, len(keys))
-	for _, key := range keys {
-		k := lockKey(key)
-		if _, dup := seen[k]; dup {
-			continue
-		}
-		seen[k] = struct{}{}
-		locks = append(locks, k)
+	keys := make([]int64, 0, len(modes))
+	for k := range modes {
+		keys = append(keys, k)
 	}
-	slices.Sort(locks)
+	slices.Sort(keys)
+	excl := make([]bool, len(keys))
+	for i, k := range keys {
+		excl[i] = modes[k]
+	}
 
-	for _, k := range locks {
-		if _, err := tx.ExecContext(
-			ctx,
-			"SELECT pg_advisory_xact_lock($1)",
-			k,
-		); err != nil {
-			return fmt.Errorf("failed to acquire advisory lock: %w", err)
-		}
+	// Single round trip. The ORDER BY inside the subquery both sorts the
+	// keys server-side and, because a sort clause blocks subquery pull-up,
+	// forces the planner to keep the subquery as a separate scan node: the
+	// volatile lock functions in the outer target list are then evaluated
+	// row by row in ascending key order. This is the shape the PostgreSQL
+	// documentation prescribes for set-oriented advisory locking. CASE
+	// evaluates only the selected branch, so each key is locked in exactly
+	// one mode.
+	query := "SELECT CASE WHEN k.excl" +
+		" THEN pg_advisory_xact_lock(k.key) IS NOT NULL" +
+		" ELSE pg_advisory_xact_lock_shared(k.key) IS NOT NULL END" +
+		" FROM (SELECT t.key, t.excl" +
+		" FROM unnest($1::bigint[], $2::boolean[]) AS t(key, excl)" +
+		" ORDER BY t.key) k"
+	if _, err := tx.ExecContext(ctx, query, keys, excl); err != nil {
+		return fmt.Errorf("failed to acquire advisory locks: %w", err)
 	}
 	return nil
 }
@@ -529,7 +421,7 @@ func (s *Store) Claim(
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim mutations: %w", err)
 	}
-	defer closeRows(rows, s.logger)
+	defer close(rows, s.logger)
 
 	var claimed []uuid.UUID
 	for rows.Next() {
@@ -549,9 +441,46 @@ func (s *Store) Claim(
 	return claimed, nil
 }
 
-// Touch implements the [diff.Store] interface. It re-sequences all personal
-// documents (and their descendants) of the given owner across every
-// registered table so they re-enter the patch feed.
+// Grants implements the [diff.Store] interface. It returns, for each of
+// the given owners, the identifiers of the teams currently granted access
+// to their personal documents. Owners without live grants are omitted.
+func (s *Store) Grants(
+	ctx context.Context,
+	tx *sql.Tx,
+	owners []string,
+) (map[string][]string, error) {
+	out := make(map[string][]string, len(owners))
+	if len(owners) == 0 {
+		return out, nil
+	}
+
+	query := "SELECT user_id::text, team_id::text FROM " + s.identShares +
+		" WHERE user_id = ANY($1::uuid[])"
+	rows, err := tx.QueryContext(ctx, query, owners)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read grants: %w", err)
+	}
+	defer close(rows, s.logger)
+
+	for rows.Next() {
+		var owner, team string
+		if err := rows.Scan(&owner, &team); err != nil {
+			return nil, fmt.Errorf("failed to scan grant: %w", err)
+		}
+		out[owner] = append(out[owner], team)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read grants: %w", err)
+	}
+	return out, nil
+}
+
+// Touch re-sequences all personal documents (and their descendants) of the
+// given owner across every registered table so they re-enter the patch
+// feed. The built-in [Store.Shares] handler invokes it whenever a grant
+// lands; backend flows may call it to re-feed an owner's personal documents
+// to newly granted teams. Callers must hold the owner's scope locks (see
+// [Store.Mutate]).
 func (s *Store) Touch(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -568,14 +497,33 @@ func (s *Store) Touch(
 	return nil
 }
 
-// Mutate runs fn within a single transaction after acquiring the advisory
-// locks of the given scope (its user and all its teams).
+// Mutate runs fn within a single transaction after acquiring the exclusive
+// advisory locks of the given scope (its user and all its teams).
 //
 // IMPORTANT: Every backend-initiated write to synced tables MUST go through
 // Mutate (or acquire the equivalent locks via [Store.Lock]). Writing to a
 // synced table without holding the scope locks races against concurrent
 // sync transactions and can assign sequence values that a client's feed
 // scan silently skips, permanently desynchronizing that client.
+//
+// A compliant backend write stamps the rows with a fresh engine timestamp
+// and re-enters them into the patch feed via [Table.Reseq]; backend
+// deletions go through [Table.Bury]:
+//
+//	now := engine.Now()
+//	err := store.Mutate(ctx, scope, func(ctx context.Context, tx *sql.Tx) error {
+//	    if _, err := tx.ExecContext(ctx,
+//	        "UPDATE assets SET data = $2, hlc = $3 WHERE id = $1",
+//	        id, data, int64(now),
+//	    ); err != nil {
+//	        return err
+//	    }
+//	    return assets.Reseq(ctx, tx, []uuid.UUID{id})
+//	})
+//
+// Flows inserting rows directly may instead allocate sequence values
+// themselves: [Store.Barrier] doubles as a seq allocator, returning one
+// fresh feed sequence value per call.
 func (s *Store) Mutate(
 	ctx context.Context,
 	scope diff.Scope,
@@ -585,7 +533,7 @@ func (s *Store) Mutate(
 		keys := make([]string, 0, len(scope.Teams)+1)
 		keys = append(keys, scope.UserID)
 		keys = append(keys, scope.Teams...)
-		if err := s.Lock(ctx, tx, keys); err != nil {
+		if err := s.Lock(ctx, tx, nil, keys); err != nil {
 			return err
 		}
 		return fn(ctx, tx)
@@ -650,17 +598,17 @@ func (s *Store) PruneTombstones(
 	return pruned, nil
 }
 
-// Shares returns the built-in handler for the reserved "share" entity type,
+// Shares returns the built-in handler for the reserved "share" model,
 // backed by the share grants table. Register it via
 // [diff.Registry.RegisterShares].
 func (s *Store) Shares() diff.Handler[*sql.Tx] {
 	return &shares{store: s}
 }
 
-// shares implements [diff.Handler] for the reserved "share" entity type. A
-// share is a root document {id, user_id, team_id} granting a team access to
-// the owner's personal documents; at most one live grant exists per
-// (user_id, team_id) pair.
+// shares implements [diff.Handler] for the reserved "share" model. A share
+// is a root document {id, user_id, team_id} granting a team access to the
+// owner's personal documents; at most one live grant exists per (user_id,
+// team_id) pair.
 type shares struct {
 	store *Store
 }
@@ -669,43 +617,115 @@ type shares struct {
 // last-write-wins. Only the owner of a grant may mutate it. A newer grant
 // for an already granted (user, team) pair supersedes the older duplicate:
 // the duplicate is removed and tombstoned so clients converge on a single
-// grant row.
+// grant row. When a grant's team changes, the previously granted team
+// receives a move tombstone carrying the old identity, and whenever a grant
+// lands (its insert or update was actually applied), the owner's personal
+// documents are re-fed to the granted teams via [Store.Touch].
 func (h *shares) Upsert(
 	ctx context.Context,
 	tx *sql.Tx,
 	scope diff.Scope,
 	ops []diff.Op,
 ) error {
+	if len(ops) == 0 {
+		return nil
+	}
 	s := h.store
 
+	// Fold intra-batch duplicates for the same (user, team) pair: only the
+	// newest grant per pair is applied, the losers are tombstoned under the
+	// winner's timestamp, exactly as if they had landed first and been
+	// superseded in a later request.
+	type pair struct{ user, team string }
+	best := make(map[pair]diff.Op, len(ops))
+	for _, op := range ops {
+		if op.Meta.TeamID == nil {
+			return errors.New("share is missing team_id")
+		}
+		k := pair{user: op.Meta.UserID, team: *op.Meta.TeamID}
+		cur, exists := best[k]
+		if !exists || op.Time > cur.Time || (op.Time == cur.Time &&
+			op.Meta.ID.Compare(cur.Meta.ID) > 0) {
+			best[k] = op
+		}
+	}
+	var wins []diff.Op
+	var losers []move
+	for _, op := range ops {
+		w := best[pair{user: op.Meta.UserID, team: *op.Meta.TeamID}]
+		if w.Meta.ID == op.Meta.ID {
+			wins = append(wins, op)
+		} else {
+			losers = append(losers, move{
+				id:   op.Meta.ID.String(),
+				user: op.Meta.UserID,
+				team: *op.Meta.TeamID,
+				hlc:  int64(w.Time),
+			})
+		}
+	}
+
+	n := len(wins)
+	ids := make([]string, n)
+	users := make([]string, n)
+	teams := make([]string, n)
+	hlcs := make([]int64, n)
+	for i, op := range wins {
+		ids[i] = op.Meta.ID.String()
+		users[i] = op.Meta.UserID
+		teams[i] = *op.Meta.TeamID
+		hlcs[i] = int64(op.Time)
+	}
+
+	// Snapshot the current team assignments so team moves can be detected
+	// after the upsert.
+	before, err := h.snapshot(ctx, tx, ids)
+	if err != nil {
+		return err
+	}
+
 	// Remove older duplicate grants for the same (user, team) pair and
-	// tombstone them under the incoming timestamp.
-	supersede := "WITH stale AS (" +
-		" DELETE FROM " + s.identShares + " s" +
-		" WHERE s.user_id = $2::uuid AND s.team_id = $3::uuid" +
-		" AND s.id <> $1::uuid AND s.hlc < $4::bigint" +
+	// tombstone them under the incoming timestamp. This runs as its own
+	// statement so the upsert's duplicate check below observes the
+	// post-supersede state.
+	supersede := "WITH incoming AS (" +
+		" SELECT t.id, t.user_id, t.team_id, t.hlc" +
+		" FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::bigint[])" +
+		" AS t(id, user_id, team_id, hlc)" +
+		"), stale AS (" +
+		" DELETE FROM " + s.identShares + " s USING incoming i" +
+		" WHERE s.user_id = i.user_id AND s.team_id = i.team_id" +
+		" AND s.id <> i.id AND s.hlc < i.hlc" +
 		" AND s.user_id = $5::uuid" +
-		" RETURNING s.id, s.user_id, s.team_id" +
+		" RETURNING s.id, s.user_id, s.team_id, i.hlc" +
 		") INSERT INTO " + s.identTombstones + " AS ts" +
 		" (type, id, user_id, team_id, hlc, seq)" +
-		" SELECT $6::text, id, user_id, team_id, $4::bigint, " + s.nextval +
+		" SELECT $6::text, id, user_id, team_id, hlc, " + s.nextval +
 		" FROM stale" +
 		" ON CONFLICT (type, id) DO UPDATE SET" +
+		" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
 		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
 		" WHERE EXCLUDED.hlc > ts.hlc"
 
-	// Last-write-wins upsert honoring tombstones. The whole operation is
-	// suppressed (including tombstone clearing) while a surviving duplicate
-	// grant still holds the (user, team) pair, and the conflict update only
-	// applies when the caller owns the existing row.
+	// Last-write-wins upsert honoring tombstones. A tombstone may only be
+	// bypassed (resurrection) when its identity lies within the caller's
+	// scope or the grant is still alive; clearing it additionally requires
+	// the grant to be dead, so departure tombstones of live grants survive
+	// for late syncers. The whole operation is suppressed while a surviving
+	// duplicate grant still holds the (user, team) pair, and the conflict
+	// update only applies when the caller owns the existing row.
 	upsert := "WITH incoming AS (" +
-		" SELECT $1::uuid AS id, $2::uuid AS user_id," +
-		" $3::uuid AS team_id, $4::bigint AS hlc" +
+		" SELECT t.id, t.user_id, t.team_id, t.hlc" +
+		" FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::bigint[])" +
+		" AS t(id, user_id, team_id, hlc)" +
 		"), alive AS (" +
 		" SELECT i.* FROM incoming i" +
 		" LEFT JOIN " + s.identTombstones + " ts" +
 		" ON ts.type = $6::text AND ts.id = i.id" +
-		" WHERE (ts.id IS NULL OR i.hlc > ts.hlc)" +
+		" LEFT JOIN " + s.identShares + " r ON r.id = i.id" +
+		" WHERE (ts.id IS NULL OR (i.hlc > ts.hlc" +
+		" AND (r.id IS NOT NULL" +
+		" OR ts.user_id = $5::uuid OR ts.team_id = ANY($7::uuid[]))))" +
 		" AND NOT EXISTS (" +
 		" SELECT 1 FROM " + s.identShares + " x" +
 		" WHERE x.user_id = i.user_id AND x.team_id = i.team_id" +
@@ -714,6 +734,10 @@ func (h *shares) Upsert(
 		"), cleared AS (" +
 		" DELETE FROM " + s.identTombstones + " ts USING alive a" +
 		" WHERE ts.type = $6::text AND ts.id = a.id" +
+		" AND (ts.user_id = $5::uuid OR ts.team_id = ANY($7::uuid[]))" +
+		" AND NOT EXISTS (" +
+		" SELECT 1 FROM " + s.identShares + " r WHERE r.id = a.id" +
+		")" +
 		") INSERT INTO " + s.identShares + " AS s" +
 		" (id, user_id, team_id, hlc, seq)" +
 		" SELECT a.id, a.user_id, a.team_id, a.hlc, " + s.nextval +
@@ -721,28 +745,74 @@ func (h *shares) Upsert(
 		" ON CONFLICT (id) DO UPDATE SET" +
 		" team_id = EXCLUDED.team_id, hlc = EXCLUDED.hlc," +
 		" seq = EXCLUDED.seq" +
-		" WHERE EXCLUDED.hlc > s.hlc AND s.user_id = $5::uuid"
+		" WHERE EXCLUDED.hlc > s.hlc AND s.user_id = $5::uuid" +
+		" RETURNING s.id::text, s.user_id::text, s.team_id::text, s.hlc"
 
-	for _, op := range ops {
-		if op.Meta.TeamID == nil {
-			return errors.New("share is missing team_id")
-		}
-		args := []any{
-			op.Meta.ID.String(),
-			op.Meta.UserID,
-			*op.Meta.TeamID,
-			int64(op.Time),
-			scope.UserID,
-			diff.TypeShare,
-		}
-		if _, err := tx.ExecContext(ctx, supersede, args...); err != nil {
-			return fmt.Errorf("failed to supersede duplicate share: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, upsert, args...); err != nil {
-			return fmt.Errorf("failed to upsert share: %w", err)
+	if _, err := tx.ExecContext(ctx, supersede,
+		ids, users, teams, hlcs, scope.UserID, diff.ModelShare,
+	); err != nil {
+		return fmt.Errorf("failed to supersede duplicate shares: %w", err)
+	}
+
+	rows, err := tx.QueryContext(ctx, upsert,
+		ids, users, teams, hlcs, scope.UserID, diff.ModelShare, scope.Teams,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to upsert shares: %w", err)
+	}
+	landed, err := scanStamps(rows, s.logger)
+	if err != nil {
+		return err
+	}
+
+	// The old team of a moved grant must receive the grant's removal: write
+	// a move tombstone carrying the grant's previous identity.
+	moves := slices.Clone(losers)
+	for _, l := range landed {
+		old, existed := before[l.id]
+		if existed && old != l.team {
+			moves = append(moves, move{
+				id:   l.id,
+				user: l.user,
+				team: old.String, // old.Valid always: team_id is NOT NULL
+				hlc:  l.hlc,
+			})
 		}
 	}
+	if err := s.entomb(ctx, tx, diff.ModelShare, moves); err != nil {
+		return err
+	}
+
+	// A landing grant re-feeds the owner's personal documents to the newly
+	// granted team members.
+	if len(landed) > 0 {
+		return s.Touch(ctx, tx, scope.UserID)
+	}
 	return nil
+}
+
+// snapshot returns the current team assignment of the given grants.
+func (h *shares) snapshot(
+	ctx context.Context,
+	tx *sql.Tx,
+	ids []string,
+) (map[string]sql.NullString, error) {
+	s := h.store
+	query := "SELECT id::text, team_id::text FROM " + s.identShares +
+		" WHERE id = ANY($1::uuid[])"
+	rows, err := tx.QueryContext(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to snapshot shares: %w", err)
+	}
+	states, err := scanStates(rows, s.logger)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]sql.NullString, len(states))
+	for _, st := range states {
+		out[st.id] = st.team
+	}
+	return out, nil
 }
 
 // Delete implements the [diff.Handler] interface. Only the owner of a grant
@@ -754,11 +824,27 @@ func (h *shares) Delete(
 	scope diff.Scope,
 	ops []diff.Op,
 ) error {
+	if len(ops) == 0 {
+		return nil
+	}
 	s := h.store
 
+	n := len(ops)
+	ids := make([]string, n)
+	hlcs := make([]int64, n)
+	users := make([]string, n)
+	teams := make([]string, n)
+	for i, op := range ops {
+		ids[i] = op.Meta.ID.String()
+		hlcs[i] = int64(op.Time)
+		users[i] = op.Meta.UserID
+		teams[i] = pointer.Value(op.Meta.TeamID)
+	}
+
 	query := "WITH incoming AS (" +
-		" SELECT $1::uuid AS id, $2::bigint AS hlc, $3::uuid AS user_id," +
-		" nullif($4, '')::uuid AS team_id" +
+		" SELECT t.id, t.hlc, t.user_id, nullif(t.team_id, '')::uuid AS team_id" +
+		" FROM unnest($1::uuid[], $2::bigint[], $3::uuid[], $4::text[])" +
+		" AS t(id, hlc, user_id, team_id)" +
 		"), victims AS (" +
 		" DELETE FROM " + s.identShares + " s USING incoming i" +
 		" WHERE s.id = i.id AND s.hlc < i.hlc AND s.user_id = $5::uuid" +
@@ -775,28 +861,22 @@ func (h *shares) Delete(
 		" SELECT $6::text, id, user_id, team_id, hlc, " + s.nextval +
 		" FROM scoped" +
 		" ON CONFLICT (type, id) DO UPDATE SET" +
+		" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
 		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
 		" WHERE EXCLUDED.hlc > ts.hlc"
 
-	for _, op := range ops {
-		args := []any{
-			op.Meta.ID.String(),
-			int64(op.Time),
-			op.Meta.UserID,
-			pointer.Value(op.Meta.TeamID),
-			scope.UserID,
-			diff.TypeShare,
-		}
-		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-			return fmt.Errorf("failed to delete share: %w", err)
-		}
+	if _, err := tx.ExecContext(ctx, query,
+		ids, hlcs, users, teams, scope.UserID, diff.ModelShare,
+	); err != nil {
+		return fmt.Errorf("failed to delete shares: %w", err)
 	}
 	return nil
 }
 
 // Fetch implements the [diff.Handler] interface. Grants are visible to
 // their owner and to members of the granted team; payloads are
-// reconstructed from the row columns.
+// reconstructed from the row columns. The query is a union of
+// independently indexable branches, merged in sequence order.
 func (h *shares) Fetch(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -805,19 +885,27 @@ func (h *shares) Fetch(
 ) ([]diff.Version, error) {
 	s := h.store
 
-	query := "(SELECT id::text, seq, FALSE AS deleted," +
-		" jsonb_build_object(" +
+	data := "jsonb_build_object(" +
 		"'id', id, 'user_id', user_id, 'team_id', team_id" +
-		") AS data" +
+		") AS data"
+	query := "(SELECT id::text, seq, hlc, FALSE AS deleted, " + data +
 		" FROM " + s.identShares +
-		" WHERE (user_id = $1::uuid OR team_id = ANY($2::uuid[]))" +
+		" WHERE user_id = $1::uuid AND seq > $3 AND seq < $4" +
+		" UNION ALL" +
+		" SELECT id::text, seq, hlc, FALSE, " + data +
+		" FROM " + s.identShares +
+		" WHERE team_id = ANY($2::uuid[]) AND user_id <> $1::uuid" +
 		" AND seq > $3 AND seq < $4" +
 		" UNION ALL" +
-		" SELECT id::text, seq, TRUE AS deleted, NULL::jsonb AS data" +
+		" SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
 		" FROM " + s.identTombstones +
-		" WHERE type = $5::text" +
-		" AND (user_id = $1::uuid OR team_id = ANY($2::uuid[]))" +
+		" WHERE type = $5::text AND user_id = $1::uuid" +
 		" AND seq > $3 AND seq < $4" +
+		" UNION ALL" +
+		" SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
+		" FROM " + s.identTombstones +
+		" WHERE type = $5::text AND team_id = ANY($2::uuid[])" +
+		" AND user_id <> $1::uuid AND seq > $3 AND seq < $4" +
 		") ORDER BY seq LIMIT $6"
 
 	rows, err := tx.QueryContext(ctx, query,
@@ -825,7 +913,7 @@ func (h *shares) Fetch(
 		scope.Teams,
 		w.Since,
 		w.Until,
-		diff.TypeShare,
+		diff.ModelShare,
 		w.Limit,
 	)
 	if err != nil {
@@ -846,27 +934,111 @@ func (h *shares) Resolve(
 	return resolve(ctx, tx, query, ids, s.logger)
 }
 
-// collect scans feed rows of the shape (id, seq, deleted, data) into
+// move is one departed-audience tombstone entry: the identity a document
+// carried before it moved (or, for superseded grants, before it was
+// replaced), together with the timestamp of the displacing write.
+type move struct {
+	id   string
+	user string
+	team string // empty for personal documents
+	hlc  int64
+}
+
+// entomb records move tombstones for the given model: each entry buries the
+// document's previous identity under the displacing timestamp and a fresh
+// sequence value, so the departed audience receives a deletion. Members of
+// the new audience that see the corresponding update in the same page keep
+// the document (equal-time updates beat deletions in the client contract).
+func (s *Store) entomb(
+	ctx context.Context,
+	tx *sql.Tx,
+	model string,
+	moves []move,
+) error {
+	if len(moves) == 0 {
+		return nil
+	}
+
+	n := len(moves)
+	ids := make([]string, n)
+	users := make([]string, n)
+	teams := make([]string, n)
+	hlcs := make([]int64, n)
+	for i, m := range moves {
+		ids[i] = m.id
+		users[i] = m.user
+		teams[i] = m.team
+		hlcs[i] = m.hlc
+	}
+
+	query := "INSERT INTO " + s.identTombstones + " AS ts" +
+		" (type, id, user_id, team_id, hlc, seq)" +
+		" SELECT $1::text, m.id, m.user_id, nullif(m.team_id, '')::uuid," +
+		" m.hlc, " + s.nextval +
+		" FROM unnest($2::uuid[], $3::uuid[], $4::text[], $5::bigint[])" +
+		" AS m(id, user_id, team_id, hlc)" +
+		" ON CONFLICT (type, id) DO UPDATE SET" +
+		" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
+		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
+		" WHERE EXCLUDED.hlc > ts.hlc"
+
+	if _, err := tx.ExecContext(ctx, query,
+		model, ids, users, teams, hlcs,
+	); err != nil {
+		return fmt.Errorf("failed to record move tombstones: %w", err)
+	}
+	return nil
+}
+
+// stamp is one written row as reported by a RETURNING clause: its
+// post-write identity and timestamp.
+type stamp struct {
+	id   string
+	user string
+	team sql.NullString
+	hlc  int64
+}
+
+// scanStamps consumes rows of the shape (id, user_id, team_id, hlc).
+func scanStamps(rows *sql.Rows, logger *slog.Logger) ([]stamp, error) {
+	defer close(rows, logger)
+
+	var out []stamp
+	for rows.Next() {
+		var st stamp
+		if err := rows.Scan(&st.id, &st.user, &st.team, &st.hlc); err != nil {
+			return nil, fmt.Errorf("failed to scan written document: %w", err)
+		}
+		out = append(out, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read written documents: %w", err)
+	}
+	return out, nil
+}
+
+// collect scans feed rows of the shape (id, seq, hlc, deleted, data) into
 // versions, preserving row order.
 func collect(rows *sql.Rows, logger *slog.Logger) ([]diff.Version, error) {
-	defer closeRows(rows, logger)
+	defer close(rows, logger)
 
 	var out []diff.Version
 	for rows.Next() {
 		var (
 			raw     string
 			seq     int64
+			ts      int64
 			deleted bool
 			data    []byte
 		)
-		if err := rows.Scan(&raw, &seq, &deleted, &data); err != nil {
+		if err := rows.Scan(&raw, &seq, &ts, &deleted, &data); err != nil {
 			return nil, fmt.Errorf("failed to scan feed row: %w", err)
 		}
 		id, err := uuid.Parse(raw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse document id: %w", err)
 		}
-		v := diff.Version{ID: id, Seq: seq, Deleted: deleted}
+		v := diff.Version{ID: id, Seq: seq, Time: hlc.Time(ts), Deleted: deleted}
 		if !deleted {
 			v.Data = jsontext.Value(data)
 		}
@@ -896,7 +1068,7 @@ func resolve(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve documents: %w", err)
 	}
-	defer closeRows(rows, logger)
+	defer close(rows, logger)
 
 	for rows.Next() {
 		var rawID, user string
@@ -921,9 +1093,9 @@ func resolve(
 	return out, nil
 }
 
-// closeRows closes a result set, logging failures instead of shadowing the
+// close closes a result set, logging failures instead of shadowing the
 // caller's error.
-func closeRows(rows *sql.Rows, logger *slog.Logger) {
+func close(rows *sql.Rows, logger *slog.Logger) {
 	if err := rows.Close(); err != nil {
 		logger.Error("Failed to close rows", slog.Any("error", err))
 	}
@@ -937,22 +1109,6 @@ func toStrings(ids []uuid.UUID) []string {
 		out[i] = id.String()
 	}
 	return out
-}
-
-// ident assembles a fully qualified, safely quoted PostgreSQL identifier.
-func ident(schema, table string) string {
-	// Example output: "public"."diff_state"
-	return fmt.Sprintf("%s.%s", escape(schema), escape(table))
-}
-
-// escape safely wraps PostgreSQL identifiers in double quotes.
-func escape(s string) string {
-	return quote.Double(strings.ReplaceAll(s, `"`, `""`))
-}
-
-// literal safely wraps a string in single quotes for use as a SQL literal.
-func literal(s string) string {
-	return quote.Single(strings.ReplaceAll(s, "'", "''"))
 }
 
 var (
