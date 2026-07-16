@@ -16,6 +16,7 @@ linters:
     - errcheck
     - errname
     - errorlint
+    - copyloopvar
     - gocritic
     - goheader
     - gosec
