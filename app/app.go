@@ -16,7 +16,7 @@
 // ensuring graceful shutdown on OS signals.
 //
 // The [Run] and [RunAll] functions are the main entry points. They wrap your
-// application components ([Runnable]), executing them and managing their
+// application components ([Component]), executing them and managing their
 // lifecycle. It listens for interrupt signals (like SIGINT/SIGTERM) or
 // component completions and propagates a cancellation signal via a
 // [context.Context]. This allows your application to perform cleanup tasks
@@ -68,7 +68,7 @@
 //
 //	  // 3. Run the application components concurrently.
 //	  err := app.RunAll(
-//	    []app.Runnable{worker, server},
+//	    []app.Component{worker, server},
 //	    app.WithLogger(logger),
 //	  )
 //	  if err != nil {
@@ -100,12 +100,12 @@ const DefaultTimeout = 10 * time.Second
 // when a component exits without error.
 var errCleanExit = errors.New("component exited cleanly")
 
-// Runnable defines a function that can be executed by the application runner.
+// Component defines a function that can be executed by the application runner.
 // It receives a [context.Context] that is canceled when a shutdown signal is
-// received, or if another concurrently running [Runnable] completes or returns
+// received, or if another concurrently running [Component] completes or returns
 // an error. The function should perform its cleanup and return when the
 // context is done.
-type Runnable func(ctx context.Context) error
+type Component func(ctx context.Context) error
 
 // config holds the internal settings for the application runner, including
 // logging, timeouts, signal handling, and parent context.
@@ -164,27 +164,27 @@ func WithContext(ctx context.Context) Option {
 	}
 }
 
-// Run provides a managed execution environment for a single [Runnable].
-// It launches the [Runnable] in a separate goroutine and blocks until it
+// Run provides a managed execution environment for a single [Component].
+// It launches the [Component] in a separate goroutine and blocks until it
 // completes, an OS interrupt signal is caught, or the parent context is
 // canceled. For running multiple components concurrently, see [RunAll].
-func Run(runnable Runnable, opts ...Option) error {
-	return RunAll([]Runnable{runnable}, opts...)
+func Run(component Component, opts ...Option) error {
+	return RunAll([]Component{component}, opts...)
 }
 
-// RunAll provides a managed execution environment for multiple [Runnable]
-// functions. It launches each runnable in a separate goroutine and blocks
+// RunAll provides a managed execution environment for multiple [Component]
+// functions. It launches each component in a separate goroutine and blocks
 // until an OS interrupt signal is caught, the parent context (if specified via
-// [WithContext]) is canceled, or any single runnable completes or returns an
+// [WithContext]) is canceled, or any single component completes or returns an
 // error.
 //
-// Upon receiving a signal or when any runnable completes or encounters an
-// error, it cancels the context passed to all runnables and waits for the
-// specified shutdown timeout. The runnables are expected to honor the context
+// Upon receiving a signal or when any component completes or encounters an
+// error, it cancels the context passed to all components and waits for the
+// specified shutdown timeout. The components are expected to honor the context
 // cancellation and perform any necessary cleanup before returning. This
-// function returns any error from the runnables themselves, or an error if the
+// function returns any error from the components themselves, or an error if the
 // shutdown process times out.
-func RunAll(runnables []Runnable, opts ...Option) error {
+func RunAll(components []Component, opts ...Option) error {
 	cfg := config{
 		logger:  slog.Default(),
 		timeout: DefaultTimeout,
@@ -199,17 +199,17 @@ func RunAll(runnables []Runnable, opts ...Option) error {
 	ctx, cancel := signal.NotifyContext(cfg.ctx, cfg.signals...)
 	defer cancel()
 
-	// Use errgroup to manage concurrent runnables. The group context will be
+	// Use errgroup to manage concurrent components. The group context will be
 	// canceled if the base context is canceled, or if any goroutine returns an
 	// error.
 	g, gCtx := errgroup.WithContext(ctx)
 
 	cfg.logger.Info(
 		"Application started",
-		slog.Int("components", len(runnables)),
+		slog.Int("components", len(components)),
 	)
 
-	for _, fn := range runnables {
+	for _, fn := range components {
 		g.Go(func() (err error) {
 			defer func() {
 				if r := recover(); r != nil {

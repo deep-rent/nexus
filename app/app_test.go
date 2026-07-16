@@ -258,7 +258,7 @@ func TestRunAll_Success(t *testing.T) {
 	r1 := func(ctx context.Context) error { return nil }
 	r2 := func(ctx context.Context) error { return nil }
 
-	if err := app.RunAll([]app.Runnable{r1, r2}); err != nil {
+	if err := app.RunAll([]app.Component{r1, r2}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 }
@@ -282,7 +282,7 @@ func TestRunAll_CascadingError(t *testing.T) {
 		return nil
 	}
 
-	err := app.RunAll([]app.Runnable{r1, r2})
+	err := app.RunAll([]app.Component{r1, r2})
 
 	if err == nil {
 		t.Fatal("should have returned an error")
@@ -315,7 +315,7 @@ func TestRunAll_CascadingPanic(t *testing.T) {
 		return nil
 	}
 
-	err := app.RunAll([]app.Runnable{r1, r2})
+	err := app.RunAll([]app.Component{r1, r2})
 
 	if err == nil {
 		t.Fatal("should have returned an error")
@@ -353,7 +353,7 @@ func TestRunAll_SignalShutdownAll(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- app.RunAll([]app.Runnable{r1, r2}, app.WithSignals(sig))
+		errCh <- app.RunAll([]app.Component{r1, r2}, app.WithSignals(sig))
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -377,11 +377,11 @@ func TestRunAll_SignalShutdownAll(t *testing.T) {
 	}
 
 	if !canceled1 {
-		t.Errorf("first runnable canceled: got %t; want true", canceled1)
+		t.Errorf("first component canceled: got %t; want true", canceled1)
 	}
 
 	if !canceled2 {
-		t.Errorf("second runnable canceled: got %t; want true", canceled2)
+		t.Errorf("second component canceled: got %t; want true", canceled2)
 	}
 }
 
@@ -403,7 +403,7 @@ func TestRunAll_ShutdownTimeoutOnCascadingError(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- app.RunAll([]app.Runnable{r1, r2}, app.WithTimeout(timeout))
+		errCh <- app.RunAll([]app.Component{r1, r2}, app.WithTimeout(timeout))
 	}()
 
 	select {
