@@ -39,6 +39,27 @@ func TestPackUnpack(t *testing.T) {
 	}
 }
 
+func TestPackUnpack_Bounds(t *testing.T) {
+	t.Parallel()
+
+	expP := uint64(1<<33 - 1)
+	expL := uint64(1<<20 - 1)
+
+	packed := hlc.Pack(expP, expL)
+
+	if packed != hlc.Max {
+		t.Errorf("packed maximum: got %d; want %d", packed, uint64(hlc.Max))
+	}
+
+	actP, actL := hlc.Unpack(packed)
+	if actP != expP {
+		t.Errorf("physical: got %d; want %d", actP, expP)
+	}
+	if actL != expL {
+		t.Errorf("logical: got %d; want %d", actL, expL)
+	}
+}
+
 func TestClock_Now(t *testing.T) {
 	t.Parallel()
 
@@ -51,6 +72,9 @@ func TestClock_Now(t *testing.T) {
 		t.Errorf("timestamps should be strictly monotonic; got t1=%d, t2=%d",
 			t1, t2)
 	}
+	if t2 > hlc.Max {
+		t.Errorf("got timestamp %d; want at most %d", t2, uint64(hlc.Max))
+	}
 }
 
 func TestClock_Update(t *testing.T) {
@@ -61,7 +85,7 @@ func TestClock_Update(t *testing.T) {
 	t1 := clock.Now()
 
 	p1, _ := hlc.Unpack(t1)
-	remoteOld := hlc.Pack(p1-1000, 5)
+	remoteOld := hlc.Pack(p1-100, 5)
 
 	t2, err := clock.Update(remoteOld)
 	if err != nil {
@@ -72,7 +96,7 @@ func TestClock_Update(t *testing.T) {
 			t2, t1)
 	}
 
-	remoteNew := hlc.Pack(p1+500, 0)
+	remoteNew := hlc.Pack(p1+30, 0)
 	t3, err := clock.Update(remoteNew)
 	if err != nil {
 		t.Fatalf("for new remote: should not have returned an error: %v", err)
@@ -89,10 +113,21 @@ func TestClock_Update_Drift(t *testing.T) {
 
 	clock := hlc.New(nil)
 
-	pt := uint64(time.Now().UnixMilli())
-	future := hlc.Pack(pt+(2*60*60*1000), 0)
+	pt := uint64(time.Now().Unix())
+	future := hlc.Pack(pt+(2*60*60), 0)
 
 	_, err := clock.Update(future)
+	if !errors.Is(err, hlc.ErrClockDriftTooLarge) {
+		t.Errorf("got error %v; want ErrClockDriftTooLarge", err)
+	}
+}
+
+func TestClock_Update_Oversized(t *testing.T) {
+	t.Parallel()
+
+	clock := hlc.New(nil)
+
+	_, err := clock.Update(hlc.Time(uint64(hlc.Max) + 1))
 	if !errors.Is(err, hlc.ErrClockDriftTooLarge) {
 		t.Errorf("got error %v; want ErrClockDriftTooLarge", err)
 	}
@@ -103,10 +138,10 @@ func TestClock_Update_Overflow(t *testing.T) {
 
 	clock := hlc.New(nil)
 
-	pt := uint64(time.Now().UnixMilli())
+	pt := uint64(time.Now().Unix())
 
-	futureP := pt + 1000
-	futureL := uint64((1 << 16) - 1)
+	futureP := pt + 30
+	futureL := uint64((1 << 20) - 1)
 	remote := hlc.Pack(futureP, futureL)
 
 	_, err := clock.Update(remote)

@@ -15,8 +15,14 @@
 // Package hlc provides a Hybrid Logical Clock (HLC) implementation.
 //
 // HLCs are used to generate causally ordered timestamps for distributed
-// systems. They combine a physical wall-clock timestamp (in milliseconds)
+// systems. They combine a physical wall-clock timestamp (in Unix seconds)
 // with a logical counter, fitting both into a single uint64.
+//
+// A timestamp packs 33 bits of physical seconds (sufficient until the year
+// 2242) and 20 bits of logical counter (about one million increments per
+// second) into 53 bits total. Every timestamp therefore fits losslessly
+// into an IEEE 754 double, a signed 64-bit integer, and a JSON number as
+// consumed by JavaScript clients.
 //
 // # Usage
 //
@@ -42,12 +48,16 @@ import (
 )
 
 const (
-	bits = 16
+	bits = 20
 	mask = (1 << bits) - 1
 
-	// maxOffset is the maximum physical clock drift allowed from remote peers
-	// (e.g., 1 minute). Timestamps further in the future are rejected.
-	maxOffset = 60000
+	// Max is the highest representable timestamp. It equals 2^53 - 1, the
+	// largest integer that survives a round-trip through an IEEE 754 double.
+	Max = (1 << 53) - 1
+
+	// maxOffset is the maximum physical clock drift (in seconds) allowed from
+	// remote peers. Timestamps further in the future are rejected.
+	maxOffset = 60
 )
 
 // ErrClockDriftTooLarge is returned when updating the clock with a remote
@@ -57,19 +67,22 @@ var ErrClockDriftTooLarge = errors.New(
 )
 
 // ErrLogicalOverflow is returned when the logical counter space for a single
-// millisecond is exhausted while applying a remote timestamp.
+// second is exhausted while applying a remote timestamp.
 var ErrLogicalOverflow = errors.New("logical counter overflow")
 
 // Time represents a causally ordered timestamp.
-// It combines physical milliseconds and logical counter into a single value.
+// It combines physical Unix seconds and logical counter into a single value
+// no greater than [Max].
 type Time uint64
 
-// Pack combines physical milliseconds and logical counter into a single Time.
+// Pack combines physical Unix seconds and logical counter into a single Time.
+// The physical component must fit into 33 bits; the logical counter is masked
+// to 20 bits.
 func Pack(physical, logical uint64) Time {
 	return Time((physical << bits) | (logical & mask))
 }
 
-// Unpack splits a packed Time into physical milliseconds and logical counter.
+// Unpack splits a packed Time into physical Unix seconds and logical counter.
 func Unpack(packed Time) (physical, logical uint64) {
 	return uint64(packed) >> bits, uint64(packed) & mask
 }
@@ -78,7 +91,7 @@ func Unpack(packed Time) (physical, logical uint64) {
 type Clock struct {
 	mu  sync.Mutex
 	now func() time.Time
-	l   uint64 // Highest physical millisecond observed
+	l   uint64 // Highest physical second observed
 	c   uint64 // Logical counter
 }
 
@@ -91,7 +104,7 @@ func New(now func() time.Time) *Clock {
 	}
 	return &Clock{
 		now: now,
-		l:   uint64(now().UnixMilli()),
+		l:   uint64(now().Unix()),
 	}
 }
 
@@ -99,7 +112,7 @@ func New(now func() time.Time) *Clock {
 func (c *Clock) Now() Time {
 	for {
 		c.mu.Lock()
-		pt := uint64(c.now().UnixMilli())
+		pt := uint64(c.now().Unix())
 
 		// If wall clock is ahead, catch up and reset counter.
 		if pt > c.l {
@@ -118,13 +131,13 @@ func (c *Clock) Now() Time {
 			return res
 		}
 
-		// Overflow prevention: release lock and wait until physical clock.
-		// advances.
+		// Overflow prevention: release lock and wait until physical clock
+		// advances to the next second.
 		target := c.l
 		c.mu.Unlock()
 
-		for uint64(c.now().UnixMilli()) <= target {
-			time.Sleep(time.Millisecond)
+		for uint64(c.now().Unix()) <= target {
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
@@ -132,8 +145,14 @@ func (c *Clock) Now() Time {
 // Update ticks the clock forward based on an incoming remote timestamp.
 // It guarantees that the next generated local timestamp is greater than remote.
 func (c *Clock) Update(remote Time) (Time, error) {
+	// Reject values outside the 53-bit space so malformed input can never
+	// enter causal comparisons.
+	if remote > Max {
+		return 0, ErrClockDriftTooLarge
+	}
+
 	rl, rc := Unpack(remote)
-	pt := uint64(c.now().UnixMilli())
+	pt := uint64(c.now().Unix())
 
 	// Prevent malicious/misconfigured clients from dragging the clock too far
 	// forward.
