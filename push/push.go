@@ -36,8 +36,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -173,15 +174,15 @@ type Sender interface {
 
 // BatchSend concurrently dispatches multiple messages using the provided
 // [Sender]. It limits concurrency to the given workers limit to prevent
-// exhausting system resources. The returned slice of errors corresponds
-// exactly to the input messages slice index, containing nil for successful
-// deliveries and the respective error for failures.
+// exhausting system resources. It uses an errgroup with context cancellation
+// to abort early if a dispatch fails, and returns a joined error of all
+// failures.
 func BatchSend(
 	ctx context.Context,
 	sender Sender,
 	msgs []*Message,
 	workers int,
-) []error {
+) error {
 	n := len(msgs)
 	if n == 0 {
 		return nil
@@ -189,26 +190,22 @@ func BatchSend(
 	workers = max(1, min(workers, n))
 
 	errs := make([]error, n)
-	var wg sync.WaitGroup
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(workers)
 
-	jobs := make(chan int, n)
-	for i := range msgs {
-		jobs <- i
-	}
-	close(jobs)
-
-	for w := 0; w < workers; w++ {
-		wg.Go(func() {
-			for i := range jobs {
-				if err := ctx.Err(); err != nil {
-					errs[i] = err
-					continue
-				}
-				errs[i] = sender.Send(ctx, msgs[i])
+	for i, msg := range msgs {
+		i, msg := i, msg
+		eg.Go(func() error {
+			if err := egCtx.Err(); err != nil {
+				errs[i] = err
+				return err
 			}
+			err := sender.Send(egCtx, msg)
+			errs[i] = err
+			return err
 		})
 	}
 
-	wg.Wait()
-	return errs
+	_ = eg.Wait()
+	return errors.Join(errs...)
 }

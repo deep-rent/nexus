@@ -82,14 +82,9 @@ func TestBatchSend_Success(t *testing.T) {
 		push.NewMessage("2", "2", push.Target{Token: "2"}),
 		push.NewMessage("3", "3", push.Target{Token: "3"}),
 	}
-	errs := push.BatchSend(t.Context(), sender, msgs, 2)
-	if len(errs) != 3 {
-		t.Fatalf("expected 3 errors, got %d", len(errs))
-	}
-	for i, err := range errs {
-		if err != nil {
-			t.Errorf("expected nil error at index %d, got %v", i, err)
-		}
+	err := push.BatchSend(t.Context(), sender, msgs, 2)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
@@ -101,18 +96,12 @@ func TestBatchSend_Errors(t *testing.T) {
 		push.NewMessage("fail", "2", push.Target{Token: "2"}),
 		push.NewMessage("3", "3", push.Target{Token: "3"}),
 	}
-	errs := push.BatchSend(t.Context(), sender, msgs, 0)
-	if len(errs) != 3 {
-		t.Fatalf("expected 3 errors, got %d", len(errs))
+	err := push.BatchSend(t.Context(), sender, msgs, 0)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if errs[0] != nil {
-		t.Errorf("expected nil at index 0")
-	}
-	if errs[1] == nil || errs[1].Error() != "mock error" {
-		t.Errorf("expected mock error at index 1, got %v", errs[1])
-	}
-	if errs[2] != nil {
-		t.Errorf("expected nil at index 2")
+	if err.Error() != "mock error" {
+		t.Errorf("expected joined error with 'mock error', got %v", err)
 	}
 }
 
@@ -128,14 +117,11 @@ func TestBatchSend_Cancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // Cancel immediately
 
-	errs := push.BatchSend(ctx, sender, msgs, 1)
-	if len(errs) != 2 {
-		t.Fatalf("expected 2 errors, got %d", len(errs))
+	err := push.BatchSend(ctx, sender, msgs, 1)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if !errors.Is(errs[0], context.Canceled) {
-		t.Errorf("expected context canceled at index 0, got %v", errs[0])
-	}
-	if !errors.Is(errs[1], context.Canceled) {
-		t.Errorf("expected context canceled at index 1, got %v", errs[1])
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context canceled, got %v", err)
 	}
 }
