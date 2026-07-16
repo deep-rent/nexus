@@ -177,12 +177,18 @@ func TestBackoffNew(t *testing.T) {
 
 			if got, want := s.MinDelay(),
 				tt.wantMin; math.Abs(float64(got-want)) > float64(unit) {
-				t.Errorf("min delay: got %v; want %v (delta %v)", got, want, unit)
+				t.Errorf(
+					"min delay: got %v; want %v (delta %v)",
+					got, want, unit,
+				)
 			}
 
 			if got, want := s.MaxDelay(),
 				tt.wantMax; math.Abs(float64(got-want)) > float64(unit) {
-				t.Errorf("max delay: got %v; want %v (delta %v)", got, want, unit)
+				t.Errorf(
+					"max delay: got %v; want %v (delta %v)",
+					got, want, unit,
+				)
 			}
 
 			if tt.seq != nil {
