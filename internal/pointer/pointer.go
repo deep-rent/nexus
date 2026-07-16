@@ -54,6 +54,9 @@ func Alloc(rv reflect.Value) {
 // nil pointer (e.g., one within an unexported struct field), it stops and
 // returns that pointer to prevent a panic. The final, non-pointer value is
 // returned as a [reflect.Value].
+//
+// Note: This function handles multi-level pointers, unlike [reflect.Indirect]
+// that only strips away exactly one level.
 func Deref(rv reflect.Value) reflect.Value {
 	// Loop through multi-level pointers to handle cases like **int.
 	for rv.Kind() == reflect.Pointer {
@@ -68,4 +71,14 @@ func Deref(rv reflect.Value) reflect.Value {
 		rv = rv.Elem()
 	}
 	return rv
+}
+
+// Value returns the value pointed to by v, or the zero value of T if v is nil.
+func Value[T any](v *T) T {
+	if v != nil {
+		return *v
+	}
+
+	var zero T
+	return zero
 }
