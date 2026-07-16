@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -169,10 +170,8 @@ func New(keyID, teamID string, privateKeyPEM []byte, opts ...Option) push.Sender
 		claims := struct {
 			jwt.Reserved
 		}{
-			Reserved: jwt.Reserved{
-				Iss: teamID,
-				Iat: cfg.clock(),
-			},
+			Iss: teamID,
+			Iat: cfg.clock(),
 		}
 		tok, err := jwt.Sign(ctx, keyPair, claims)
 		if err != nil {
@@ -238,9 +237,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	}
 
 	payload := make(map[string]any)
-	for k, v := range msg.Data {
-		payload[k] = v
-	}
+	maps.Copy(payload, msg.Data)
 	payload["aps"] = map[string]any{
 		"alert": map[string]any{
 			"title": msg.Title,
