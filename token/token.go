@@ -15,6 +15,25 @@
 // Package token provides a reusable, thread-safe, lazy-loading token cache.
 // It is designed to cache authentication tokens (like OAuth Access Tokens or
 // signed JWTs) and proactively refresh them just before they expire.
+//
+// # Usage
+//
+// Create a token [Source] by providing a [Fetcher] function that performs the
+// underlying token generation or network fetch, returning the token string and
+// its exact expiration time. A buffer duration can be specified to preemptively
+// refresh the token before it expires.
+//
+//	fetch := func(ctx context.Context) (string, time.Time, error) {
+//		// Generate or fetch the token...
+//		return "token_string", time.Now().Add(1 * time.Hour), nil
+//	}
+//
+//	// Create a source that refreshes tokens 5 minutes before expiration.
+//	source := token.NewSource(fetch, 5*time.Minute)
+//
+//	// Retrieve the token. The fetcher is called only if the cached token is
+//	// missing or expired (within the buffer window).
+//	tok, err := source.Get(ctx)
 package token
 
 import (
