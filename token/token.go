@@ -42,6 +42,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // DefaultBufferTime is the default duration to preemptively refresh tokens.
@@ -83,9 +85,11 @@ type Source struct {
 	buf   time.Duration
 	clock func() time.Time
 
-	mu  sync.Mutex
+	mu  sync.RWMutex
 	tok string
 	exp time.Time
+
+	group singleflight.Group
 }
 
 // NewSource creates a new token cache. The provided buffer duration is
@@ -110,21 +114,36 @@ func NewSource(fetch Fetcher, opts ...Option) *Source {
 // Get returns the current valid token, or fetches a new one if it is missing or
 // within the expiration buffer window.
 func (s *Source) Get(ctx context.Context) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	s.mu.RLock()
 	// Consider the token expired if we are within the buffer window.
 	if s.tok != "" && s.clock().Add(s.buf).Before(s.exp) {
-		return s.tok, nil
+		tok := s.tok
+		s.mu.RUnlock()
+		return tok, nil
 	}
+	s.mu.RUnlock()
 
-	tok, exp, err := s.fetch(ctx)
-	if err != nil {
-		return "", err
+	ch := s.group.DoChan("fetch", func() (interface{}, error) {
+		tok, exp, err := s.fetch(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.mu.Lock()
+		s.tok = tok
+		s.exp = exp
+		s.mu.Unlock()
+
+		return tok, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return "", res.Err
+		}
+		return res.Val.(string), nil
 	}
-
-	s.tok = tok
-	s.exp = exp
-
-	return s.tok, nil
 }
