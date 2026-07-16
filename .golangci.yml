@@ -21,6 +21,7 @@ linters:
     - gosec
     - govet
     - ineffassign
+    - unused
     - makezero
     - misspell
     - nilerr
