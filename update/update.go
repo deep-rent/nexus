@@ -49,8 +49,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/transport"
 	"golang.org/x/mod/semver"
+
+	"github.com/deep-rent/nexus/internal/transport"
 )
 
 // Default configuration values for the [Updater].
