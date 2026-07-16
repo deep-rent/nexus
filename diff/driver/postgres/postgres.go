@@ -563,6 +563,88 @@ func (s *Store) Mutate(
 	})
 }
 
+// OffboardTeam buries every share that grants the given team access to
+// owners' personal documents. Each grant is removed and tombstoned so the
+// team's members receive a share deletion on their next sync and their
+// clients purge the shared documents (see the client contract). It returns
+// the number of grants buried.
+//
+// Call it before deleting a team row: document_shares references teams with
+// ON DELETE RESTRICT precisely so a team cannot be dropped while grants —
+// and the deletions its members are owed — still reference it. Stamp the
+// tombstones with a fresh timestamp from the engine clock ([Engine.Now]).
+//
+// Team removal is therefore a lifecycle, not an instant: after offboarding,
+// the grant tombstones themselves reference the team (so its members can
+// still fetch the deletions), and the RESTRICT on document_tombstones keeps
+// the team row alive until those tombstones age out and are pruned with
+// [Store.PruneTombstones]. Only then is the team row deletable.
+//
+// It does not touch documents assigned directly to the team (team_id equal
+// to teamID); reassigning or deleting those is an application decision,
+// carried out through the normal sync handlers before the team is removed.
+func (s *Store) OffboardTeam(
+	ctx context.Context,
+	teamID string,
+	at hlc.Time,
+) (int64, error) {
+	var buried int64
+	err := s.Exec(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		// Every owner that granted this team access appears in a tombstone
+		// and has their grant visibility reset, so the lock set is the team
+		// key (whose members read the tombstones under a shared lock) plus
+		// each granting owner.
+		rows, err := tx.QueryContext(ctx,
+			"SELECT user_id::text FROM "+s.identShares+
+				" WHERE team_id = $1::uuid", teamID)
+		if err != nil {
+			return fmt.Errorf("failed to list team grants: %w", err)
+		}
+		var owners []string
+		for rows.Next() {
+			var owner string
+			if err := rows.Scan(&owner); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("failed to scan grant owner: %w", err)
+			}
+			owners = append(owners, owner)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("failed to list team grants: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("failed to close grant rows: %w", err)
+		}
+
+		if err := s.Lock(ctx, tx, nil, append(owners, teamID)); err != nil {
+			return err
+		}
+
+		query := "WITH removed AS (" +
+			" DELETE FROM " + s.identShares + " WHERE team_id = $1::uuid" +
+			" RETURNING id, user_id, team_id" +
+			") INSERT INTO " + s.identTombstones + " AS ts" +
+			" (type, id, user_id, team_id, hlc, seq)" +
+			" SELECT $2::text, id, user_id, team_id, $3, " + s.nextval +
+			" FROM removed" +
+			" ON CONFLICT (type, id) DO UPDATE SET" +
+			" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
+			" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
+			" WHERE EXCLUDED.hlc > ts.hlc"
+		res, err := tx.ExecContext(ctx, query,
+			teamID, diff.ModelShare, int64(at))
+		if err != nil {
+			return fmt.Errorf("failed to bury team grants: %w", err)
+		}
+		buried, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to count buried grants: %w", err)
+		}
+		return nil
+	})
+	return buried, err
+}
+
 // PruneMutations deletes mutation records older than the given age and
 // returns the number of rows removed. Run it periodically; the retention
 // period bounds the window during which replayed mutations deduplicate.

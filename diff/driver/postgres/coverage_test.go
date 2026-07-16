@@ -22,6 +22,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/deep-rent/nexus/diff"
 	"github.com/deep-rent/nexus/diff/driver/postgres"
 )
 
@@ -186,5 +187,95 @@ func TestStore_Mutate_GrantFence(t *testing.T) {
 	}
 	if err := <-blocked; err != nil {
 		t.Errorf("blocked locker: should not have returned an error: %v", err)
+	}
+}
+
+// TestStore_OffboardTeam proves the offboarding flow: burying a team's
+// grants delivers a share tombstone to the team's members and frees the
+// shares table of references to the team, so the team row can then be
+// deleted despite the ON DELETE RESTRICT constraint.
+func TestStore_OffboardTeam(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+	shares := s.Shares()
+
+	owner := newUser(t, db)
+	member := newUser(t, db)
+	team := newTeam(t, db)
+	ownerScope := scopeOf(owner)
+	memberScope := scopeOf(member, team)
+
+	// Owner has a personal document and grants the team access to it.
+	doc := uuid.NewV7()
+	applyUpserts(t, s, assets, ownerScope,
+		upsertOp(doc, owner, nil, 10, assetDoc(doc, 1)))
+	grant := uuid.NewV7()
+	applyUpserts(t, s, shares, ownerScope,
+		upsertOp(grant, owner, &team, 20, "{}"))
+
+	// The team member can see the shared document.
+	if got := fetchAll(t, s, assets, memberScope); len(got) != 1 {
+		t.Fatalf("before offboarding: got %d visible; want 1", len(got))
+	}
+
+	// Deleting the team while the grant exists is refused by the FK.
+	if _, err := db.Exec(
+		"DELETE FROM teams WHERE id = $1::uuid", team,
+	); err == nil {
+		t.Fatal("deleting a granted team should be refused by the FK")
+	}
+
+	// Offboard: bury the team's grants.
+	buried, err := s.OffboardTeam(context.Background(), team, 30)
+	if err != nil {
+		t.Fatalf("offboard: should not have returned an error: %v", err)
+	}
+	if buried != 1 {
+		t.Errorf("buried: got %d; want 1", buried)
+	}
+
+	// The member receives the share tombstone on their next sync.
+	feed := fetchAll(t, s, s.Shares(),
+		diff.Scope{UserID: member, Teams: []string{team}})
+	var tomb bool
+	for _, v := range feed {
+		if v.ID == grant && v.Deleted {
+			tomb = true
+		}
+	}
+	if !tomb {
+		t.Error("member should have received the share tombstone")
+	}
+
+	// The owner's personal document is no longer visible to the team.
+	if got := fetchAll(t, s, assets, memberScope); len(got) != 0 {
+		t.Errorf("after offboarding: got %d visible; want 0", len(got))
+	}
+
+	// The shares table no longer references the team.
+	var live int
+	if err := db.QueryRow(
+		"SELECT count(*) FROM document_shares WHERE team_id = $1::uuid", team,
+	).Scan(&live); err != nil {
+		t.Fatalf("count shares: should not have returned an error: %v", err)
+	}
+	if live != 0 {
+		t.Errorf("got %d live grants for the team; want 0", live)
+	}
+
+	// The team row still cannot be deleted: the grant tombstone the members
+	// are owed references it. Once those tombstones are pruned, the team
+	// becomes deletable — the two-phase offboarding lifecycle.
+	if _, err := db.Exec(
+		"DELETE FROM teams WHERE id = $1::uuid", team,
+	); err == nil {
+		t.Fatal("team deletion should await tombstone retention")
+	}
+	if _, err := s.PruneTombstones(context.Background(), 0); err != nil {
+		t.Fatalf("prune: should not have returned an error: %v", err)
+	}
+	if _, err := db.Exec(
+		"DELETE FROM teams WHERE id = $1::uuid", team,
+	); err != nil {
+		t.Errorf("deleting the reaped team: unexpected error: %v", err)
 	}
 }

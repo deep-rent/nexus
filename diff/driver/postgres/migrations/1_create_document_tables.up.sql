@@ -32,8 +32,12 @@
 --   * team_id on tombstones is RESTRICT for the same reason: tombstones are
 --     historical facts that team members still need to sync, and SET NULL
 --     would silently reclassify them as personal deletions.
---   * team_id on shares is CASCADE: a share grants a team access, so once
---     the team is gone the grant is meaningless and may vanish with it.
+--   * team_id on shares is RESTRICT: a share grants a team access to an
+--     owner's personal documents, so its members are owed a deletion when
+--     the grant ends. A cascade would drop the grant silently, leaving
+--     those members with phantom visibility until a forced resync. Delete a
+--     team through an explicit offboarding flow (Store.OffboardTeam) that
+--     buries the grants first, so the deletions reach the feed.
 
 -- The global sequence ordering the patch feed.
 CREATE SEQUENCE IF NOT EXISTS "public"."document_seq" CACHE 1;
@@ -85,7 +89,7 @@ CREATE TABLE IF NOT EXISTS "public"."document_shares" (
   user_id UUID NOT NULL
     REFERENCES "public"."users" (id) ON DELETE RESTRICT,
   team_id UUID NOT NULL
-    REFERENCES "public"."teams" (id) ON DELETE CASCADE,
+    REFERENCES "public"."teams" (id) ON DELETE RESTRICT,
   hlc     BIGINT NOT NULL,
   seq     BIGINT NOT NULL,
   UNIQUE (user_id, team_id)
