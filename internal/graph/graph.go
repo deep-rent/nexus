@@ -85,9 +85,9 @@ func (g *Graph[T]) AddEdge(child, parent T) {
 }
 
 // Sort resolves the dependency graph and returns the nodes in canonical
-// topological order: parents strictly precede their children, and nodes not
-// constrained relative to each other appear in their natural order. The
-// result is therefore a pure function of the graph's nodes and edges. It
+// topological order (Kahn sort): parents strictly precede their children, and
+// nodes not constrained relative to each other appear in their natural order.
+// The result is therefore a pure function of the graph's nodes and edges. It
 // returns [ErrCycleDetected] if a cyclic dependency prevents a valid
 // sorting.
 func (g *Graph[T]) Sort() ([]T, error) {
