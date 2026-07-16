@@ -139,7 +139,7 @@ func New(cfg *Config) *Updater {
 		baseURL = DefaultBaseURL
 	}
 	timeout := cfg.Timeout
-	if timeout == 0 {
+	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
 	return &Updater{
