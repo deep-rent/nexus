@@ -218,7 +218,7 @@ func (r *Registry[Tx]) order() []string {
 
 	sorted, err := g.Sort()
 	if err != nil {
-		panic("entity type dependencies contain a cycle")
+		panic(err)
 	}
 
 	r.sorted = sorted
