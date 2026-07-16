@@ -56,14 +56,17 @@ linters:
 formatters:
   enable:
     - gofumpt
-    - goimports
+    - gci
 
   settings:
     gofumpt:
       extra-rules: true
 
-    goimports:
-      local-prefixes: [github.com/deep-rent/nexus]
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/deep-rent/nexus)
 
 issues:
   max-issues-per-linter: 0
