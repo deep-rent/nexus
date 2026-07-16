@@ -92,7 +92,6 @@ func TestRequest_Validate(t *testing.T) {
 			t.Errorf("got error for %v; want field %q", err, "limit")
 		}
 	})
-
 }
 
 func TestRequest_Decode(t *testing.T) {
