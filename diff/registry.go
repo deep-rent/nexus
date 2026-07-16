@@ -26,8 +26,8 @@ import (
 )
 
 // TypeShare is the reserved entity type implementing personal-document
-// grants. Register a store-backed handler for it via [RegisterShares] to
-// enable sharing.
+// grants. Register a store-backed handler for it via
+// [Registry.RegisterShares] to enable sharing.
 const TypeShare = "share"
 
 // typeConfig holds the relationship metadata of one entity type.
@@ -79,7 +79,7 @@ type entry[Tx any] struct {
 }
 
 // Registry maps entity type names to their handlers and relationship
-// metadata. Populate it with [Register] and pass it to [New].
+// metadata. Populate it with [Registry.Register] and pass it to [New].
 type Registry[Tx any] struct {
 	entries map[string]*entry[Tx]
 	sorted  []string // memoized topological order (parents first)
@@ -97,8 +97,7 @@ func NewRegistry[Tx any]() *Registry[Tx] {
 //
 // Register panics if the name is empty, reserved, or already taken
 // (programmer error).
-func Register[Tx any, T any](
-	r *Registry[Tx],
+func (r *Registry[Tx]) Register[T any](
 	name string,
 	h Handler[Tx],
 	opts ...TypeOption,
@@ -115,7 +114,7 @@ func Register[Tx any, T any](
 // RegisterShares enables personal-document grants by binding the reserved
 // [TypeShare] entity type to a store-backed handler (see
 // driver/postgres.Store.Shares).
-func RegisterShares[Tx any](r *Registry[Tx], h Handler[Tx]) {
+func (r *Registry[Tx]) RegisterShares(h Handler[Tx]) {
 	register[Tx, Share](r, TypeShare, h, WithRootMeta())
 }
 
@@ -125,15 +124,15 @@ type Share struct {
 	// ID is the share identifier (UUIDv7).
 	ID uuid.UUID `json:"id"`
 	// UserID is the granting owner; it must equal the authenticated user.
-	UserID uuid.UUID `json:"user_id"`
+	UserID string `json:"user_id"`
 	// TeamID is the team being granted access.
-	TeamID *uuid.UUID `json:"team_id"`
+	TeamID *string `json:"team_id"`
 }
 
 // Validate implements the [valid.Validatable] interface.
 func (s *Share) Validate(v *valid.Validator) {
-	if s.TeamID == nil || *s.TeamID == uuid.Nil() {
-		v.Fail("team_id", "must not be empty")
+	if s.TeamID == nil || !valid.UUID(*s.TeamID) {
+		v.Fail("team_id", "must be a valid UUID")
 	}
 }
 
