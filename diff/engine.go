@@ -33,8 +33,8 @@ import (
 const (
 	// DefaultMaxChanges caps the number of changes accepted per request.
 	DefaultMaxChanges = 500
-	// DefaultMaxLimit caps the requestable patch feed page size.
-	DefaultMaxLimit = 1000
+	// DefaultMaxPatches caps the requestable patch feed page size.
+	DefaultMaxPatches = 1000
 	// DefaultLimit is the feed page size applied when the request omits one.
 	DefaultLimit = 200
 )
@@ -92,8 +92,9 @@ func WithMaxChanges(n int) Option {
 	}
 }
 
-// WithMaxLimit overrides [DefaultMaxLimit]. Non-positive values are ignored.
-func WithMaxLimit(n int) Option {
+// WithMaxPatches overrides [DefaultMaxPatches]. Non-positive values are
+// ignored.
+func WithMaxPatches(n int) Option {
 	return func(c *config) {
 		if n > 0 {
 			c.maxLimit = n
@@ -136,7 +137,7 @@ func New[Tx any](store Store[Tx], reg *Registry[Tx], opts ...Option) *Engine[Tx]
 		logger:     slog.Default(),
 		clock:      hlc.New(nil),
 		maxChanges: DefaultMaxChanges,
-		maxLimit:   DefaultMaxLimit,
+		maxLimit:   DefaultMaxPatches,
 		defLimit:   DefaultLimit,
 	}
 	for _, opt := range opts {
