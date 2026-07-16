@@ -59,18 +59,23 @@ linters:
 
 formatters:
   enable:
-    - gofumpt
     - gci
+    - gofumpt
+    - golines
 
   settings:
-    gofumpt:
-      extra-rules: true
-
     gci:
       sections:
         - standard
         - default
         - prefix(github.com/deep-rent/nexus)
+
+    gofumpt:
+      extra-rules: true
+
+    golines:
+      max-len: 80
+      shorten-comments: true
 
 issues:
   max-issues-per-linter: 0
