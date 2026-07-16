@@ -346,6 +346,42 @@ func TestValidator_Methods(t *testing.T) {
 			want:  "must be at most 5",
 		},
 		{
+			name:  "MinInt64",
+			apply: func(v *valid.Validator) { v.MinInt64("f", 1, 5) },
+			field: "f",
+			want:  "must be at least 5",
+		},
+		{
+			name:  "MaxInt64",
+			apply: func(v *valid.Validator) { v.MaxInt64("f", 10, 5) },
+			field: "f",
+			want:  "must be at most 5",
+		},
+		{
+			name:  "MinUint",
+			apply: func(v *valid.Validator) { v.MinUint("f", 1, 5) },
+			field: "f",
+			want:  "must be at least 5",
+		},
+		{
+			name:  "MaxUint",
+			apply: func(v *valid.Validator) { v.MaxUint("f", 10, 5) },
+			field: "f",
+			want:  "must be at most 5",
+		},
+		{
+			name:  "MinUint64",
+			apply: func(v *valid.Validator) { v.MinUint64("f", 1, 5) },
+			field: "f",
+			want:  "must be at least 5",
+		},
+		{
+			name:  "MaxUint64",
+			apply: func(v *valid.Validator) { v.MaxUint64("f", 10, 5) },
+			field: "f",
+			want:  "must be at most 5",
+		},
+		{
 			name:  "Between",
 			apply: func(v *valid.Validator) { v.Between("f", 10.0, 1.0, 5.0) },
 			field: "f",
@@ -354,6 +390,24 @@ func TestValidator_Methods(t *testing.T) {
 		{
 			name:  "BetweenInt",
 			apply: func(v *valid.Validator) { v.BetweenInt("f", 10, 1, 5) },
+			field: "f",
+			want:  "must be between 1 and 5",
+		},
+		{
+			name:  "BetweenInt64",
+			apply: func(v *valid.Validator) { v.BetweenInt64("f", 10, 1, 5) },
+			field: "f",
+			want:  "must be between 1 and 5",
+		},
+		{
+			name:  "BetweenUint",
+			apply: func(v *valid.Validator) { v.BetweenUint("f", 10, 1, 5) },
+			field: "f",
+			want:  "must be between 1 and 5",
+		},
+		{
+			name:  "BetweenUint64",
+			apply: func(v *valid.Validator) { v.BetweenUint64("f", 10, 1, 5) },
 			field: "f",
 			want:  "must be between 1 and 5",
 		},

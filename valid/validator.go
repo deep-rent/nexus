@@ -226,6 +226,52 @@ func (v *Validator) MaxInt(field string, val, max int) {
 	}
 }
 
+// MinInt64 asserts that a 64-bit integer value is at least the given minimum.
+func (v *Validator) MinInt64(field string, val, min int64) {
+	if val < min {
+		v.Fail(field, fmt.Sprintf("must be at least %d", min))
+	}
+}
+
+// MaxInt64 asserts that a 64-bit integer value is at most the given maximum.
+func (v *Validator) MaxInt64(field string, val, max int64) {
+	if val > max {
+		v.Fail(field, fmt.Sprintf("must be at most %d", max))
+	}
+}
+
+// MinUint asserts that an unsigned integer value is at least the given
+// minimum.
+func (v *Validator) MinUint(field string, val, min uint) {
+	if val < min {
+		v.Fail(field, fmt.Sprintf("must be at least %d", min))
+	}
+}
+
+// MaxUint asserts that an unsigned integer value is at most the given
+// maximum.
+func (v *Validator) MaxUint(field string, val, max uint) {
+	if val > max {
+		v.Fail(field, fmt.Sprintf("must be at most %d", max))
+	}
+}
+
+// MinUint64 asserts that a 64-bit unsigned integer value is at least the
+// given minimum.
+func (v *Validator) MinUint64(field string, val, min uint64) {
+	if val < min {
+		v.Fail(field, fmt.Sprintf("must be at least %d", min))
+	}
+}
+
+// MaxUint64 asserts that a 64-bit unsigned integer value is at most the
+// given maximum.
+func (v *Validator) MaxUint64(field string, val, max uint64) {
+	if val > max {
+		v.Fail(field, fmt.Sprintf("must be at most %d", max))
+	}
+}
+
 // Between asserts that a numeric value is between min and max inclusive.
 func (v *Validator) Between(field string, val, min, max float64) {
 	if val < min || val > max {
@@ -235,6 +281,30 @@ func (v *Validator) Between(field string, val, min, max float64) {
 
 // BetweenInt asserts that an integer value is between min and max inclusive.
 func (v *Validator) BetweenInt(field string, val, min, max int) {
+	if val < min || val > max {
+		v.Fail(field, fmt.Sprintf("must be between %d and %d", min, max))
+	}
+}
+
+// BetweenInt64 asserts that a 64-bit integer value is between min and max
+// inclusive.
+func (v *Validator) BetweenInt64(field string, val, min, max int64) {
+	if val < min || val > max {
+		v.Fail(field, fmt.Sprintf("must be between %d and %d", min, max))
+	}
+}
+
+// BetweenUint asserts that an unsigned integer value is between min and max
+// inclusive.
+func (v *Validator) BetweenUint(field string, val, min, max uint) {
+	if val < min || val > max {
+		v.Fail(field, fmt.Sprintf("must be between %d and %d", min, max))
+	}
+}
+
+// BetweenUint64 asserts that a 64-bit unsigned integer value is between min
+// and max inclusive.
+func (v *Validator) BetweenUint64(field string, val, min, max uint64) {
 	if val < min || val > max {
 		v.Fail(field, fmt.Sprintf("must be between %d and %d", min, max))
 	}
