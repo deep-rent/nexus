@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 var (
@@ -100,12 +101,58 @@ func (m *Message) Validate() error {
 	return nil
 }
 
-// Sender is the interface that wraps the Send method.
+// Sender represents a push notification provider.
 //
 // Implementations of this interface are expected to be safe for concurrent
 // use by multiple goroutines. They should respect the provided context for
 // timeouts and cancellation.
 type Sender interface {
-	// Send dispatches the provided [Message] payload to the underlying provider.
+	// Send dispatches the provided [Message] payload to the underlying
+	// provider.
 	Send(ctx context.Context, msg *Message) error
+}
+
+// BatchSend concurrently dispatches multiple messages using the provided
+// [Sender]. It limits concurrency to the given workers limit to prevent
+// exhausting system resources. The returned slice of errors corresponds
+// exactly to the input messages slice index, containing nil for successful
+// deliveries and the respective error for failures.
+func BatchSend(
+	ctx context.Context,
+	sender Sender,
+	msgs []*Message,
+	workers int,
+) []error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	if workers <= 0 || workers > len(msgs) {
+		workers = len(msgs)
+	}
+
+	errs := make([]error, len(msgs))
+	var wg sync.WaitGroup
+
+	jobs := make(chan int, len(msgs))
+	for i := range msgs {
+		jobs <- i
+	}
+	close(jobs)
+
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				if err := ctx.Err(); err != nil {
+					errs[i] = err
+					continue
+				}
+				errs[i] = sender.Send(ctx, msgs[i])
+			}
+		}()
+	}
+
+	wg.Wait()
+	return errs
 }
