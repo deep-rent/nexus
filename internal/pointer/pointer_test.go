@@ -214,3 +214,33 @@ func TestDeref(t *testing.T) {
 		})
 	}
 }
+
+func TestValue(t *testing.T) {
+	t.Parallel()
+
+	t.Run("int", func(t *testing.T) {
+		t.Parallel()
+		var p *int
+		if got, want := pointer.Value(p), 0; got != want {
+			t.Errorf("got %v; want %v", got, want)
+		}
+
+		v := 42
+		if got, want := pointer.Value(&v), 42; got != want {
+			t.Errorf("got %v; want %v", got, want)
+		}
+	})
+
+	t.Run("string", func(t *testing.T) {
+		t.Parallel()
+		var p *string
+		if got, want := pointer.Value(p), ""; got != want {
+			t.Errorf("got %q; want %q", got, want)
+		}
+
+		v := "hello"
+		if got, want := pointer.Value(&v), "hello"; got != want {
+			t.Errorf("got %q; want %q", got, want)
+		}
+	})
+}
