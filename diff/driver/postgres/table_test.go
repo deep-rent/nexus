@@ -20,6 +20,7 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ import (
 	"github.com/deep-rent/nexus/diff/driver/postgres"
 )
 
-// setupTables provisions a store plus a three-level entity hierarchy:
+// setupTables provisions a store plus a three-level model hierarchy:
 // assets (root) <- files <- notes.
 func setupTables(t *testing.T) (
 	*sql.DB,
@@ -43,19 +44,23 @@ func setupTables(t *testing.T) (
 	db, s := setupStore(t)
 	ctx := context.Background()
 
+	// The identity columns reference the application-owned users and teams
+	// tables, as recommended by the Table documentation. The parent columns
+	// (asset_id, file_id) deliberately carry no foreign keys: constraints
+	// between synced document tables are unsupported.
 	stmts := []string{
 		`CREATE TABLE assets (
 		  id      UUID PRIMARY KEY,
-		  user_id UUID NOT NULL,
-		  team_id UUID,
+		  user_id UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+		  team_id UUID REFERENCES teams (id) ON DELETE RESTRICT,
 		  hlc     BIGINT NOT NULL,
 		  seq     BIGINT NOT NULL,
 		  data    JSONB NOT NULL
 		)`,
 		`CREATE TABLE files (
 		  id           UUID PRIMARY KEY,
-		  root_user_id UUID NOT NULL,
-		  root_team_id UUID,
+		  root_user_id UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+		  root_team_id UUID REFERENCES teams (id) ON DELETE RESTRICT,
 		  asset_id     UUID NOT NULL,
 		  hlc          BIGINT NOT NULL,
 		  seq          BIGINT NOT NULL,
@@ -63,13 +68,32 @@ func setupTables(t *testing.T) (
 		)`,
 		`CREATE TABLE notes (
 		  id           UUID PRIMARY KEY,
-		  root_user_id UUID NOT NULL,
-		  root_team_id UUID,
+		  root_user_id UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+		  root_team_id UUID REFERENCES teams (id) ON DELETE RESTRICT,
 		  file_id      UUID NOT NULL,
 		  hlc          BIGINT NOT NULL,
 		  seq          BIGINT NOT NULL,
 		  data         JSONB NOT NULL
 		)`,
+		// The index set documented on Table: one index per visibility branch
+		// of the feed scan, plus the parent reference index on child tables.
+		`CREATE INDEX assets_user_seq ON assets (user_id, seq)`,
+		`CREATE INDEX assets_team_seq ON assets (team_id, seq)
+		  WHERE team_id IS NOT NULL`,
+		`CREATE INDEX assets_personal_seq ON assets (user_id, seq)
+		  WHERE team_id IS NULL`,
+		`CREATE INDEX files_user_seq ON files (root_user_id, seq)`,
+		`CREATE INDEX files_team_seq ON files (root_team_id, seq)
+		  WHERE root_team_id IS NOT NULL`,
+		`CREATE INDEX files_personal_seq ON files (root_user_id, seq)
+		  WHERE root_team_id IS NULL`,
+		`CREATE INDEX files_asset ON files (asset_id)`,
+		`CREATE INDEX notes_user_seq ON notes (root_user_id, seq)`,
+		`CREATE INDEX notes_team_seq ON notes (root_team_id, seq)
+		  WHERE root_team_id IS NOT NULL`,
+		`CREATE INDEX notes_personal_seq ON notes (root_user_id, seq)
+		  WHERE root_team_id IS NULL`,
+		`CREATE INDEX notes_file ON notes (file_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
@@ -214,14 +238,50 @@ func rowStr(
 func tombstoneHLC(
 	t *testing.T,
 	db *sql.DB,
-	typ string,
+	model string,
 	id uuid.UUID,
 ) (int64, bool) {
 	t.Helper()
 	return rowInt(t, db,
-		"SELECT hlc FROM diff_tombstones WHERE type = $1 AND id = $2::uuid",
-		typ, id.String(),
+		"SELECT hlc FROM document_tombstones WHERE type = $1 AND id = $2::uuid",
+		model, id.String(),
 	)
+}
+
+// tombstoneIdent returns the identity and timestamp of the given tombstone,
+// if one exists.
+func tombstoneIdent(
+	t *testing.T,
+	db *sql.DB,
+	model string,
+	id uuid.UUID,
+) (string, sql.NullString, int64, bool) {
+	t.Helper()
+	var user string
+	var team sql.NullString
+	var ts int64
+	err := db.QueryRow(
+		"SELECT user_id::text, team_id::text, hlc FROM document_tombstones"+
+			" WHERE type = $1 AND id = $2::uuid",
+		model, id.String(),
+	).Scan(&user, &team, &ts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", sql.NullString{}, 0, false
+	}
+	if err != nil {
+		t.Fatalf("query: should not have returned an error: %v", err)
+	}
+	return user, team, ts, true
+}
+
+// versionIDs projects fetched versions onto their document IDs, preserving
+// order.
+func versionIDs(vs []diff.Version) []uuid.UUID {
+	out := make([]uuid.UUID, len(vs))
+	for i, v := range vs {
+		out[i] = v.ID
+	}
+	return out
 }
 
 func expectPanic(t *testing.T, name string, fn func()) {
@@ -245,7 +305,7 @@ func TestNewTable_Panics(t *testing.T) {
 	expectPanic(t, "nil store", func() {
 		postgres.NewTable(nil, "asset", "assets")
 	})
-	expectPanic(t, "empty type", func() {
+	expectPanic(t, "empty model", func() {
 		postgres.NewTable(s, "", "assets")
 	})
 	expectPanic(t, "empty table", func() {
@@ -265,7 +325,7 @@ func TestNewTable_Panics(t *testing.T) {
 func TestTable_RootLWW(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7().String()
+	owner := newUser(t, db)
 	scope := scopeOf(owner)
 	x := uuid.NewV7()
 
@@ -343,7 +403,7 @@ func TestTable_RootLWW(t *testing.T) {
 			hlc, ok)
 	}
 	if user, _ := rowStr(t, db,
-		"SELECT user_id::text FROM diff_tombstones"+
+		"SELECT user_id::text FROM document_tombstones"+
 			" WHERE type = 'asset' AND id = $1::uuid", y.String(),
 	); user.String != owner {
 		t.Errorf("absent delete: got tombstone user %q; want %q",
@@ -367,8 +427,8 @@ func TestTable_RootLWW(t *testing.T) {
 func TestTable_HijackGuard(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7().String()
-	attacker := uuid.NewV7().String()
+	owner := newUser(t, db)
+	attacker := newUser(t, db)
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner),
@@ -405,9 +465,9 @@ func TestTable_HijackGuard(t *testing.T) {
 func TestTable_OwnerImmutable(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7().String()
-	member := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := newUser(t, db)
+	member := newUser(t, db)
+	team := newTeam(t, db)
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner, team),
@@ -431,10 +491,10 @@ func TestTable_OwnerImmutable(t *testing.T) {
 }
 
 func TestTable_Resolve(t *testing.T) {
-	_, s, assets, files, _ := setupTables(t)
+	db, s, assets, files, _ := setupTables(t)
 
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := newUser(t, db)
+	team := newTeam(t, db)
 	scope := scopeOf(owner, team)
 	x := uuid.NewV7()
 	f := uuid.NewV7()
@@ -483,8 +543,8 @@ func TestTable_Resolve(t *testing.T) {
 func TestTable_TeamMoveCascade(t *testing.T) {
 	db, s, assets, files, notes := setupTables(t)
 
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := newUser(t, db)
+	team := newTeam(t, db)
 	scope := scopeOf(owner, team)
 
 	x := uuid.NewV7()
@@ -543,7 +603,7 @@ func TestTable_TeamMoveCascade(t *testing.T) {
 func TestTable_DeleteCascade(t *testing.T) {
 	db, s, assets, files, notes := setupTables(t)
 
-	owner := uuid.NewV7().String()
+	owner := newUser(t, db)
 	scope := scopeOf(owner)
 
 	x := uuid.NewV7()
@@ -566,26 +626,26 @@ func TestTable_DeleteCascade(t *testing.T) {
 
 	// All levels are tombstoned under the root's delete timestamp.
 	checks := []struct {
-		typ string
-		id  uuid.UUID
+		model string
+		id    uuid.UUID
 	}{
 		{"asset", x},
 		{"file", f},
 		{"note", n},
 	}
 	for _, c := range checks {
-		hlc, ok := tombstoneHLC(t, db, c.typ, c.id)
-		if !ok || hlc != 50 {
-			t.Errorf("type %s: got tombstone hlc %d, exists %t; want 50, true",
-				c.typ, hlc, ok)
+		ts, ok := tombstoneHLC(t, db, c.model, c.id)
+		if !ok || ts != 50 {
+			t.Errorf("model %s: got tombstone hlc %d, exists %t; want 50, true",
+				c.model, ts, ok)
 		}
 	}
 }
 
 func TestTable_FetchWindow(t *testing.T) {
-	_, s, assets, _, _ := setupTables(t)
+	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7().String()
+	owner := newUser(t, db)
 	scope := scopeOf(owner)
 
 	// Sequential upserts assign seq 1, 2, 3; the absent delete tombstones
@@ -609,6 +669,16 @@ func TestTable_FetchWindow(t *testing.T) {
 			t.Errorf("version %d: got seq %d; want %d", i, got, want)
 		}
 	}
+
+	// Versions carry the HLC timestamps of their rows: the upserts stamped
+	// 10..12, the tombstone 20.
+	wantTimes := []diff.Stamp{10, 11, 12, 20}
+	for i, v := range all {
+		if got, want := diff.Stamp(v.Time), wantTimes[i]; got != want {
+			t.Errorf("version %d: got time %d; want %d", i, got, want)
+		}
+	}
+
 	if all[3].ID != gone || !all[3].Deleted {
 		t.Errorf("got last version %v (deleted %t); want tombstone %v",
 			all[3].ID, all[3].Deleted, gone)
@@ -666,9 +736,9 @@ func TestShares_GrantRevoke(t *testing.T) {
 	db, s, assets, files, _ := setupTables(t)
 	shares := s.Shares()
 
-	owner := uuid.NewV7().String()
-	member := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := newUser(t, db)
+	member := newUser(t, db)
+	team := newTeam(t, db)
 
 	ownerScope := scopeOf(owner)
 	memberScope := scopeOf(member, team)
@@ -708,9 +778,14 @@ func TestShares_GrantRevoke(t *testing.T) {
 		!strings.Contains(data, team) {
 		t.Errorf("got share payload %s; want owner and team included", data)
 	}
+	if ts := diff.Stamp(got[0].Time); ts != 20 {
+		t.Errorf("got share time %d; want 20", ts)
+	}
 
-	// Touch re-sequences the owner's personal documents and descendants so
-	// they re-enter the feed of the newly granted team.
+	// The public Touch helper re-sequences the owner's personal documents
+	// and descendants so they re-enter the feed of the newly granted team
+	// (the shares handler already did this internally when the grant
+	// landed).
 	seqX0, _ := rowInt(t, db,
 		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
 	seqF0, _ := rowInt(t, db,
@@ -731,7 +806,7 @@ func TestShares_GrantRevoke(t *testing.T) {
 
 	// Revoking the grant removes the visibility and tombstones the share.
 	applyDeletes(t, s, shares, ownerScope, deleteOp(grant, owner, &team, 30))
-	if count, _ := rowInt(t, db, "SELECT count(*) FROM diff_shares"); count != 0 {
+	if count, _ := rowInt(t, db, "SELECT count(*) FROM document_shares"); count != 0 {
 		t.Errorf("after revoke: got %d shares; want 0", count)
 	}
 	if _, ok := tombstoneHLC(t, db, "share", grant); !ok {
@@ -746,8 +821,8 @@ func TestShares_DuplicateGrants(t *testing.T) {
 	db, s, _, _, _ := setupTables(t)
 	shares := s.Shares()
 
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := newUser(t, db)
+	team := newTeam(t, db)
 	scope := scopeOf(owner)
 
 	// A newer grant for the same (user, team) pair supersedes the older
@@ -757,11 +832,11 @@ func TestShares_DuplicateGrants(t *testing.T) {
 	g2 := uuid.NewV7()
 	applyUpserts(t, s, shares, scope, upsertOp(g2, owner, &team, 20, "{}"))
 
-	if count, _ := rowInt(t, db, "SELECT count(*) FROM diff_shares"); count != 1 {
+	if count, _ := rowInt(t, db, "SELECT count(*) FROM document_shares"); count != 1 {
 		t.Fatalf("got %d shares; want 1", count)
 	}
 	if id, _ := rowStr(t, db,
-		"SELECT id::text FROM diff_shares LIMIT 1",
+		"SELECT id::text FROM document_shares LIMIT 1",
 	); id.String != g2.String() {
 		t.Errorf("got surviving share %q; want %q", id.String, g2.String())
 	}
@@ -772,21 +847,468 @@ func TestShares_DuplicateGrants(t *testing.T) {
 	// A stale duplicate never displaces a newer grant.
 	g3 := uuid.NewV7()
 	applyUpserts(t, s, shares, scope, upsertOp(g3, owner, &team, 15, "{}"))
-	if count, _ := rowInt(t, db, "SELECT count(*) FROM diff_shares"); count != 1 {
+	if count, _ := rowInt(t, db, "SELECT count(*) FROM document_shares"); count != 1 {
 		t.Fatalf("after stale duplicate: got %d shares; want 1", count)
 	}
 	if id, _ := rowStr(t, db,
-		"SELECT id::text FROM diff_shares LIMIT 1",
+		"SELECT id::text FROM document_shares LIMIT 1",
 	); id.String != g2.String() {
 		t.Errorf("after stale duplicate: got share %q; want %q",
 			id.String, g2.String())
 	}
 }
 
+func TestTable_TeamMoveDeparture(t *testing.T) {
+	db, s, assets, files, _ := setupTables(t)
+
+	owner := newUser(t, db)
+	teamA := newTeam(t, db)
+	teamB := newTeam(t, db)
+	scope := scopeOf(owner, teamA, teamB)
+	scopeA := scopeOf(uuid.NewV7().String(), teamA)
+	scopeB := scopeOf(uuid.NewV7().String(), teamB)
+
+	x := uuid.NewV7()
+	f := uuid.NewV7()
+	applyUpserts(t, s, assets, scope,
+		upsertOp(x, owner, &teamA, 10, assetDoc(x, 1)))
+	applyUpserts(t, s, files, scope,
+		upsertOp(f, owner, &teamA, 10, fileDoc(f, x)))
+
+	if got := fetchAll(t, s, assets, scopeA); len(got) != 1 || got[0].Deleted {
+		t.Fatalf("before move: got %v; want one live version", got)
+	}
+
+	// Moving the root to team B leaves move tombstones carrying the OLD
+	// identity for the root and every cascaded child row.
+	applyUpserts(t, s, assets, scope,
+		upsertOp(x, owner, &teamB, 20, assetDoc(x, 2)))
+
+	for _, c := range []struct {
+		model string
+		id    uuid.UUID
+	}{
+		{"asset", x},
+		{"file", f},
+	} {
+		user, team, ts, ok := tombstoneIdent(t, db, c.model, c.id)
+		if !ok {
+			t.Fatalf("model %s: move tombstone should exist", c.model)
+		}
+		if user != owner {
+			t.Errorf("model %s: got tombstone user %q; want %q",
+				c.model, user, owner)
+		}
+		if !team.Valid || team.String != teamA {
+			t.Errorf("model %s: got tombstone team %q; want %q",
+				c.model, team.String, teamA)
+		}
+		if ts != 20 {
+			t.Errorf("model %s: got tombstone hlc %d; want 20", c.model, ts)
+		}
+	}
+
+	// The live rows survive under the new identity.
+	if count, _ := rowInt(t, db, "SELECT count(*) FROM assets"); count != 1 {
+		t.Errorf("got %d assets; want 1", count)
+	}
+	if count, _ := rowInt(t, db, "SELECT count(*) FROM files"); count != 1 {
+		t.Errorf("got %d files; want 1", count)
+	}
+
+	// The departed audience receives deletions for the root and the
+	// cascaded child...
+	gotA := fetchAll(t, s, assets, scopeA)
+	if len(gotA) != 1 || !gotA[0].Deleted || gotA[0].ID != x ||
+		diff.Stamp(gotA[0].Time) != 20 {
+		t.Errorf("old audience: got %v; want deletion of %v at time 20",
+			gotA, x)
+	}
+	filesA := fetchAll(t, s, files, scopeA)
+	if len(filesA) != 1 || !filesA[0].Deleted || filesA[0].ID != f {
+		t.Errorf("old audience: got %v; want deletion of %v", filesA, f)
+	}
+
+	// ...while the new audience sees only the live documents.
+	gotB := fetchAll(t, s, assets, scopeB)
+	if len(gotB) != 1 || gotB[0].Deleted || gotB[0].ID != x {
+		t.Errorf("new audience: got %v; want live %v", gotB, x)
+	}
+
+	// A later move overwrites the tombstone in place: back to a personal
+	// document, team B becomes the departed audience.
+	applyUpserts(t, s, assets, scope,
+		upsertOp(x, owner, nil, 30, assetDoc(x, 3)))
+	_, team, ts, ok := tombstoneIdent(t, db, "asset", x)
+	if !ok || !team.Valid || team.String != teamB || ts != 30 {
+		t.Errorf("after second move: got tombstone team %q hlc %d; want %q, 30",
+			team.String, ts, teamB)
+	}
+	gotB = fetchAll(t, s, assets, scopeB)
+	if len(gotB) != 1 || !gotB[0].Deleted || diff.Stamp(gotB[0].Time) != 30 {
+		t.Errorf("after second move: got %v; want deletion at time 30", gotB)
+	}
+}
+
+func TestTable_MoveTombstoneKeepsRowWritable(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+
+	owner := newUser(t, db)
+	member := newUser(t, db)
+	teamA := newTeam(t, db)
+	teamB := newTeam(t, db)
+
+	x := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(owner, teamA, teamB),
+		upsertOp(x, owner, &teamA, 10, assetDoc(x, 1)))
+	applyUpserts(t, s, assets, scopeOf(owner, teamA, teamB),
+		upsertOp(x, owner, &teamB, 20, assetDoc(x, 2)))
+
+	// A member of the new team is outside the move tombstone's identity
+	// scope, yet their updates must keep flowing: the live row governs.
+	applyUpserts(t, s, assets, scopeOf(member, teamB),
+		upsertOp(x, owner, &teamB, 40, assetDoc(x, 3)))
+	if v, _ := rowStr(t, db,
+		"SELECT data ->> 'v' FROM assets WHERE id = $1::uuid", x.String(),
+	); v.String != "3" {
+		t.Errorf("got v %q; want %q (update applied)", v.String, "3")
+	}
+
+	// The departure tombstone survives updates of the live row, so late
+	// syncers of team A still receive the deletion.
+	_, team, ts, ok := tombstoneIdent(t, db, "asset", x)
+	if !ok || !team.Valid || team.String != teamA || ts != 20 {
+		t.Errorf("got tombstone team %q hlc %d, exists %t; want %q, 20, true",
+			team.String, ts, ok, teamA)
+	}
+}
+
+func TestTable_ReparentGuard(t *testing.T) {
+	db, s, assets, files, _ := setupTables(t)
+
+	owner1 := newUser(t, db)
+	owner2 := newUser(t, db)
+	team := newTeam(t, db)
+
+	r1 := uuid.NewV7()
+	r2 := uuid.NewV7()
+	r3 := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(owner1, team),
+		upsertOp(r1, owner1, &team, 10, assetDoc(r1, 1)))
+	applyUpserts(t, s, assets, scopeOf(owner2, team),
+		upsertOp(r2, owner2, &team, 10, assetDoc(r2, 2)))
+	applyUpserts(t, s, assets, scopeOf(owner1, team),
+		upsertOp(r3, owner1, &team, 10, assetDoc(r3, 3)))
+
+	c := uuid.NewV7()
+	applyUpserts(t, s, files, scopeOf(owner1, team),
+		upsertOp(c, owner1, &team, 10, fileDoc(c, r1)))
+
+	// Re-parenting the child under a root with a DIFFERENT owner is
+	// silently skipped, even for an in-scope caller with a newer timestamp.
+	applyUpserts(t, s, files, scopeOf(owner2, team),
+		upsertOp(c, owner2, &team, 20, fileDoc(c, r2)))
+	if ref, _ := rowStr(t, db,
+		"SELECT asset_id::text FROM files WHERE id = $1::uuid", c.String(),
+	); ref.String != r1.String() {
+		t.Errorf("got parent %q; want %q (re-parent skipped)",
+			ref.String, r1.String())
+	}
+	if user, _ := rowStr(t, db,
+		"SELECT root_user_id::text FROM files WHERE id = $1::uuid", c.String(),
+	); user.String != owner1 {
+		t.Errorf("got owner %q; want %q (immutable)", user.String, owner1)
+	}
+	if ts, _ := rowInt(t, db,
+		"SELECT hlc FROM files WHERE id = $1::uuid", c.String(),
+	); ts != 10 {
+		t.Errorf("got hlc %d; want 10 (untouched)", ts)
+	}
+
+	// Re-parenting between roots of the SAME owner applies normally.
+	applyUpserts(t, s, files, scopeOf(owner1, team),
+		upsertOp(c, owner1, &team, 30, fileDoc(c, r3)))
+	if ref, _ := rowStr(t, db,
+		"SELECT asset_id::text FROM files WHERE id = $1::uuid", c.String(),
+	); ref.String != r3.String() {
+		t.Errorf("got parent %q; want %q (re-parent applied)",
+			ref.String, r3.String())
+	}
+}
+
+func TestTable_ResurrectionScopeGuard(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+
+	owner := newUser(t, db)
+	attacker := newUser(t, db)
+	x := uuid.NewV7()
+
+	applyUpserts(t, s, assets, scopeOf(owner),
+		upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+	applyDeletes(t, s, assets, scopeOf(owner), deleteOp(x, owner, nil, 20))
+
+	// A caller outside the tombstone's identity scope cannot resurrect the
+	// document, even with a newer timestamp and a forged payload identity.
+	applyUpserts(t, s, assets, scopeOf(attacker),
+		upsertOp(x, attacker, nil, 30, assetDoc(x, 666)))
+	if _, ok := rowInt(t, db,
+		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
+	); ok {
+		t.Error("foreign upsert: row should not resurrect")
+	}
+	if ts, ok := tombstoneHLC(t, db, "asset", x); !ok || ts != 20 {
+		t.Errorf("got tombstone hlc %d, exists %t; want 20, true", ts, ok)
+	}
+
+	// The owner resurrects normally, clearing the tombstone.
+	applyUpserts(t, s, assets, scopeOf(owner),
+		upsertOp(x, owner, nil, 30, assetDoc(x, 2)))
+	if ts, ok := rowInt(t, db,
+		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
+	); !ok || ts != 30 {
+		t.Errorf("got hlc %d, exists %t; want 30, true", ts, ok)
+	}
+	if _, ok := tombstoneHLC(t, db, "asset", x); ok {
+		t.Error("tombstone should be cleared after in-scope resurrect")
+	}
+}
+
+func TestTable_FetchVisibility(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+	shares := s.Shares()
+
+	caller := newUser(t, db)
+	teammate := newUser(t, db)
+	granter := newUser(t, db)
+	stranger := newUser(t, db)
+	team := newTeam(t, db)
+	scope := scopeOf(caller, team)
+
+	own := uuid.NewV7()
+	applyUpserts(t, s, assets, scope,
+		upsertOp(own, caller, nil, 10, assetDoc(own, 1)))
+	shared := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(teammate, team),
+		upsertOp(shared, teammate, &team, 11, assetDoc(shared, 2)))
+	granted := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(granter),
+		upsertOp(granted, granter, nil, 12, assetDoc(granted, 3)))
+	hidden := uuid.NewV7()
+	applyUpserts(t, s, assets, scopeOf(stranger),
+		upsertOp(hidden, stranger, nil, 13, assetDoc(hidden, 4)))
+
+	// Without a grant, only the caller's own documents and their team's
+	// documents are visible.
+	got := fetchAll(t, s, assets, scope)
+	if ids, want := versionIDs(got), []uuid.UUID{own, shared}; !slices.Equal(ids, want) {
+		t.Fatalf("got documents %v; want %v", ids, want)
+	}
+
+	// A grant additionally exposes the granting owner's personal documents
+	// (and re-feeds them under a fresh sequence value).
+	applyUpserts(t, s, shares, scopeOf(granter),
+		upsertOp(uuid.NewV7(), granter, &team, 14, "{}"))
+	got = fetchAll(t, s, assets, scope)
+	if ids, want := versionIDs(got), []uuid.UUID{own, shared, granted}; !slices.Equal(ids, want) {
+		t.Fatalf("after grant: got documents %v; want %v", ids, want)
+	}
+
+	// Versions carry the HLC timestamps of their rows.
+	for i, want := range []diff.Stamp{10, 11, 12} {
+		if got := diff.Stamp(got[i].Time); got != want {
+			t.Errorf("version %d: got time %d; want %d", i, got, want)
+		}
+	}
+
+	// Tombstones follow the same visibility branches: a team deletion is
+	// fed to members, a stranger's personal deletion stays invisible.
+	applyDeletes(t, s, assets, scopeOf(teammate, team),
+		deleteOp(shared, teammate, &team, 21))
+	applyDeletes(t, s, assets, scopeOf(stranger),
+		deleteOp(hidden, stranger, nil, 22))
+	got = fetchAll(t, s, assets, scope)
+	if ids, want := versionIDs(got), []uuid.UUID{own, granted, shared}; !slices.Equal(ids, want) {
+		t.Fatalf("after deletes: got documents %v; want %v", ids, want)
+	}
+	last := got[len(got)-1]
+	if !last.Deleted || diff.Stamp(last.Time) != 21 {
+		t.Errorf("got last version deleted %t time %d; want true, 21",
+			last.Deleted, last.Time)
+	}
+}
+
+func TestTable_Reseq(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+
+	owner := newUser(t, db)
+	scope := scopeOf(owner)
+	x := uuid.NewV7()
+	y := uuid.NewV7()
+	applyUpserts(t, s, assets, scope, upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+	applyUpserts(t, s, assets, scope, upsertOp(y, owner, nil, 10, assetDoc(y, 2)))
+
+	seqX0, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
+	seqY0, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", y.String())
+
+	// Reseq re-enters exactly the given rows into the patch feed.
+	err := s.Mutate(context.Background(), scope,
+		func(ctx context.Context, tx *sql.Tx) error {
+			return assets.Reseq(ctx, tx, []uuid.UUID{x})
+		})
+	if err != nil {
+		t.Fatalf("reseq: should not have returned an error: %v", err)
+	}
+	if seqX1, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String(),
+	); seqX1 <= seqX0 {
+		t.Errorf("got seq %d; want > %d", seqX1, seqX0)
+	}
+	if seqY1, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", y.String(),
+	); seqY1 != seqY0 {
+		t.Errorf("got seq %d; want %d (untouched)", seqY1, seqY0)
+	}
+
+	// Empty input is a no-op.
+	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
+		return assets.Reseq(ctx, tx, nil)
+	})
+}
+
+func TestTable_Bury(t *testing.T) {
+	db, s, assets, files, _ := setupTables(t)
+
+	owner := newUser(t, db)
+	scope := scopeOf(owner)
+	x := uuid.NewV7()
+	f := uuid.NewV7()
+	applyUpserts(t, s, assets, scope, upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+	applyUpserts(t, s, files, scope, upsertOp(f, owner, nil, 10, fileDoc(f, x)))
+
+	// Bury removes the documents under the identities and timestamps of the
+	// given operations and cascades to descendants, without scope checks.
+	err := s.Mutate(context.Background(), scope,
+		func(ctx context.Context, tx *sql.Tx) error {
+			return assets.Bury(ctx, tx, []diff.Op{deleteOp(x, owner, nil, 50)})
+		})
+	if err != nil {
+		t.Fatalf("bury: should not have returned an error: %v", err)
+	}
+	for _, table := range []string{"assets", "files"} {
+		if count, _ := rowInt(t, db, "SELECT count(*) FROM "+table); count != 0 {
+			t.Errorf("table %s: got %d rows; want 0", table, count)
+		}
+	}
+	for _, c := range []struct {
+		model string
+		id    uuid.UUID
+	}{
+		{"asset", x},
+		{"file", f},
+	} {
+		if ts, ok := tombstoneHLC(t, db, c.model, c.id); !ok || ts != 50 {
+			t.Errorf("model %s: got tombstone hlc %d, exists %t; want 50, true",
+				c.model, ts, ok)
+		}
+	}
+
+	// A stale bury is a complete no-op.
+	y := uuid.NewV7()
+	applyUpserts(t, s, assets, scope, upsertOp(y, owner, nil, 60, assetDoc(y, 1)))
+	err = s.Mutate(context.Background(), scope,
+		func(ctx context.Context, tx *sql.Tx) error {
+			return assets.Bury(ctx, tx, []diff.Op{deleteOp(y, owner, nil, 55)})
+		})
+	if err != nil {
+		t.Fatalf("bury: should not have returned an error: %v", err)
+	}
+	if _, ok := rowInt(t, db,
+		"SELECT hlc FROM assets WHERE id = $1::uuid", y.String(),
+	); !ok {
+		t.Error("row should have survived the stale bury")
+	}
+	if _, ok := tombstoneHLC(t, db, "asset", y); ok {
+		t.Error("no tombstone should exist after the stale bury")
+	}
+}
+
+func TestShares_TeamMove(t *testing.T) {
+	db, s, _, _, _ := setupTables(t)
+	shares := s.Shares()
+
+	owner := newUser(t, db)
+	teamA := newTeam(t, db)
+	teamB := newTeam(t, db)
+	scope := scopeOf(owner)
+
+	g := uuid.NewV7()
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &teamA, 10, "{}"))
+
+	// Re-pointing the grant to another team removes it from the old team's
+	// feed: the LWW update leaves a move tombstone under the old identity.
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &teamB, 20, "{}"))
+
+	if team, _ := rowStr(t, db,
+		"SELECT team_id::text FROM document_shares WHERE id = $1::uuid",
+		g.String(),
+	); team.String != teamB {
+		t.Errorf("got team %q; want %q", team.String, teamB)
+	}
+	_, team, ts, ok := tombstoneIdent(t, db, "share", g)
+	if !ok || !team.Valid || team.String != teamA || ts != 20 {
+		t.Errorf("got tombstone team %q hlc %d, exists %t; want %q, 20, true",
+			team.String, ts, ok, teamA)
+	}
+
+	// The old team receives the deletion; the new team the live grant.
+	gotA := fetchAll(t, s, shares, scopeOf(uuid.NewV7().String(), teamA))
+	if len(gotA) != 1 || !gotA[0].Deleted || gotA[0].ID != g {
+		t.Errorf("old team: got %v; want deletion of %v", gotA, g)
+	}
+	gotB := fetchAll(t, s, shares, scopeOf(uuid.NewV7().String(), teamB))
+	if len(gotB) != 1 || gotB[0].Deleted || gotB[0].ID != g {
+		t.Errorf("new team: got %v; want live grant %v", gotB, g)
+	}
+}
+
+func TestShares_TouchOnLand(t *testing.T) {
+	db, s, assets, _, _ := setupTables(t)
+	shares := s.Shares()
+
+	owner := newUser(t, db)
+	team := newTeam(t, db)
+	scope := scopeOf(owner)
+
+	x := uuid.NewV7()
+	applyUpserts(t, s, assets, scope, upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+	seq0, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
+
+	// A landing grant re-feeds the owner's personal documents to the newly
+	// granted team.
+	g := uuid.NewV7()
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 20, "{}"))
+	seq1, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
+	if seq1 <= seq0 {
+		t.Errorf("got seq %d; want > %d (touched)", seq1, seq0)
+	}
+
+	// A stale grant does not land and must not re-feed.
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 15, "{}"))
+	seq2, _ := rowInt(t, db,
+		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
+	if seq2 != seq1 {
+		t.Errorf("got seq %d; want %d (untouched)", seq2, seq1)
+	}
+}
+
 func TestStore_PruneTombstones(t *testing.T) {
 	db, s, assets, _, _ := setupTables(t)
 
-	owner := uuid.NewV7().String()
+	owner := newUser(t, db)
 	scope := scopeOf(owner)
 
 	// Deleting absent documents seeds two tombstones at seq 1 and 2.
@@ -815,7 +1337,7 @@ func TestStore_PruneTombstones(t *testing.T) {
 		t.Errorf("got %d pruned; want 2", n)
 	}
 	if count, _ := rowInt(t, db,
-		"SELECT count(*) FROM diff_tombstones",
+		"SELECT count(*) FROM document_tombstones",
 	); count != 0 {
 		t.Errorf("got %d tombstones; want 0", count)
 	}
