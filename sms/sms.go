@@ -35,6 +35,7 @@ package sms
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -73,13 +74,20 @@ var (
 type APIError struct {
 	// Status is the HTTP status code returned by the provider.
 	Status int
-	// Body is the raw response body returned by the provider.
-	Body string
+	// Code is the Twilio-specific error code.
+	Code int `json:"code"`
+	// Message is the description of the error.
+	Message string `json:"message"`
+	// MoreInfo is a URL to more information about the error.
+	MoreInfo string `json:"more_info"`
 }
 
 // Error implements the [error] interface.
 func (e *APIError) Error() string {
-	return fmt.Sprintf("api returned status %d: %s", e.Status, e.Body)
+	if e.Message != "" {
+		return fmt.Sprintf("api returned status %d (code %d): %s", e.Status, e.Code, e.Message)
+	}
+	return fmt.Sprintf("api returned status %d", e.Status)
 }
 
 // Unwrap allows [errors.Is] to match against [ErrDispatchFailed].
@@ -338,11 +346,11 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	}()
 
 	if code := res.StatusCode; code >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-		return &APIError{
-			Status: code,
-			Body:   string(body),
-		}
+		var apiErr APIError
+		apiErr.Status = code
+		// Attempt to parse the JSON error body. If it fails, we just return the status.
+		_ = json.UnmarshalRead(io.LimitReader(res.Body, 1<<20), &apiErr)
+		return &apiErr
 	}
 
 	s.logger.DebugContext(

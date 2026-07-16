@@ -32,11 +32,12 @@ func TestAPIError(t *testing.T) {
 	t.Parallel()
 
 	err := &sms.APIError{
-		Status: 400,
-		Body:   "Bad Request",
+		Status:  400,
+		Code:    21211,
+		Message: "Invalid 'To' Phone Number",
 	}
 
-	want := "api returned status 400: Bad Request"
+	want := "api returned status 400 (code 21211): Invalid 'To' Phone Number"
 	if got := err.Error(); got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}
