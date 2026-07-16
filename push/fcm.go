@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/deep-rent/nexus/jose/jwa"
@@ -33,6 +32,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sign"
+	"github.com/deep-rent/nexus/token"
 )
 
 const (
@@ -41,18 +41,11 @@ const (
 )
 
 type fcm struct {
-	projectID   string
-	clientEmail string
-	keyPair     jwk.KeyPair
-	url         string
-	oauthURL    string
-	client      *http.Client
-	logger      *slog.Logger
-	retry       []retry.Option
-
-	mu        sync.Mutex
-	token     string
-	expiresAt time.Time
+	projectID string
+	source    *token.Source
+	url       string
+	client    *http.Client
+	logger    *slog.Logger
 }
 
 var _ Sender = (*fcm)(nil)
@@ -152,13 +145,9 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 	}
 
 	s := &fcm{
-		projectID:   sa.ProjectID,
-		clientEmail: sa.ClientEmail,
-		keyPair:     keyPair,
-		url:         cfg.baseURL,
-		oauthURL:    cfg.oauthURL,
-		logger:      cfg.logger,
-		retry:       cfg.retry,
+		projectID: sa.ProjectID,
+		url:       cfg.baseURL,
+		logger:    cfg.logger,
 	}
 
 	if cfg.client == nil {
@@ -186,79 +175,65 @@ func FCM(credentialsJSON []byte, opts ...FCMOption) Sender {
 		s.client = cfg.client
 	}
 
+	fetch := func(ctx context.Context) (string, time.Time, error) {
+		claims := struct {
+			Iss   string `json:"iss"`
+			Scope string `json:"scope"`
+			Aud   string `json:"aud"`
+			Iat   int64  `json:"iat"`
+			Exp   int64  `json:"exp"`
+		}{
+			Iss:   sa.ClientEmail,
+			Scope: fcmScope,
+			Aud:   cfg.oauthURL,
+			Iat:   time.Now().Unix(),
+			Exp:   time.Now().Add(time.Hour).Unix(),
+		}
+
+		assertion, err := jwt.Sign(ctx, keyPair, claims)
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("failed to sign oauth assertion: %w", err)
+		}
+
+		data := url.Values{}
+		data.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+		data.Set("assertion", string(assertion))
+
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			cfg.oauthURL,
+			strings.NewReader(data.Encode()),
+		)
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("failed to create oauth request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		res, err := s.client.Do(req)
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("oauth request failed: %w", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(res.Body)
+			return "", time.Time{}, fmt.Errorf("oauth failed with status %d: %s", res.StatusCode, string(body))
+		}
+
+		var authRes struct {
+			AccessToken string `json:"access_token"`
+			ExpiresIn   int    `json:"expires_in"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&authRes); err != nil {
+			return "", time.Time{}, fmt.Errorf("failed to decode oauth response: %w", err)
+		}
+
+		return authRes.AccessToken, time.Now().Add(time.Duration(authRes.ExpiresIn) * time.Second), nil
+	}
+	s.source = token.NewSource(fetch, 60*time.Second)
+
 	return s
-}
-
-func (s *fcm) getToken(ctx context.Context) (string, error) {
-	s.mu.Lock()
-	if s.token != "" && time.Now().Before(s.expiresAt) {
-		tok := s.token
-		s.mu.Unlock()
-		return tok, nil
-	}
-	s.mu.Unlock()
-
-	claims := struct {
-		Iss   string `json:"iss"`
-		Scope string `json:"scope"`
-		Aud   string `json:"aud"`
-		Iat   int64  `json:"iat"`
-		Exp   int64  `json:"exp"`
-	}{
-		Iss:   s.clientEmail,
-		Scope: fcmScope,
-		Aud:   s.oauthURL,
-		Iat:   time.Now().Unix(),
-		Exp:   time.Now().Add(time.Hour).Unix(),
-	}
-
-	assertion, err := jwt.Sign(ctx, s.keyPair, claims)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign oauth assertion: %w", err)
-	}
-
-	data := url.Values{}
-	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	data.Set("assertion", string(assertion))
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		s.oauthURL,
-		strings.NewReader(data.Encode()),
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to create oauth request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	res, err := s.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("oauth request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(res.Body)
-		return "", fmt.Errorf("oauth failed with status %d: %s", res.StatusCode, string(body))
-	}
-
-	var authRes struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&authRes); err != nil {
-		return "", fmt.Errorf("failed to decode oauth response: %w", err)
-	}
-
-	s.mu.Lock()
-	s.token = authRes.AccessToken
-	// Keep a 60-second buffer for expiration
-	s.expiresAt = time.Now().Add(time.Duration(authRes.ExpiresIn-60) * time.Second)
-	tok := s.token
-	s.mu.Unlock()
-
-	return tok, nil
 }
 
 // Send dispatches the HTTP request to the FCM v1 API.
@@ -267,7 +242,7 @@ func (s *fcm) Send(ctx context.Context, msg *Message) error {
 		return err
 	}
 
-	token, err := s.getToken(ctx)
+	tok, err := s.source.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to obtain oauth token: %w", err)
 	}
@@ -307,7 +282,7 @@ func (s *fcm) Send(ctx context.Context, msg *Message) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 
 	s.logger.DebugContext(ctx, "Dispatching FCM message",

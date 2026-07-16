@@ -32,6 +32,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sign"
+	"github.com/deep-rent/nexus/token"
 )
 
 const (
@@ -42,12 +43,11 @@ const (
 )
 
 type apns struct {
-	keyPair jwk.KeyPair
-	teamID  string
-	url     string
-	client  *http.Client
-	logger  *slog.Logger
-	retry   []retry.Option
+	source *token.Source
+	url    string
+	client *http.Client
+	logger *slog.Logger
+	retry  []retry.Option
 }
 
 var _ Sender = (*apns)(nil)
@@ -127,12 +127,30 @@ func APNS(keyID, teamID string, privateKeyPEM []byte, opts ...APNSOption) Sender
 		opt(&cfg)
 	}
 
+	fetch := func(ctx context.Context) (string, time.Time, error) {
+		claims := struct {
+			jwt.Reserved
+		}{
+			Reserved: jwt.Reserved{
+				Iss: teamID,
+				Iat: time.Now(),
+			},
+		}
+		tok, err := jwt.Sign(ctx, keyPair, claims)
+		if err != nil {
+			return "", time.Time{}, err
+		}
+		// Apple allows tokens to be used between 20 and 60 minutes.
+		return string(tok), time.Now().Add(45 * time.Minute), nil
+	}
+
+	source := token.NewSource(fetch, 5*time.Minute)
+
 	s := &apns{
-		keyPair: keyPair,
-		teamID:  teamID,
-		url:     cfg.baseURL,
-		logger:  cfg.logger,
-		retry:   cfg.retry,
+		source: source,
+		url:    cfg.baseURL,
+		logger: cfg.logger,
+		retry:  cfg.retry,
 	}
 
 	if cfg.client == nil {
@@ -172,17 +190,9 @@ func (s *apns) Send(ctx context.Context, msg *Message) error {
 		return errors.New("APNs requires a device token target")
 	}
 
-	claims := struct {
-		jwt.Reserved
-	}{
-		Reserved: jwt.Reserved{
-			Iss: s.teamID,
-			Iat: time.Now(),
-		},
-	}
-	token, err := jwt.Sign(ctx, s.keyPair, claims)
+	tok, err := s.source.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to sign APNs token: %w", err)
+		return fmt.Errorf("failed to get APNs token: %w", err)
 	}
 
 	payload := make(map[string]any)
@@ -211,7 +221,7 @@ func (s *apns) Send(ctx context.Context, msg *Message) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "bearer "+string(token))
+	req.Header.Set("Authorization", "bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 	if msg.Target.Topic != "" {
 		req.Header.Set("apns-topic", msg.Target.Topic)
