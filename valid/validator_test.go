@@ -740,10 +740,10 @@ func TestValidator_Methods(t *testing.T) {
 			want:  "must be a valid ISO 4217 currency code",
 		},
 		{
-			name:  "UUIDv7",
-			apply: func(v *valid.Validator) { v.UUIDv7("f", "bad") },
+			name:  "UUID",
+			apply: func(v *valid.Validator) { v.UUID("f", "bad") },
 			field: "f",
-			want:  "must be a valid UUIDv7",
+			want:  "must be a valid UUID",
 		},
 		{
 			name:  "Lat",

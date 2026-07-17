@@ -699,10 +699,10 @@ func (v *Validator) Currency(field, val string) {
 	}
 }
 
-// Currency ensures that the given string satisfies [UUID].
-func (v *Validator) UUIDv7(field, val string) {
-	if !Currency(val) {
-		v.Fail(field, "must be a valid UUIDv7")
+// UUID ensures that the given string satisfies [UUID].
+func (v *Validator) UUID(field, val string) {
+	if !UUID(val) {
+		v.Fail(field, "must be a valid UUID")
 	}
 }
 
