@@ -21,7 +21,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -148,7 +147,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			}(),
 			body:       valid(),
 			wantStatus: http.StatusForbidden,
-			wantReason: diff.ReasonDelegationRequired,
+			wantReason: auth.ReasonDelegationRequired,
 		},
 		{
 			name: "non-uuid subject",

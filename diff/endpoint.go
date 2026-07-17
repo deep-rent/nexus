@@ -33,9 +33,6 @@ const (
 	// rejected; the response context maps each rejected mutation ID to its
 	// [Cause]. No change from the request was applied.
 	ReasonChangesRejected = "changes_rejected"
-	// ReasonDelegationRequired indicates a machine token where an end-user
-	// context was required.
-	ReasonDelegationRequired = "delegation_required"
 	// ReasonConflict indicates a concurrent ownership change; the client
 	// should retry the identical request.
 	ReasonConflict = "conflict_retry"
@@ -81,7 +78,7 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 		if !claims.Delegated() {
 			return &router.Error{
 				Status: http.StatusForbidden,
-				Reason: ReasonDelegationRequired,
+				Reason: auth.ReasonDelegationRequired,
 				Description: "The sync endpoint serves end users; " +
 					"machine tokens cannot sync documents.",
 			}
