@@ -344,7 +344,7 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 				return &router.Error{
 					Status:      http.StatusUnauthorized,
 					Reason:      ReasonMissingToken,
-					Description: "missing or malformed bearer token",
+					Description: "The bearer token is missing or malformed.",
 				}
 			}
 
@@ -353,7 +353,7 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 				return &router.Error{
 					Status:      http.StatusUnauthorized,
 					Reason:      ReasonInvalidToken,
-					Description: "the provided token is invalid or expired",
+					Description: "The provided token is invalid or expired.",
 					Cause:       err,
 				}
 			}
@@ -370,7 +370,7 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 					return &router.Error{
 						Status:      http.StatusForbidden,
 						Reason:      ReasonInsufficientPrivileges,
-						Description: "access denied by security policy",
+						Description: "Access denied by security policy.",
 						Cause:       err,
 					}
 				}
