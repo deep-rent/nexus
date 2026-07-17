@@ -247,8 +247,8 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// NewSender creates a configured Twilio client implementing the [Sender]
-// interface.
+// NewSender creates a configured Twilio client with the given account SID and
+// authentication token.
 func NewSender(sid, token string, opts ...Option) Sender {
 	if sid == "" {
 		panic("account SID is required")
