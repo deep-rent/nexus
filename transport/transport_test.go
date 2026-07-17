@@ -21,12 +21,12 @@ func TestNew_Defaults(t *testing.T) {
 		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
 	}
 
-	if tr.DisableKeepAlives {
-		t.Error("expected DisableKeepAlives to be false by default")
+	if exp, act := false, tr.DisableKeepAlives; exp != act {
+		t.Errorf("expected DisableKeepAlives to be %v, got %v", exp, act)
 	}
 
-	if !tr.ForceAttemptHTTP2 {
-		t.Error("expected ForceAttemptHTTP2 to be true by default")
+	if exp, act := true, tr.ForceAttemptHTTP2; exp != act {
+		t.Errorf("expected ForceAttemptHTTP2 to be %v, got %v", exp, act)
 	}
 
 	if tr.TLSClientConfig != nil {
@@ -58,39 +58,27 @@ func TestNew_Defaults(t *testing.T) {
 	}
 
 	if exp, act := 1024, tr.MaxIdleConnsPerHost; exp != act {
-		t.Errorf(
-			"expected MaxIdleConnsPerHost to be default %v, got %v",
-			exp,
-			act,
-		)
+		t.Errorf("expected MaxIdleConnsPerHost to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 1024, tr.MaxConnsPerHost; exp != act {
-		t.Errorf("expected MaxConnsPerHost to be default %v, got %v", exp, act)
+		t.Errorf("expected MaxConnsPerHost to be %v, got %v", exp, act)
 	}
 
 	if exp, act := time.Duration(0), tr.ResponseHeaderTimeout; exp != act {
-		t.Errorf(
-			"expected ResponseHeaderTimeout to be default %v, got %v",
-			exp,
-			act,
-		)
+		t.Errorf("expected ResponseHeaderTimeout to be %v, got %v", exp, act)
 	}
 
 	if exp, act := int64(64*1024), tr.MaxResponseHeaderBytes; exp != act {
-		t.Errorf(
-			"expected MaxResponseHeaderBytes to be default %v, got %v",
-			exp,
-			act,
-		)
+		t.Errorf("expected MaxResponseHeaderBytes to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 4*1024, tr.WriteBufferSize; exp != act {
-		t.Errorf("expected WriteBufferSize to be default %v, got %v", exp, act)
+		t.Errorf("expected WriteBufferSize to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 4*1024, tr.ReadBufferSize; exp != act {
-		t.Errorf("expected ReadBufferSize to be default %v, got %v", exp, act)
+		t.Errorf("expected ReadBufferSize to be %v, got %v", exp, act)
 	}
 }
 
@@ -98,8 +86,12 @@ func TestNew_WithOptions(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true}
 	http2Cfg := &http.HTTP2Config{}
 	protocols := &http.Protocols{}
-	proxyFunc := func(*http.Request) (*url.URL, error) { return nil, nil }
-	dialerFunc := func(ctx context.Context, network, addr string) (net.Conn, error) { return nil, nil }
+	proxy := func(*http.Request) (*url.URL, error) {
+		return nil, nil
+	}
+	dialer := func(ctx context.Context, net, addr string) (net.Conn, error) {
+		return nil, nil
+	}
 
 	rt := New(
 		WithDialTimeout(15*time.Second),
@@ -120,8 +112,8 @@ func TestNew_WithOptions(t *testing.T) {
 		WithReadBufferSize(4096),
 		WithHTTP2Config(http2Cfg),
 		WithProtocols(protocols),
-		WithProxy(proxyFunc),
-		WithDialContext(dialerFunc),
+		WithProxy(proxy),
+		WithDialContext(dialer),
 	)
 
 	tr, ok := rt.(*http.Transport)
@@ -227,35 +219,23 @@ func TestNew_WithNegativeOptions(t *testing.T) {
 	}
 
 	if exp, act := 2*time.Second, tr.TLSHandshakeTimeout; exp != act {
-		t.Errorf(
-			"expected TLSHandshakeTimeout to be default %v, got %v",
-			exp,
-			act,
-		)
+		t.Errorf("expected TLSHandshakeTimeout to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 1*time.Second, tr.ExpectContinueTimeout; exp != act {
-		t.Errorf(
-			"expected ExpectContinueTimeout to be default %v, got %v",
-			exp,
-			act,
-		)
+		t.Errorf("expected ExpectContinueTimeout to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 90*time.Second, tr.IdleConnTimeout; exp != act {
-		t.Errorf("expected IdleConnTimeout to be default %v, got %v", exp, act)
+		t.Errorf("expected IdleConnTimeout to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 1024, tr.MaxIdleConns; exp != act {
-		t.Errorf("expected MaxIdleConns to be default %v, got %v", exp, act)
+		t.Errorf("expected MaxIdleConns to be %v, got %v", exp, act)
 	}
 
 	if exp, act := 1024, tr.MaxIdleConnsPerHost; exp != act {
-		t.Errorf(
-			"expected MaxIdleConnsPerHost to be default %v, got %v",
-			exp,
-			act,
-		)
+		t.Errorf("expected MaxIdleConnsPerHost to be %v, got %v", exp, act)
 	}
 }
 
@@ -272,20 +252,16 @@ func TestNew_WithHeadersAndRetry(t *testing.T) {
 }
 
 func TestNewClient_Timeout(t *testing.T) {
-	client := NewClient(10 * time.Second)
-	if exp, act := 10*time.Second, client.Timeout; exp != act {
+	clientA := NewClient(10 * time.Second) // Positive
+	if exp, act := 10*time.Second, clientA.Timeout; exp != act {
 		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
-
-	// Test default fallback for zero timeout
-	clientZero := NewClient(0)
-	if exp, act := 5*time.Second, clientZero.Timeout; exp != act {
+	clientB := NewClient(0) // Zero
+	if exp, act := 5*time.Second, clientB.Timeout; exp != act {
 		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
-
-	// Test default fallback for negative timeout
-	clientNegative := NewClient(-1 * time.Second)
-	if exp, act := 5*time.Second, clientNegative.Timeout; exp != act {
+	clientC := NewClient(-1 * time.Second) // Negative
+	if exp, act := 5*time.Second, clientC.Timeout; exp != act {
 		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
 }
