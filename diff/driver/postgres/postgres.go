@@ -1047,7 +1047,14 @@ func (h *shares) Fetch(
 	b.WriteString(") ORDER BY seq LIMIT $5")
 
 	args := make([]any, 0, 5+n)
-	args = append(args, scope.UserID, w.Since, w.Until, diff.ModelShare, w.Limit)
+	args = append(
+		args,
+		scope.UserID,
+		w.Since,
+		w.Until,
+		diff.ModelShare,
+		w.Limit,
+	)
 	for _, team := range scope.Teams {
 		args = append(args, team)
 	}

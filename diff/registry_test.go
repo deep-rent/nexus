@@ -268,21 +268,31 @@ func (stubStore) Exec(
 ) error {
 	return nil
 }
+
 func (stubStore) Lock(context.Context, struct{}, []string, []string) error {
 	return nil
 }
-func (stubStore) Floor(context.Context, struct{}) (int64, error) { return 0, nil }
+
+func (stubStore) Floor(
+	context.Context,
+	struct{},
+) (int64, error) {
+	return 0, nil
+}
 func (stubStore) Barrier(context.Context, struct{}) (int64, error) {
 	return 0, nil
 }
+
 func (stubStore) Watermark(context.Context, struct{}) (int64, error) {
 	return 0, nil
 }
+
 func (stubStore) Claim(
 	context.Context, struct{}, string, []uuid.UUID,
 ) ([]uuid.UUID, error) {
 	return nil, nil
 }
+
 func (stubStore) Grants(
 	context.Context, struct{}, []string,
 ) (map[string][]string, error) {

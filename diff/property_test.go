@@ -17,6 +17,7 @@ package diff_test
 import (
 	"encoding/json/v2"
 	"testing"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"

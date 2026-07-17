@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -280,7 +281,11 @@ func TestEngine_Sync_DriftRetry(t *testing.T) {
 
 		_, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{
-				upsert("contract", contractDoc(uuid.NewV7(), assetID), stamp(2)),
+				upsert(
+					"contract",
+					contractDoc(uuid.NewV7(), assetID),
+					stamp(2),
+				),
 			},
 		})
 		if !errors.Is(err, diff.ErrConflict) {
@@ -364,7 +369,11 @@ func TestEngine_Sync_ChildEnvelopeErrors(t *testing.T) {
 	t.Run("malformed child payload", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		c := upsert("contract", jsontext.Value(`{"id":`), stamp(1)) // broken JSON
+		c := upsert(
+			"contract",
+			jsontext.Value(`{"id":`),
+			stamp(1),
+		) // broken JSON
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 		rejectedWith(t, err, c.ID, diff.CodeInvalid)
@@ -373,8 +382,13 @@ func TestEngine_Sync_ChildEnvelopeErrors(t *testing.T) {
 	t.Run("child missing id", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		c := upsert("contract",
-			jsontext.Value(`{"asset_id":"`+uuid.NewV7().String()+`"}`), stamp(1))
+		c := upsert(
+			"contract",
+			jsontext.Value(
+				`{"asset_id":"`+uuid.NewV7().String()+`"}`,
+			),
+			stamp(1),
+		)
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 		rejectedWith(t, err, c.ID, diff.CodeInvalid)

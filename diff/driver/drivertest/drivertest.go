@@ -169,7 +169,10 @@ func (h *harness[Tx]) fetch(
 }
 
 // fetchAll reads every version visible to the scope.
-func (h *harness[Tx]) fetchAll(hd diff.Handler[Tx], s diff.Scope) []diff.Version {
+func (h *harness[Tx]) fetchAll(
+	hd diff.Handler[Tx],
+	s diff.Scope,
+) []diff.Version {
 	return h.fetch(hd, s, diff.Window{Since: 0, Until: 1 << 60, Limit: 1000})
 }
 
@@ -263,7 +266,11 @@ func (h *harness[Tx]) wantAbsent(
 ) {
 	h.t.Helper()
 	if v, ok := h.find(hd, s, id); ok {
-		h.t.Errorf("id %v: got version (deleted %t); want absent", id, v.Deleted)
+		h.t.Errorf(
+			"id %v: got version (deleted %t); want absent",
+			id,
+			v.Deleted,
+		)
 	}
 }
 
@@ -321,7 +328,10 @@ func marker(t *testing.T, data jsontext.Value) int {
 		V int `json:"v"`
 	}
 	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("unmarshal payload: should not have returned an error: %v", err)
+		t.Fatalf(
+			"unmarshal payload: should not have returned an error: %v",
+			err,
+		)
 	}
 	return m.V
 }

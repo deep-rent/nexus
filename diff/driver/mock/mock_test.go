@@ -289,7 +289,12 @@ func TestShares_WriteThrough(t *testing.T) {
 	del := shareOp(shareID, owner, team, 20)
 	del.Action = diff.ActionDelete
 	del.Data = nil
-	if err := shares.Delete(ctx, &mock.Tx{}, scope, []diff.Op{del}); err != nil {
+	if err := shares.Delete(
+		ctx,
+		&mock.Tx{},
+		scope,
+		[]diff.Op{del},
+	); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	granted, err = store.Grants(ctx, &mock.Tx{}, []string{owner})

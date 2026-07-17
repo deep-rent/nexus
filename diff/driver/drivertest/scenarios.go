@@ -109,7 +109,11 @@ func scHijack[Tx any](t *testing.T, h *harness[Tx]) {
 	h.upsert(h.tg.Root, scope(owner), upsertOp(id, owner, nil, 100, doc(id, 1)))
 
 	// A forged upsert under the attacker's scope leaves the row untouched.
-	h.upsert(h.tg.Root, scope(attacker), upsertOp(id, owner, nil, 200, doc(id, 9)))
+	h.upsert(
+		h.tg.Root,
+		scope(attacker),
+		upsertOp(id, owner, nil, 200, doc(id, 9)),
+	)
 	h.wantLive(h.tg.Root, scope(owner), id, 100, 1)
 
 	// A foreign delete cannot remove the row nor tombstone it.
@@ -188,7 +192,11 @@ func scFetchWindow[Tx any](t *testing.T, h *harness[Tx]) {
 	}
 
 	// The limit caps the page to the lowest sequence values.
-	limited := h.fetch(h.tg.Root, s, diff.Window{Since: 0, Until: 1 << 60, Limit: 2})
+	limited := h.fetch(
+		h.tg.Root,
+		s,
+		diff.Window{Since: 0, Until: 1 << 60, Limit: 2},
+	)
 	if got := versionIDs(limited); !equal(got, ids[:2]) {
 		t.Errorf("limited scan: got ids %v; want %v", got, ids[:2])
 	}

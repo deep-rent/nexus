@@ -85,25 +85,27 @@
 //
 // One request runs this timeline inside a single transaction:
 //
-//		Floor(1) → Barrier → apply writes → Fetch(since, barrier) → Watermark → Floor(2)
+//	Floor(1) → Barrier → apply writes → Fetch(since, barrier) →
 //
-//	  - Floor(1) rejects a cursor that already predates the pruning floor.
-//	  - Barrier consumes one sequence value up front. Every row written by
-//	    this request gets a sequence above the barrier, so scanning strictly
-//	    below it fences the request's own writes out of its feed (a device
-//	    never echoes its own push). The barrier is also the feed's exclusive
-//	    upper bound.
-//	  - The writes apply, each taking sequence values above the barrier.
-//	  - Fetch returns rows and tombstones with since < seq < barrier, the
-//	    work the client missed, excluding this request's own writes.
-//	  - When the page is not full (More is false), the cursor advances to the
-//	    Watermark — the highest sequence assigned so far — which jumps the
-//	    client past its own just-written rows permanently. When the page is
-//	    full, the cursor is the last delivered row's sequence instead, so the
-//	    next page resumes exactly where this one stopped.
-//	  - Floor(2) re-reads the floor after the scan: tombstone pruning runs
-//	    outside the request's locks and could have advanced the floor past
-//	    the cursor mid-scan, which must convert into a resync.
+// Watermark → Floor(2)
+//
+//   - Floor(1) rejects a cursor that already predates the pruning floor.
+//   - Barrier consumes one sequence value up front. Every row written by
+//     this request gets a sequence above the barrier, so scanning strictly
+//     below it fences the request's own writes out of its feed (a device
+//     never echoes its own push). The barrier is also the feed's exclusive
+//     upper bound.
+//   - The writes apply, each taking sequence values above the barrier.
+//   - Fetch returns rows and tombstones with since < seq < barrier, the
+//     work the client missed, excluding this request's own writes.
+//   - When the page is not full (More is false), the cursor advances to the
+//     Watermark — the highest sequence assigned so far — which jumps the
+//     client past its own just-written rows permanently. When the page is
+//     full, the cursor is the last delivered row's sequence instead, so the
+//     next page resumes exactly where this one stopped.
+//   - Floor(2) re-reads the floor after the scan: tombstone pruning runs
+//     outside the request's locks and could have advanced the floor past
+//     the cursor mid-scan, which must convert into a resync.
 //
 // # Isolation
 //

@@ -1273,8 +1273,19 @@ func TestTable_FetchMultiTeamBranches(t *testing.T) {
 	applyUpserts(t, s, assets, scopeOf(outsider, teamC),
 		upsertOp(hiddenTeam, outsider, &teamC, 14, assetDoc(hiddenTeam, 5)))
 	hiddenPersonal := uuid.NewV7()
-	applyUpserts(t, s, assets, scopeOf(outsider),
-		upsertOp(hiddenPersonal, outsider, nil, 15, assetDoc(hiddenPersonal, 6)))
+	applyUpserts(
+		t,
+		s,
+		assets,
+		scopeOf(outsider),
+		upsertOp(
+			hiddenPersonal,
+			outsider,
+			nil,
+			15,
+			assetDoc(hiddenPersonal, 6),
+		),
+	)
 
 	ascending := func(vs []diff.Version) bool {
 		for i := 1; i < len(vs); i++ {
@@ -1342,7 +1353,13 @@ func TestShares_TouchSkipsRefresh(t *testing.T) {
 	scope := scopeOf(owner)
 
 	x := uuid.NewV7()
-	applyUpserts(t, s, assets, scope, upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+	applyUpserts(
+		t,
+		s,
+		assets,
+		scope,
+		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+	)
 
 	// The first grant lands and re-feeds the owner's personal documents.
 	g := uuid.NewV7()
@@ -1367,7 +1384,10 @@ func TestShares_TouchSkipsRefresh(t *testing.T) {
 	if hlc, _ := rowInt(t, db,
 		"SELECT hlc FROM document_shares WHERE id = $1::uuid", g.String(),
 	); hlc != 30 {
-		t.Errorf("got grant hlc %d; want 30 (the grant should have landed)", hlc)
+		t.Errorf(
+			"got grant hlc %d; want 30 (the grant should have landed)",
+			hlc,
+		)
 	}
 }
 
