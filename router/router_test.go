@@ -712,14 +712,20 @@ func TestRouter_ErrorResponse(t *testing.T) {
 	defer srv.Close()
 
 	t.Run("typed error", func(t *testing.T) {
-		res, _ := http.Get(srv.URL + "/typed")
+		res, err := http.Get(srv.URL + "/typed")
+		if err != nil {
+			t.Fatalf("http get failed: %v", err)
+		}
 		if got, want := res.StatusCode, http.StatusTeapot; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
 		}
 	})
 
 	t.Run("standard error", func(t *testing.T) {
-		res, _ := http.Get(srv.URL + "/std")
+		res, err := http.Get(srv.URL + "/std")
+		if err != nil {
+			t.Fatalf("http get failed: %v", err)
+		}
 		if got, want := res.StatusCode,
 			http.StatusInternalServerError; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
@@ -1059,5 +1065,31 @@ func TestErrorID(t *testing.T) {
 
 	if id == router.ErrorID() {
 		t.Error("got the same ID twice; want unique IDs")
+	}
+}
+
+func TestRouter_NotFound(t *testing.T) {
+	t.Parallel()
+	r := router.New()
+	req := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+
+	var errRes router.Error
+	if err := json.Unmarshal(w.Body.Bytes(), &errRes); err != nil {
+		t.Fatalf("failed to unmarshal error response: %v", err)
+	}
+
+	if errRes.Reason != router.ReasonNotFound {
+		t.Errorf(
+			"expected reason %q, got %q",
+			router.ReasonNotFound,
+			errRes.Reason,
+		)
 	}
 }

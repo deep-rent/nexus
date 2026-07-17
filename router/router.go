@@ -614,6 +614,8 @@ type Router struct {
 }
 
 // New creates a new [Router] instance with the provided options.
+// It automatically registers a catch-all handler on "/" that returns a
+// standardized [Error] with [ReasonNotFound] for unmatched routes.
 func New(opts ...Option) *Router {
 	r := &Router{
 		Mux:          http.NewServeMux(),
@@ -623,6 +625,15 @@ func New(opts ...Option) *Router {
 	for _, opt := range opts {
 		opt(r)
 	}
+
+	r.Handle("/", HandlerFunc(func(e *Exchange) error {
+		return &Error{
+			Status:      http.StatusNotFound,
+			Reason:      ReasonNotFound,
+			Description: "The requested route does not exist.",
+		}
+	}))
+
 	return r
 }
 
