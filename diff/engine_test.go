@@ -152,15 +152,15 @@ func sync(
 	req *diff.Request,
 ) *diff.Response {
 	t.Helper()
-	resp, err := f.engine.Sync(t.Context(), scope, req)
+	res, err := f.engine.Sync(t.Context(), scope, req)
 	if err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
-	return resp
+	return res
 }
 
-// rejectedWith asserts that err is a *diff.Error carrying the given code
-// for the given mutation ID, and returns the recorded cause.
+// rejectedWith asserts that the provided error is a [*diff.Error] carrying the
+// given code for the given mutation ID, and returns the recorded cause.
 func rejectedWith(
 	t *testing.T,
 	err error,

@@ -132,9 +132,8 @@ type Share struct {
 
 // Validate implements the [valid.Validatable] interface.
 func (s *Share) Validate(v *valid.Validator) {
-	if !valid.UUID(s.TeamID) {
-		v.Fail("team_id", "must be a valid UUID")
-	}
+    v.UUID("user_id", s.UserID)
+    v.UUID("team_id", s.TeamID)
 }
 
 var _ valid.Validatable = (*Share)(nil)
@@ -226,12 +225,12 @@ func (r *Registry[Tx]) Models() []string {
 	return slices.Clone(r.order())
 }
 
-// checkHandlers cross-checks each handler that implements [Describer]
-// against its registry entry, panicking on a mismatch. This catches, at
-// construction time, a handler configured with a different model name or
-// parent reference than the entry it is registered under — a
-// misconfiguration that would otherwise silently corrupt the patch feed.
-func (r *Registry[Tx]) checkHandlers() {
+// verify cross-checks each handler that implements [Describer] against its
+// registry entry, panicking on a mismatch. This catches, at construction time,
+// a handler configured with a different model name or parent reference than the
+// entry it is registered under — a misconfiguration that would otherwise
+// silently corrupt the patch feed.
+func (r *Registry[Tx]) verify() {
 	for name, e := range r.entries {
 		d, ok := e.handler.(Describer)
 		if !ok {

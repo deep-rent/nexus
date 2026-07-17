@@ -136,8 +136,8 @@ func New[Tx any](
 	if reg == nil || len(reg.entries) == 0 {
 		panic("registry with at least one model is required")
 	}
-	reg.order()         // surface cycles and dangling references now
-	reg.checkHandlers() // surface handler/registry misconfiguration now
+	reg.order()  // surface cycles and dangling references now
+	reg.verify() // surface handler/registry misconfiguration now
 
 	cfg := config{
 		logger:     slog.Default(),
