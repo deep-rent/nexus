@@ -697,7 +697,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		if e.W.Closed() {
 			logger.Error(
 				"Handler returned error after writing response",
-				slog.Any("err", err),
+				slog.Any("error", err),
 			)
 			return
 		}
@@ -709,7 +709,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 			logger.Error(
 				"An internal server error occurred",
 				slog.String("error_id", id),
-				slog.Any("err", err),
+				slog.Any("error", err),
 			)
 
 			ae = &Error{
@@ -721,7 +721,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		}
 
 		if we := e.JSON(ae.Status, ae); we != nil {
-			logger.Warn("Failed to write error response", slog.Any("err", we))
+			logger.Warn("Failed to write error response", slog.Any("error", we))
 		}
 	}
 }
