@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
