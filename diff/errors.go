@@ -33,6 +33,21 @@ var ErrTooManyChanges = errors.New("change set exceeds maximum size")
 // the identical request (idempotency makes this safe).
 var ErrConflict = errors.New("concurrent ownership change, retry sync")
 
+// ErrUnknownModel is returned by [Engine.Get] when the requested model name
+// is not registered.
+var ErrUnknownModel = errors.New("unknown document model")
+
+// ErrUnsupportedModel is returned by [Engine.Get] when the requested
+// model's handler does not implement [Reader] and therefore cannot serve
+// point reads.
+var ErrUnsupportedModel = errors.New("model does not support point reads")
+
+// ErrNotFound is returned by [Engine.Get] when the requested document does
+// not exist or is not visible to the caller. The two cases are deliberately
+// indistinguishable so callers cannot probe for the existence of foreign
+// documents.
+var ErrNotFound = errors.New("document not found")
+
 // Code classifies why an individual change was rejected. Every code implies
 // a specific client reaction, documented on the respective constant.
 type Code string

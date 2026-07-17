@@ -159,6 +159,51 @@ func (e *Engine[Tx]) Now() hlc.Time {
 	return e.cfg.clock.Now()
 }
 
+// Get returns the live version of a single document by model name and ID,
+// applying the same visibility rules as the patch feed: the caller's own
+// documents, their teams' documents, and foreign personal documents shared
+// with any of their teams. It returns [ErrUnknownModel] for unregistered
+// models, [ErrUnsupportedModel] when the model's handler does not implement
+// [Reader], and [ErrNotFound] when the document is absent, deleted, or not
+// visible to the scope (indistinguishable by design).
+//
+// Unlike Sync, Get acquires no advisory locks: the scope locks exist to
+// keep the barrier/scan window of cursor pagination sound, and a point read
+// carries no cursor. A read-committed snapshot of the single row is all it
+// needs.
+func (e *Engine[Tx]) Get(
+	ctx context.Context,
+	scope Scope,
+	model string,
+	id uuid.UUID,
+) (*Document, error) {
+	entry, known := e.reg.lookup(model)
+	if !known {
+		return nil, ErrUnknownModel
+	}
+	reader, ok := entry.handler.(Reader[Tx])
+	if !ok {
+		return nil, ErrUnsupportedModel
+	}
+
+	var doc *Document
+	err := e.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
+		v, found, err := reader.Read(ctx, tx, scope, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrNotFound
+		}
+		doc = &Document{Model: model, Time: Stamp(v.Time), Data: v.Data}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
 // change extends [Op] with ingestion bookkeeping.
 type change struct {
 	Op

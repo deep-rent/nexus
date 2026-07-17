@@ -120,6 +120,23 @@ type Handler[Tx any] interface {
 	) (map[uuid.UUID]Meta, error)
 }
 
+// Reader is an optional interface a [Handler] may implement to serve point
+// reads of individual documents. Models whose handlers implement it are
+// retrievable through [Engine.Get] and the single-document HTTP endpoint;
+// models whose handlers do not are write- and feed-only. All bundled
+// handlers (the reference driver/postgres tables, the share handlers, and
+// the mock driver) implement it.
+type Reader[Tx any] interface {
+	// Read returns the live version of the given document if it is visible
+	// to the scope, applying the same visibility rules as [Handler.Fetch]:
+	// the caller's own documents, their teams' documents, and foreign
+	// personal documents shared with any of their teams. Absent, deleted,
+	// and out-of-scope documents uniformly report ok == false, so callers
+	// cannot distinguish foreign documents from missing ones.
+	Read(ctx context.Context, tx Tx, scope Scope, id uuid.UUID) (
+		v Version, ok bool, err error)
+}
+
 // Describer is an optional interface a [Handler] may implement to declare
 // the structural expectations it was built with. When a registered handler
 // implements it, [New] cross-checks those expectations against the

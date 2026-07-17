@@ -1065,6 +1065,40 @@ func (h *shares) Fetch(
 	return collect(rows, s.logger)
 }
 
+// Read implements the [diff.Reader] interface. A grant is visible to its
+// owner and to members of the granted team; the payload is reconstructed
+// from the row columns, like in [shares.Fetch].
+func (h *shares) Read(
+	ctx context.Context,
+	tx *sql.Tx,
+	scope diff.Scope,
+	id uuid.UUID,
+) (diff.Version, bool, error) {
+	s := h.store
+	query := "SELECT seq, hlc, jsonb_build_object(" +
+		"'id', id, 'user_id', user_id, 'team_id', team_id)" +
+		" FROM " + s.shares + " WHERE id = $1::uuid" +
+		" AND (user_id = $2::uuid OR team_id = ANY($3::uuid[]))"
+
+	v := diff.Version{ID: id}
+	var ts int64
+	var data []byte
+	err := tx.QueryRowContext(ctx, query,
+		id, scope.UserID, scope.Teams,
+	).Scan(&v.Seq, &ts, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return diff.Version{}, false, nil
+	}
+	if err != nil {
+		return diff.Version{}, false, fmt.Errorf(
+			"failed to read share: %w", err,
+		)
+	}
+	v.Time = hlc.Time(ts)
+	v.Data = jsontext.Value(data)
+	return v, true, nil
+}
+
 // Resolve implements the [diff.Handler] interface.
 func (h *shares) Resolve(
 	ctx context.Context,
@@ -1240,4 +1274,5 @@ func close(rows *sql.Rows, logger *slog.Logger) {
 var (
 	_ diff.Store[*sql.Tx]   = (*Store)(nil)
 	_ diff.Handler[*sql.Tx] = (*shares)(nil)
+	_ diff.Reader[*sql.Tx]  = (*shares)(nil)
 )

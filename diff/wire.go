@@ -118,6 +118,18 @@ type Patch struct {
 	Update []Row `json:"update,omitempty"`
 }
 
+// Document is a single document version as returned by the single-document
+// endpoint. The document identifier travels inside Data, like in a patch
+// [Row].
+type Document struct {
+	// Model names the registered document model the document belongs to.
+	Model string `json:"type"`
+	// Time is the HLC timestamp of this document version.
+	Time Stamp `json:"time"`
+	// Data is the full document payload.
+	Data jsontext.Value `json:"data"`
+}
+
 // Response is the outcome of a sync round-trip.
 type Response struct {
 	// Patches contains the missed changes in order of application.

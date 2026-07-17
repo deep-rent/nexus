@@ -23,6 +23,11 @@
 // is guaranteed by transactional mutation deduplication; and related models
 // apply in dependency order on both server and client.
 //
+// A companion endpoint, "GET /{type}/{id}", serves point reads of single
+// documents under the same visibility rules as the feed — primarily for
+// third parties integrating with the API without running the sync
+// protocol. See [DocumentEndpoint].
+//
 // Documents are isolated per user and team: every document belongs to a user
 // (its immutable owner) and optionally to a team. Owners may share their
 // personal documents with teams through the built-in "share" model.

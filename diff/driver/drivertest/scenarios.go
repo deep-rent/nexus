@@ -36,6 +36,7 @@ func scenarios[Tx any]() []scenario[Tx] {
 		{name: "grant_visibility", run: scGrantVisibility[Tx]},
 		{name: "child_lww", run: scChild[Tx]},
 		{name: "team_move_departure", departure: true, run: scDeparture[Tx]},
+		{name: "point_read", run: scRead[Tx]},
 	}
 }
 
@@ -328,6 +329,72 @@ func scDeparture[Tx any](t *testing.T, h *harness[Tx]) {
 	h.wantDead(h.tg.Root, oldAudience, id, 200)
 	h.wantLive(h.tg.Root, newAudience, id, 200, 2)
 	h.wantLive(h.tg.Root, scope(owner), id, 200, 2)
+}
+
+// scRead covers point reads: a document is readable by its owner and team
+// members, foreign personal documents surface only through live grants, and
+// absent, deleted, and out-of-scope documents uniformly read as missing.
+func scRead[Tx any](t *testing.T, h *harness[Tx]) {
+	owner := h.user()
+	team := h.team()
+	member := h.user()
+	stranger := h.user()
+
+	ownerScope := scope(owner)
+	memberScope := scope(member, team)
+
+	// The owner reads their own personal document; a stranger cannot, and
+	// cannot distinguish it from a missing one.
+	personal := uuid.NewV7()
+	h.upsert(h.tg.Root, ownerScope,
+		upsertOp(personal, owner, uuid.Nil(), 100, doc(personal, 1)))
+	v, ok := h.read(h.tg.Root, ownerScope, personal)
+	if !ok {
+		t.Fatalf("id %v: owner read got absent; want live", personal)
+	}
+	if v.Time != 100 {
+		t.Errorf("id %v: got time %d; want 100", personal, v.Time)
+	}
+	if got := marker(t, v.Data); got != 1 {
+		t.Errorf("id %v: got marker %d; want 1", personal, got)
+	}
+	if _, ok := h.read(h.tg.Root, scope(stranger), personal); ok {
+		t.Errorf("id %v: stranger read got live; want absent", personal)
+	}
+
+	// Team documents are readable by team members.
+	shared := uuid.NewV7()
+	h.upsert(h.tg.Root, scope(owner, team),
+		upsertOp(shared, owner, team, 110, doc(shared, 2)))
+	if _, ok := h.read(h.tg.Root, memberScope, shared); !ok {
+		t.Errorf("id %v: member read got absent; want live", shared)
+	}
+
+	// A grant exposes the owner's personal document to team members;
+	// revoking it hides the document again.
+	grant := uuid.NewV7()
+	h.upsert(h.tg.Shares, ownerScope, upsertOp(grant, owner, team, 120, "{}"))
+	if _, ok := h.read(h.tg.Root, memberScope, personal); !ok {
+		t.Errorf("id %v: granted read got absent; want live", personal)
+	}
+	if _, ok := h.read(h.tg.Shares, memberScope, grant); !ok {
+		t.Errorf("grant %v: member read got absent; want live", grant)
+	}
+	h.remove(h.tg.Shares, ownerScope, deleteOp(grant, owner, team, 130))
+	if _, ok := h.read(h.tg.Root, memberScope, personal); ok {
+		t.Errorf("id %v: revoked read got live; want absent", personal)
+	}
+
+	// Deleted documents read as missing, not as tombstones.
+	h.remove(h.tg.Root, ownerScope, deleteOp(personal, owner, uuid.Nil(), 200))
+	if _, ok := h.read(h.tg.Root, ownerScope, personal); ok {
+		t.Errorf("id %v: deleted read got live; want absent", personal)
+	}
+
+	// Absent ids read as missing.
+	if _, ok := h.read(h.tg.Root, ownerScope, uuid.NewV7()); ok {
+		t.Error("absent id: read got live; want absent")
+	}
 }
 
 // versionIDs projects versions onto their document ids, preserving order.

@@ -556,3 +556,126 @@ func TestRegister_SelfOwnerPanics(t *testing.T) {
 		})
 	}
 }
+
+// feedOnly wraps a handler while hiding its optional interfaces, modeling a
+// custom handler that does not support point reads.
+type feedOnly struct {
+	diff.Handler[*mock.Tx]
+}
+
+func TestEngine_Get(t *testing.T) {
+	t.Parallel()
+
+	f := setup()
+	owner := uuid.NewV7()
+	scope := diff.Scope{UserID: owner}
+	id := uuid.NewV7()
+
+	at := stamp(1)
+	if _, err := f.engine.Sync(t.Context(), scope, &diff.Request{
+		Changes: []diff.Change{upsert("asset", assetDoc(id, owner,
+			uuid.Nil()), at)},
+	}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	doc, err := f.engine.Get(t.Context(), scope, "asset", id)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if doc.Model != "asset" {
+		t.Errorf("model: got %q; want %q", doc.Model, "asset")
+	}
+	if doc.Time != at {
+		t.Errorf("time: got %d; want %d", doc.Time, at)
+	}
+	var payload struct {
+		ID uuid.UUID `json:"id"`
+	}
+	if err := json.Unmarshal(doc.Data, &payload); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if payload.ID != id {
+		t.Errorf("data id: got %v; want %v", payload.ID, id)
+	}
+
+	// A foreign caller cannot distinguish the document from a missing one.
+	foreign := diff.Scope{UserID: uuid.NewV7()}
+	if _, err := f.engine.Get(
+		t.Context(), foreign, "asset", id,
+	); !errors.Is(err, diff.ErrNotFound) {
+		t.Errorf("foreign get: got %v; want ErrNotFound", err)
+	}
+
+	// Absent documents are not found.
+	if _, err := f.engine.Get(
+		t.Context(), scope, "asset", uuid.NewV7(),
+	); !errors.Is(err, diff.ErrNotFound) {
+		t.Errorf("absent get: got %v; want ErrNotFound", err)
+	}
+
+	// Deleted documents are not found.
+	if _, err := f.engine.Sync(t.Context(), scope, &diff.Request{
+		Changes: []diff.Change{remove("asset", assetDoc(id, owner,
+			uuid.Nil()), stamp(2))},
+	}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if _, err := f.engine.Get(
+		t.Context(), scope, "asset", id,
+	); !errors.Is(err, diff.ErrNotFound) {
+		t.Errorf("deleted get: got %v; want ErrNotFound", err)
+	}
+
+	// Unregistered models are unknown.
+	if _, err := f.engine.Get(
+		t.Context(), scope, "vehicle", id,
+	); !errors.Is(err, diff.ErrUnknownModel) {
+		t.Errorf("unknown model: got %v; want ErrUnknownModel", err)
+	}
+}
+
+func TestEngine_Get_Errors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unsupported model", func(t *testing.T) {
+		t.Parallel()
+		store := mock.New()
+		reg := diff.NewRegistry[*mock.Tx]()
+		reg.Register[asset]("asset",
+			feedOnly{mock.NewHandler(store)}, diff.Root())
+		engine := diff.New(store, reg)
+
+		_, err := engine.Get(t.Context(), diff.Scope{UserID: uuid.NewV7()},
+			"asset", uuid.NewV7())
+		if !errors.Is(err, diff.ErrUnsupportedModel) {
+			t.Errorf("got %v; want ErrUnsupportedModel", err)
+		}
+	})
+
+	t.Run("store error", func(t *testing.T) {
+		t.Parallel()
+		f := setup()
+		boom := errors.New("boom")
+		f.store.ErrExec = boom
+
+		_, err := f.engine.Get(t.Context(), diff.Scope{UserID: uuid.NewV7()},
+			"asset", uuid.NewV7())
+		if !errors.Is(err, boom) {
+			t.Errorf("got %v; want the injected store error", err)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+		f := setup()
+		boom := errors.New("boom")
+		f.assets.ErrRead = boom
+
+		_, err := f.engine.Get(t.Context(), diff.Scope{UserID: uuid.NewV7()},
+			"asset", uuid.NewV7())
+		if !errors.Is(err, boom) {
+			t.Errorf("got %v; want the injected read error", err)
+		}
+	})
+}

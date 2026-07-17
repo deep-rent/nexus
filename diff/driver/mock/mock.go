@@ -275,6 +275,7 @@ type Handler struct {
 	ErrUpsert error
 	ErrDelete error
 	ErrFetch  error
+	ErrRead   error
 
 	// OnFetch, if set, is invoked at the start of every [Handler.Fetch]
 	// call. It lets a test simulate a concurrent tombstone prune advancing
@@ -441,6 +442,38 @@ func (h *Handler) Fetch(
 	return out, nil
 }
 
+// Read implements the [diff.Reader] interface with the same visibility
+// rules as [Handler.Fetch]. Absent, deleted, and out-of-scope documents
+// uniformly report ok == false.
+func (h *Handler) Read(
+	_ context.Context,
+	_ *Tx,
+	scope diff.Scope,
+	id uuid.UUID,
+) (diff.Version, bool, error) {
+	h.Calls = append(h.Calls, "read")
+	if h.ErrRead != nil {
+		return diff.Version{}, false, h.ErrRead
+	}
+
+	r, exists := h.rows[id]
+	if !exists {
+		return diff.Version{}, false, nil
+	}
+	visible := scope.Allows(r.meta.UserID, r.meta.TeamID) ||
+		(r.meta.TeamID == uuid.Nil() &&
+			h.store.granted(r.meta.UserID, scope.Teams))
+	if !visible {
+		return diff.Version{}, false, nil
+	}
+	return diff.Version{
+		ID:   id,
+		Seq:  r.seq,
+		Time: r.hlc,
+		Data: r.data,
+	}, true, nil
+}
+
 // Resolve implements the [diff.Handler] interface.
 func (h *Handler) Resolve(
 	_ context.Context,
@@ -478,6 +511,7 @@ func (h *Handler) Tombstones() []uuid.UUID {
 var (
 	_ diff.Store[*Tx]   = (*Store)(nil)
 	_ diff.Handler[*Tx] = (*Handler)(nil)
+	_ diff.Reader[*Tx]  = (*Handler)(nil)
 )
 
 // Shares is the in-memory handler for the reserved share model. It applies

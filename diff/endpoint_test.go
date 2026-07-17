@@ -92,6 +92,33 @@ func post(
 	return res.StatusCode, decoded
 }
 
+// get requests a single document and returns the status code and decoded
+// body.
+func get(
+	t *testing.T,
+	srv *httptest.Server,
+	path string,
+) (int, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer token")
+
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	var decoded map[string]any
+	if err := json.UnmarshalRead(res.Body, &decoded); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	return res.StatusCode, decoded
+}
+
 func TestEndpoint_Sync(t *testing.T) {
 	t.Parallel()
 
@@ -282,4 +309,136 @@ func TestEndpoint_Errors(t *testing.T) {
 				got, diff.ReasonResyncRequired)
 		}
 	})
+}
+
+func TestEndpoint_Document(t *testing.T) {
+	t.Parallel()
+
+	f := setup()
+	owner := uuid.NewV7()
+	srv := serve(t, f, claimsFor(owner))
+
+	// Seed one document through the sync endpoint.
+	id := uuid.NewV7()
+	code, body := post(t, srv, fmt.Sprintf(
+		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
+			`"data":%s,"time":%d}]}`,
+		uuid.NewV7(), assetDoc(id, owner, uuid.Nil()), stamp(1),
+	))
+	if code != http.StatusOK {
+		t.Fatalf("seed status: got %d; want %d (body %v)",
+			code, http.StatusOK, body)
+	}
+
+	code, body = get(t, srv, "/asset/"+id.String())
+	if code != http.StatusOK {
+		t.Fatalf("status: got %d; want %d (body %v)",
+			code, http.StatusOK, body)
+	}
+	if got := body["type"]; got != "asset" {
+		t.Errorf("type: got %v; want %q", got, "asset")
+	}
+	if _, ok := body["time"].(float64); !ok {
+		t.Errorf("time: got %v; want a timestamp", body["time"])
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data: got %v; want a document payload", body["data"])
+	}
+	if got := data["id"]; got != id.String() {
+		t.Errorf("data id: got %v; want %q", got, id.String())
+	}
+}
+
+func TestEndpoint_Document_Errors(t *testing.T) {
+	t.Parallel()
+
+	owner := uuid.NewV7()
+	foreign := uuid.NewV7() // a document of another user
+
+	seed := func(f *fixture, srv *httptest.Server) {
+		t.Helper()
+		code, body := post(t, srv, fmt.Sprintf(
+			`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
+				`"type":"asset","data":%s,"time":%d}]}`,
+			uuid.NewV7(), assetDoc(foreign, owner, uuid.Nil()), stamp(1),
+		))
+		if code != http.StatusOK {
+			t.Fatalf("seed status: got %d; want %d (body %v)",
+				code, http.StatusOK, body)
+		}
+	}
+
+	tests := []struct {
+		name       string
+		claims     *auth.Claims
+		path       string
+		wantStatus int
+		wantReason string
+	}{
+		{
+			name: "machine token",
+			claims: func() *auth.Claims {
+				svc := uuid.NewV7()
+				c := &auth.Claims{}
+				c.Sub = svc
+				c.Azp = svc // azp == sub: not delegated
+				return c
+			}(),
+			path:       "/asset/" + uuid.NewV7().String(),
+			wantStatus: http.StatusForbidden,
+			wantReason: auth.ReasonDelegationRequired,
+		},
+		{
+			name:       "invalid id",
+			claims:     claimsFor(owner),
+			path:       "/asset/not-a-uuid",
+			wantStatus: http.StatusBadRequest,
+			wantReason: router.ReasonValidationFailed,
+		},
+		{
+			name:       "unknown model",
+			claims:     claimsFor(owner),
+			path:       "/vehicle/" + uuid.NewV7().String(),
+			wantStatus: http.StatusNotFound,
+			wantReason: diff.ReasonUnknownModel,
+		},
+		{
+			name:       "absent document",
+			claims:     claimsFor(owner),
+			path:       "/asset/" + uuid.NewV7().String(),
+			wantStatus: http.StatusNotFound,
+			wantReason: diff.ReasonNotFound,
+		},
+		{
+			name:       "foreign document",
+			claims:     claimsFor(uuid.NewV7()), // not the owner
+			path:       "/asset/" + foreign.String(),
+			wantStatus: http.StatusNotFound,
+			wantReason: diff.ReasonNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup()
+
+			// Seeding requires owner claims; serve the test claims through a
+			// second server sharing the same fixture.
+			seeder := serve(t, f, claimsFor(owner))
+			seed(f, seeder)
+
+			srv := serve(t, f, tt.claims)
+			code, body := get(t, srv, tt.path)
+
+			if code != tt.wantStatus {
+				t.Errorf("status: got %d; want %d (body %v)",
+					code, tt.wantStatus, body)
+			}
+			if got := body["reason"]; got != tt.wantReason {
+				t.Errorf("reason: got %v; want %q", got, tt.wantReason)
+			}
+		})
+	}
 }

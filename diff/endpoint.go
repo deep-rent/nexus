@@ -18,11 +18,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/router"
+	"github.com/deep-rent/nexus/valid"
 )
 
 // Error reasons emitted by the sync endpoint, complementing the reasons
@@ -43,6 +43,12 @@ const (
 	// ReasonTooManyChanges indicates a change set above the configured
 	// maximum size; the client should split its queue into smaller batches.
 	ReasonTooManyChanges = "too_many_changes"
+	// ReasonUnknownModel indicates that the requested document type is not
+	// served by this endpoint.
+	ReasonUnknownModel = "unknown_model"
+	// ReasonNotFound indicates that the requested document does not exist
+	// or is not visible to the caller (indistinguishable by design).
+	ReasonNotFound = "not_found"
 )
 
 // Syncer is the engine capability the HTTP layer builds on. It is
@@ -51,6 +57,16 @@ const (
 type Syncer interface {
 	// Sync ingests a change set and compiles the missed patch feed.
 	Sync(ctx context.Context, scope Scope, req *Request) (*Response, error)
+}
+
+// Getter is the engine capability behind the single-document endpoint. It
+// is implemented by [Engine] and decouples the endpoint from the storage
+// transaction type.
+type Getter interface {
+	// Get returns the live version of a single document by model name and
+	// ID, subject to the scope's visibility.
+	Get(ctx context.Context, scope Scope, model string, id uuid.UUID) (
+		*Document, error)
 }
 
 // Endpoint builds the unified sync handler around the engine. Requests
@@ -68,32 +84,9 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 		panic("syncer is required")
 	}
 	return func(e *router.Exchange) error {
-		claims, ok := auth.From[C](e)
-		if !ok {
-			return &router.Error{
-				Status:      http.StatusUnauthorized,
-				Reason:      auth.ReasonMissingToken,
-				Description: "The sync endpoint requires authentication.",
-			}
-		}
-		if !claims.Delegated() {
-			return &router.Error{
-				Status: http.StatusForbidden,
-				Reason: auth.ReasonDelegationRequired,
-				Description: "The sync endpoint serves end users; " +
-					"machine tokens cannot sync documents.",
-			}
-		}
-		// Subjects and memberships are typed UUIDs end to end; a token
-		// whose sub claim failed to parse never verifies, so only the
-		// zero value needs rejecting here.
-		sub := claims.Subject()
-		if sub == uuid.Nil() {
-			return &router.Error{
-				Status:      http.StatusUnauthorized,
-				Reason:      auth.ReasonInvalidToken,
-				Description: "The token subject is not a user identifier.",
-			}
+		scope, aerr := scopeFrom[C](e)
+		if aerr != nil {
+			return aerr
 		}
 
 		var req Request
@@ -101,7 +94,6 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 			return aerr
 		}
 
-		scope := Scope{UserID: sub, Teams: claims.Memberships()}
 		resp, err := s.Sync(e.Context(), scope, &req)
 		if err != nil {
 			return translate(err)
@@ -110,16 +102,98 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 	}
 }
 
+// DocumentEndpoint builds the single-document retrieval handler around the
+// engine. It serves "GET /{type}/{id}" requests, returning the live version
+// of one document subject to the caller's visibility, and shares the
+// authentication requirements of [Endpoint]:
+//
+//	guard := auth.NewGuard[*auth.Claims](verifier)
+//	get := diff.DocumentEndpoint[*auth.Claims](engine)
+//	r.HandleFunc("GET /{type}/{id}", get, guard.Secure())
+//
+// The {type} parameter names a registered document model and {id} the
+// document identifier. Absent, deleted, and out-of-scope documents
+// uniformly yield 404 so callers cannot probe foreign document IDs.
+func DocumentEndpoint[C auth.AccessClaims](g Getter) router.HandlerFunc {
+	if g == nil {
+		panic("getter is required")
+	}
+	return func(e *router.Exchange) error {
+		scope, aerr := scopeFrom[C](e)
+		if aerr != nil {
+			return aerr
+		}
+
+		id, err := uuid.Parse(e.Param("id"))
+		if err != nil {
+			return &router.Error{
+				Status:      http.StatusBadRequest,
+				Reason:      router.ReasonValidationFailed,
+				Description: "The document ID is not a valid UUID.",
+				Context: valid.Error{
+					"id": {"must be a valid UUID"},
+				},
+			}
+		}
+
+		doc, err := g.Get(e.Context(), scope, e.Param("type"), id)
+		if err != nil {
+			return translate(err)
+		}
+		return e.JSON(http.StatusOK, doc)
+	}
+}
+
+// scopeFrom extracts the authorization scope from the request's verified
+// claims: the subject identifies the acting user and the "teams" claim (via
+// [auth.AccessClaims.Memberships]) carries their team memberships. It
+// rejects unauthenticated requests and machine tokens.
+func scopeFrom[C auth.AccessClaims](e *router.Exchange) (Scope, *router.Error) {
+	claims, ok := auth.From[C](e)
+	if !ok {
+		return Scope{}, &router.Error{
+			Status:      http.StatusUnauthorized,
+			Reason:      auth.ReasonMissingToken,
+			Description: "This endpoint requires authentication.",
+		}
+	}
+	if !claims.Delegated() {
+		return Scope{}, &router.Error{
+			Status: http.StatusForbidden,
+			Reason: auth.ReasonDelegationRequired,
+			Description: "This endpoint serves end users; " +
+				"machine tokens cannot access documents.",
+		}
+	}
+	// Subjects and memberships are typed UUIDs end to end; a token
+	// whose sub claim failed to parse never verifies, so only the
+	// zero value needs rejecting here.
+	sub := claims.Subject()
+	if sub == uuid.Nil() {
+		return Scope{}, &router.Error{
+			Status:      http.StatusUnauthorized,
+			Reason:      auth.ReasonInvalidToken,
+			Description: "The token subject is not a user identifier.",
+		}
+	}
+	return Scope{UserID: sub, Teams: claims.Memberships()}, nil
+}
+
 // Mount registers the sync endpoint as "POST /sync" following the mount
-// convention of this framework. Pass the auth guard (and any additional
-// route middleware) as mws. For a custom pattern, register [Endpoint] with
-// [router.Router.HandleFunc] directly.
+// convention of this framework. When s also implements [Getter] (as
+// [Engine] does), the single-document endpoint is registered as
+// "GET /{type}/{id}" alongside it. Pass the auth guard (and any additional
+// route middleware) as mws. For custom patterns, register [Endpoint] and
+// [DocumentEndpoint] with [router.Router.HandleFunc] directly.
 func Mount[C auth.AccessClaims](
 	r *router.Router,
 	s Syncer,
 	mws ...router.Middleware,
 ) {
 	r.HandleFunc("POST /sync", Endpoint[C](s), mws...)
+	if g, ok := s.(Getter); ok {
+		r.HandleFunc("GET /{type}/{id}", DocumentEndpoint[C](g), mws...)
+	}
 }
 
 // translate maps the engine's typed errors onto HTTP error responses.
@@ -160,6 +234,25 @@ func translate(err error) error {
 			Status:      http.StatusRequestEntityTooLarge,
 			Reason:      ReasonTooManyChanges,
 			Description: "The change set exceeds the maximum size.",
+			Cause:       err,
+		}
+	}
+	// Unsupported models deliberately read as unknown: from the API
+	// consumer's perspective, a type without point reads is simply not
+	// served by this endpoint.
+	if errors.Is(err, ErrUnknownModel) || errors.Is(err, ErrUnsupportedModel) {
+		return &router.Error{
+			Status:      http.StatusNotFound,
+			Reason:      ReasonUnknownModel,
+			Description: "The requested document type has not been recognized.",
+			Cause:       err,
+		}
+	}
+	if errors.Is(err, ErrNotFound) {
+		return &router.Error{
+			Status:      http.StatusNotFound,
+			Reason:      ReasonNotFound,
+			Description: "The requested document does not exist.",
 			Cause:       err,
 		}
 	}

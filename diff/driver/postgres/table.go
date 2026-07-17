@@ -20,6 +20,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json/jsontext"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -30,6 +32,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
+	"github.com/deep-rent/nexus/internal/hlc"
 	"github.com/deep-rent/nexus/internal/quote"
 )
 
@@ -168,6 +171,7 @@ type Table struct {
 	resolveSQL  string
 	snapshotSQL string
 	reseqSQL    string
+	readSQL     string
 	// fetchCache memoizes the feed scan SQL keyed by the number of teams in
 	// the caller's scope. The scan expands one indexable UNION ALL arm per
 	// team, so its shape depends on the team count and cannot be a single
@@ -343,6 +347,16 @@ func (t *Table) buildSQL() {
 
 	t.reseqSQL = "UPDATE " + t.ident + " SET seq = " + s.nextval +
 		" WHERE id = ANY($1::uuid[])"
+
+	// A point read is a primary key lookup guarded by the same visibility
+	// branches as the feed scan: the caller's own documents, their teams'
+	// documents, and foreign personal documents shared through live grants.
+	t.readSQL = "SELECT seq, hlc, data FROM " + t.ident +
+		" WHERE id = $1::uuid AND (" + t.userCol + " = $2::uuid" +
+		" OR " + t.teamCol + " = ANY($3::uuid[])" +
+		" OR (" + t.teamCol + " IS NULL AND " + t.userCol + " IN (" +
+		"SELECT user_id FROM " + s.shares +
+		" WHERE team_id = ANY($3::uuid[]))))"
 }
 
 // Upsert implements the [diff.Handler] interface. It applies
@@ -669,6 +683,35 @@ func (t *Table) Fetch(
 	return collect(rows, t.store.logger)
 }
 
+// Read implements the [diff.Reader] interface. It returns the live version
+// of the given document if it is visible to the scope, applying the same
+// visibility branches as the feed scan. Absent, deleted, and out-of-scope
+// documents uniformly report ok == false.
+func (t *Table) Read(
+	ctx context.Context,
+	tx *sql.Tx,
+	scope diff.Scope,
+	id uuid.UUID,
+) (diff.Version, bool, error) {
+	v := diff.Version{ID: id}
+	var ts int64
+	var data []byte
+	err := tx.QueryRowContext(ctx, t.readSQL,
+		id, scope.UserID, scope.Teams,
+	).Scan(&v.Seq, &ts, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return diff.Version{}, false, nil
+	}
+	if err != nil {
+		return diff.Version{}, false, fmt.Errorf(
+			"failed to read document: %w", err,
+		)
+	}
+	v.Time = hlc.Time(ts)
+	v.Data = jsontext.Value(data)
+	return v, true, nil
+}
+
 // Resolve implements the [diff.Handler] interface. For child tables, the
 // returned envelopes carry the denormalized root identity.
 func (t *Table) Resolve(
@@ -832,5 +875,6 @@ func (t *Table) Parent() (via string, ok bool) {
 
 var (
 	_ diff.Handler[*sql.Tx] = (*Table)(nil)
+	_ diff.Reader[*sql.Tx]  = (*Table)(nil)
 	_ diff.Describer        = (*Table)(nil)
 )

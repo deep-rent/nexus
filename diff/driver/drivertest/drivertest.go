@@ -192,6 +192,28 @@ func (h *harness[Tx]) resolve(
 	return meta, ok
 }
 
+// read performs a point read through the handler's [diff.Reader]
+// implementation, failing the test if the backend does not provide one.
+func (h *harness[Tx]) read(
+	hd diff.Handler[Tx],
+	s diff.Scope,
+	id uuid.UUID,
+) (diff.Version, bool) {
+	h.t.Helper()
+	reader, ok := hd.(diff.Reader[Tx])
+	if !ok {
+		h.t.Fatalf("handler %T does not implement diff.Reader", hd)
+	}
+	var out diff.Version
+	var found bool
+	h.tg.InTx(h.t, func(ctx context.Context, tx Tx) error {
+		var err error
+		out, found, err = reader.Read(ctx, tx, s, id)
+		return err
+	})
+	return out, found
+}
+
 // find returns the single version of id visible to the scope, if any.
 func (h *harness[Tx]) find(
 	hd diff.Handler[Tx],
