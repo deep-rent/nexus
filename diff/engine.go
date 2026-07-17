@@ -379,7 +379,7 @@ func (e *Engine[Tx]) screen(
 			// Owner and team identifiers must be well-formed UUIDs before
 			// they participate in scope checks or lock derivation.
 			if !valid.UUID(meta.UserID) ||
-				(meta.TeamID != nil && !valid.UUID(*meta.TeamID)) {
+				(meta.TeamID != "" && !valid.UUID(meta.TeamID)) {
 				rejected.reject(
 					in.ID,
 					Cause{Code: CodeInvalid, Fields: valid.Error{
@@ -528,10 +528,10 @@ func (e *Engine[Tx]) assemble(
 	owners := make(
 		map[string]struct{},
 	) // owners whose personal docs are written
-	include := func(userID string, teamID *string) {
+	include := func(userID, teamID string) {
 		write[userID] = struct{}{}
-		if teamID != nil {
-			write[*teamID] = struct{}{}
+		if teamID != "" {
+			write[teamID] = struct{}{}
 		} else {
 			owners[userID] = struct{}{}
 		}
@@ -622,7 +622,7 @@ func (e *Engine[Tx]) resolve(
 		if c.child {
 			c.resolved = false
 			c.Meta.UserID = ""
-			c.Meta.TeamID = nil
+			c.Meta.TeamID = ""
 		}
 	}
 

@@ -99,7 +99,7 @@ func TestEndpoint_Sync(t *testing.T) {
 	owner := uuid.NewV7().String()
 	srv := serve(t, f, claimsFor(owner))
 
-	doc := assetDoc(uuid.NewV7(), owner, nil)
+	doc := assetDoc(uuid.NewV7(), owner, "")
 	code, body := post(t, srv, fmt.Sprintf(
 		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
 			`"data":%s,"time":%d}]}`,
@@ -127,7 +127,7 @@ func TestEndpoint_Errors(t *testing.T) {
 		return fmt.Sprintf(
 			`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 				`"type":"asset","data":%s,"time":%d}]}`,
-			uuid.NewV7(), assetDoc(uuid.NewV7(), owner, nil), stamp(1),
+			uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
 		)
 	}
 
@@ -175,7 +175,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			body: fmt.Sprintf(
 				`{"since":-1,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"asset","data":%s,"time":%d}]}`,
-				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, nil), stamp(1),
+				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
 			wantReason: router.ReasonValidationFailed,
@@ -186,7 +186,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			body: fmt.Sprintf(
 				`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"vehicle","data":%s,"time":%d}]}`,
-				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, nil), stamp(1),
+				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
 			wantReason: diff.ReasonChangesRejected,
@@ -201,7 +201,7 @@ func TestEndpoint_Errors(t *testing.T) {
 				assetDoc(
 					uuid.NewV7(),
 					uuid.NewV7().String(),
-					nil,
+					"",
 				), // foreign owner
 				stamp(1),
 			),
@@ -292,7 +292,7 @@ func TestEndpoint_MalformedMembership(t *testing.T) {
 	code, body := post(t, srv, fmt.Sprintf(
 		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
 			`"data":%s,"time":%d}]}`,
-		uuid.NewV7(), assetDoc(uuid.NewV7(), owner, nil), stamp(1),
+		uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
 	))
 	if code != http.StatusUnauthorized {
 		t.Errorf("status: got %d; want %d (body %v)",

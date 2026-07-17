@@ -30,7 +30,6 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
-	"github.com/deep-rent/nexus/internal/pointer"
 	"github.com/deep-rent/nexus/internal/quote"
 )
 
@@ -371,7 +370,7 @@ func (t *Table) Upsert(
 	for i, op := range ops {
 		ids[i] = op.Meta.ID.String()
 		users[i] = op.Meta.UserID
-		teams[i] = pointer.Value(op.Meta.TeamID)
+		teams[i] = op.Meta.TeamID
 		hlcs[i] = int64(op.Time)
 		datas[i] = string(op.Data)
 	}
@@ -522,7 +521,7 @@ func deleteArgs(ops []diff.Op) ([]string, []int64, []string, []string) {
 		ids[i] = op.Meta.ID.String()
 		hlcs[i] = int64(op.Time)
 		users[i] = op.Meta.UserID
-		teams[i] = pointer.Value(op.Meta.TeamID)
+		teams[i] = op.Meta.TeamID
 	}
 	return ids, hlcs, users, teams
 }

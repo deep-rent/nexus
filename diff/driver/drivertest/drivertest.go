@@ -279,7 +279,7 @@ func (h *harness[Tx]) wantAbsent(
 func upsertOp(
 	id uuid.UUID,
 	owner string,
-	team *string,
+	team string,
 	time diff.Stamp,
 	data string,
 ) diff.Op {
@@ -295,7 +295,7 @@ func upsertOp(
 func deleteOp(
 	id uuid.UUID,
 	owner string,
-	team *string,
+	team string,
 	time diff.Stamp,
 ) diff.Op {
 	return diff.Op{

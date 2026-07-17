@@ -103,14 +103,14 @@ func stamp(n uint64) diff.Stamp {
 	return diff.Stamp(hlc.Pack(uint64(time.Now().Unix()), n))
 }
 
-func assetDoc(id uuid.UUID, owner string, team *string) jsontext.Value {
+func assetDoc(id uuid.UUID, owner, team string) jsontext.Value {
 	doc := map[string]any{
 		"id":      id.String(),
 		"user_id": owner,
 		"name":    "doc",
 	}
-	if team != nil {
-		doc["team_id"] = *team
+	if team != "" {
+		doc["team_id"] = team
 	}
 	b, err := json.Marshal(doc)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestEngine_Sync_PushPull(t *testing.T) {
 	// Device A pushes one asset; its own write must not echo back.
 	resp := sync(t, f, scope, &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(id, owner, nil), stamp(1)),
+			upsert("asset", assetDoc(id, owner, ""), stamp(1)),
 		},
 	})
 	if len(resp.Patches) != 0 {
@@ -239,7 +239,7 @@ func TestEngine_Sync_IdempotentReplay(t *testing.T) {
 
 	req := &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(id, owner, nil), stamp(1)),
+			upsert("asset", assetDoc(id, owner, ""), stamp(1)),
 		},
 	}
 
@@ -274,7 +274,7 @@ func TestEngine_Sync_Compaction(t *testing.T) {
 		owner := uuid.NewV7().String()
 		scope := diff.Scope{UserID: owner}
 		id := uuid.NewV7()
-		doc := assetDoc(id, owner, nil)
+		doc := assetDoc(id, owner, "")
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			upsert("asset", doc, stamp(10)),
 			remove("asset", doc, stamp(20)),
@@ -293,7 +293,7 @@ func TestEngine_Sync_Compaction(t *testing.T) {
 		owner := uuid.NewV7().String()
 		scope := diff.Scope{UserID: owner}
 		id := uuid.NewV7()
-		doc := assetDoc(id, owner, nil)
+		doc := assetDoc(id, owner, "")
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			remove("asset", doc, stamp(10)),
 			upsert("asset", doc, stamp(20)),
@@ -321,7 +321,7 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 		id := uuid.NewV7()
 		want[id] = true
 		changes = append(changes,
-			upsert("asset", assetDoc(id, owner, nil), stamp(uint64(i+1))))
+			upsert("asset", assetDoc(id, owner, ""), stamp(uint64(i+1))))
 	}
 	sync(t, f, scope, &diff.Request{Changes: changes})
 
@@ -377,7 +377,7 @@ func TestEngine_Sync_Convergence(t *testing.T) {
 
 	// Two devices edit the same document concurrently; regardless of
 	// arrival order, the highest HLC timestamp must win everywhere.
-	editA := upsert("asset", assetDoc(id, owner, nil), stamp(10))
+	editA := upsert("asset", assetDoc(id, owner, ""), stamp(10))
 	editB := upsert("asset", jsontext.Value(fmt.Sprintf(
 		`{"id":%q,"user_id":%q,"name":"winner"}`, id, owner,
 	)), stamp(20))
@@ -428,7 +428,7 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 			// Child listed first on purpose: resolution must not depend on
 			// request order.
 			upsert("contract", contractDoc(contractID, assetID), stamp(2)),
-			upsert("asset", assetDoc(assetID, owner, &team), stamp(1)),
+			upsert("asset", assetDoc(assetID, owner, team), stamp(1)),
 		}})
 
 		if _, alive := f.contracts.Rows()[contractID]; !alive {
@@ -443,7 +443,7 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 		if meta.UserID != owner {
 			t.Errorf("resolved owner: got %v; want %v", meta.UserID, owner)
 		}
-		if meta.TeamID == nil || *meta.TeamID != team {
+		if meta.TeamID != team {
 			t.Errorf("resolved team: got %v; want %v", meta.TeamID, team)
 		}
 	})
@@ -456,7 +456,7 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 		assetID, contractID := uuid.NewV7(), uuid.NewV7()
 
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-			upsert("asset", assetDoc(assetID, owner, nil), stamp(1)),
+			upsert("asset", assetDoc(assetID, owner, ""), stamp(1)),
 		}})
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			upsert("contract", contractDoc(contractID, assetID), stamp(2)),
@@ -490,7 +490,7 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 
 		sync(t, f, diff.Scope{UserID: owner}, &diff.Request{
 			Changes: []diff.Change{
-				upsert("asset", assetDoc(assetID, owner, nil), stamp(1)),
+				upsert("asset", assetDoc(assetID, owner, ""), stamp(1)),
 			},
 		})
 
@@ -560,7 +560,7 @@ func TestEngine_Sync_LockSet(t *testing.T) {
 	scope := diff.Scope{UserID: owner, Teams: []string{team}}
 
 	sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-		upsert("asset", assetDoc(uuid.NewV7(), other, &team), stamp(1)),
+		upsert("asset", assetDoc(uuid.NewV7(), other, team), stamp(1)),
 	}})
 
 	if len(f.store.Locked) == 0 {
@@ -585,8 +585,8 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		f := setup(diff.WithMaxChanges(1))
 		_, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{
-				upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(1)),
-				upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(2)),
+				upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
+				upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(2)),
 			},
 		})
 		if !errors.Is(err, diff.ErrTooManyChanges) {
@@ -597,7 +597,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 	t.Run("unknown type", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		c := upsert("vehicle", assetDoc(uuid.NewV7(), owner, nil), stamp(1))
+		c := upsert("vehicle", assetDoc(uuid.NewV7(), owner, ""), stamp(1))
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -608,7 +608,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		t.Parallel()
 		f := setup()
 		foreign := uuid.NewV7().String()
-		c := upsert("asset", assetDoc(uuid.NewV7(), foreign, nil), stamp(1))
+		c := upsert("asset", assetDoc(uuid.NewV7(), foreign, ""), stamp(1))
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -636,7 +636,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		t.Parallel()
 		f := setup()
 
-		doc := assetDoc(uuid.NewV7(), owner, nil)
+		doc := assetDoc(uuid.NewV7(), owner, "")
 		badID := upsert("asset", doc, stamp(1))
 		badID.ID = uuid.NewV4() // not a UUIDv7
 		badAction := upsert("asset", doc, stamp(2))
@@ -671,7 +671,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		t.Parallel()
 		f := setup()
 		future := diff.Stamp(hlc.Pack(uint64(time.Now().Unix())+7200, 0))
-		c := upsert("asset", assetDoc(uuid.NewV7(), owner, nil), future)
+		c := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), future)
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -718,7 +718,7 @@ func TestEngine_Sync_ApplyOrder(t *testing.T) {
 
 	// Push child before parent, and delete parent before child: the engine
 	// must reorder both along the dependency graph.
-	doc := assetDoc(assetID, owner, nil)
+	doc := assetDoc(assetID, owner, "")
 	if _, err := engine.Sync(t.Context(), scope, &diff.Request{
 		Changes: []diff.Change{
 			upsert("contract", contractDoc(contractID, assetID), stamp(2)),
@@ -754,7 +754,7 @@ func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
 
 	// Seed one document so the sequence has advanced past zero.
 	sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-		upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(1)),
+		upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
 	}})
 
 	before, err := f.store.Watermark(t.Context(), &mock.Tx{})
@@ -782,7 +782,7 @@ func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
 	// A pure replay (all mutation ids already claimed) is likewise a zero-
 	// write request and must not advance the sequence either.
 	replay := &diff.Request{Changes: []diff.Change{
-		upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(2)),
+		upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(2)),
 	}}
 	sync(t, f, scope, replay)
 	seeded, err := f.store.Watermark(t.Context(), &mock.Tx{})
@@ -843,7 +843,7 @@ func TestEngine_Sync_GrantsResolvedOncePerSync(t *testing.T) {
 	// held.
 	if _, err := engine.Sync(t.Context(), scope, &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(uuid.NewV7(), owner, nil), stamp(1)),
+			upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
 		},
 	}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)

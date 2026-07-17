@@ -38,14 +38,14 @@ type Scope struct {
 }
 
 // Allows reports whether a document owned by userID and assigned to teamID
-// (nil for personal documents) is directly accessible within the scope.
+// (empty for personal documents) is directly accessible within the scope.
 // Grant-based visibility of foreign personal documents is evaluated by the
 // store, not here.
-func (s Scope) Allows(userID string, teamID *string) bool {
+func (s Scope) Allows(userID, teamID string) bool {
 	if userID == s.UserID {
 		return true
 	}
-	return teamID != nil && slices.Contains(s.Teams, *teamID)
+	return teamID != "" && slices.Contains(s.Teams, teamID)
 }
 
 // Meta is the identifying envelope of a root document payload. Child
@@ -57,8 +57,10 @@ type Meta struct {
 	ID uuid.UUID `json:"id"`
 	// UserID is the immutable owner of the document.
 	UserID string `json:"user_id"`
-	// TeamID optionally assigns the document to a team.
-	TeamID *string `json:"team_id,omitzero"`
+	// TeamID optionally assigns the document to a team. An empty string
+	// denotes a personal document with no team; identifiers are never
+	// empty, so the empty value is an unambiguous sentinel.
+	TeamID string `json:"team_id,omitzero"`
 }
 
 // Op is a single compacted, validated, and authorized operation passed to a

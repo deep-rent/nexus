@@ -30,7 +30,7 @@ import (
 func op(
 	id uuid.UUID,
 	owner string,
-	team *string,
+	team string,
 	time diff.Stamp,
 ) diff.Op {
 	return diff.Op{
@@ -53,12 +53,12 @@ func TestHandler_LWW(t *testing.T) {
 	ctx := t.Context()
 
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
-		[]diff.Op{op(id, owner, nil, 100)}); err != nil {
+		[]diff.Op{op(id, owner, "", 100)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	// A stale upsert must lose against the newer row.
-	stale := op(id, owner, nil, 50)
+	stale := op(id, owner, "", 50)
 	stale.Data = jsontext.Value(`{"stale":true}`)
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
 		[]diff.Op{stale}); err != nil {
@@ -69,7 +69,7 @@ func TestHandler_LWW(t *testing.T) {
 	}
 
 	// A newer delete wins and leaves a tombstone.
-	del := op(id, owner, nil, 200)
+	del := op(id, owner, "", 200)
 	del.Action = diff.ActionDelete
 	del.Data = nil
 	if err := h.Delete(ctx, &mock.Tx{}, scope,
@@ -85,14 +85,14 @@ func TestHandler_LWW(t *testing.T) {
 
 	// A stale upsert must not resurrect; a newer one must.
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
-		[]diff.Op{op(id, owner, nil, 150)}); err != nil {
+		[]diff.Op{op(id, owner, "", 150)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if _, alive := h.Rows()[id]; alive {
 		t.Error("stale upsert should not have resurrected the row")
 	}
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
-		[]diff.Op{op(id, owner, nil, 300)}); err != nil {
+		[]diff.Op{op(id, owner, "", 300)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if _, alive := h.Rows()[id]; !alive {
@@ -115,13 +115,13 @@ func TestHandler_HijackGuard(t *testing.T) {
 	ctx := t.Context()
 
 	if err := h.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
-		[]diff.Op{op(id, owner, nil, 100)}); err != nil {
+		[]diff.Op{op(id, owner, "", 100)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	// The attacker forges the owner's identity in the payload but syncs
 	// under their own scope: the existing row must stay untouched.
-	forged := op(id, owner, nil, 200)
+	forged := op(id, owner, "", 200)
 	forged.Data = jsontext.Value(`{"hijacked":true}`)
 	if err := h.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: attacker},
 		[]diff.Op{forged}); err != nil {
@@ -131,7 +131,7 @@ func TestHandler_HijackGuard(t *testing.T) {
 		t.Errorf("after forged upsert: got payload %s; want {}", got)
 	}
 
-	del := op(id, owner, nil, 300)
+	del := op(id, owner, "", 300)
 	del.Action = diff.ActionDelete
 	del.Data = nil
 	if err := h.Delete(ctx, &mock.Tx{}, diff.Scope{UserID: attacker},
@@ -158,7 +158,7 @@ func TestHandler_Fetch_Window(t *testing.T) {
 		id := uuid.NewV7()
 		ids = append(ids, id)
 		if err := h.Upsert(ctx, &mock.Tx{}, scope,
-			[]diff.Op{op(id, owner, nil, diff.Stamp(100+i))}); err != nil {
+			[]diff.Op{op(id, owner, "", diff.Stamp(100+i))}); err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
 	}
@@ -197,7 +197,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 
 	id := uuid.NewV7()
 	if err := h.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
-		[]diff.Op{op(id, owner, nil, 100)}); err != nil {
+		[]diff.Op{op(id, owner, "", 100)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
@@ -225,7 +225,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 
 func shareOp(id uuid.UUID, owner, team string, time diff.Stamp) diff.Op {
 	return diff.Op{
-		Meta:   diff.Meta{ID: id, UserID: owner, TeamID: &team},
+		Meta:   diff.Meta{ID: id, UserID: owner, TeamID: team},
 		Action: diff.ActionUpsert,
 		Time:   time,
 		Data:   jsontext.Value(`{}`),
@@ -246,7 +246,7 @@ func TestShares_WriteThrough(t *testing.T) {
 
 	docID := uuid.NewV7()
 	if err := docs.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
-		[]diff.Op{op(docID, owner, nil, 1)}); err != nil {
+		[]diff.Op{op(docID, owner, "", 1)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	seqBefore := docs.Rows()[docID].Seq

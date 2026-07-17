@@ -279,6 +279,7 @@ func (stubStore) Floor(
 ) (int64, error) {
 	return 0, nil
 }
+
 func (stubStore) Barrier(context.Context, struct{}) (int64, error) {
 	return 0, nil
 }

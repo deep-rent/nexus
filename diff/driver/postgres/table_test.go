@@ -118,7 +118,7 @@ func scopeOf(user string, teams ...string) diff.Scope {
 func upsertOp(
 	id uuid.UUID,
 	user string,
-	team *string,
+	team string,
 	ts uint64,
 	data string,
 ) diff.Op {
@@ -130,7 +130,7 @@ func upsertOp(
 	}
 }
 
-func deleteOp(id uuid.UUID, user string, team *string, ts uint64) diff.Op {
+func deleteOp(id uuid.UUID, user, team string, ts uint64) diff.Op {
 	return diff.Op{
 		Meta:   diff.Meta{ID: id, UserID: user, TeamID: team},
 		Action: diff.ActionDelete,
@@ -265,7 +265,7 @@ func tombstoneIdent(
 		"SELECT user_id::text, team_id::text, hlc FROM document_tombstones"+
 			" WHERE type = $1 AND id = $2::uuid",
 		model, id.String(),
-	).Scan(&user, &team, &ts)
+	).Scan(&user, team, &ts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", sql.NullString{}, 0, false
 	}
@@ -336,7 +336,7 @@ func TestTable_RootLWW(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
 	if hlc, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
@@ -350,7 +350,7 @@ func TestTable_RootLWW(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 20, assetDoc(x, 2)),
+		upsertOp(x, owner, "", 20, assetDoc(x, 2)),
 	)
 	if v, _ := rowStr(t, db,
 		"SELECT data ->> 'v' FROM assets WHERE id = $1::uuid", x.String(),
@@ -364,7 +364,7 @@ func TestTable_RootLWW(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 15, assetDoc(x, 9)),
+		upsertOp(x, owner, "", 15, assetDoc(x, 9)),
 	)
 	if v, _ := rowStr(t, db,
 		"SELECT data ->> 'v' FROM assets WHERE id = $1::uuid", x.String(),
@@ -378,7 +378,7 @@ func TestTable_RootLWW(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 20, assetDoc(x, 9)),
+		upsertOp(x, owner, "", 20, assetDoc(x, 9)),
 	)
 	if v, _ := rowStr(t, db,
 		"SELECT data ->> 'v' FROM assets WHERE id = $1::uuid", x.String(),
@@ -387,7 +387,7 @@ func TestTable_RootLWW(t *testing.T) {
 	}
 
 	// Delete removes the row and records a tombstone.
-	applyDeletes(t, s, assets, scope, deleteOp(x, owner, nil, 25))
+	applyDeletes(t, s, assets, scope, deleteOp(x, owner, "", 25))
 	if _, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
 	); ok {
@@ -404,7 +404,7 @@ func TestTable_RootLWW(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 22, assetDoc(x, 3)),
+		upsertOp(x, owner, "", 22, assetDoc(x, 3)),
 	)
 	if _, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
@@ -421,7 +421,7 @@ func TestTable_RootLWW(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 30, assetDoc(x, 4)),
+		upsertOp(x, owner, "", 30, assetDoc(x, 4)),
 	)
 	if hlc, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
@@ -438,7 +438,7 @@ func TestTable_RootLWW(t *testing.T) {
 
 	// Deleting an absent document tombstones the payload identity.
 	y := uuid.NewV7()
-	applyDeletes(t, s, assets, scope, deleteOp(y, owner, nil, 5))
+	applyDeletes(t, s, assets, scope, deleteOp(y, owner, "", 5))
 	if hlc, ok := tombstoneHLC(t, db, "asset", y); !ok || hlc != 5 {
 		t.Errorf("absent delete: got tombstone hlc %d, exists %t; want 5, true",
 			hlc, ok)
@@ -453,7 +453,7 @@ func TestTable_RootLWW(t *testing.T) {
 
 	// A stale delete is a complete no-op: the row survives and no
 	// tombstone appears.
-	applyDeletes(t, s, assets, scope, deleteOp(x, owner, nil, 10))
+	applyDeletes(t, s, assets, scope, deleteOp(x, owner, "", 10))
 	if hlc, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
 	); !ok || hlc != 30 {
@@ -473,12 +473,12 @@ func TestTable_HijackGuard(t *testing.T) {
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner),
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)))
 
 	// An out-of-scope caller cannot overwrite the row, even with a newer
 	// timestamp and a forged payload identity.
 	applyUpserts(t, s, assets, scopeOf(attacker),
-		upsertOp(x, attacker, nil, 99, assetDoc(x, 666)))
+		upsertOp(x, attacker, "", 99, assetDoc(x, 666)))
 	if user, _ := rowStr(t, db,
 		"SELECT user_id::text FROM assets WHERE id = $1::uuid", x.String(),
 	); user.String != owner {
@@ -492,7 +492,7 @@ func TestTable_HijackGuard(t *testing.T) {
 
 	// Nor can they delete it: the row survives and no tombstone appears.
 	applyDeletes(t, s, assets, scopeOf(attacker),
-		deleteOp(x, attacker, nil, 99))
+		deleteOp(x, attacker, "", 99))
 	if _, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
 	); !ok {
@@ -512,12 +512,12 @@ func TestTable_OwnerImmutable(t *testing.T) {
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner, team),
-		upsertOp(x, owner, &team, 10, assetDoc(x, 1)))
+		upsertOp(x, owner, team, 10, assetDoc(x, 1)))
 
 	// A team member may update the document, but the owner column never
 	// yields to the payload identity.
 	applyUpserts(t, s, assets, scopeOf(member, team),
-		upsertOp(x, member, &team, 20, assetDoc(x, 2)))
+		upsertOp(x, member, team, 20, assetDoc(x, 2)))
 
 	if v, _ := rowStr(t, db,
 		"SELECT data ->> 'v' FROM assets WHERE id = $1::uuid", x.String(),
@@ -541,9 +541,9 @@ func TestTable_Resolve(t *testing.T) {
 	f := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scope,
-		upsertOp(x, owner, &team, 10, assetDoc(x, 1)))
+		upsertOp(x, owner, team, 10, assetDoc(x, 1)))
 	applyUpserts(t, s, files, scope,
-		upsertOp(f, owner, &team, 10, fileDoc(f, x)))
+		upsertOp(f, owner, team, 10, fileDoc(f, x)))
 
 	missing := uuid.NewV7()
 	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
@@ -558,7 +558,7 @@ func TestTable_Resolve(t *testing.T) {
 		if meta.UserID != owner {
 			t.Errorf("got owner %v; want %v", meta.UserID, owner)
 		}
-		if meta.TeamID == nil || *meta.TeamID != team {
+		if meta.TeamID != team {
 			t.Errorf("got team %v; want %v", meta.TeamID, team)
 		}
 
@@ -574,7 +574,7 @@ func TestTable_Resolve(t *testing.T) {
 		if meta.UserID != owner {
 			t.Errorf("got child owner %v; want %v", meta.UserID, owner)
 		}
-		if meta.TeamID == nil || *meta.TeamID != team {
+		if meta.TeamID != team {
 			t.Errorf("got child team %v; want %v", meta.TeamID, team)
 		}
 		return nil
@@ -597,10 +597,10 @@ func TestTable_TeamMoveCascade(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
-	applyUpserts(t, s, files, scope, upsertOp(f, owner, nil, 10, fileDoc(f, x)))
-	applyUpserts(t, s, notes, scope, upsertOp(n, owner, nil, 10, noteDoc(n, f)))
+	applyUpserts(t, s, files, scope, upsertOp(f, owner, "", 10, fileDoc(f, x)))
+	applyUpserts(t, s, notes, scope, upsertOp(n, owner, "", 10, noteDoc(n, f)))
 
 	seqF0, _ := rowInt(t, db,
 		"SELECT seq FROM files WHERE id = $1::uuid", f.String())
@@ -613,7 +613,7 @@ func TestTable_TeamMoveCascade(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, &team, 20, assetDoc(x, 2)),
+		upsertOp(x, owner, team, 20, assetDoc(x, 2)),
 	)
 
 	if got, _ := rowStr(t, db,
@@ -650,7 +650,7 @@ func TestTable_TeamMoveCascade(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 30, assetDoc(x, 3)),
+		upsertOp(x, owner, "", 30, assetDoc(x, 3)),
 	)
 	if got, _ := rowStr(t, db,
 		"SELECT root_team_id::text FROM notes WHERE id = $1::uuid", n.String(),
@@ -674,12 +674,12 @@ func TestTable_DeleteCascade(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
-	applyUpserts(t, s, files, scope, upsertOp(f, owner, nil, 10, fileDoc(f, x)))
-	applyUpserts(t, s, notes, scope, upsertOp(n, owner, nil, 10, noteDoc(n, f)))
+	applyUpserts(t, s, files, scope, upsertOp(f, owner, "", 10, fileDoc(f, x)))
+	applyUpserts(t, s, notes, scope, upsertOp(n, owner, "", 10, noteDoc(n, f)))
 
-	applyDeletes(t, s, assets, scope, deleteOp(x, owner, nil, 50))
+	applyDeletes(t, s, assets, scope, deleteOp(x, owner, "", 50))
 
 	for _, table := range []string{"assets", "files", "notes"} {
 		if count, _ := rowInt(t, db,
@@ -719,10 +719,10 @@ func TestTable_FetchWindow(t *testing.T) {
 	for i := range docs {
 		docs[i] = uuid.NewV7()
 		applyUpserts(t, s, assets, scope,
-			upsertOp(docs[i], owner, nil, uint64(10+i), assetDoc(docs[i], i)))
+			upsertOp(docs[i], owner, "", uint64(10+i), assetDoc(docs[i], i)))
 	}
 	gone := uuid.NewV7()
-	applyDeletes(t, s, assets, scope, deleteOp(gone, owner, nil, 20))
+	applyDeletes(t, s, assets, scope, deleteOp(gone, owner, "", 20))
 
 	// Full window: live rows and tombstones interleave in seq order.
 	all := fetchAll(t, s, assets, scope)
@@ -812,9 +812,9 @@ func TestShares_GrantRevoke(t *testing.T) {
 	x := uuid.NewV7()
 	f := uuid.NewV7()
 	applyUpserts(t, s, assets, ownerScope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)))
 	applyUpserts(t, s, files, ownerScope,
-		upsertOp(f, owner, nil, 10, fileDoc(f, x)))
+		upsertOp(f, owner, "", 10, fileDoc(f, x)))
 	if got := fetchAll(t, s, assets, memberScope); len(got) != 0 {
 		t.Fatalf("before grant: got %d versions; want 0", len(got))
 	}
@@ -823,7 +823,7 @@ func TestShares_GrantRevoke(t *testing.T) {
 	// their descendants.
 	grant := uuid.NewV7()
 	applyUpserts(t, s, shares, ownerScope,
-		upsertOp(grant, owner, &team, 20, "{}"))
+		upsertOp(grant, owner, team, 20, "{}"))
 	if got := fetchAll(t, s, assets, memberScope); len(got) != 1 ||
 		got[0].ID != x {
 		t.Errorf("after grant: got assets %v; want [%v]", got, x)
@@ -870,7 +870,7 @@ func TestShares_GrantRevoke(t *testing.T) {
 	}
 
 	// Revoking the grant removes the visibility and tombstones the share.
-	applyDeletes(t, s, shares, ownerScope, deleteOp(grant, owner, &team, 30))
+	applyDeletes(t, s, shares, ownerScope, deleteOp(grant, owner, team, 30))
 	if count, _ := rowInt(
 		t,
 		db,
@@ -897,9 +897,9 @@ func TestShares_DuplicateGrants(t *testing.T) {
 	// A newer grant for the same (user, team) pair supersedes the older
 	// duplicate under a different id.
 	g1 := uuid.NewV7()
-	applyUpserts(t, s, shares, scope, upsertOp(g1, owner, &team, 10, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g1, owner, team, 10, "{}"))
 	g2 := uuid.NewV7()
-	applyUpserts(t, s, shares, scope, upsertOp(g2, owner, &team, 20, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g2, owner, team, 20, "{}"))
 
 	if count, _ := rowInt(
 		t,
@@ -919,7 +919,7 @@ func TestShares_DuplicateGrants(t *testing.T) {
 
 	// A stale duplicate never displaces a newer grant.
 	g3 := uuid.NewV7()
-	applyUpserts(t, s, shares, scope, upsertOp(g3, owner, &team, 15, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g3, owner, team, 15, "{}"))
 	if count, _ := rowInt(
 		t,
 		db,
@@ -948,9 +948,9 @@ func TestTable_TeamMoveDeparture(t *testing.T) {
 	x := uuid.NewV7()
 	f := uuid.NewV7()
 	applyUpserts(t, s, assets, scope,
-		upsertOp(x, owner, &teamA, 10, assetDoc(x, 1)))
+		upsertOp(x, owner, teamA, 10, assetDoc(x, 1)))
 	applyUpserts(t, s, files, scope,
-		upsertOp(f, owner, &teamA, 10, fileDoc(f, x)))
+		upsertOp(f, owner, teamA, 10, fileDoc(f, x)))
 
 	if got := fetchAll(t, s, assets, scopeA); len(got) != 1 || got[0].Deleted {
 		t.Fatalf("before move: got %v; want one live version", got)
@@ -959,7 +959,7 @@ func TestTable_TeamMoveDeparture(t *testing.T) {
 	// Moving the root to team B leaves move tombstones carrying the OLD
 	// identity for the root and every cascaded child row.
 	applyUpserts(t, s, assets, scope,
-		upsertOp(x, owner, &teamB, 20, assetDoc(x, 2)))
+		upsertOp(x, owner, teamB, 20, assetDoc(x, 2)))
 
 	for _, c := range []struct {
 		model string
@@ -1015,7 +1015,7 @@ func TestTable_TeamMoveDeparture(t *testing.T) {
 	// A later move overwrites the tombstone in place: back to a personal
 	// document, team B becomes the departed audience.
 	applyUpserts(t, s, assets, scope,
-		upsertOp(x, owner, nil, 30, assetDoc(x, 3)))
+		upsertOp(x, owner, "", 30, assetDoc(x, 3)))
 	_, team, ts, ok := tombstoneIdent(t, db, "asset", x)
 	if !ok || !team.Valid || team.String != teamB || ts != 30 {
 		t.Errorf("after second move: got tombstone team %q hlc %d; want %q, 30",
@@ -1037,14 +1037,14 @@ func TestTable_MoveTombstoneKeepsRowWritable(t *testing.T) {
 
 	x := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(owner, teamA, teamB),
-		upsertOp(x, owner, &teamA, 10, assetDoc(x, 1)))
+		upsertOp(x, owner, teamA, 10, assetDoc(x, 1)))
 	applyUpserts(t, s, assets, scopeOf(owner, teamA, teamB),
-		upsertOp(x, owner, &teamB, 20, assetDoc(x, 2)))
+		upsertOp(x, owner, teamB, 20, assetDoc(x, 2)))
 
 	// A member of the new team is outside the move tombstone's identity
 	// scope, yet their updates must keep flowing: the live row governs.
 	applyUpserts(t, s, assets, scopeOf(member, teamB),
-		upsertOp(x, owner, &teamB, 40, assetDoc(x, 3)))
+		upsertOp(x, owner, teamB, 40, assetDoc(x, 3)))
 	if v, _ := rowStr(t, db,
 		"SELECT data ->> 'v' FROM assets WHERE id = $1::uuid", x.String(),
 	); v.String != "3" {
@@ -1071,20 +1071,20 @@ func TestTable_ReparentGuard(t *testing.T) {
 	r2 := uuid.NewV7()
 	r3 := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(owner1, team),
-		upsertOp(r1, owner1, &team, 10, assetDoc(r1, 1)))
+		upsertOp(r1, owner1, team, 10, assetDoc(r1, 1)))
 	applyUpserts(t, s, assets, scopeOf(owner2, team),
-		upsertOp(r2, owner2, &team, 10, assetDoc(r2, 2)))
+		upsertOp(r2, owner2, team, 10, assetDoc(r2, 2)))
 	applyUpserts(t, s, assets, scopeOf(owner1, team),
-		upsertOp(r3, owner1, &team, 10, assetDoc(r3, 3)))
+		upsertOp(r3, owner1, team, 10, assetDoc(r3, 3)))
 
 	c := uuid.NewV7()
 	applyUpserts(t, s, files, scopeOf(owner1, team),
-		upsertOp(c, owner1, &team, 10, fileDoc(c, r1)))
+		upsertOp(c, owner1, team, 10, fileDoc(c, r1)))
 
 	// Re-parenting the child under a root with a DIFFERENT owner is
 	// silently skipped, even for an in-scope caller with a newer timestamp.
 	applyUpserts(t, s, files, scopeOf(owner2, team),
-		upsertOp(c, owner2, &team, 20, fileDoc(c, r2)))
+		upsertOp(c, owner2, team, 20, fileDoc(c, r2)))
 	if ref, _ := rowStr(t, db,
 		"SELECT asset_id::text FROM files WHERE id = $1::uuid", c.String(),
 	); ref.String != r1.String() {
@@ -1104,7 +1104,7 @@ func TestTable_ReparentGuard(t *testing.T) {
 
 	// Re-parenting between roots of the SAME owner applies normally.
 	applyUpserts(t, s, files, scopeOf(owner1, team),
-		upsertOp(c, owner1, &team, 30, fileDoc(c, r3)))
+		upsertOp(c, owner1, team, 30, fileDoc(c, r3)))
 	if ref, _ := rowStr(t, db,
 		"SELECT asset_id::text FROM files WHERE id = $1::uuid", c.String(),
 	); ref.String != r3.String() {
@@ -1121,13 +1121,13 @@ func TestTable_ResurrectionScopeGuard(t *testing.T) {
 	x := uuid.NewV7()
 
 	applyUpserts(t, s, assets, scopeOf(owner),
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)))
-	applyDeletes(t, s, assets, scopeOf(owner), deleteOp(x, owner, nil, 20))
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)))
+	applyDeletes(t, s, assets, scopeOf(owner), deleteOp(x, owner, "", 20))
 
 	// A caller outside the tombstone's identity scope cannot resurrect the
 	// document, even with a newer timestamp and a forged payload identity.
 	applyUpserts(t, s, assets, scopeOf(attacker),
-		upsertOp(x, attacker, nil, 30, assetDoc(x, 666)))
+		upsertOp(x, attacker, "", 30, assetDoc(x, 666)))
 	if _, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
 	); ok {
@@ -1139,7 +1139,7 @@ func TestTable_ResurrectionScopeGuard(t *testing.T) {
 
 	// The owner resurrects normally, clearing the tombstone.
 	applyUpserts(t, s, assets, scopeOf(owner),
-		upsertOp(x, owner, nil, 30, assetDoc(x, 2)))
+		upsertOp(x, owner, "", 30, assetDoc(x, 2)))
 	if ts, ok := rowInt(t, db,
 		"SELECT hlc FROM assets WHERE id = $1::uuid", x.String(),
 	); !ok || ts != 30 {
@@ -1163,16 +1163,16 @@ func TestTable_FetchVisibility(t *testing.T) {
 
 	own := uuid.NewV7()
 	applyUpserts(t, s, assets, scope,
-		upsertOp(own, caller, nil, 10, assetDoc(own, 1)))
+		upsertOp(own, caller, "", 10, assetDoc(own, 1)))
 	shared := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(teammate, team),
-		upsertOp(shared, teammate, &team, 11, assetDoc(shared, 2)))
+		upsertOp(shared, teammate, team, 11, assetDoc(shared, 2)))
 	granted := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(granter),
-		upsertOp(granted, granter, nil, 12, assetDoc(granted, 3)))
+		upsertOp(granted, granter, "", 12, assetDoc(granted, 3)))
 	hidden := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(stranger),
-		upsertOp(hidden, stranger, nil, 13, assetDoc(hidden, 4)))
+		upsertOp(hidden, stranger, "", 13, assetDoc(hidden, 4)))
 
 	// Without a grant, only the caller's own documents and their team's
 	// documents are visible.
@@ -1192,7 +1192,7 @@ func TestTable_FetchVisibility(t *testing.T) {
 	// A grant additionally exposes the granting owner's personal documents
 	// (and re-feeds them under a fresh sequence value).
 	applyUpserts(t, s, shares, scopeOf(granter),
-		upsertOp(uuid.NewV7(), granter, &team, 14, "{}"))
+		upsertOp(uuid.NewV7(), granter, team, 14, "{}"))
 	got = fetchAll(t, s, assets, scope)
 	if ids, want := versionIDs(
 		got,
@@ -1217,9 +1217,9 @@ func TestTable_FetchVisibility(t *testing.T) {
 	// Tombstones follow the same visibility branches: a team deletion is
 	// fed to members, a stranger's personal deletion stays invisible.
 	applyDeletes(t, s, assets, scopeOf(teammate, team),
-		deleteOp(shared, teammate, &team, 21))
+		deleteOp(shared, teammate, team, 21))
 	applyDeletes(t, s, assets, scopeOf(stranger),
-		deleteOp(hidden, stranger, nil, 22))
+		deleteOp(hidden, stranger, "", 22))
 	got = fetchAll(t, s, assets, scope)
 	if ids, want := versionIDs(
 		got,
@@ -1257,21 +1257,21 @@ func TestTable_FetchMultiTeamBranches(t *testing.T) {
 	// One document per visibility class, plus two that must stay invisible.
 	own := uuid.NewV7()
 	applyUpserts(t, s, assets, scope,
-		upsertOp(own, caller, nil, 10, assetDoc(own, 1)))
+		upsertOp(own, caller, "", 10, assetDoc(own, 1)))
 	inA := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(mateA, teamA),
-		upsertOp(inA, mateA, &teamA, 11, assetDoc(inA, 2)))
+		upsertOp(inA, mateA, teamA, 11, assetDoc(inA, 2)))
 	inB := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(mateB, teamB),
-		upsertOp(inB, mateB, &teamB, 12, assetDoc(inB, 3)))
+		upsertOp(inB, mateB, teamB, 12, assetDoc(inB, 3)))
 	granted := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(granter),
-		upsertOp(granted, granter, nil, 13, assetDoc(granted, 4)))
+		upsertOp(granted, granter, "", 13, assetDoc(granted, 4)))
 	// A document in a team the caller does not belong to, and a stranger's
 	// personal document: both invisible across every branch.
 	hiddenTeam := uuid.NewV7()
 	applyUpserts(t, s, assets, scopeOf(outsider, teamC),
-		upsertOp(hiddenTeam, outsider, &teamC, 14, assetDoc(hiddenTeam, 5)))
+		upsertOp(hiddenTeam, outsider, teamC, 14, assetDoc(hiddenTeam, 5)))
 	hiddenPersonal := uuid.NewV7()
 	applyUpserts(
 		t,
@@ -1281,7 +1281,7 @@ func TestTable_FetchMultiTeamBranches(t *testing.T) {
 		upsertOp(
 			hiddenPersonal,
 			outsider,
-			nil,
+			"",
 			15,
 			assetDoc(hiddenPersonal, 6),
 		),
@@ -1313,7 +1313,7 @@ func TestTable_FetchMultiTeamBranches(t *testing.T) {
 	// Granting teamA access to the granter's personal documents exposes them
 	// through the granted-owner branch (resolved once via the shared CTE).
 	applyUpserts(t, s, shares, scopeOf(granter),
-		upsertOp(uuid.NewV7(), granter, &teamA, 16, "{}"))
+		upsertOp(uuid.NewV7(), granter, teamA, 16, "{}"))
 	got = fetchAll(t, s, assets, scope)
 	if ids, want := versionIDs(got), []uuid.UUID{
 		own, inA, inB, granted,
@@ -1358,12 +1358,12 @@ func TestShares_TouchSkipsRefresh(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
 
 	// The first grant lands and re-feeds the owner's personal documents.
 	g := uuid.NewV7()
-	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 20, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, team, 20, "{}"))
 	seq1, _ := rowInt(t, db,
 		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
 
@@ -1372,7 +1372,7 @@ func TestShares_TouchSkipsRefresh(t *testing.T) {
 	// access, so the owner's documents must NOT be re-sequenced. Skipping the
 	// owner-wide Touch here avoids re-delivering every personal document to
 	// already-granted teams.
-	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 30, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, team, 30, "{}"))
 	seq2, _ := rowInt(t, db,
 		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
 	if seq2 != seq1 {
@@ -1403,14 +1403,14 @@ func TestTable_Reseq(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
 	applyUpserts(
 		t,
 		s,
 		assets,
 		scope,
-		upsertOp(y, owner, nil, 10, assetDoc(y, 2)),
+		upsertOp(y, owner, "", 10, assetDoc(y, 2)),
 	)
 
 	seqX0, _ := rowInt(t, db,
@@ -1455,15 +1455,15 @@ func TestTable_Bury(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
-	applyUpserts(t, s, files, scope, upsertOp(f, owner, nil, 10, fileDoc(f, x)))
+	applyUpserts(t, s, files, scope, upsertOp(f, owner, "", 10, fileDoc(f, x)))
 
 	// Bury removes the documents under the identities and timestamps of the
 	// given operations and cascades to descendants, without scope checks.
 	err := s.Mutate(context.Background(), scope,
 		func(ctx context.Context, tx *sql.Tx) error {
-			return assets.Bury(ctx, tx, []diff.Op{deleteOp(x, owner, nil, 50)})
+			return assets.Bury(ctx, tx, []diff.Op{deleteOp(x, owner, "", 50)})
 		})
 	if err != nil {
 		t.Fatalf("bury: should not have returned an error: %v", err)
@@ -1497,11 +1497,11 @@ func TestTable_Bury(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(y, owner, nil, 60, assetDoc(y, 1)),
+		upsertOp(y, owner, "", 60, assetDoc(y, 1)),
 	)
 	err = s.Mutate(context.Background(), scope,
 		func(ctx context.Context, tx *sql.Tx) error {
-			return assets.Bury(ctx, tx, []diff.Op{deleteOp(y, owner, nil, 55)})
+			return assets.Bury(ctx, tx, []diff.Op{deleteOp(y, owner, "", 55)})
 		})
 	if err != nil {
 		t.Fatalf("bury: should not have returned an error: %v", err)
@@ -1526,11 +1526,11 @@ func TestShares_TeamMove(t *testing.T) {
 	scope := scopeOf(owner)
 
 	g := uuid.NewV7()
-	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &teamA, 10, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, teamA, 10, "{}"))
 
 	// Re-pointing the grant to another team removes it from the old team's
 	// feed: the LWW update leaves a move tombstone under the old identity.
-	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &teamB, 20, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, teamB, 20, "{}"))
 
 	if team, _ := rowStr(t, db,
 		"SELECT team_id::text FROM document_shares WHERE id = $1::uuid",
@@ -1569,7 +1569,7 @@ func TestShares_TouchOnLand(t *testing.T) {
 		s,
 		assets,
 		scope,
-		upsertOp(x, owner, nil, 10, assetDoc(x, 1)),
+		upsertOp(x, owner, "", 10, assetDoc(x, 1)),
 	)
 	seq0, _ := rowInt(t, db,
 		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
@@ -1577,7 +1577,7 @@ func TestShares_TouchOnLand(t *testing.T) {
 	// A landing grant re-feeds the owner's personal documents to the newly
 	// granted team.
 	g := uuid.NewV7()
-	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 20, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, team, 20, "{}"))
 	seq1, _ := rowInt(t, db,
 		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
 	if seq1 <= seq0 {
@@ -1585,7 +1585,7 @@ func TestShares_TouchOnLand(t *testing.T) {
 	}
 
 	// A stale grant does not land and must not re-feed.
-	applyUpserts(t, s, shares, scope, upsertOp(g, owner, &team, 15, "{}"))
+	applyUpserts(t, s, shares, scope, upsertOp(g, owner, team, 15, "{}"))
 	seq2, _ := rowInt(t, db,
 		"SELECT seq FROM assets WHERE id = $1::uuid", x.String())
 	if seq2 != seq1 {
@@ -1601,8 +1601,8 @@ func TestStore_PruneTombstones(t *testing.T) {
 
 	// Deleting absent documents seeds two tombstones at seq 1 and 2.
 	applyDeletes(t, s, assets, scope,
-		deleteOp(uuid.NewV7(), owner, nil, 5),
-		deleteOp(uuid.NewV7(), owner, nil, 6),
+		deleteOp(uuid.NewV7(), owner, "", 5),
+		deleteOp(uuid.NewV7(), owner, "", 6),
 	)
 
 	// Young tombstones survive and the floor stays put.

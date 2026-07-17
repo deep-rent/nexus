@@ -46,19 +46,19 @@ func scLWW[Tx any](t *testing.T, h *harness[Tx]) {
 	s := scope(owner)
 	id := uuid.NewV7()
 
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 100, doc(id, 1)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 100, doc(id, 1)))
 	h.wantLive(h.tg.Root, s, id, 100, 1)
 
 	// A stale upsert loses: the row keeps its timestamp and payload.
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 50, doc(id, 9)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 50, doc(id, 9)))
 	h.wantLive(h.tg.Root, s, id, 100, 1)
 
 	// An equal-timestamp upsert keeps the existing row.
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 100, doc(id, 9)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 100, doc(id, 9)))
 	h.wantLive(h.tg.Root, s, id, 100, 1)
 
 	// A strictly newer upsert wins.
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 200, doc(id, 2)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 200, doc(id, 2)))
 	h.wantLive(h.tg.Root, s, id, 200, 2)
 }
 
@@ -71,27 +71,27 @@ func scTombstone[Tx any](t *testing.T, h *harness[Tx]) {
 	s := scope(owner)
 	id := uuid.NewV7()
 
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 100, doc(id, 1)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 100, doc(id, 1)))
 
 	// A newer delete wins and leaves a tombstone carrying its timestamp.
-	h.remove(h.tg.Root, s, deleteOp(id, owner, nil, 200))
+	h.remove(h.tg.Root, s, deleteOp(id, owner, "", 200))
 	h.wantDead(h.tg.Root, s, id, 200)
 
 	// A stale delete of the tombstoned document is a no-op.
-	h.remove(h.tg.Root, s, deleteOp(id, owner, nil, 150))
+	h.remove(h.tg.Root, s, deleteOp(id, owner, "", 150))
 	h.wantDead(h.tg.Root, s, id, 200)
 
 	// A stale upsert cannot resurrect.
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 150, doc(id, 9)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 150, doc(id, 9)))
 	h.wantDead(h.tg.Root, s, id, 200)
 
 	// A newer upsert resurrects the document and clears the tombstone.
-	h.upsert(h.tg.Root, s, upsertOp(id, owner, nil, 300, doc(id, 5)))
+	h.upsert(h.tg.Root, s, upsertOp(id, owner, "", 300, doc(id, 5)))
 	h.wantLive(h.tg.Root, s, id, 300, 5)
 
 	// Deleting an absent document tombstones the payload identity.
 	absent := uuid.NewV7()
-	h.remove(h.tg.Root, s, deleteOp(absent, owner, nil, 40))
+	h.remove(h.tg.Root, s, deleteOp(absent, owner, "", 40))
 	h.wantDead(h.tg.Root, s, absent, 40)
 	if meta, ok := h.resolve(h.tg.Root, absent); ok {
 		t.Errorf("id %v: got resolved live %v; want absent", absent, meta)
@@ -106,18 +106,18 @@ func scHijack[Tx any](t *testing.T, h *harness[Tx]) {
 	attacker := h.user()
 	id := uuid.NewV7()
 
-	h.upsert(h.tg.Root, scope(owner), upsertOp(id, owner, nil, 100, doc(id, 1)))
+	h.upsert(h.tg.Root, scope(owner), upsertOp(id, owner, "", 100, doc(id, 1)))
 
 	// A forged upsert under the attacker's scope leaves the row untouched.
 	h.upsert(
 		h.tg.Root,
 		scope(attacker),
-		upsertOp(id, owner, nil, 200, doc(id, 9)),
+		upsertOp(id, owner, "", 200, doc(id, 9)),
 	)
 	h.wantLive(h.tg.Root, scope(owner), id, 100, 1)
 
 	// A foreign delete cannot remove the row nor tombstone it.
-	h.remove(h.tg.Root, scope(attacker), deleteOp(id, owner, nil, 300))
+	h.remove(h.tg.Root, scope(attacker), deleteOp(id, owner, "", 300))
 	h.wantLive(h.tg.Root, scope(owner), id, 100, 1)
 }
 
@@ -130,11 +130,11 @@ func scOwnerImmutable[Tx any](t *testing.T, h *harness[Tx]) {
 	id := uuid.NewV7()
 
 	h.upsert(h.tg.Root, scope(owner, team),
-		upsertOp(id, owner, &team, 100, doc(id, 1)))
+		upsertOp(id, owner, team, 100, doc(id, 1)))
 
 	// The member's update applies, but the forged owner is ignored.
 	h.upsert(h.tg.Root, scope(member, team),
-		upsertOp(id, member, &team, 200, doc(id, 2)))
+		upsertOp(id, member, team, 200, doc(id, 2)))
 	h.wantLive(h.tg.Root, scope(owner, team), id, 200, 2)
 
 	meta, ok := h.resolve(h.tg.Root, id)
@@ -158,7 +158,7 @@ func scFetchWindow[Tx any](t *testing.T, h *harness[Tx]) {
 	for i := range ids {
 		ids[i] = uuid.NewV7()
 		h.upsert(h.tg.Root, s,
-			upsertOp(ids[i], owner, nil, diff.Stamp(100+i), doc(ids[i], i)))
+			upsertOp(ids[i], owner, "", diff.Stamp(100+i), doc(ids[i], i)))
 	}
 
 	// The full scan returns all five rows in ascending sequence order with
@@ -203,7 +203,7 @@ func scFetchWindow[Tx any](t *testing.T, h *harness[Tx]) {
 
 	// A tombstone interleaves at the end and carries its own timestamp.
 	gone := uuid.NewV7()
-	h.remove(h.tg.Root, s, deleteOp(gone, owner, nil, 200))
+	h.remove(h.tg.Root, s, deleteOp(gone, owner, "", 200))
 	all = h.fetchAll(h.tg.Root, s)
 	if got, want := len(all), 6; got != want {
 		t.Fatalf("after delete: got %d versions; want %d", got, want)
@@ -228,18 +228,18 @@ func scGrantVisibility[Tx any](t *testing.T, h *harness[Tx]) {
 	memberScope := scope(member, team)
 
 	id := uuid.NewV7()
-	h.upsert(h.tg.Root, ownerScope, upsertOp(id, owner, nil, 100, doc(id, 1)))
+	h.upsert(h.tg.Root, ownerScope, upsertOp(id, owner, "", 100, doc(id, 1)))
 
 	// Before the grant, the personal document is invisible to the team.
 	h.wantAbsent(h.tg.Root, memberScope, id)
 
 	// The grant exposes the owner's personal document to the team.
 	grant := uuid.NewV7()
-	h.upsert(h.tg.Shares, ownerScope, upsertOp(grant, owner, &team, 110, "{}"))
+	h.upsert(h.tg.Shares, ownerScope, upsertOp(grant, owner, team, 110, "{}"))
 	h.wantLive(h.tg.Root, memberScope, id, 100, 1)
 
 	// Revoking the grant hides the document again.
-	h.remove(h.tg.Shares, ownerScope, deleteOp(grant, owner, &team, 120))
+	h.remove(h.tg.Shares, ownerScope, deleteOp(grant, owner, team, 120))
 	h.wantAbsent(h.tg.Root, memberScope, id)
 }
 
@@ -253,12 +253,12 @@ func scChild[Tx any](t *testing.T, h *harness[Tx]) {
 	id := uuid.NewV7()
 
 	h.upsert(h.tg.Child, s,
-		upsertOp(id, owner, nil, 100, childDoc(id, parent, h.tg.ChildRef, 1)))
+		upsertOp(id, owner, "", 100, childDoc(id, parent, h.tg.ChildRef, 1)))
 	h.wantLive(h.tg.Child, s, id, 100, 1)
 
 	// A newer upsert wins on the child, exactly as on the root.
 	h.upsert(h.tg.Child, s,
-		upsertOp(id, owner, nil, 200, childDoc(id, parent, h.tg.ChildRef, 2)))
+		upsertOp(id, owner, "", 200, childDoc(id, parent, h.tg.ChildRef, 2)))
 	h.wantLive(h.tg.Child, s, id, 200, 2)
 
 	meta, ok := h.resolve(h.tg.Child, id)
@@ -284,12 +284,12 @@ func scDeparture[Tx any](t *testing.T, h *harness[Tx]) {
 	newAudience := scope(uuid.NewV7().String(), teamB)
 
 	id := uuid.NewV7()
-	h.upsert(h.tg.Root, writer, upsertOp(id, owner, &teamA, 100, doc(id, 1)))
+	h.upsert(h.tg.Root, writer, upsertOp(id, owner, teamA, 100, doc(id, 1)))
 	h.wantLive(h.tg.Root, oldAudience, id, 100, 1)
 
 	// Moving the root to team B leaves team A a move tombstone at the move's
 	// timestamp, while team B and the owner see the live row.
-	h.upsert(h.tg.Root, writer, upsertOp(id, owner, &teamB, 200, doc(id, 2)))
+	h.upsert(h.tg.Root, writer, upsertOp(id, owner, teamB, 200, doc(id, 2)))
 	h.wantDead(h.tg.Root, oldAudience, id, 200)
 	h.wantLive(h.tg.Root, newAudience, id, 200, 2)
 	h.wantLive(h.tg.Root, scope(owner), id, 200, 2)

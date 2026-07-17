@@ -16,6 +16,7 @@ package diff_test
 
 import (
 	"encoding/json/v2"
+	"slices"
 	"testing"
 
 	"uuid"
@@ -48,8 +49,8 @@ func (r *replica) apply(t *testing.T, resp *diff.Response) {
 			r.docs[m.ID] = row.Data
 		}
 	}
-	for i := len(resp.Patches) - 1; i >= 0; i-- {
-		for _, d := range resp.Patches[i].Delete {
+	for _, v := range slices.Backward(resp.Patches) {
+		for _, d := range v.Delete {
 			delete(r.docs, d.ID)
 		}
 	}
@@ -100,7 +101,7 @@ func TestProperty_Pagination_NoSkipWithTombstones(t *testing.T) {
 	for i := range n {
 		id := uuid.NewV7()
 		tick++
-		doc := assetDoc(id, owner, nil)
+		doc := assetDoc(id, owner, "")
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			upsert("asset", doc, stamp(tick)),
 		}})
@@ -140,8 +141,8 @@ func TestProperty_Convergence_WithDeletes(t *testing.T) {
 	scope := diff.Scope{UserID: owner}
 
 	idA, idB := uuid.NewV7(), uuid.NewV7()
-	docA := assetDoc(idA, owner, nil)
-	docB := assetDoc(idB, owner, nil)
+	docA := assetDoc(idA, owner, "")
+	docB := assetDoc(idB, owner, "")
 
 	upA := upsert("asset", docA, stamp(30)) // A: upsert wins (later)
 	delA := remove("asset", docA, stamp(10))

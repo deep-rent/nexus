@@ -83,7 +83,7 @@ func TestTable_WithTableSchema(t *testing.T) {
 	scope := scopeOf(owner)
 	id := uuid.NewV7()
 	applyUpserts(t, s, things, scope,
-		upsertOp(id, owner, nil, 10, assetDoc(id, 1)))
+		upsertOp(id, owner, "", 10, assetDoc(id, 1)))
 
 	got := fetchAll(t, s, things, scope)
 	if len(got) != 1 || got[0].ID != id {
@@ -103,7 +103,7 @@ func TestShares_Resolve(t *testing.T) {
 
 	grant := uuid.NewV7()
 	applyUpserts(t, s, shares, scope,
-		upsertOp(grant, owner, &team, 20, "{}"))
+		upsertOp(grant, owner, team, 20, "{}"))
 
 	// The stored share resolves to its owner/team identity; an unknown id
 	// is simply absent from the result.
@@ -123,7 +123,7 @@ func TestShares_Resolve(t *testing.T) {
 		if m.UserID != owner {
 			t.Errorf("owner: got %q; want %q", m.UserID, owner)
 		}
-		if m.TeamID == nil || *m.TeamID != team {
+		if m.TeamID != team {
 			t.Errorf("team: got %v; want %v", m.TeamID, team)
 		}
 		return nil
@@ -146,7 +146,7 @@ func TestStore_Mutate_GrantFence(t *testing.T) {
 
 	// Owner grants the team access to their personal documents.
 	applyUpserts(t, s, shares, scopeOf(owner),
-		upsertOp(uuid.NewV7(), owner, &team, 10, "{}"))
+		upsertOp(uuid.NewV7(), owner, team, 10, "{}"))
 
 	// Mutate under the owner's scope holds its locks open. A competing
 	// exclusive locker on the granted team key must block until Mutate
@@ -208,10 +208,10 @@ func TestStore_OffboardTeam(t *testing.T) {
 	// Owner has a personal document and grants the team access to it.
 	doc := uuid.NewV7()
 	applyUpserts(t, s, assets, ownerScope,
-		upsertOp(doc, owner, nil, 10, assetDoc(doc, 1)))
+		upsertOp(doc, owner, "", 10, assetDoc(doc, 1)))
 	grant := uuid.NewV7()
 	applyUpserts(t, s, shares, ownerScope,
-		upsertOp(grant, owner, &team, 20, "{}"))
+		upsertOp(grant, owner, team, 20, "{}"))
 
 	// The team member can see the shared document.
 	if got := fetchAll(t, s, assets, memberScope); len(got) != 1 {

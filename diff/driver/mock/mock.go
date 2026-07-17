@@ -220,7 +220,7 @@ func (s *Store) touch(ownerID string) error {
 
 	for _, h := range s.handlers {
 		for _, r := range h.rows {
-			if r.meta.UserID == ownerID && r.meta.TeamID == nil {
+			if r.meta.UserID == ownerID && r.meta.TeamID == "" {
 				s.seq++
 				r.seq = s.seq
 			}
@@ -405,7 +405,7 @@ func (h *Handler) Fetch(
 		if scope.Allows(meta.UserID, meta.TeamID) {
 			return true
 		}
-		return meta.TeamID == nil &&
+		return meta.TeamID == "" &&
 			h.store.granted(meta.UserID, scope.Teams)
 	}
 
@@ -546,9 +546,9 @@ func (h *Shares) sync() {
 	defer h.store.mu.Unlock()
 	clear(h.store.Granted)
 	for _, r := range h.rows {
-		if r.meta.TeamID != nil {
+		if r.meta.TeamID != "" {
 			h.store.Granted[r.meta.UserID] = append(
-				h.store.Granted[r.meta.UserID], *r.meta.TeamID,
+				h.store.Granted[r.meta.UserID], r.meta.TeamID,
 			)
 		}
 	}

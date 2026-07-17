@@ -68,7 +68,6 @@ import (
 
 	"github.com/deep-rent/nexus/diff"
 	"github.com/deep-rent/nexus/internal/hlc"
-	"github.com/deep-rent/nexus/internal/pointer"
 	"github.com/deep-rent/nexus/internal/quote"
 )
 
@@ -744,10 +743,10 @@ func (h *shares) Upsert(
 	type pair struct{ user, team string }
 	best := make(map[pair]diff.Op, len(ops))
 	for _, op := range ops {
-		if op.Meta.TeamID == nil {
+		if op.Meta.TeamID == "" {
 			return errors.New("share is missing team_id")
 		}
-		k := pair{user: op.Meta.UserID, team: *op.Meta.TeamID}
+		k := pair{user: op.Meta.UserID, team: op.Meta.TeamID}
 		cur, exists := best[k]
 		if !exists || op.Time > cur.Time || (op.Time == cur.Time &&
 			op.Meta.ID.Compare(cur.Meta.ID) > 0) {
@@ -757,14 +756,14 @@ func (h *shares) Upsert(
 	var wins []diff.Op
 	var losers []move
 	for _, op := range ops {
-		w := best[pair{user: op.Meta.UserID, team: *op.Meta.TeamID}]
+		w := best[pair{user: op.Meta.UserID, team: op.Meta.TeamID}]
 		if w.Meta.ID == op.Meta.ID {
 			wins = append(wins, op)
 		} else {
 			losers = append(losers, move{
 				id:   op.Meta.ID.String(),
 				user: op.Meta.UserID,
-				team: *op.Meta.TeamID,
+				team: op.Meta.TeamID,
 				hlc:  int64(w.Time),
 			})
 		}
@@ -778,7 +777,7 @@ func (h *shares) Upsert(
 	for i, op := range wins {
 		ids[i] = op.Meta.ID.String()
 		users[i] = op.Meta.UserID
-		teams[i] = *op.Meta.TeamID
+		teams[i] = op.Meta.TeamID
 		hlcs[i] = int64(op.Time)
 	}
 
@@ -958,7 +957,7 @@ func (h *shares) Delete(
 		ids[i] = op.Meta.ID.String()
 		hlcs[i] = int64(op.Time)
 		users[i] = op.Meta.UserID
-		teams[i] = pointer.Value(op.Meta.TeamID)
+		teams[i] = op.Meta.TeamID
 	}
 
 	query := "WITH incoming AS (" +
@@ -1228,11 +1227,7 @@ func resolve(
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse document id: %w", err)
 		}
-		meta := diff.Meta{ID: id, UserID: user}
-		if rawTeam.Valid {
-			team := rawTeam.String
-			meta.TeamID = &team
-		}
+		meta := diff.Meta{ID: id, UserID: user, TeamID: rawTeam.String}
 		out[id] = meta
 	}
 	if err := rows.Err(); err != nil {
