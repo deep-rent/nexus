@@ -29,7 +29,11 @@
 //		"Your verification code is 123456.",
 //	)
 //
-//	sender := sms.NewSender(&http.Client{}, "twilio_sid", "twilio_auth_token")
+//	sender := sms.NewSender(
+//	  http.DefaultClient,
+//	  "twilio_sid",
+//	  "twilio_auth_token",
+//	)
 //	err := sender.Send(ctx, msg)
 package sms
 

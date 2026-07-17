@@ -23,7 +23,7 @@
 // JSON credentials file.
 //
 //	sender := fcm.New(
-//		&http.Client{},
+//		http.DefaultClient,
 //		credentials, // Google Service Account JSON
 //	)
 //	err := sender.Send(ctx, msg)

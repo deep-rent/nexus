@@ -23,7 +23,7 @@
 // PEM-encoded PKCS#8 private key contents.
 //
 //	sender := apns.New(
-//		&http.Client{},
+//		http.DefaultClient,
 //		"ABC123DEFG",
 //		"DEF123GHIJ",
 //		key, // PEM format

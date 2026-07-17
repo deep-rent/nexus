@@ -36,7 +36,7 @@
 //	  )),
 //	)
 //
-//	client := &http.Client{Transport: transport}
+//	client := &http.Client{Timeout: 1 * time.Second, Transport: transport}
 //
 //	// This request will be retried automatically on temporary failures.
 //	res, err := client.Get("http://example.com/flaky")

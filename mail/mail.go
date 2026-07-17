@@ -28,9 +28,8 @@
 // Example:
 //
 //	// 1. Initialize the default SendGrid sender with a custom User-Agent.
-//	sender := mail.NewSender(&http.Client{}, "your-api-key",
-//
-// mail.WithUserAgent("MyApp/1.0"))
+//	sender := mail.NewSender(http.DefaultClient, "your-api-key",
+//	  mail.WithUserAgent("MyApp/1.0"))
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(

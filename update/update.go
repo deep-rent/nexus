@@ -32,7 +32,7 @@
 //	}
 //
 //	// Check for updates.
-//	rel, err := update.Check(context.Background(), &http.Client{}, cfg)
+//	rel, err := update.Check(context.Background(), http.DefaultClient, cfg)
 //	if err != nil {
 //	  log.Printf("Failed to check for updates: %v", err)
 //	} else if rel != nil {
