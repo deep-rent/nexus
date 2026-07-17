@@ -88,6 +88,8 @@ const (
 	ReasonValidationFailed = "validation_failed"
 	// ReasonServerError indicates that an unexpected internal error occurred.
 	ReasonServerError = "server_error"
+    // ReasonNotFound indicates that the requested resource does not exist.
+    ReasonNotFound = "not_found"
 )
 
 // Standard media types used in the Content-Type header.
