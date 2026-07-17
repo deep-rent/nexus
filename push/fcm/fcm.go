@@ -386,11 +386,22 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		}
 	}()
 
-	if res.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode >= http.StatusBadRequest {
+		buf, err := io.ReadAll(io.LimitReader(res.Body, 1<<16))
+		var body string
+		if err != nil {
+			s.logger.WarnContext(
+				ctx,
+				"Failed to read response body",
+				slog.Any("error", err),
+			)
+		} else {
+			body = string(buf)
+		}
+
 		return &push.APIError{
 			Status: res.StatusCode,
-			Body:   string(body),
+			Body:   body,
 		}
 	}
 
