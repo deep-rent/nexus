@@ -83,6 +83,9 @@ const (
 	// ReasonInsufficientPrivileges indicates the user is authenticated, but
 	// their assigned scopes or roles do not permit access to the resource.
 	ReasonInsufficientPrivileges = "insufficient_privileges"
+	// ReasonDelegationRequired indicates a machine token where an end-user
+	// context was required.
+	ReasonDelegationRequired = "delegation_required"
 )
 
 const (
