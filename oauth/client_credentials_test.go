@@ -75,7 +75,12 @@ func TestClientCredentialsGrant(t *testing.T) {
 
 			if tt.wantCode != "" {
 				if got := errCode(err); got != tt.wantCode {
-					t.Fatalf("got error code %q; want %q (err: %v)", got, tt.wantCode, err)
+					t.Fatalf(
+						"got error code %q; want %q (err: %v)",
+						got,
+						tt.wantCode,
+						err,
+					)
 				}
 				return
 			}

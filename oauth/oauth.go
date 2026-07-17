@@ -358,7 +358,10 @@ type SessionStore interface {
 	// If found, it must return the data and nil.
 	// If not found, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
-	GetDeviceCodeByUserCode(ctx context.Context, userCode string) (DeviceCode, error)
+	GetDeviceCodeByUserCode(
+		ctx context.Context,
+		userCode string,
+	) (DeviceCode, error)
 	// CreateDeviceCode stores a new device code.
 	//
 	// It should return an error only if the persistence operation fails.

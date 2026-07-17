@@ -156,7 +156,12 @@ func TestDeviceCodeGrant(t *testing.T) {
 
 			if tt.wantCode != "" {
 				if got := errCode(err); got != tt.wantCode {
-					t.Fatalf("got error code %q; want %q (err: %v)", got, tt.wantCode, err)
+					t.Fatalf(
+						"got error code %q; want %q (err: %v)",
+						got,
+						tt.wantCode,
+						err,
+					)
 				}
 				return
 			}
@@ -185,7 +190,11 @@ func TestDeviceCodeGrant(t *testing.T) {
 		pro := newProposal(client, store, form, now)
 		_, err := DeviceCodeGrant().Authorize(t.Context(), pro)
 		if got := errCode(err); got != ErrorCodeAuthorizationPending {
-			t.Fatalf("got error code %q; want %q", got, ErrorCodeAuthorizationPending)
+			t.Fatalf(
+				"got error code %q; want %q",
+				got,
+				ErrorCodeAuthorizationPending,
+			)
 		}
 
 		if got := store.deviceCodes["device-1"].LastPolledAt; got != now.Unix() {
@@ -203,7 +212,11 @@ func TestDeviceCodeGrant(t *testing.T) {
 		pro = newProposal(client, store, form, now.Add(6*time.Second))
 		_, err = DeviceCodeGrant().Authorize(t.Context(), pro)
 		if got := errCode(err); got != ErrorCodeAuthorizationPending {
-			t.Fatalf("got error code %q; want %q", got, ErrorCodeAuthorizationPending)
+			t.Fatalf(
+				"got error code %q; want %q",
+				got,
+				ErrorCodeAuthorizationPending,
+			)
 		}
 	})
 }

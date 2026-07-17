@@ -127,7 +127,12 @@ func TestRefreshTokenGrant(t *testing.T) {
 
 			if tt.wantCode != "" {
 				if got := errCode(err); got != tt.wantCode {
-					t.Fatalf("got error code %q; want %q (err: %v)", got, tt.wantCode, err)
+					t.Fatalf(
+						"got error code %q; want %q (err: %v)",
+						got,
+						tt.wantCode,
+						err,
+					)
 				}
 				return
 			}
@@ -166,7 +171,11 @@ func TestRefreshTokenGrant(t *testing.T) {
 		pro = newProposal(client, store, data, now)
 		_, err := RefreshTokenGrant().Authorize(t.Context(), pro)
 		if got := errCode(err); got != ErrorCodeInvalidGrant {
-			t.Fatalf("reuse should fail with %q; got %q", ErrorCodeInvalidGrant, got)
+			t.Fatalf(
+				"reuse should fail with %q; got %q",
+				ErrorCodeInvalidGrant,
+				got,
+			)
 		}
 	})
 }

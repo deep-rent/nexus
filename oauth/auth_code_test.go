@@ -142,9 +142,11 @@ func TestAuthCodeGrant(t *testing.T) {
 			seed: true,
 			code: code(),
 			data: url.Values{
-				"code":          {"code-1"},
-				"code_verifier": {"wrong-verifier-wrong-verifier-wrong-verifier"},
-				"redirect_uri":  {"https://app.example.com/callback"},
+				"code": {"code-1"},
+				"code_verifier": {
+					"wrong-verifier-wrong-verifier-wrong-verifier",
+				},
+				"redirect_uri": {"https://app.example.com/callback"},
 			},
 			wantCode: ErrorCodeInvalidGrant,
 		},
@@ -171,7 +173,12 @@ func TestAuthCodeGrant(t *testing.T) {
 
 			if tt.wantCode != "" {
 				if got := errCode(err); got != tt.wantCode {
-					t.Fatalf("got error code %q; want %q (err: %v)", got, tt.wantCode, err)
+					t.Fatalf(
+						"got error code %q; want %q (err: %v)",
+						got,
+						tt.wantCode,
+						err,
+					)
 				}
 				return
 			}
@@ -208,7 +215,11 @@ func TestAuthCodeGrant(t *testing.T) {
 		pro = newProposal(client, store, form(), now)
 		_, err := AuthCodeGrant().Authorize(t.Context(), pro)
 		if got := errCode(err); got != ErrorCodeInvalidGrant {
-			t.Fatalf("replay should fail with %q; got %q", ErrorCodeInvalidGrant, got)
+			t.Fatalf(
+				"replay should fail with %q; got %q",
+				ErrorCodeInvalidGrant,
+				got,
+			)
 		}
 	})
 }

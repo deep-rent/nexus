@@ -88,7 +88,10 @@ func (s *Server) Login(e *router.Exchange) error {
 func (s *Server) Logout(e *router.Exchange) error {
 	cookie, err := e.Cookie(s.sessionCookieName)
 	if err == nil && cookie.Value != "" {
-		if err := s.subjects.DeleteSession(e.Context(), cookie.Value); err != nil {
+		if err := s.subjects.DeleteSession(
+			e.Context(),
+			cookie.Value,
+		); err != nil {
 			s.logger.ErrorContext(
 				e.Context(),
 				"Failed to delete subject session",

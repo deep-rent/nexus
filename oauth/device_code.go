@@ -95,7 +95,8 @@ func (g deviceCodeGrant) Authorize(
 
 	// RFC 8628 Section 3.5: clients polling faster than the announced
 	// interval must back off.
-	if c.Interval > 0 && c.LastPolledAt != 0 && now-c.LastPolledAt < c.Interval {
+	if c.Interval > 0 && c.LastPolledAt != 0 &&
+		now-c.LastPolledAt < c.Interval {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeSlowDown,

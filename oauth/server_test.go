@@ -403,7 +403,11 @@ func TestTokenErrors(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
-		if got := w.Header().Get("WWW-Authenticate"); !strings.HasPrefix(got, "Basic") {
+		if got := w.Header().
+			Get("WWW-Authenticate"); !strings.HasPrefix(
+			got,
+			"Basic",
+		) {
 			t.Errorf("got WWW-Authenticate %q; want a Basic challenge", got)
 		}
 		res := decodeJSON[Error](t, w)
@@ -682,7 +686,12 @@ func TestIntrospect(t *testing.T) {
 		}, env.client, "s3cret")
 
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 		res := decodeJSON[IntrospectionResponse](t, w)
 		if !res.Active {
@@ -847,12 +856,21 @@ func TestDeviceFlow(t *testing.T) {
 
 	w = env.do(req)
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusNoContent, w.Body)
+		t.Fatalf(
+			"got status %d; want %d: %s",
+			w.Code,
+			http.StatusNoContent,
+			w.Body,
+		)
 	}
 
 	stored := env.sessions.deviceCodes[res.DeviceCode]
 	if stored.Status != DeviceCodeStatusAuthorized {
-		t.Fatalf("got status %q; want %q", stored.Status, DeviceCodeStatusAuthorized)
+		t.Fatalf(
+			"got status %q; want %q",
+			stored.Status,
+			DeviceCodeStatusAuthorized,
+		)
 	}
 	if stored.SubjectID != env.subject.id {
 		t.Fatalf("got subject %v; want %v", stored.SubjectID, env.subject.id)

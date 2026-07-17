@@ -203,9 +203,16 @@ func TestExternalFlow(t *testing.T) {
 
 		w := env.do(req)
 		if w.Code != http.StatusFound {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusFound, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusFound,
+				w.Body,
+			)
 		}
-		if got, want := w.Header().Get("Location"), "https://app.example.com/dashboard"; got != want {
+		if got, want := w.Header().
+			Get("Location"),
+			"https://app.example.com/dashboard"; got != want {
 			t.Errorf("got location %q; want %q", got, want)
 		}
 

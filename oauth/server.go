@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -221,20 +222,41 @@ func New(cfg Config, opts ...Option) (*Server, error) {
 	}
 
 	s := &Server{
-		grants:               make(map[GrantType]Grant),
-		idps:                 make(map[string]IdentityProvider),
-		vault:                cfg.Vault,
-		clients:              cfg.Clients,
-		sessions:             cfg.Sessions,
-		subjects:             cfg.Subjects,
-		issuer:               cfg.Issuer,
-		sessionCookieName:    cmp.Or(cfg.SessionCookieName, DefaultSessionCookieName),
-		stateCookieName:      cmp.Or(cfg.StateCookieName, DefaultStateCookieName),
-		accessTokenLifetime:  cmp.Or(cfg.AccessTokenLifetime, DefaultAccessTokenLifetime),
-		refreshTokenLifetime: cmp.Or(cfg.RefreshTokenLifetime, DefaultRefreshTokenLifetime),
-		authCodeLifetime:     cmp.Or(cfg.AuthCodeLifetime, DefaultAuthCodeLifetime),
-		deviceCodeLifetime:   cmp.Or(cfg.DeviceCodeLifetime, DefaultDeviceCodeLifetime),
-		devicePollInterval:   cmp.Or(cfg.DevicePollInterval, DefaultDevicePollInterval),
+		grants:   make(map[GrantType]Grant),
+		idps:     make(map[string]IdentityProvider),
+		vault:    cfg.Vault,
+		clients:  cfg.Clients,
+		sessions: cfg.Sessions,
+		subjects: cfg.Subjects,
+		issuer:   cfg.Issuer,
+		sessionCookieName: cmp.Or(
+			cfg.SessionCookieName,
+			DefaultSessionCookieName,
+		),
+		stateCookieName: cmp.Or(
+			cfg.StateCookieName,
+			DefaultStateCookieName,
+		),
+		accessTokenLifetime: cmp.Or(
+			cfg.AccessTokenLifetime,
+			DefaultAccessTokenLifetime,
+		),
+		refreshTokenLifetime: cmp.Or(
+			cfg.RefreshTokenLifetime,
+			DefaultRefreshTokenLifetime,
+		),
+		authCodeLifetime: cmp.Or(
+			cfg.AuthCodeLifetime,
+			DefaultAuthCodeLifetime,
+		),
+		deviceCodeLifetime: cmp.Or(
+			cfg.DeviceCodeLifetime,
+			DefaultDeviceCodeLifetime,
+		),
+		devicePollInterval: cmp.Or(
+			cfg.DevicePollInterval,
+			DefaultDevicePollInterval,
+		),
 		realm:                cmp.Or(cfg.Realm, DefaultRealm),
 		loginTerminalURI:     cfg.LoginTerminalURI,
 		loginRedirectURI:     cfg.LoginRedirectURI,
