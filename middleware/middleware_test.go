@@ -58,7 +58,7 @@ func TestChain(t *testing.T) {
 		h := mw.Chain(mockHandler, rec("a"), rec("b"), rec("c"))
 		h.ServeHTTP(
 			httptest.NewRecorder(),
-			httptest.NewRequest("GET", "/", nil),
+			httptest.NewRequest(http.MethodGet, "/", nil),
 		)
 
 		want := "a,b,c"
@@ -82,7 +82,7 @@ func TestChain(t *testing.T) {
 		h := mw.Chain(mockHandler, nil, p, nil)
 		h.ServeHTTP(
 			httptest.NewRecorder(),
-			httptest.NewRequest("GET", "/", nil),
+			httptest.NewRequest(http.MethodGet, "/", nil),
 		)
 
 		if !called {
@@ -94,7 +94,7 @@ func TestChain(t *testing.T) {
 		t.Parallel()
 		h := mw.Chain(mockHandler)
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
@@ -117,7 +117,7 @@ func TestRecover(t *testing.T) {
 		h := pipe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			panic("test")
 		}))
-		req := httptest.NewRequest("GET", "/panic", nil)
+		req := httptest.NewRequest(http.MethodGet, "/panic", nil)
 		rr := httptest.NewRecorder()
 
 		h.ServeHTTP(rr, req)
@@ -148,7 +148,7 @@ func TestRecover(t *testing.T) {
 
 		h := pipe(mockHandler)
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest("GET", "/ok", nil))
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/ok", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
@@ -172,7 +172,7 @@ func TestRequestID(t *testing.T) {
 
 	h := mw.RequestID()(trap)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	id := rr.Header().Get("X-Request-ID")
 	if len(id) == 0 {
@@ -223,7 +223,7 @@ func TestLog(t *testing.T) {
 		})
 
 		h := pipe(final)
-		req := httptest.NewRequest("POST", "/path?q=1", nil)
+		req := httptest.NewRequest(http.MethodPost, "/path?q=1", nil)
 		req.RemoteAddr = "1.2.3.4:12345"
 		req.Header.Set("User-Agent", "test-agent")
 		req = req.WithContext(mw.SetRequestID(req.Context(), "test-id"))
@@ -265,7 +265,7 @@ func TestLog(t *testing.T) {
 
 		ch := pipe(final)
 		rr := httptest.NewRecorder()
-		ch.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+		ch.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
@@ -280,7 +280,7 @@ func TestVolatile(t *testing.T) {
 	t.Parallel()
 	h := mw.Volatile()(mockHandler)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	wantCC := "no-store, no-cache, must-revalidate, proxy-revalidate"
 
@@ -305,7 +305,7 @@ func TestSecure(t *testing.T) {
 		t.Parallel()
 		h := mw.Secure(mw.DefaultSecurityConfig)(mockHandler)
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 		if got, want := rr.Code, http.StatusOK; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
@@ -380,7 +380,7 @@ func TestSecure(t *testing.T) {
 		}
 		h := mw.Secure(cfg)(mockHandler)
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 		hdr := rr.Header()
 		tests := []struct {
@@ -411,7 +411,7 @@ func TestSecure(t *testing.T) {
 		cfg := mw.SecurityConfig{}
 		h := mw.Secure(cfg)(mockHandler)
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
 		hdr := rr.Header()
 		checks := []string{
@@ -460,7 +460,7 @@ func TestIntegration(t *testing.T) {
 		mw.Volatile(),
 	)
 
-	req := httptest.NewRequest("GET", "/int", nil)
+	req := httptest.NewRequest(http.MethodGet, "/int", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 

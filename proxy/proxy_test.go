@@ -102,7 +102,7 @@ func TestHandler_ServeHTTP_Rewrite(t *testing.T) {
 
 	h := proxy.NewHandler(u, proxy.WithRewrite(rewrite))
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	h.ServeHTTP(rec, req)
 
@@ -154,7 +154,7 @@ func TestErrorHandler_Handle_StatusAndLogging(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(&buf, nil))
 			h := proxy.NewErrorHandler(logger)
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest("GET", "/", nil).WithContext(t.Context())
+			req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(t.Context())
 
 			h(rec, req, tt.err)
 
@@ -270,7 +270,7 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil).WithContext(t.Context())
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(t.Context())
 
 	rp.ErrorHandler(rec, req, wantErr)
 

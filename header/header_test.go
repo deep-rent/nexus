@@ -854,7 +854,7 @@ func TestNewTransport(t *testing.T) {
 
 		req, err := http.NewRequestWithContext(
 			t.Context(),
-			"GET",
+			http.MethodGet,
 			"http://example.com",
 			nil,
 		)

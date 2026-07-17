@@ -284,7 +284,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			{res: mockResponse(http.StatusOK, "ok")},
 		}}
 		tr := retry.NewTransport(m)
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
@@ -306,7 +306,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 		}
 		tr := retry.NewTransport(m, retry.WithAttemptLimit(3))
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
@@ -328,7 +328,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 		}
 		tr := retry.NewTransport(m, retry.WithAttemptLimit(3))
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
@@ -351,7 +351,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 		}
 		tr := retry.NewTransport(m, retry.WithAttemptLimit(2))
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
@@ -375,7 +375,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			backoff.Constant(100*time.Millisecond),
 		))
 		ctx, cancel := context.WithCancel(t.Context())
-		req, _ := http.NewRequestWithContext(ctx, "GET", "/", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
@@ -399,7 +399,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 		}
 		tr := retry.NewTransport(m)
-		req, _ := http.NewRequest("PUT", "/", http.NoBody)
+		req, _ := http.NewRequest(http.MethodPut, "/", http.NoBody)
 		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
@@ -422,7 +422,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 		}
 		tr := retry.NewTransport(m)
 		body := "body"
-		req, _ := http.NewRequest("PUT", "/", strings.NewReader(body))
+		req, _ := http.NewRequest(http.MethodPut, "/", strings.NewReader(body))
 		req.GetBody = func() (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(body)), nil
 		}
@@ -454,7 +454,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			retry.WithBackoff(backoff.Constant(100*time.Millisecond)),
 			retry.WithClock(func() time.Time { return now }),
 		)
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 
 		start := time.Now()
 		_, err := tr.RoundTrip(req)
@@ -492,7 +492,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			retry.WithAttemptLimit(5),
 		)
 
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 		_, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
@@ -524,7 +524,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 		))
 
 		tr := retry.NewTransport(m, retry.WithLogger(logger))
-		req, _ := http.NewRequest("GET", "/", nil)
+		req, _ := http.NewRequest(http.MethodGet, "/", nil)
 
 		_, err := tr.RoundTrip(req)
 		if err != nil {

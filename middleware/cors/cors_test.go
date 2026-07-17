@@ -65,7 +65,7 @@ func TestMiddleware(t *testing.T) {
 			reqMethod: http.MethodOptions,
 			reqHeaders: map[string]string{
 				"Origin":                        "http://a.com",
-				"Access-Control-Request-Method": "GET",
+				"Access-Control-Request-Method": http.MethodGet,
 			},
 			wantStatusCode: http.StatusNoContent,
 			wantResHeaders: map[string]string{
@@ -107,7 +107,7 @@ func TestMiddleware(t *testing.T) {
 			reqMethod: http.MethodOptions,
 			reqHeaders: map[string]string{
 				"Origin":                         "http://a.com",
-				"Access-Control-Request-Method":  "PUT",
+				"Access-Control-Request-Method":  http.MethodPut,
 				"Access-Control-Request-Headers": "X-Custom-Header",
 			},
 			wantStatusCode: http.StatusNoContent,
