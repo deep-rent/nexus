@@ -29,7 +29,7 @@
 //		"Your verification code is 123456.",
 //	)
 //
-//	sender := sms.NewSender("twilio_sid", "twilio_auth_token")
+//	sender := sms.NewSender(&http.Client{}, "twilio_sid", "twilio_auth_token")
 //	err := sender.Send(ctx, msg)
 package sms
 
@@ -44,9 +44,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/deep-rent/nexus/internal/transport"
-	"github.com/deep-rent/nexus/retry"
 )
 
 const (
@@ -164,41 +161,22 @@ type sender struct {
 	client *http.Client
 	// logger is used for structured diagnostic output.
 	logger *slog.Logger
-	// retry contains the retry configuration options.
-	retry []retry.Option
 }
 
 var _ Sender = (*sender)(nil)
 
 // config holds the optional configuration for the [sender].
 type config struct {
-	// client holds a custom [http.Client], if provided.
-	client *http.Client
 	// baseURL overrides the default Twilio API endpoint.
 	baseURL string
 	// userAgent defines the User-Agent header value for outgoing requests.
 	userAgent string
-	// timeout sets the maximum [time.Duration] for HTTP requests.
-	timeout time.Duration
-	// retry stores options for the HTTP transport retry mechanism.
-	retry []retry.Option
 	// logger specifies the custom structured [slog.Logger].
 	logger *slog.Logger
 }
 
 // Option defines the functional option pattern for configuring the [sender].
 type Option func(*config)
-
-// WithClient allows passing a custom [http.Client] to the [sender].
-// If provided, it overrides the [WithTimeout] setting. Nil values will be
-// ignored.
-func WithClient(client *http.Client) Option {
-	return func(c *config) {
-		if client != nil {
-			c.client = client
-		}
-	}
-}
 
 // WithBaseURL allows overriding the Twilio API base URL for testing or mocking.
 // Empty string values are ignored.
@@ -220,23 +198,6 @@ func WithUserAgent(v string) Option {
 	}
 }
 
-// WithTimeout configures the timeout for the default [http.Client].
-// Zero values are ignored.
-func WithTimeout(d time.Duration) Option {
-	return func(c *config) {
-		if d != 0 {
-			c.timeout = d
-		}
-	}
-}
-
-// WithRetryOptions configures the retry mechanism for the default HTTP client.
-func WithRetryOptions(opts ...retry.Option) Option {
-	return func(c *config) {
-		c.retry = append(c.retry, opts...)
-	}
-}
-
 // WithLogger injects a structured [slog.Logger] into the sender.
 // Nil values are ignored.
 func WithLogger(logger *slog.Logger) Option {
@@ -249,7 +210,7 @@ func WithLogger(logger *slog.Logger) Option {
 
 // NewSender creates a configured Twilio client with the given account SID and
 // authentication token.
-func NewSender(sid, token string, opts ...Option) Sender {
+func NewSender(client *http.Client, sid, token string, opts ...Option) Sender {
 	if sid == "" {
 		panic("account SID is required")
 	}
@@ -259,7 +220,6 @@ func NewSender(sid, token string, opts ...Option) Sender {
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		timeout: DefaultTimeout,
 		logger:  slog.Default(),
 	}
 
@@ -280,21 +240,7 @@ func NewSender(sid, token string, opts ...Option) Sender {
 		url:        endpoint,
 		userAgent:  cfg.userAgent,
 		logger:     cfg.logger,
-		retry:      cfg.retry,
-	}
-
-	if cfg.client == nil {
-		s.client = transport.NewClient(transport.Options{
-			Timeout: cfg.timeout,
-			Retry:   cfg.retry,
-		})
-	} else {
-		if len(cfg.retry) != 0 {
-			s.logger.Warn(
-				"Custom client provided; retry options will be ignored",
-			)
-		}
-		s.client = cfg.client
+		client:     client,
 	}
 
 	return s

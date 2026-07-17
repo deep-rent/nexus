@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sms"
 )
 
@@ -113,7 +112,7 @@ func TestNewSender_Panics(t *testing.T) {
 					t.Error("expected a panic")
 				}
 			}()
-			sms.NewSender(tt.accountSID, tt.authToken)
+			sms.NewSender(&http.Client{}, tt.accountSID, tt.authToken)
 		})
 	}
 }
@@ -190,7 +189,7 @@ func TestSender_Send(t *testing.T) {
 			ts := httptest.NewServer(h)
 			defer ts.Close()
 
-			sender := sms.NewSender("sid", "token",
+			sender := sms.NewSender(&http.Client{}, "sid", "token",
 				sms.WithBaseURL(ts.URL),
 				sms.WithUserAgent("TestAgent"),
 				sms.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
@@ -220,10 +219,7 @@ func TestSender_WithClientAndOptions(t *testing.T) {
 	t.Parallel()
 
 	client := &http.Client{Timeout: 1 * time.Second}
-	sender := sms.NewSender("sid", "token",
-		sms.WithClient(client),
-		sms.WithRetryOptions(retry.WithAttemptLimit(3)),
-	)
+	sender := sms.NewSender(client, "sid", "token")
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")
