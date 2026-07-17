@@ -569,7 +569,7 @@ type IdentityProvider interface {
 	// query parameters (e.g., `?state=...`). The redirect URI should point
 	// to the server's registered ExternalCallback endpoint.
 	AuthURL(ctx context.Context, state string) (string, error)
-	// Process processes the callback request and returns the external
+	// Exchange handles the callback request and returns the external
 	// identity information.
 	//
 	// Implementations should extract the authorization code from the request
@@ -577,16 +577,21 @@ type IdentityProvider interface {
 	// core [Server] already validates the state parameter against a secure
 	// cookie prior to calling this method, so implementations do not need to
 	// perform additional CSRF checks.
-	Process(ctx context.Context, req *http.Request) (Claimant, error)
+	Exchange(ctx context.Context, req *http.Request) (Claimant, error)
 }
 
 // TokenResponse outlines the payload returned after a successful token grant.
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
-	ExpiresIn    uint64 `json:"expires_in,omitzero"`
+	ExpiresIn    int64  `json:"expires_in,omitzero"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	Scope        string `json:"scope,omitempty"`
+	// IDToken carries the OpenID Connect ID token (OIDC Core Section
+	// 3.1.3.3). This server does not issue ID tokens yet; the field is
+	// populated by external OIDC providers and consumed when this package
+	// acts as a client during social login exchanges.
+	IDToken string `json:"id_token,omitempty"`
 }
 
 // DeviceAuthorizationResponse outlines the payload returned from the device

@@ -47,22 +47,22 @@ import (
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/oauth"
-	"github.com/deep-rent/nexus/oauth/social"
+	"github.com/deep-rent/nexus/oauth/oidc"
 )
 
 // Google OIDC endpoints, as published at
 // https://accounts.google.com/.well-known/openid-configuration.
 const (
-	authEndpoint  = "https://accounts.google.com/o/oauth2/v2/auth"
-	tokenEndpoint = "https://oauth2.googleapis.com/token"
-	keySetURL     = "https://www.googleapis.com/oauth2/v3/certs"
+	AuthEndpoint  = "https://accounts.google.com/o/oauth2/v2/auth"
+	TokenEndpoint = "https://oauth2.googleapis.com/token"
+	KeySetURL     = "https://www.googleapis.com/oauth2/v3/certs"
 )
 
-// issuers lists the values Google uses for the "iss" claim.
-var issuers = []string{"https://accounts.google.com", "accounts.google.com"}
+// Issuers lists the values Google uses for the "iss" claim.
+var Issuers = []string{"https://accounts.google.com", "accounts.google.com"}
 
-// defaultScopes requests the standard OIDC identity profile.
-var defaultScopes = []string{"openid", "email", "profile"}
+// DefaultScopes requests the standard OIDC identity profile.
+var DefaultScopes = []string{"openid", "email", "profile"}
 
 // Config carries the settings for the Google identity provider.
 type Config struct {
@@ -78,7 +78,7 @@ type Config struct {
 	// "openid email profile".
 	Scopes []string
 	// Client overrides the HTTP client used for outbound requests to
-	// Google. Defaults to a client bounded by [social.DefaultTimeout].
+	// Google. Defaults to a client bounded by [oidc.DefaultTimeout].
 	Client *http.Client
 }
 
@@ -90,7 +90,7 @@ type Provider struct {
 	scopes       []string
 	client       *http.Client
 	keys         jwk.CacheSet
-	verifier     jwt.Verifier[*social.IDToken]
+	verifier     jwt.Verifier[*oidc.IDToken]
 	auth         string
 	token        string
 }
@@ -103,24 +103,24 @@ type Provider struct {
 func New(cfg Config) (*Provider, error) {
 	switch {
 	case cfg.ClientID == "":
-		return nil, errors.New("google: Config.ClientID is required")
+		return nil, errors.New("Config.ClientID is required")
 	case cfg.ClientSecret == "":
-		return nil, errors.New("google: Config.ClientSecret is required")
+		return nil, errors.New("Config.ClientSecret is required")
 	case cfg.RedirectURI == "":
-		return nil, errors.New("google: Config.RedirectURI is required")
+		return nil, errors.New("Config.RedirectURI is required")
 	}
 
 	client := cfg.Client
 	if client == nil {
-		client = &http.Client{Timeout: social.DefaultTimeout}
+		client = &http.Client{Timeout: oidc.DefaultTimeout}
 	}
 
 	scopes := cfg.Scopes
 	if len(scopes) == 0 {
-		scopes = defaultScopes
+		scopes = DefaultScopes
 	}
 
-	keys := jwk.NewCacheSet(client, keySetURL)
+	keys := jwk.NewCacheSet(client, KeySetURL)
 
 	return &Provider{
 		clientID:     cfg.ClientID,
@@ -129,14 +129,14 @@ func New(cfg Config) (*Provider, error) {
 		scopes:       scopes,
 		client:       client,
 		keys:         keys,
-		verifier: jwt.NewVerifier[*social.IDToken](
+		verifier: jwt.NewVerifier[*oidc.IDToken](
 			keys,
-			jwt.WithIssuers(issuers...),
+			jwt.WithIssuers(Issuers...),
 			jwt.WithAudiences(cfg.ClientID),
 			jwt.WithLeeway(time.Minute),
 		),
-		auth:  authEndpoint,
-		token: tokenEndpoint,
+		auth:  AuthEndpoint,
+		token: TokenEndpoint,
 	}, nil
 }
 
@@ -166,18 +166,18 @@ func (p *Provider) AuthURL(_ context.Context, state string) (string, error) {
 	return p.auth + "?" + q.Encode(), nil
 }
 
-// Process implements [oauth.IdentityProvider].
+// Exchange implements [oauth.IdentityProvider].
 //
 // It exchanges the authorization code from the callback request for an ID
 // token, verifies the token against Google's signing keys, and extracts the
 // user's identity.
-func (p *Provider) Process(
+func (p *Provider) Exchange(
 	ctx context.Context,
 	req *http.Request,
 ) (oauth.Claimant, error) {
 	if e := req.FormValue("error"); e != "" {
 		return oauth.Claimant{}, fmt.Errorf(
-			"google: authorization failed: %s",
+			"authorization failed: %s",
 			e,
 		)
 	}
@@ -185,11 +185,11 @@ func (p *Provider) Process(
 	code := req.FormValue("code")
 	if code == "" {
 		return oauth.Claimant{}, errors.New(
-			"google: missing authorization code",
+			"missing authorization code",
 		)
 	}
 
-	tok, err := social.Exchange(ctx, p.client, p.token, url.Values{
+	tok, err := oidc.Exchange(ctx, p.client, p.token, url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"client_id":     {p.clientID},
@@ -197,19 +197,19 @@ func (p *Provider) Process(
 		"redirect_uri":  {p.redirectURI},
 	})
 	if err != nil {
-		return oauth.Claimant{}, fmt.Errorf("google: %w", err)
+		return oauth.Claimant{}, err
 	}
 
 	if tok.IDToken == "" {
 		return oauth.Claimant{}, errors.New(
-			"google: token response is missing the id_token",
+			"token response is missing the id_token",
 		)
 	}
 
 	claims, err := p.verifier.Verify([]byte(tok.IDToken))
 	if err != nil {
 		return oauth.Claimant{}, fmt.Errorf(
-			"google: id token verification failed: %w",
+			"id token verification failed: %w",
 			err,
 		)
 	}

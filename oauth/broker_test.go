@@ -33,7 +33,7 @@ func (f *fakeIDP) AuthURL(_ context.Context, state string) (string, error) {
 	return "https://idp.example.com/auth?state=" + url.QueryEscape(state), nil
 }
 
-func (f *fakeIDP) Process(
+func (f *fakeIDP) Exchange(
 	_ context.Context,
 	_ *http.Request,
 ) (Claimant, error) {

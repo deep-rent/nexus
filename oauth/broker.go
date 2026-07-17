@@ -215,13 +215,14 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 		}
 	}
 
-	identity, err := idp.Process(e.Context(), e.R)
+	identity, err := idp.Exchange(e.Context(), e.R)
 	if err != nil {
 		id := router.ErrorID()
 
 		s.logger.ErrorContext(
 			e.Context(),
 			"Failed to process external exchange",
+			slog.String("idp", name),
 			slog.String("error_id", id),
 			slog.Any("error", err),
 		)

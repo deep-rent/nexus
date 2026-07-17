@@ -61,26 +61,26 @@ import (
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/oauth"
-	"github.com/deep-rent/nexus/oauth/social"
+	"github.com/deep-rent/nexus/oauth/oidc"
 	"github.com/deep-rent/nexus/sign"
 )
 
-// Apple endpoints and token issuer, as documented at
+// Apple endpoints and token Issuer, as documented at
 // https://developer.apple.com/documentation/signinwithapple.
 const (
-	authEndpoint  = "https://appleid.apple.com/auth/authorize"
-	tokenEndpoint = "https://appleid.apple.com/auth/token"
-	keySetURL     = "https://appleid.apple.com/auth/keys"
-	issuer        = "https://appleid.apple.com"
+	AuthEndpoint  = "https://appleid.apple.com/auth/authorize"
+	TokenEndpoint = "https://appleid.apple.com/auth/token"
+	KeySetURL     = "https://appleid.apple.com/auth/keys"
+	Issuer        = "https://appleid.apple.com"
 )
 
-// secretLifetime bounds the validity of the self-signed client secret JWT.
+// SecretLifetime bounds the validity of the self-signed client secret JWT.
 // Apple allows up to six months; a short window suffices since the secret
 // is minted per exchange.
-const secretLifetime = 5 * time.Minute
+const SecretLifetime = 5 * time.Minute
 
-// defaultScopes requests the user's name and email on first authorization.
-var defaultScopes = []string{"name", "email"}
+// DefaultScopes requests the user's name and email on first authorization.
+var DefaultScopes = []string{"name", "email"}
 
 // Config carries the settings for the Apple identity provider.
 type Config struct {
@@ -103,7 +103,7 @@ type Config struct {
 	// response mode.
 	Scopes []string
 	// Client overrides the HTTP client used for outbound requests to
-	// Apple. Defaults to a client bounded by [social.DefaultTimeout].
+	// Apple. Defaults to a client bounded by [oidc.DefaultTimeout].
 	Client *http.Client
 }
 
@@ -116,7 +116,7 @@ type Provider struct {
 	key         jwk.KeyPair
 	client      *http.Client
 	keys        jwk.CacheSet
-	verifier    jwt.Verifier[*social.IDToken]
+	verifier    jwt.Verifier[*oidc.IDToken]
 	auth        string
 	token       string
 	now         func() time.Time
@@ -131,15 +131,15 @@ type Provider struct {
 func New(cfg Config) (*Provider, error) {
 	switch {
 	case cfg.ClientID == "":
-		return nil, errors.New("apple: Config.ClientID is required")
+		return nil, errors.New("Config.ClientID is required")
 	case cfg.TeamID == "":
-		return nil, errors.New("apple: Config.TeamID is required")
+		return nil, errors.New("Config.TeamID is required")
 	case cfg.KeyID == "":
-		return nil, errors.New("apple: Config.KeyID is required")
+		return nil, errors.New("Config.KeyID is required")
 	case len(cfg.PrivateKey) == 0:
-		return nil, errors.New("apple: Config.PrivateKey is required")
+		return nil, errors.New("Config.PrivateKey is required")
 	case cfg.RedirectURI == "":
-		return nil, errors.New("apple: Config.RedirectURI is required")
+		return nil, errors.New("Config.RedirectURI is required")
 	}
 
 	key, err := parseKey(cfg.PrivateKey, cfg.KeyID)
@@ -149,15 +149,15 @@ func New(cfg Config) (*Provider, error) {
 
 	client := cfg.Client
 	if client == nil {
-		client = &http.Client{Timeout: social.DefaultTimeout}
+		client = &http.Client{Timeout: oidc.DefaultTimeout}
 	}
 
 	scopes := cfg.Scopes
 	if scopes == nil {
-		scopes = defaultScopes
+		scopes = DefaultScopes
 	}
 
-	keys := jwk.NewCacheSet(client, keySetURL)
+	keys := jwk.NewCacheSet(client, KeySetURL)
 
 	return &Provider{
 		clientID:    cfg.ClientID,
@@ -167,14 +167,14 @@ func New(cfg Config) (*Provider, error) {
 		key:         key,
 		client:      client,
 		keys:        keys,
-		verifier: jwt.NewVerifier[*social.IDToken](
+		verifier: jwt.NewVerifier[*oidc.IDToken](
 			keys,
-			jwt.WithIssuers(issuer),
+			jwt.WithIssuers(Issuer),
 			jwt.WithAudiences(cfg.ClientID),
 			jwt.WithLeeway(time.Minute),
 		),
-		auth:  authEndpoint,
-		token: tokenEndpoint,
+		auth:  AuthEndpoint,
+		token: TokenEndpoint,
 		now:   time.Now,
 	}, nil
 }
@@ -185,14 +185,14 @@ func parseKey(pemBytes []byte, kid string) (jwk.KeyPair, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
 		return nil, errors.New(
-			"apple: Config.PrivateKey is not PEM encoded",
+			"Config.PrivateKey is not PEM encoded",
 		)
 	}
 
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"apple: failed to parse Config.PrivateKey: %w",
+			"failed to parse Config.PrivateKey: %w",
 			err,
 		)
 	}
@@ -200,14 +200,14 @@ func parseKey(pemBytes []byte, kid string) (jwk.KeyPair, error) {
 	ec, ok := parsed.(*ecdsa.PrivateKey)
 	if !ok {
 		return nil, errors.New(
-			"apple: Config.PrivateKey is not an ECDSA key",
+			"Config.PrivateKey is not an ECDSA key",
 		)
 	}
 
 	key := jwk.NewKeyPair(jwa.ES256, kid, sign.From(ec))
 	if key == nil {
 		return nil, errors.New(
-			"apple: Config.PrivateKey is not usable for ES256 signing",
+			"Config.PrivateKey is not usable for ES256 signing",
 		)
 	}
 	return key, nil
@@ -260,12 +260,12 @@ func (p *Provider) clientSecret(ctx context.Context) (string, error) {
 	token, err := jwt.Sign(ctx, p.key, secretClaims{
 		Iss: p.teamID,
 		Iat: now,
-		Exp: now.Add(secretLifetime),
-		Aud: issuer,
+		Exp: now.Add(SecretLifetime),
+		Aud: Issuer,
 		Sub: p.clientID,
 	})
 	if err != nil {
-		return "", fmt.Errorf("apple: failed to sign client secret: %w", err)
+		return "", fmt.Errorf("failed to sign client secret: %w", err)
 	}
 	return string(token), nil
 }
@@ -280,19 +280,19 @@ type user struct {
 	Email string `json:"email"`
 }
 
-// Process implements [oauth.IdentityProvider].
+// Exchange implements [oauth.IdentityProvider].
 //
 // It exchanges the authorization code from the callback request for an ID
 // token, verifies the token against Apple's signing keys, and extracts the
 // user's identity. On the subject's first authorization, the display name
 // from the accompanying "user" payload is merged into the result.
-func (p *Provider) Process(
+func (p *Provider) Exchange(
 	ctx context.Context,
 	req *http.Request,
 ) (oauth.Claimant, error) {
 	if e := req.FormValue("error"); e != "" {
 		return oauth.Claimant{}, fmt.Errorf(
-			"apple: authorization failed: %s",
+			"authorization failed: %s",
 			e,
 		)
 	}
@@ -300,7 +300,7 @@ func (p *Provider) Process(
 	code := req.FormValue("code")
 	if code == "" {
 		return oauth.Claimant{}, errors.New(
-			"apple: missing authorization code",
+			"missing authorization code",
 		)
 	}
 
@@ -309,7 +309,7 @@ func (p *Provider) Process(
 		return oauth.Claimant{}, err
 	}
 
-	tok, err := social.Exchange(ctx, p.client, p.token, url.Values{
+	tok, err := oidc.Exchange(ctx, p.client, p.token, url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"client_id":     {p.clientID},
@@ -317,19 +317,19 @@ func (p *Provider) Process(
 		"redirect_uri":  {p.redirectURI},
 	})
 	if err != nil {
-		return oauth.Claimant{}, fmt.Errorf("apple: %w", err)
+		return oauth.Claimant{}, err
 	}
 
 	if tok.IDToken == "" {
 		return oauth.Claimant{}, errors.New(
-			"apple: token response is missing the id_token",
+			"token response is missing the id_token",
 		)
 	}
 
 	claims, err := p.verifier.Verify([]byte(tok.IDToken))
 	if err != nil {
 		return oauth.Claimant{}, fmt.Errorf(
-			"apple: id token verification failed: %w",
+			"id token verification failed: %w",
 			err,
 		)
 	}

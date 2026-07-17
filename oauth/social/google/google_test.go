@@ -25,7 +25,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
-	"github.com/deep-rent/nexus/oauth/social"
+	"github.com/deep-rent/nexus/oauth/oidc"
 )
 
 func testConfig() Config {
@@ -114,7 +114,7 @@ func TestAuthURL(t *testing.T) {
 	}
 }
 
-func TestProcess(t *testing.T) {
+func TestExchange(t *testing.T) {
 	t.Parallel()
 
 	key, err := jwk.Generate(jwa.ES256)
@@ -124,7 +124,7 @@ func TestProcess(t *testing.T) {
 
 	now := time.Now()
 
-	idToken, err := jwt.Sign(t.Context(), key, &social.IDToken{
+	idToken, err := jwt.Sign(t.Context(), key, &oidc.IDToken{
 		Sub:           "g-123",
 		Iss:           "https://accounts.google.com",
 		Aud:           jwt.Audience{"client-1"},
@@ -146,9 +146,9 @@ func TestProcess(t *testing.T) {
 			t.Fatalf("failed to construct provider: %v", err)
 		}
 		p.token = srvURL
-		p.verifier = jwt.NewVerifier[*social.IDToken](
+		p.verifier = jwt.NewVerifier[*oidc.IDToken](
 			jwk.Singleton(key),
-			jwt.WithIssuers(issuers...),
+			jwt.WithIssuers(Issuers...),
 			jwt.WithAudiences("client-1"),
 		)
 		return p
@@ -188,7 +188,7 @@ func TestProcess(t *testing.T) {
 			nil,
 		)
 
-		c, err := p.Process(t.Context(), req)
+		c, err := p.Exchange(t.Context(), req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -213,7 +213,7 @@ func TestProcess(t *testing.T) {
 			"/callback/google?error=access_denied",
 			nil,
 		)
-		if _, err := p.Process(t.Context(), req); err == nil {
+		if _, err := p.Exchange(t.Context(), req); err == nil {
 			t.Fatal("should have returned an error")
 		}
 	})
@@ -224,7 +224,7 @@ func TestProcess(t *testing.T) {
 		p := newProvider(t, "http://invalid.invalid")
 
 		req := httptest.NewRequest(http.MethodGet, "/callback/google", nil)
-		if _, err := p.Process(t.Context(), req); err == nil {
+		if _, err := p.Exchange(t.Context(), req); err == nil {
 			t.Fatal("should have returned an error")
 		}
 	})
@@ -232,7 +232,7 @@ func TestProcess(t *testing.T) {
 	t.Run("wrong audience", func(t *testing.T) {
 		t.Parallel()
 
-		foreign, err := jwt.Sign(t.Context(), key, &social.IDToken{
+		foreign, err := jwt.Sign(t.Context(), key, &oidc.IDToken{
 			Sub: "g-123",
 			Iss: "https://accounts.google.com",
 			Aud: jwt.Audience{"other-client"},
@@ -261,7 +261,7 @@ func TestProcess(t *testing.T) {
 			"/callback/google?code=abc",
 			nil,
 		)
-		if _, err := p.Process(t.Context(), req); err == nil {
+		if _, err := p.Exchange(t.Context(), req); err == nil {
 			t.Fatal("should have rejected the foreign audience")
 		}
 	})

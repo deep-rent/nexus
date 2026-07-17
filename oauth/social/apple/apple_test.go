@@ -32,7 +32,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
-	"github.com/deep-rent/nexus/oauth/social"
+	"github.com/deep-rent/nexus/oauth/oidc"
 )
 
 // generatePEM returns a fresh P-256 private key encoded as PKCS#8 PEM, in
@@ -189,7 +189,7 @@ func TestClientSecret(t *testing.T) {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
-	tok, err := jwt.Parse[*social.IDToken]([]byte(secret))
+	tok, err := jwt.Parse[*oidc.IDToken]([]byte(secret))
 	if err != nil {
 		t.Fatalf("failed to parse client secret: %v", err)
 	}
@@ -213,19 +213,19 @@ func TestClientSecret(t *testing.T) {
 	if claims.Sub != cfg.ClientID {
 		t.Errorf("got sub %q; want %q", claims.Sub, cfg.ClientID)
 	}
-	if !slices.Equal(claims.Audience(), []string{issuer}) {
-		t.Errorf("got aud %v; want [%s]", claims.Audience(), issuer)
+	if !slices.Equal(claims.Audience(), []string{Issuer}) {
+		t.Errorf("got aud %v; want [%s]", claims.Audience(), Issuer)
 	}
-	if !claims.ExpiresAt().Equal(now.Add(secretLifetime)) {
+	if !claims.ExpiresAt().Equal(now.Add(SecretLifetime)) {
 		t.Errorf(
 			"got exp %v; want %v",
 			claims.ExpiresAt(),
-			now.Add(secretLifetime),
+			now.Add(SecretLifetime),
 		)
 	}
 }
 
-func TestProcess(t *testing.T) {
+func TestExchange(t *testing.T) {
 	t.Parallel()
 
 	appleKey, err := jwk.Generate(jwa.ES256)
@@ -239,7 +239,7 @@ func TestProcess(t *testing.T) {
 	// reproduce that quirk.
 	idToken, err := jwt.Sign(t.Context(), appleKey, map[string]any{
 		"sub":            "apple-123",
-		"iss":            issuer,
+		"iss":            Issuer,
 		"aud":            "com.example.web",
 		"iat":            now,
 		"exp":            now.Add(time.Hour),
@@ -261,7 +261,7 @@ func TestProcess(t *testing.T) {
 
 			// The client secret must be a well-formed, self-signed JWT.
 			secret := r.FormValue("client_secret")
-			tok, err := jwt.Parse[*social.IDToken]([]byte(secret))
+			tok, err := jwt.Parse[*oidc.IDToken]([]byte(secret))
 			if err != nil {
 				t.Errorf("failed to parse client secret: %v", err)
 			} else if tok.Claims().Iss != "94Z27KF87Q" {
@@ -286,9 +286,9 @@ func TestProcess(t *testing.T) {
 		t.Fatalf("failed to construct provider: %v", err)
 	}
 	p.token = srv.URL
-	p.verifier = jwt.NewVerifier[*social.IDToken](
+	p.verifier = jwt.NewVerifier[*oidc.IDToken](
 		jwk.Singleton(appleKey),
-		jwt.WithIssuers(issuer),
+		jwt.WithIssuers(Issuer),
 		jwt.WithAudiences("com.example.web"),
 	)
 
@@ -309,7 +309,7 @@ func TestProcess(t *testing.T) {
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	c, err := p.Process(t.Context(), req)
+	c, err := p.Exchange(t.Context(), req)
 	if err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}

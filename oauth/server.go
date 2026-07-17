@@ -951,7 +951,7 @@ func (s *Server) token(e *router.Exchange) error {
 	res := TokenResponse{
 		AccessToken: string(token),
 		TokenType:   auth.Scheme,
-		ExpiresIn:   uint64(s.accessTokenLifetime.Seconds()),
+		ExpiresIn:   int64(s.accessTokenLifetime.Seconds()),
 		Scope:       iss.Scope,
 	}
 

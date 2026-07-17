@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package social provides shared building blocks for implementing external
-// [github.com/deep-rent/nexus/oauth.IdentityProvider] integrations.
+// Package oidc provides OpenID Connect client utilities shared by external
+// [oauth.IdentityProvider] integrations.
 //
-// It contains the OIDC primitives common to all social login providers:
+// It contains the protocol primitives common to all OIDC relying parties:
 // a lenient [IDToken] claims structure that tolerates provider quirks
 // (polymorphic audiences via [jwt.Audience], stringified booleans, non-UUID
-// subjects), and a token endpoint [Exchange] helper for swapping
-// authorization codes.
+// subjects), and a token endpoint [Exchange] helper that swaps an
+// authorization code for an [oauth.TokenResponse].
 //
-// Concrete providers live in the subpackages, e.g.
-// [github.com/deep-rent/nexus/oauth/social/google] and
-// [github.com/deep-rent/nexus/oauth/social/apple].
-package social
+// Concrete providers built on top of this package live under oauth/social.
+package oidc
 
 import (
 	"context"
@@ -36,7 +34,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/jose/jwt"
@@ -130,21 +127,12 @@ func (t *IDToken) Claimant() oauth.Claimant {
 	}
 }
 
-// Token outlines the JSON payload returned by a provider's token endpoint.
-type Token struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type,omitempty"`
-	ExpiresIn    int64  `json:"expires_in,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	IDToken      string `json:"id_token,omitempty"`
-}
-
 // maxResponseSize caps token endpoint response bodies to guard against
 // misbehaving servers.
 const maxResponseSize = 1 << 20
 
 // Exchange posts the given form to a provider's token endpoint and decodes
-// the JSON response.
+// the JSON response into an [oauth.TokenResponse].
 //
 // Non-200 responses are converted into descriptive errors, surfacing the
 // provider's "error" and "error_description" fields when present.
@@ -153,7 +141,7 @@ func Exchange(
 	client *http.Client,
 	endpoint string,
 	form url.Values,
-) (Token, error) {
+) (oauth.TokenResponse, error) {
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -161,14 +149,20 @@ func Exchange(
 		strings.NewReader(form.Encode()),
 	)
 	if err != nil {
-		return Token{}, fmt.Errorf("failed to build token request: %w", err)
+		return oauth.TokenResponse{}, fmt.Errorf(
+			"failed to build token request: %w",
+			err,
+		)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
 	res, err := client.Do(req)
 	if err != nil {
-		return Token{}, fmt.Errorf("token request failed: %w", err)
+		return oauth.TokenResponse{}, fmt.Errorf(
+			"token request failed: %w",
+			err,
+		)
 	}
 	defer func() {
 		_ = res.Body.Close()
@@ -176,33 +170,39 @@ func Exchange(
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseSize))
 	if err != nil {
-		return Token{}, fmt.Errorf("failed to read token response: %w", err)
+		return oauth.TokenResponse{}, fmt.Errorf(
+			"failed to read token response: %w",
+			err,
+		)
 	}
 
 	if res.StatusCode != http.StatusOK {
-		var e struct {
-			Code        string `json:"error"`
-			Description string `json:"error_description"`
-		}
+		var e oauth.Error
 		if err := json.Unmarshal(body, &e); err == nil && e.Code != "" {
 			if e.Description != "" {
-				return Token{}, fmt.Errorf(
+				return oauth.TokenResponse{}, fmt.Errorf(
 					"token endpoint returned %q: %s",
 					e.Code,
 					e.Description,
 				)
 			}
-			return Token{}, fmt.Errorf("token endpoint returned %q", e.Code)
+			return oauth.TokenResponse{}, fmt.Errorf(
+				"token endpoint returned %q",
+				e.Code,
+			)
 		}
-		return Token{}, fmt.Errorf(
+		return oauth.TokenResponse{}, fmt.Errorf(
 			"token endpoint returned status %d",
 			res.StatusCode,
 		)
 	}
 
-	var tok Token
+	var tok oauth.TokenResponse
 	if err := json.Unmarshal(body, &tok); err != nil {
-		return Token{}, fmt.Errorf("failed to decode token response: %w", err)
+		return oauth.TokenResponse{}, fmt.Errorf(
+			"failed to decode token response: %w",
+			err,
+		)
 	}
 	return tok, nil
 }
