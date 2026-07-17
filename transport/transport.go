@@ -189,7 +189,7 @@ func WithIdleConnTimeout(d time.Duration) Option {
 func WithTLSConfig(cfg *tls.Config) Option {
 	return func(c *config) {
 		if cfg != nil {
-			c.tlsConfig = cfg
+			c.tlsConfig = cfg.Clone()
 		}
 	}
 }
