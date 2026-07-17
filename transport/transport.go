@@ -29,9 +29,11 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/deep-rent/nexus/header"
@@ -91,6 +93,12 @@ const DefaultWriteBufferSize = 4 * 1024 // 4 KB
 // DefaultReadBufferSize specifies the size of the read buffer used.
 const DefaultReadBufferSize = 4 * 1024 // 4 KB
 
+// Proxy defines a custom proxy function.
+type Proxy func(*http.Request) (*url.URL, error)
+
+// Dialer defines a custom dial function for creating network connections.
+type Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
+
 // config is used to hold the configuration for a [Transport].
 type config struct {
 	dialTimeout            time.Duration
@@ -113,6 +121,8 @@ type config struct {
 	readBufferSize         int
 	http2Config            *http.HTTP2Config
 	protocols              *http.Protocols
+	proxy                  Proxy
+	dialer                 Dialer
 }
 
 // Option configures an [http.Transport] via [New].
@@ -177,7 +187,11 @@ func WithIdleConnTimeout(d time.Duration) Option {
 
 // WithTLSConfig sets the TLS configuration for the transport.
 func WithTLSConfig(cfg *tls.Config) Option {
-	return func(c *config) { c.tlsConfig = cfg }
+	return func(c *config) {
+		if cfg != nil {
+			c.tlsConfig = cfg
+		}
+	}
 }
 
 // WithDisableKeepAlives disables HTTP keep-alives.
@@ -243,14 +257,25 @@ func WithProtocols(protocols *http.Protocols) Option {
 	return func(c *config) { c.protocols = protocols }
 }
 
+// WithProxy defines a custom proxy function. Pass http.ProxyURL(nil) to disable
+// proxying.
+func WithProxy(proxy Proxy) Option {
+	return func(c *config) { c.proxy = proxy }
+}
+
+// WithDialContext overrides the default net.Dialer.
+func WithDialContext(dialer Dialer) Option {
+	return func(c *config) { c.dialer = dialer }
+}
+
 // WithHeader defines static headers applied to every request.
 func WithHeader(h ...header.Header) Option {
 	return func(c *config) { c.headers = append(c.headers, h...) }
 }
 
 // WithUserAgent defines the User-Agent header applied to every request.
-func WithUserAgent(userAgent string) Option {
-	return WithHeader(header.New("User-Agent", userAgent))
+func WithUserAgent(v string) Option {
+	return WithHeader(header.New("User-Agent", v))
 }
 
 // WithRetry configures the HTTP retry mechanism.
@@ -321,9 +346,19 @@ func New(opts ...Option) http.RoundTripper {
 		d.KeepAlive = -1
 	}
 
+	proxy := http.ProxyFromEnvironment
+	if cfg.proxy != nil {
+		proxy = cfg.proxy
+	}
+
+	dialContext := d.DialContext
+	if cfg.dialer != nil {
+		dialContext = cfg.dialer
+	}
+
 	var t http.RoundTripper = &http.Transport{
-		Proxy:                  http.ProxyFromEnvironment,
-		DialContext:            d.DialContext,
+		Proxy:                  proxy,
+		DialContext:            dialContext,
 		ForceAttemptHTTP2:      cfg.forceAttemptHTTP2,
 		TLSClientConfig:        cfg.tlsConfig,
 		TLSHandshakeTimeout:    cfg.tlsHandshakeTimeout,

@@ -1,8 +1,11 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -28,6 +31,14 @@ func TestNew_Defaults(t *testing.T) {
 
 	if tr.TLSClientConfig != nil {
 		t.Error("expected TLSClientConfig to be nil by default")
+	}
+
+	if tr.Proxy == nil {
+		t.Error("expected Proxy to be set by default")
+	}
+
+	if tr.DialContext == nil {
+		t.Error("expected DialContext to be set by default")
 	}
 
 	if exp, act := 2*time.Second, tr.TLSHandshakeTimeout; exp != act {
@@ -87,6 +98,8 @@ func TestNew_WithOptions(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true}
 	http2Cfg := &http.HTTP2Config{}
 	protocols := &http.Protocols{}
+	proxyFunc := func(*http.Request) (*url.URL, error) { return nil, nil }
+	dialerFunc := func(ctx context.Context, network, addr string) (net.Conn, error) { return nil, nil }
 
 	rt := New(
 		WithDialTimeout(15*time.Second),
@@ -107,6 +120,8 @@ func TestNew_WithOptions(t *testing.T) {
 		WithReadBufferSize(4096),
 		WithHTTP2Config(http2Cfg),
 		WithProtocols(protocols),
+		WithProxy(proxyFunc),
+		WithDialContext(dialerFunc),
 	)
 
 	tr, ok := rt.(*http.Transport)
@@ -122,8 +137,19 @@ func TestNew_WithOptions(t *testing.T) {
 		t.Error("expected ForceAttemptHTTP2 to be true")
 	}
 
-	if tr.TLSClientConfig != tlsCfg {
-		t.Error("expected TLSClientConfig to be set correctly")
+	if tr.TLSClientConfig == tlsCfg {
+		t.Error("expected TLSClientConfig to be cloned")
+	}
+	if !tr.TLSClientConfig.InsecureSkipVerify {
+		t.Error("expected cloned TLSClientConfig to retain values")
+	}
+
+	if tr.Proxy == nil {
+		t.Error("expected Proxy to be set")
+	}
+
+	if tr.DialContext == nil {
+		t.Error("expected DialContext to be set")
 	}
 
 	if exp, act := 17*time.Second, tr.TLSHandshakeTimeout; exp != act {
@@ -237,6 +263,7 @@ func TestNew_WithHeadersAndRetry(t *testing.T) {
 	rt := New(
 		WithHeader(header.New("X-Test", "true")),
 		WithRetry(retry.WithAttemptLimit(3)),
+		WithUserAgent("my-agent/1.0"),
 	)
 
 	if _, ok := rt.(*http.Transport); ok {
