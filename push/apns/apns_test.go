@@ -21,7 +21,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -44,12 +43,20 @@ func generate(t *testing.T) []byte {
 	return pem
 }
 
+type mockTransport struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return m.fn(r)
+}
+
 func TestAPNS_Send(t *testing.T) {
 	t.Parallel()
 
 	key := generate(t)
-	ts := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tr := &mockTransport{
+		fn: func(r *http.Request) (*http.Response, error) {
 			if !strings.HasPrefix(r.URL.Path, "/3/device/") {
 				t.Errorf("got path %s", r.URL.Path)
 			}
@@ -60,20 +67,22 @@ func TestAPNS_Send(t *testing.T) {
 				t.Errorf("missing or invalid authorization header")
 			}
 
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
-		}),
-	)
-	defer ts.Close()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
 
 	sender := apns.New(
-		&http.Client{Timeout: 1 * time.Second},
+		&http.Client{Timeout: 1 * time.Second, Transport: tr},
 		apns.Credentials{
 			KeyID:      "keyID",
 			TeamID:     "teamID",
 			PrivateKey: key,
 		},
-		apns.WithBaseURL(ts.URL),
+		apns.WithBaseURL("https://api.sandbox.push.apple.com"),
 		apns.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 

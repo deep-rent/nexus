@@ -19,6 +19,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/deep-rent/nexus/push"
 )
@@ -61,6 +62,51 @@ func TestMessage_Validate(t *testing.T) {
 				t.Errorf("got %v; want %v", err, tt.err)
 			}
 		})
+	}
+}
+
+func TestMessage_Options(t *testing.T) {
+	t.Parallel()
+
+	msg := push.NewMessage("Title", "Body", push.Target{Token: "tok"}).
+		WithData(map[string]any{"key": "value"}).
+		WithPriority(push.PriorityHigh).
+		WithCollapseID("col").
+		WithTTL(time.Hour).
+		AsSilent()
+
+	if msg.Data["key"] != "value" {
+		t.Errorf("expected data key=value, got %v", msg.Data["key"])
+	}
+	if msg.Priority != push.PriorityHigh {
+		t.Errorf("expected priority high, got %v", msg.Priority)
+	}
+	if msg.CollapseID != "col" {
+		t.Errorf("expected collapseID col, got %v", msg.CollapseID)
+	}
+	if msg.TTL != time.Hour {
+		t.Errorf("expected TTL 1h, got %v", msg.TTL)
+	}
+	if !msg.Silent {
+		t.Errorf("expected silent true, got false")
+	}
+}
+
+func TestAPIError(t *testing.T) {
+	t.Parallel()
+
+	err := &push.APIError{
+		Status: 400,
+		Body:   "bad request",
+	}
+
+	want := "api returned status 400: bad request"
+	if got := err.Error(); got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+
+	if !errors.Is(err, push.ErrDispatchFailed) {
+		t.Error("APIError should unwrap to ErrDispatchFailed")
 	}
 }
 

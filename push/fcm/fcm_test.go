@@ -21,7 +21,7 @@ import (
 	"encoding/json/v2"
 	"io"
 	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,21 +44,28 @@ func generate(t *testing.T) []byte {
 	return pem
 }
 
+type mockTransport struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return m.fn(r)
+}
+
 func TestFCM_Send(t *testing.T) {
 	t.Parallel()
 
 	key := generate(t)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(
-			[]byte(`{"access_token": "mock-token", "expires_in": 3600}`),
-		)
-	})
-	mux.HandleFunc(
-		"/v1/projects/my-project/messages:send",
-		func(w http.ResponseWriter, r *http.Request) {
+	tr := &mockTransport{
+		fn: func(r *http.Request) (*http.Response, error) {
+			if strings.Contains(r.URL.Path, "/token") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"access_token": "mock-token", "expires_in": 3600}`)),
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+				}, nil
+			}
+
 			if got := r.Header.Get(
 				"Authorization",
 			); got != "Bearer mock-token" {
@@ -77,23 +84,23 @@ func TestFCM_Send(t *testing.T) {
 				t.Errorf("expected topic=news, got %v", msg["topic"])
 			}
 
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+				Header:     make(http.Header),
+			}, nil
 		},
-	)
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
+	}
 
 	sender := fcm.New(
-		&http.Client{Timeout: 1 * time.Second},
+		&http.Client{Timeout: 1 * time.Second, Transport: tr},
 		fcm.Credentials{
 			ProjectID:   "my-project",
 			ClientEmail: "test@my-project.iam.gserviceaccount.com",
 			PrivateKey:  key,
 		},
-		fcm.WithBaseURL(ts.URL+"/v1"),
-		fcm.WithAuthURL(ts.URL+"/token"),
+		fcm.WithBaseURL("https://fcm.googleapis.com/v1"),
+		fcm.WithAuthURL("https://oauth2.googleapis.com/token"),
 		fcm.WithLogger(log.Silent()),
 	)
 
