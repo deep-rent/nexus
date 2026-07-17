@@ -61,8 +61,14 @@ func TestFCM_Send(t *testing.T) {
 			if strings.Contains(r.URL.Path, "/token") {
 				return &http.Response{
 					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(strings.NewReader(`{"access_token": "mock-token", "expires_in": 3600}`)),
-					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body: io.NopCloser(
+						strings.NewReader(
+							`{"access_token": "mock-token", "expires_in": 3600}`,
+						),
+					),
+					Header: http.Header{
+						"Content-Type": []string{"application/json"},
+					},
 				}, nil
 			}
 
