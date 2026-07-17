@@ -154,7 +154,8 @@ func TestErrorHandler_Handle_StatusAndLogging(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(&buf, nil))
 			h := proxy.NewErrorHandler(logger)
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(t.Context())
+			req := httptest.NewRequest(http.MethodGet, "/", nil).
+				WithContext(t.Context())
 
 			h(rec, req, tt.err)
 
@@ -270,7 +271,8 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(t.Context())
+	req := httptest.NewRequest(http.MethodGet, "/", nil).
+		WithContext(t.Context())
 
 	rp.ErrorHandler(rec, req, wantErr)
 
