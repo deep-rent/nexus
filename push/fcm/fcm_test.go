@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/push/fcm"
@@ -92,7 +93,7 @@ func TestFCM_Send(t *testing.T) {
 	defer ts.Close()
 
 	sender := fcm.New(
-		&http.Client{},
+		&http.Client{Timeout: 1 * time.Second},
 		saJSON,
 		fcm.WithBaseURL(ts.URL+"/v1"),
 		fcm.WithOAuthURL(ts.URL+"/token"),

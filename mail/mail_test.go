@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/deep-rent/nexus/mail"
 )
@@ -47,6 +48,7 @@ func mockHTTPClient(
 ) *http.Client {
 	t.Helper()
 	return &http.Client{
+		Timeout: 1 * time.Second,
 		Transport: mockRoundTripper{
 			roundTrip: func(req *http.Request) (*http.Response, error) {
 				return res, err

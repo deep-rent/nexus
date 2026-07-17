@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/push/apns"
@@ -67,7 +68,7 @@ func TestAPNS_Send(t *testing.T) {
 	defer ts.Close()
 
 	sender := apns.New(
-		&http.Client{},
+		&http.Client{Timeout: 1 * time.Second},
 		"keyID",
 		"teamID",
 		pemData,

@@ -112,7 +112,9 @@ func TestNewSender_Panics(t *testing.T) {
 					t.Error("expected a panic")
 				}
 			}()
-			sms.NewSender(&http.Client{}, tt.accountSID, tt.authToken)
+			sms.NewSender(&http.Client{
+				Timeout: 1 * time.Second,
+			}, tt.accountSID, tt.authToken)
 		})
 	}
 }
@@ -189,7 +191,9 @@ func TestSender_Send(t *testing.T) {
 			ts := httptest.NewServer(h)
 			defer ts.Close()
 
-			sender := sms.NewSender(&http.Client{}, "sid", "token",
+			sender := sms.NewSender(&http.Client{
+				Timeout: 1 * time.Second,
+			}, "sid", "token",
 				sms.WithBaseURL(ts.URL),
 				sms.WithUserAgent("TestAgent"),
 				sms.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
