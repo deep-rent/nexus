@@ -20,12 +20,12 @@ import (
 	"crypto/rand"
 	"encoding/json/v2"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/push/fcm"
 	"github.com/deep-rent/nexus/sign"
@@ -94,7 +94,7 @@ func TestFCM_Send(t *testing.T) {
 		},
 		fcm.WithBaseURL(ts.URL+"/v1"),
 		fcm.WithAuthURL(ts.URL+"/token"),
-		fcm.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		fcm.WithLogger(log.Silent()),
 	)
 
 	msg := push.NewMessage("Title", "Body", push.Target{Topic: "news"})

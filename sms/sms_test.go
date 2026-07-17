@@ -17,13 +17,13 @@ package sms_test
 import (
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/sms"
 )
 
@@ -175,8 +175,7 @@ func TestSender_Send(t *testing.T) {
 				}
 
 				body, _ := io.ReadAll(r.Body)
-				strBody := string(body)
-				if !strings.Contains(strBody, "To=%2B123") &&
+				if !strings.Contains(string(body), "To=%2B123") &&
 					tt.status != http.StatusOK {
 					//
 				}
@@ -192,7 +191,7 @@ func TestSender_Send(t *testing.T) {
 				Timeout: 1 * time.Second,
 			}, "sid", "token",
 				sms.WithBaseURL(ts.URL),
-				sms.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+				sms.WithLogger(log.Silent()),
 			)
 
 			err := sender.Send(t.Context(), tt.msg)
