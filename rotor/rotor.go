@@ -22,8 +22,8 @@
 //
 // # Usage
 //
-// Initialize a rotor with a strategy and a slice of items, then call Next to
-// retrieve the next element.
+// Initialize a [Rotor] with a strategy and a slice of items, then call [Next]
+// to retrieve an element.
 //
 // Example: Sequential rotation
 //
