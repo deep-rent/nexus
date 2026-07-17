@@ -68,6 +68,7 @@ type Sender struct {
 	url    string
 	client *http.Client
 	logger *slog.Logger
+	clock  func() time.Time
 }
 
 var _ push.Sender = (*Sender)(nil)
@@ -168,6 +169,7 @@ func New(
 		url:    cfg.baseURL,
 		logger: cfg.logger,
 		client: client,
+		clock:  cfg.clock,
 	}
 
 	return s
@@ -238,7 +240,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	}
 
 	if msg.TTL > 0 {
-		exp := time.Now().Add(msg.TTL).Unix()
+		exp := s.clock().Add(msg.TTL).Unix()
 		req.Header.Set("apns-expiration", fmt.Sprintf("%d", exp))
 	} else {
 		req.Header.Set("apns-expiration", "0")
@@ -250,7 +252,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		slog.String("token", msg.Target.Token),
 	)
 
-	start := time.Now()
+	start := s.clock()
 	res, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)

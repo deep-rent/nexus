@@ -65,6 +65,7 @@ type Sender struct {
 	url       string
 	client    *http.Client
 	logger    *slog.Logger
+	clock     func() time.Time
 }
 
 var _ push.Sender = (*Sender)(nil)
@@ -176,6 +177,7 @@ func New(
 		url:       cfg.baseURL,
 		logger:    cfg.logger,
 		client:    client,
+		clock:     cfg.clock,
 	}
 
 	fetch := func(ctx context.Context) (string, time.Time, error) {
@@ -308,7 +310,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 
 	if msg.TTL > 0 {
 		android["ttl"] = fmt.Sprintf("%ds", int(msg.TTL.Seconds()))
-		exp := time.Now().Add(msg.TTL).Unix()
+		exp := s.clock().Add(msg.TTL).Unix()
 		apnsHdrs["apns-expiration"] = fmt.Sprintf("%d", exp)
 	}
 
@@ -353,7 +355,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		slog.Any("target", msg.Target),
 	)
 
-	start := time.Now()
+	start := s.clock()
 	res, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
