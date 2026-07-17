@@ -267,7 +267,8 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			t.logger.DebugContext(
 				ctx,
 				"Request attempt failed, retrying",
-				attrs...)
+				attrs...,
+			)
 		}
 
 		if delay <= 0 {
