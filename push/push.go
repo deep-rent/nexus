@@ -194,7 +194,6 @@ func BatchSend(
 	eg.SetLimit(workers)
 
 	for i, msg := range msgs {
-		i, msg := i, msg
 		eg.Go(func() error {
 			if err := egCtx.Err(); err != nil {
 				errs[i] = err

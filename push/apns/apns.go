@@ -23,6 +23,7 @@
 // PEM-encoded PKCS#8 private key contents.
 //
 //	sender := apns.New(
+//		&http.Client{},
 //		"ABC123DEFG",
 //		"DEF123GHIJ",
 //		key, // PEM format
@@ -44,12 +45,10 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/transport"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/push"
-	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
 )
@@ -69,32 +68,18 @@ type Sender struct {
 	url    string
 	client *http.Client
 	logger *slog.Logger
-	retry  []retry.Option
 }
 
 var _ push.Sender = (*Sender)(nil)
 
 type config struct {
-	client  *http.Client
 	baseURL string
-	timeout time.Duration
-	retry   []retry.Option
 	logger  *slog.Logger
 	clock   func() time.Time
 }
 
 // Option defines the functional option pattern for configuring the APNs sender.
 type Option func(*config)
-
-// WithClient allows passing a custom [http.Client] to the sender.
-// Nil values are ignored.
-func WithClient(c *http.Client) Option {
-	return func(cfg *config) {
-		if c != nil {
-			cfg.client = c
-		}
-	}
-}
 
 // WithBaseURL allows overriding the APNs API base URL.
 // Useful for switching to [SandboxBaseURL] or mocking.
@@ -104,23 +89,6 @@ func WithBaseURL(url string) Option {
 		if url != "" {
 			cfg.baseURL = url
 		}
-	}
-}
-
-// WithTimeout configures the timeout for the default HTTP client.
-// Zero values are ignored.
-func WithTimeout(d time.Duration) Option {
-	return func(cfg *config) {
-		if d != 0 {
-			cfg.timeout = d
-		}
-	}
-}
-
-// WithRetryOptions configures the retry mechanism for the default HTTP client.
-func WithRetryOptions(opts ...retry.Option) Option {
-	return func(cfg *config) {
-		cfg.retry = append(cfg.retry, opts...)
 	}
 }
 
@@ -149,6 +117,7 @@ func WithClock(clock func() time.Time) Option {
 // and
 // the PEM-encoded PKCS#8 private key contents.
 func New(
+	client *http.Client,
 	keyID, teamID string,
 	privateKeyPEM []byte,
 	opts ...Option,
@@ -165,7 +134,6 @@ func New(
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		timeout: 5 * time.Second,
 		logger:  slog.Default(),
 		clock:   time.Now,
 	}
@@ -199,22 +167,7 @@ func New(
 		source: source,
 		url:    cfg.baseURL,
 		logger: cfg.logger,
-		retry:  cfg.retry,
-	}
-
-	if cfg.client == nil {
-		s.client = transport.NewClient(transport.Options{
-			Timeout:           cfg.timeout,
-			ForceAttemptHTTP2: true, // APNs requires HTTP/2
-			Retry:             cfg.retry,
-		})
-	} else {
-		if len(cfg.retry) != 0 {
-			s.logger.Warn(
-				"Custom client provided; retry options will be ignored",
-			)
-		}
-		s.client = cfg.client
+		client: client,
 	}
 
 	return s

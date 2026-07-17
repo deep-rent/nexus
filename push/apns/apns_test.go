@@ -67,6 +67,7 @@ func TestAPNS_Send(t *testing.T) {
 	defer ts.Close()
 
 	sender := apns.New(
+		&http.Client{},
 		"keyID",
 		"teamID",
 		pemData,

@@ -92,6 +92,7 @@ func TestFCM_Send(t *testing.T) {
 	defer ts.Close()
 
 	sender := fcm.New(
+		&http.Client{},
 		saJSON,
 		fcm.WithBaseURL(ts.URL+"/v1"),
 		fcm.WithOAuthURL(ts.URL+"/token"),

@@ -23,8 +23,8 @@
 // JSON credentials file.
 //
 //	sender := fcm.New(
+//		&http.Client{},
 //		credentials, // Google Service Account JSON
-//		fcm.WithTimeout(10 * time.Second),
 //	)
 //	err := sender.Send(ctx, msg)
 package fcm
@@ -43,12 +43,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/transport"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/push"
-	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
 )
@@ -72,27 +70,14 @@ type Sender struct {
 var _ push.Sender = (*Sender)(nil)
 
 type config struct {
-	client   *http.Client
 	baseURL  string
 	oauthURL string
-	timeout  time.Duration
-	retry    []retry.Option
 	logger   *slog.Logger
 	clock    func() time.Time
 }
 
 // Option defines the functional option pattern for configuring the FCM sender.
 type Option func(*config)
-
-// WithClient allows passing a custom [http.Client] to the sender.
-// Nil values are ignored.
-func WithClient(c *http.Client) Option {
-	return func(cfg *config) {
-		if c != nil {
-			cfg.client = c
-		}
-	}
-}
 
 // WithBaseURL allows overriding the FCM API base URL.
 // Useful for mocking. Empty string values are ignored.
@@ -111,23 +96,6 @@ func WithOAuthURL(url string) Option {
 		if url != "" {
 			cfg.oauthURL = url
 		}
-	}
-}
-
-// WithTimeout configures the timeout for the default HTTP client.
-// Zero values are ignored.
-func WithTimeout(d time.Duration) Option {
-	return func(cfg *config) {
-		if d != 0 {
-			cfg.timeout = d
-		}
-	}
-}
-
-// WithRetryOptions configures the retry mechanism for the default HTTP client.
-func WithRetryOptions(opts ...retry.Option) Option {
-	return func(cfg *config) {
-		cfg.retry = append(cfg.retry, opts...)
 	}
 }
 
@@ -163,7 +131,11 @@ type serviceAccount struct {
 // [push.Sender] interface. It requires the raw contents of the Google Service
 // Account
 // JSON credentials file.
-func New(credentialsJSON []byte, opts ...Option) push.Sender {
+func New(
+	client *http.Client,
+	credentialsJSON []byte,
+	opts ...Option,
+) push.Sender {
 	var sa serviceAccount
 	if err := json.Unmarshal(credentialsJSON, &sa); err != nil {
 		panic(fmt.Errorf("failed to parse FCM credentials JSON: %w", err))
@@ -191,7 +163,6 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 	cfg := config{
 		baseURL:  DefaultBaseURL,
 		oauthURL: "https://oauth2.googleapis.com/token",
-		timeout:  5 * time.Second,
 		logger:   slog.Default(),
 		clock:    time.Now,
 	}
@@ -204,21 +175,7 @@ func New(credentialsJSON []byte, opts ...Option) push.Sender {
 		projectID: sa.ProjectID,
 		url:       cfg.baseURL,
 		logger:    cfg.logger,
-	}
-
-	if cfg.client == nil {
-		s.client = transport.NewClient(transport.Options{
-			Timeout:           cfg.timeout,
-			ForceAttemptHTTP2: true,
-			Retry:             cfg.retry,
-		})
-	} else {
-		if len(cfg.retry) != 0 {
-			s.logger.Warn(
-				"Custom client provided; retry options will be ignored",
-			)
-		}
-		s.client = cfg.client
+		client:    client,
 	}
 
 	fetch := func(ctx context.Context) (string, time.Time, error) {
