@@ -28,6 +28,7 @@ UserInterfaceState.xcuserstate
 .go-version
 /.gocache/
 /.gomodcache/
+/.gotmp/
 /cover.out
 /coverage.out
 /dist/
