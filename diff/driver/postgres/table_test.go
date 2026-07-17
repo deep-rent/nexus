@@ -265,7 +265,7 @@ func tombstoneIdent(
 		"SELECT user_id::text, team_id::text, hlc FROM document_tombstones"+
 			" WHERE type = $1 AND id = $2::uuid",
 		model, id.String(),
-	).Scan(&user, team, &ts)
+	).Scan(&user, &team, &ts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", sql.NullString{}, 0, false
 	}
