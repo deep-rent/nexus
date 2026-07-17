@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The package overview, usage example, model narrative, and client
-// contract live in doc.go.
 package diff
 
 import (
 	"context"
 	"encoding/json/jsontext"
 	"slices"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/internal/hlc"
