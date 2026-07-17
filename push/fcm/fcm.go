@@ -52,8 +52,11 @@ import (
 )
 
 const (
-	DefaultScope   = "https://www.googleapis.com/auth/firebase.messaging"
+	// DefaultScope is the default scope for FCM v1 API.
+	DefaultScope = "https://www.googleapis.com/auth/firebase.messaging"
+	// DefaultBaseURL is the default base URL for FCM v1 API.
 	DefaultBaseURL = "https://fcm.googleapis.com/v1"
+	// DefaultAuthURL is the default authentication URL for FCM v1 API.
 	DefaultAuthURL = "https://oauth2.googleapis.com/token"
 )
 
