@@ -873,14 +873,12 @@ func (s *Server) token(e *router.Exchange) error {
 	claims := &auth.Claims{
 		Azp:   clientID,
 		Scope: strings.Fields(iss.Scope),
-		Reserved: jwt.Reserved{
-			Jti: uuid.New().String(),
-			Iss: s.issuer,
-			Aud: pro.Client.Audience(),
-			Iat: now,
-			Nbf: now,
-			Exp: now.Add(s.accessTokenLifetime),
-		},
+		Jti:   uuid.New().String(),
+		Iss:   s.issuer,
+		Aud:   pro.Client.Audience(),
+		Iat:   now,
+		Nbf:   now,
+		Exp:   now.Add(s.accessTokenLifetime),
 	}
 
 	// Populate claims based on the context of the grant.

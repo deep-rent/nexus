@@ -102,7 +102,7 @@ func (g refreshTokenGrant) Authorize(
 	scope := r.Scope
 	if requested := pro.Get("scope"); requested != "" {
 		granted := strings.Fields(r.Scope)
-		for _, sc := range strings.Fields(requested) {
+		for sc := range strings.FieldsSeq(requested) {
 			if !slices.Contains(granted, sc) {
 				return nil, &Error{
 					Status:      http.StatusBadRequest,

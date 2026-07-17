@@ -125,7 +125,7 @@ type Client interface {
 // canUseScope reports whether the client may use every scope token in the
 // space-delimited scope string.
 func canUseScope(c Client, scope string) bool {
-	for _, s := range strings.Fields(scope) {
+	for s := range strings.FieldsSeq(scope) {
 		if !c.CanUseScope(s) {
 			return false
 		}
