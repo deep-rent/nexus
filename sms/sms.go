@@ -249,12 +249,12 @@ func WithLogger(logger *slog.Logger) Option {
 
 // NewSender creates a configured Twilio client implementing the [Sender]
 // interface.
-func NewSender(accountSID, authToken string, opts ...Option) Sender {
-	if accountSID == "" {
-		panic("Account SID is required")
+func NewSender(sid, token string, opts ...Option) Sender {
+	if sid == "" {
+		panic("account SID is required")
 	}
-	if authToken == "" {
-		panic("Auth Token is required")
+	if token == "" {
+		panic("authentication token is required")
 	}
 
 	cfg := config{
@@ -268,15 +268,15 @@ func NewSender(accountSID, authToken string, opts ...Option) Sender {
 	}
 
 	endpoint, err := url.JoinPath(
-		cfg.baseURL, "Accounts", accountSID, "Messages.json",
+		cfg.baseURL, "Accounts", sid, "Messages.json",
 	)
 	if err != nil {
 		panic(fmt.Errorf("invalid base URL: %w", err))
 	}
 
 	s := &sender{
-		accountSID: accountSID,
-		authToken:  authToken,
+		accountSID: sid,
+		authToken:  token,
 		url:        endpoint,
 		userAgent:  cfg.userAgent,
 		logger:     cfg.logger,
