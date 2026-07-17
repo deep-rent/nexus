@@ -23,7 +23,7 @@
 // Define the desired timeout and options and build an [http.Client]:
 //
 //	client := transport.NewClient(
-//		10 * time.Second,
+//		0, // Use default timeout
 //		transport.WithDisableKeepAlives(true),
 //	)
 package transport
