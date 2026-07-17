@@ -79,8 +79,8 @@ type APIError struct {
 	Code int `json:"code"`
 	// Message is the description of the error.
 	Message string `json:"message"`
-	// MoreInfo is a URL to more information about the error.
-	MoreInfo string `json:"more_info"`
+	// URL is a URL to more information about the error.
+	URL string `json:"more_info"`
 }
 
 // Error implements the [error] interface.
@@ -153,14 +153,12 @@ type Sender interface {
 
 // sender is a Twilio SMS client that implements the [Sender] interface.
 type sender struct {
-	// accountSID is the Twilio Account SID used for authentication.
-	accountSID string
-	// authToken is the Twilio Auth Token used for authentication.
-	authToken string
+	// sid is the Twilio Account SID used for authentication.
+	sid string
+	// token is the Twilio Auth Token used for authentication.
+	token string
 	// url is the resolved API endpoint for dispatching requests.
 	url string
-	// userAgent is the value sent in the User-Agent header of requests.
-	userAgent string
 	// client holds the configured [http.Client].
 	client *http.Client
 	// logger is used for structured diagnostic output.
@@ -173,8 +171,6 @@ var _ Sender = (*sender)(nil)
 type config struct {
 	// baseURL overrides the default Twilio API endpoint.
 	baseURL string
-	// userAgent defines the User-Agent header value for outgoing requests.
-	userAgent string
 	// logger specifies the custom structured [slog.Logger].
 	logger *slog.Logger
 }
@@ -188,16 +184,6 @@ func WithBaseURL(url string) Option {
 	return func(c *config) {
 		if url != "" {
 			c.baseURL = url
-		}
-	}
-}
-
-// WithUserAgent configures a custom User-Agent header for the outbound API
-// requests. Empty string values are ignored.
-func WithUserAgent(v string) Option {
-	return func(c *config) {
-		if v != "" {
-			c.userAgent = v
 		}
 	}
 }
@@ -239,12 +225,11 @@ func NewSender(client *http.Client, sid, token string, opts ...Option) Sender {
 	}
 
 	s := &sender{
-		accountSID: sid,
-		authToken:  token,
-		url:        endpoint,
-		userAgent:  cfg.userAgent,
-		logger:     cfg.logger,
-		client:     client,
+		sid:    sid,
+		token:  token,
+		url:    endpoint,
+		logger: cfg.logger,
+		client: client,
 	}
 
 	return s
@@ -271,11 +256,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(s.accountSID, s.authToken)
-
-	if s.userAgent != "" {
-		req.Header.Set("User-Agent", s.userAgent)
-	}
+	req.SetBasicAuth(s.sid, s.token)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	s.logger.DebugContext(ctx, "Dispatching SMS to provider",
@@ -305,7 +286,14 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		apiErr.Status = code
 		// Attempt to parse the JSON error body. If it fails, we just return the
 		// status.
-		_ = json.UnmarshalRead(io.LimitReader(res.Body, 1<<20), &apiErr)
+		r := io.LimitReader(res.Body, 1<<16)
+		if err := json.UnmarshalRead(r, &apiErr); err != nil {
+			s.logger.WarnContext(
+				ctx,
+				"Failed to parse API error response",
+				slog.Any("error", err),
+			)
+		}
 		return &apiErr
 	}
 

@@ -173,9 +173,6 @@ func TestSender_Send(t *testing.T) {
 				); got != "application/x-www-form-urlencoded" {
 					t.Errorf("got Content-Type %q", got)
 				}
-				if got := r.Header.Get("User-Agent"); got != "TestAgent" {
-					t.Errorf("got User-Agent %q", got)
-				}
 
 				body, _ := io.ReadAll(r.Body)
 				strBody := string(body)
@@ -195,7 +192,6 @@ func TestSender_Send(t *testing.T) {
 				Timeout: 1 * time.Second,
 			}, "sid", "token",
 				sms.WithBaseURL(ts.URL),
-				sms.WithUserAgent("TestAgent"),
 				sms.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 			)
 
