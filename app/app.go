@@ -72,7 +72,7 @@
 //	    app.WithLogger(logger),
 //	  )
 //	  if err != nil {
-//	    logger.Error("Application failed", "error", err)
+//	    logger.Error("Application failed", slog.Any("error", err))
 //	    os.Exit(1)
 //	  }
 //	}
