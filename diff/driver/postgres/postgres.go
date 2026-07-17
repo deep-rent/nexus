@@ -63,7 +63,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -977,8 +976,15 @@ func (h *shares) Delete(
 		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
 		" WHERE EXCLUDED.hlc > ts.hlc"
 
-	if _, err := tx.ExecContext(ctx, query,
-		ids, hlcs, users, teams, scope.UserID, diff.ModelShare,
+	if _, err := tx.ExecContext(
+		ctx,
+		query,
+		ids,
+		hlcs,
+		users,
+		teams,
+		scope.UserID,
+		diff.ModelShare,
 	); err != nil {
 		return fmt.Errorf("failed to delete shares: %w", err)
 	}
