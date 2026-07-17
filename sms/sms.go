@@ -85,7 +85,12 @@ type APIError struct {
 // Error implements the [error] interface.
 func (e *APIError) Error() string {
 	if e.Message != "" {
-		return fmt.Sprintf("api returned status %d (code %d): %s", e.Status, e.Code, e.Message)
+		return fmt.Sprintf(
+			"api returned status %d (code %d): %s",
+			e.Status,
+			e.Code,
+			e.Message,
+		)
 	}
 	return fmt.Sprintf("api returned status %d", e.Status)
 }
@@ -348,7 +353,8 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	if code := res.StatusCode; code >= 400 {
 		var apiErr APIError
 		apiErr.Status = code
-		// Attempt to parse the JSON error body. If it fails, we just return the status.
+		// Attempt to parse the JSON error body. If it fails, we just return the
+		// status.
 		_ = json.UnmarshalRead(io.LimitReader(res.Body, 1<<20), &apiErr)
 		return &apiErr
 	}
