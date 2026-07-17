@@ -235,7 +235,7 @@ func NewTable(s *Store, model, name string, opts ...TableOption) *Table {
 // buildSQL precomputes the statements of the handler methods.
 func (t *Table) buildSQL() {
 	s := t.store
-	tomb := s.identTombstones
+	tomb := s.tombstones
 
 	// The insert column list, select list, and conflict assignments differ
 	// between root and child tables: children additionally extract the
@@ -390,7 +390,7 @@ func (t *Table) Upsert(
 	if err != nil {
 		return fmt.Errorf("failed to upsert documents: %w", err)
 	}
-	after, err := scanStamps(rows, t.store.logger)
+	after, err := stamps(rows, t.store.logger)
 	if err != nil {
 		return err
 	}
@@ -538,7 +538,7 @@ func (t *Table) remove(
 	if err != nil {
 		return fmt.Errorf("failed to delete documents: %w", err)
 	}
-	victims, err := scanStamps(rows, t.store.logger)
+	victims, err := stamps(rows, t.store.logger)
 	if err != nil {
 		return err
 	}
@@ -598,7 +598,7 @@ func (t *Table) fetchQuery(n int) string {
 	}
 
 	s := t.store
-	tomb := s.identTombstones
+	tomb := s.tombstones
 	live := func(cond string) string {
 		return "SELECT id::text, seq, hlc, FALSE AS deleted, data" +
 			" FROM " + t.ident +
@@ -612,7 +612,7 @@ func (t *Table) fetchQuery(n int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("WITH granted AS (SELECT user_id FROM " + s.identShares +
+	b.WriteString("WITH granted AS (SELECT user_id FROM " + s.shares +
 		" WHERE team_id = ANY($2::uuid[])) (")
 	b.WriteString(live(t.userCol + " = $1::uuid"))
 	for i := range n {
@@ -739,7 +739,7 @@ func (t *Table) cascadeTeam(
 			" WHERE o.id = c.id AND " + d.cond +
 			" RETURNING c.id, o." + d.table.userCol + " AS user_id," +
 			" o." + d.table.teamCol + " AS team_id, r.hlc" +
-			") INSERT INTO " + t.store.identTombstones + " AS ts" +
+			") INSERT INTO " + t.store.tombstones + " AS ts" +
 			" (type, id, user_id, team_id, hlc, seq)" +
 			" SELECT $4::text, id, user_id, team_id, hlc, " + t.store.nextval +
 			" FROM moved" +
@@ -791,7 +791,7 @@ func (t *Table) cascadeDelete(
 			" DELETE FROM " + d.table.ident + " c USING roots r" +
 			" WHERE " + d.cond +
 			" RETURNING c.id, r.user_id, r.team_id, r.hlc" +
-			") INSERT INTO " + t.store.identTombstones + " AS ts" +
+			") INSERT INTO " + t.store.tombstones + " AS ts" +
 			" (type, id, user_id, team_id, hlc, seq)" +
 			" SELECT $5::text, id, user_id, team_id, hlc, " + t.store.nextval +
 			" FROM doomed" +

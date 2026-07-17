@@ -63,7 +63,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -217,29 +216,22 @@ func WithLogger(logger *slog.Logger) Option {
 // store is used; the SQL files under migrations/ document the expected
 // shape and serve as reference material.
 type Store struct {
-	// db is the underlying database connection pool.
-	db *sql.DB
-	// schema is the unquoted default schema.
-	schema string
-	// identMutations etc. are the precomputed, safely quoted identifiers.
-	identMutations  string
-	identTombstones string
-	identState      string
-	identShares     string
-	identSequence   string
-	// nextval is the precomputed nextval() expression of the feed sequence.
-	nextval string
-	// logger records store operations.
-	logger *slog.Logger
-	// tables indexes all registered tables by their table name.
-	tables map[string]*Table
-	// order lists the registered tables in registration order (parents
-	// always precede their children).
-	order []*Table
+	db         *sql.DB           // underlying database connection pool
+	schema     string            // unquoted default schema
+	mutations  string            // precomputed, safely quoted identifier
+	tombstones string            // precomputed, safely quoted identifier
+	state      string            // precomputed, safely quoted identifier
+	shares     string            // precomputed, safely quoted identifier
+	sequence   string            // precomputed, safely quoted identifier
+	nextval    string            // nextval() expression of the feed sequence
+	logger     *slog.Logger      // records store operations
+	tables     map[string]*Table // indexes all registered tables by their name
+	order      []*Table          // lists tables in registration order
+	// Note: Parent tables always precede their children.
 }
 
 // New creates a new PostgreSQL sync store around the given connection pool
-// and options. It panics if db is nil (programmer error).
+// and options. It panics if the given pool is nil (programmer error).
 func New(db *sql.DB, opts ...Option) *Store {
 	if db == nil {
 		panic("db is required")
@@ -259,17 +251,17 @@ func New(db *sql.DB, opts ...Option) *Store {
 	}
 
 	s := &Store{
-		db:              db,
-		schema:          cfg.schema,
-		identMutations:  quote.Ident(cfg.schema, cfg.mutations),
-		identTombstones: quote.Ident(cfg.schema, cfg.tombstones),
-		identState:      quote.Ident(cfg.schema, cfg.state),
-		identShares:     quote.Ident(cfg.schema, cfg.shares),
-		identSequence:   quote.Ident(cfg.schema, cfg.sequence),
-		logger:          cfg.logger,
-		tables:          make(map[string]*Table),
+		db:         db,
+		schema:     cfg.schema,
+		mutations:  quote.Ident(cfg.schema, cfg.mutations),
+		tombstones: quote.Ident(cfg.schema, cfg.tombstones),
+		state:      quote.Ident(cfg.schema, cfg.state),
+		shares:     quote.Ident(cfg.schema, cfg.shares),
+		sequence:   quote.Ident(cfg.schema, cfg.sequence),
+		logger:     cfg.logger,
+		tables:     make(map[string]*Table),
 	}
-	s.nextval = "nextval(" + quote.Literal(s.identSequence) + ")"
+	s.nextval = "nextval(" + quote.Literal(s.sequence) + ")"
 
 	return s
 }
@@ -375,7 +367,7 @@ func lockKey(key string) int64 {
 // Floor implements the [diff.Store] interface. It returns the retention
 // floor, or 0 if the state row is missing.
 func (s *Store) Floor(ctx context.Context, tx *sql.Tx) (int64, error) {
-	query := "SELECT seq FROM " + s.identState + " WHERE key = 'floor'"
+	query := "SELECT seq FROM " + s.state + " WHERE key = 'floor'"
 	var seq int64
 	err := tx.QueryRowContext(ctx, query).Scan(&seq)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -402,7 +394,7 @@ func (s *Store) Barrier(ctx context.Context, tx *sql.Tx) (int64, error) {
 // sequence value assigned so far, or 0 if the sequence was never advanced.
 func (s *Store) Watermark(ctx context.Context, tx *sql.Tx) (int64, error) {
 	query := "SELECT CASE WHEN is_called THEN last_value" +
-		" ELSE last_value - 1 END FROM " + s.identSequence
+		" ELSE last_value - 1 END FROM " + s.sequence
 	var seq int64
 	if err := tx.QueryRowContext(ctx, query).Scan(&seq); err != nil {
 		return 0, fmt.Errorf("failed to read sequence watermark: %w", err)
@@ -422,7 +414,7 @@ func (s *Store) Claim(
 		return nil, nil
 	}
 
-	query := "INSERT INTO " + s.identMutations + " (id, user_id)" +
+	query := "INSERT INTO " + s.mutations + " (id, user_id)" +
 		" SELECT unnest($1::uuid[]), $2::uuid" +
 		" ON CONFLICT (id) DO NOTHING RETURNING id::text"
 
@@ -463,7 +455,7 @@ func (s *Store) Grants(
 		return out, nil
 	}
 
-	query := "SELECT user_id::text, team_id::text FROM " + s.identShares +
+	query := "SELECT user_id::text, team_id::text FROM " + s.shares +
 		" WHERE user_id = ANY($1::uuid[])"
 	rows, err := tx.QueryContext(ctx, query, owners)
 	if err != nil {
@@ -594,7 +586,7 @@ func (s *Store) OffboardTeam(
 		// key (whose members read the tombstones under a shared lock) plus
 		// each granting owner.
 		rows, err := tx.QueryContext(ctx,
-			"SELECT user_id::text FROM "+s.identShares+
+			"SELECT user_id::text FROM "+s.shares+
 				" WHERE team_id = $1::uuid", teamID)
 		if err != nil {
 			return fmt.Errorf("failed to list team grants: %w", err)
@@ -620,9 +612,9 @@ func (s *Store) OffboardTeam(
 		}
 
 		query := "WITH removed AS (" +
-			" DELETE FROM " + s.identShares + " WHERE team_id = $1::uuid" +
+			" DELETE FROM " + s.shares + " WHERE team_id = $1::uuid" +
 			" RETURNING id, user_id, team_id" +
-			") INSERT INTO " + s.identTombstones + " AS ts" +
+			") INSERT INTO " + s.tombstones + " AS ts" +
 			" (type, id, user_id, team_id, hlc, seq)" +
 			" SELECT $2::text, id, user_id, team_id, $3, " + s.nextval +
 			" FROM removed" +
@@ -651,7 +643,7 @@ func (s *Store) PruneMutations(
 	ctx context.Context,
 	olderThan time.Duration,
 ) (int64, error) {
-	query := "DELETE FROM " + s.identMutations +
+	query := "DELETE FROM " + s.mutations +
 		" WHERE applied_at < now() - make_interval(secs => $1)"
 	res, err := s.db.ExecContext(ctx, query, olderThan.Seconds())
 	if err != nil {
@@ -674,7 +666,7 @@ func (s *Store) PruneTombstones(
 ) (int64, error) {
 	var pruned int64
 	err := s.Exec(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		query := "WITH pruned AS (DELETE FROM " + s.identTombstones +
+		query := "WITH pruned AS (DELETE FROM " + s.tombstones +
 			" WHERE deleted_at < now() - make_interval(secs => $1)" +
 			" RETURNING seq)" +
 			" SELECT count(*), coalesce(max(seq), 0) FROM pruned"
@@ -689,7 +681,7 @@ func (s *Store) PruneTombstones(
 			return nil
 		}
 
-		query = "UPDATE " + s.identState +
+		query = "UPDATE " + s.state +
 			" SET seq = GREATEST(seq, $1) WHERE key = 'floor'"
 		if _, err := tx.ExecContext(ctx, query, peak); err != nil {
 			return fmt.Errorf("failed to advance retention floor: %w", err)
@@ -797,12 +789,12 @@ func (h *shares) Upsert(
 		" FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::bigint[])" +
 		" AS t(id, user_id, team_id, hlc)" +
 		"), stale AS (" +
-		" DELETE FROM " + s.identShares + " s USING incoming i" +
+		" DELETE FROM " + s.shares + " s USING incoming i" +
 		" WHERE s.user_id = i.user_id AND s.team_id = i.team_id" +
 		" AND s.id <> i.id AND s.hlc < i.hlc" +
 		" AND s.user_id = $5::uuid" +
 		" RETURNING s.id, s.user_id, s.team_id, i.hlc" +
-		") INSERT INTO " + s.identTombstones + " AS ts" +
+		") INSERT INTO " + s.tombstones + " AS ts" +
 		" (type, id, user_id, team_id, hlc, seq)" +
 		" SELECT $6::text, id, user_id, team_id, hlc, " + s.nextval +
 		" FROM stale" +
@@ -824,25 +816,25 @@ func (h *shares) Upsert(
 		" AS t(id, user_id, team_id, hlc)" +
 		"), alive AS (" +
 		" SELECT i.* FROM incoming i" +
-		" LEFT JOIN " + s.identTombstones + " ts" +
+		" LEFT JOIN " + s.tombstones + " ts" +
 		" ON ts.type = $6::text AND ts.id = i.id" +
-		" LEFT JOIN " + s.identShares + " r ON r.id = i.id" +
+		" LEFT JOIN " + s.shares + " r ON r.id = i.id" +
 		" WHERE (ts.id IS NULL OR (i.hlc > ts.hlc" +
 		" AND (r.id IS NOT NULL" +
 		" OR ts.user_id = $5::uuid OR ts.team_id = ANY($7::uuid[]))))" +
 		" AND NOT EXISTS (" +
-		" SELECT 1 FROM " + s.identShares + " x" +
+		" SELECT 1 FROM " + s.shares + " x" +
 		" WHERE x.user_id = i.user_id AND x.team_id = i.team_id" +
 		" AND x.id <> i.id" +
 		")" +
 		"), cleared AS (" +
-		" DELETE FROM " + s.identTombstones + " ts USING alive a" +
+		" DELETE FROM " + s.tombstones + " ts USING alive a" +
 		" WHERE ts.type = $6::text AND ts.id = a.id" +
 		" AND (ts.user_id = $5::uuid OR ts.team_id = ANY($7::uuid[]))" +
 		" AND NOT EXISTS (" +
-		" SELECT 1 FROM " + s.identShares + " r WHERE r.id = a.id" +
+		" SELECT 1 FROM " + s.shares + " r WHERE r.id = a.id" +
 		")" +
-		") INSERT INTO " + s.identShares + " AS s" +
+		") INSERT INTO " + s.shares + " AS s" +
 		" (id, user_id, team_id, hlc, seq)" +
 		" SELECT a.id, a.user_id, a.team_id, a.hlc, " + s.nextval +
 		" FROM alive a" +
@@ -864,7 +856,7 @@ func (h *shares) Upsert(
 	if err != nil {
 		return fmt.Errorf("failed to upsert shares: %w", err)
 	}
-	landed, err := scanStamps(rows, s.logger)
+	landed, err := stamps(rows, s.logger)
 	if err != nil {
 		return err
 	}
@@ -917,7 +909,7 @@ func (h *shares) snapshot(
 	ids []string,
 ) (map[string]sql.NullString, error) {
 	s := h.store
-	query := "SELECT id::text, team_id::text FROM " + s.identShares +
+	query := "SELECT id::text, team_id::text FROM " + s.shares +
 		" WHERE id = ANY($1::uuid[])"
 	rows, err := tx.QueryContext(ctx, query, ids)
 	if err != nil {
@@ -965,7 +957,7 @@ func (h *shares) Delete(
 		" FROM unnest($1::uuid[], $2::bigint[], $3::uuid[], $4::text[])" +
 		" AS t(id, hlc, user_id, team_id)" +
 		"), victims AS (" +
-		" DELETE FROM " + s.identShares + " s USING incoming i" +
+		" DELETE FROM " + s.shares + " s USING incoming i" +
 		" WHERE s.id = i.id AND s.hlc < i.hlc AND s.user_id = $5::uuid" +
 		" RETURNING s.id, s.user_id, s.team_id, i.hlc" +
 		"), scoped AS (" +
@@ -973,9 +965,9 @@ func (h *shares) Delete(
 		" UNION ALL" +
 		" SELECT i.id, i.user_id, i.team_id, i.hlc FROM incoming i" +
 		" WHERE NOT EXISTS (" +
-		" SELECT 1 FROM " + s.identShares + " s WHERE s.id = i.id" +
+		" SELECT 1 FROM " + s.shares + " s WHERE s.id = i.id" +
 		")" +
-		") INSERT INTO " + s.identTombstones + " AS ts" +
+		") INSERT INTO " + s.tombstones + " AS ts" +
 		" (type, id, user_id, team_id, hlc, seq)" +
 		" SELECT $6::text, id, user_id, team_id, hlc, " + s.nextval +
 		" FROM scoped" +
@@ -1019,12 +1011,12 @@ func (h *shares) Fetch(
 		") AS data"
 	live := func(cond string) string {
 		return "SELECT id::text, seq, hlc, FALSE AS deleted, " + data +
-			" FROM " + s.identShares +
+			" FROM " + s.shares +
 			" WHERE " + cond + " AND seq > $2 AND seq < $3"
 	}
 	dead := func(cond string) string {
 		return "SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
-			" FROM " + s.identTombstones +
+			" FROM " + s.tombstones +
 			" WHERE type = $4::text AND " + cond +
 			" AND seq > $2 AND seq < $3"
 	}
@@ -1072,7 +1064,7 @@ func (h *shares) Resolve(
 ) (map[uuid.UUID]diff.Meta, error) {
 	s := h.store
 	query := "SELECT id::text, user_id::text, team_id::text FROM " +
-		s.identShares + " WHERE id = ANY($1::uuid[])"
+		s.shares + " WHERE id = ANY($1::uuid[])"
 	return resolve(ctx, tx, query, ids, s.logger)
 }
 
@@ -1113,7 +1105,7 @@ func (s *Store) entomb(
 		hlcs[i] = m.hlc
 	}
 
-	query := "INSERT INTO " + s.identTombstones + " AS ts" +
+	query := "INSERT INTO " + s.tombstones + " AS ts" +
 		" (type, id, user_id, team_id, hlc, seq)" +
 		" SELECT $1::text, m.id, m.user_id, nullif(m.team_id, '')::uuid," +
 		" m.hlc, " + s.nextval +
@@ -1141,8 +1133,8 @@ type stamp struct {
 	hlc  int64
 }
 
-// scanStamps consumes rows of the shape (id, user_id, team_id, hlc).
-func scanStamps(rows *sql.Rows, logger *slog.Logger) ([]stamp, error) {
+// stamps consumes rows of the shape (id, user_id, team_id, hlc).
+func stamps(rows *sql.Rows, logger *slog.Logger) ([]stamp, error) {
 	defer close(rows, logger)
 
 	var out []stamp
