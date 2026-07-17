@@ -195,24 +195,26 @@ func (t *token[T]) Verify(resolver jwk.Resolver) error {
 
 var _ Token[Claims] = (*token[Claims])(nil)
 
-// audience represents the "aud" (Audience) claim of a JWT as defined in
+// Audience represents the "aud" (Audience) claim of a JWT as defined in
 // RFC 7519, Section 4.1.3.
 //
 // Because the "aud" claim can be either a single case-sensitive string or
 // an array of such strings, this type implements custom JSON unmarshaling
 // logic to ensure it is always handled as a slice of strings internally.
-type audience []string
+// Embed it in custom claims structs whenever the token source may use
+// either encoding.
+type Audience []string
 
 // UnmarshalJSON handles the polymorphic nature of the "aud" claim.
-func (a *audience) UnmarshalJSON(b []byte) error {
+func (a *Audience) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s, jsonOptions); err == nil {
-		*a = audience{s}
+		*a = Audience{s}
 		return nil
 	}
 	var m []string
 	if err := json.Unmarshal(b, &m, jsonOptions); err == nil {
-		*a = audience(m)
+		*a = Audience(m)
 		return nil
 	}
 	return errors.New("expected a string or an array of strings")
@@ -268,7 +270,7 @@ type Reserved struct {
 	Jti string    `json:"jti,omitempty"` // JWT ID
 	Sub uuid.UUID `json:"sub,omitzero"`  // Subject
 	Iss string    `json:"iss,omitempty"` // Issuer
-	Aud audience  `json:"aud,omitempty"` // Audience
+	Aud Audience  `json:"aud,omitempty"` // Audience
 	Iat time.Time `json:"iat,omitzero"`  // Issued At
 	Exp time.Time `json:"exp,omitzero"`  // Expires At
 	Nbf time.Time `json:"nbf,omitzero"`  // Not Before
