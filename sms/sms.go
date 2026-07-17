@@ -236,6 +236,7 @@ func NewSender(client *http.Client, sid, token string, opts ...Option) Sender {
 }
 
 // Send executes the HTTP request to the Twilio Messaging API.
+// It returns an [APIError] when the API responds with an error status.
 func (s *sender) Send(ctx context.Context, msg *Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
@@ -259,7 +260,9 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	req.SetBasicAuth(s.sid, s.token)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	s.logger.DebugContext(ctx, "Dispatching SMS to provider",
+	s.logger.DebugContext(
+		ctx,
+		"Dispatching SMS to provider",
 		slog.String("to", msg.To),
 	)
 
@@ -281,7 +284,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		}
 	}()
 
-	if code := res.StatusCode; code >= 400 {
+	if code := res.StatusCode; code >= http.StatusBadRequest {
 		var apiErr APIError
 		apiErr.Status = code
 		// Attempt to parse the JSON error body. If it fails, we just return the
