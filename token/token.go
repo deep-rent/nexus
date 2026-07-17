@@ -51,6 +51,10 @@ import (
 // DefaultBufferTime is the default duration to preemptively refresh tokens.
 const DefaultBufferTime = 1 * time.Minute
 
+// RetryDelay is the time to wait before retrying a failed fetch.
+// Only used when a scheduler is provided.
+const RetryDelay = 5 * time.Second
+
 // Fetcher is a function that generates or retrieves a new token and its exact
 // expiration time. It is called by the [Source] when a token is missing or
 // expired.
@@ -88,7 +92,7 @@ func WithClock(clock func() time.Time) Option {
 
 // WithScheduler configures the Source to eagerly fetch and proactively refresh
 // tokens in the background using the provided scheduler. If not provided,
-// tokens are refreshed synchronously during the Get call.
+// tokens are refreshed synchronously during the [Source.Get] call.
 func WithScheduler(sched schedule.Scheduler) Option {
 	return func(c *config) {
 		c.sched = sched
@@ -187,7 +191,7 @@ func (s *Source) refresh(ctx context.Context) time.Duration {
 		_, err := s.get(ctx)
 		if err != nil {
 			// On error, wait a short backoff before retrying.
-			return 5 * time.Second
+			return RetryDelay
 		}
 		// Trigger immediately to recalculate wait time based on the new
 		// expiration time.
