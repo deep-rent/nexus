@@ -31,7 +31,7 @@ func TestNewClient_Defaults(t *testing.T) {
 		t.Errorf("expected default timeout to be 5s, got %v", client.Timeout)
 	}
 
-	transport, ok := client.Transport.(*http.Transport)
+	tr, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf(
 			"expected transport to be *http.Transport, got %T",
@@ -39,15 +39,15 @@ func TestNewClient_Defaults(t *testing.T) {
 		)
 	}
 
-	if transport.DisableKeepAlives {
+	if tr.DisableKeepAlives {
 		t.Error("expected DisableKeepAlives to be false by default")
 	}
 
-	if transport.ForceAttemptHTTP2 {
+	if tr.ForceAttemptHTTP2 {
 		t.Error("expected ForceAttemptHTTP2 to be false by default")
 	}
 
-	if transport.TLSClientConfig != nil {
+	if tr.TLSClientConfig != nil {
 		t.Error("expected TLSClientConfig to be nil by default")
 	}
 }
@@ -66,7 +66,7 @@ func TestNewClient_WithOptions(t *testing.T) {
 		t.Errorf("expected timeout to be 10s, got %v", client.Timeout)
 	}
 
-	transport, ok := client.Transport.(*http.Transport)
+	tr, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf(
 			"expected transport to be *http.Transport, got %T",
@@ -74,15 +74,15 @@ func TestNewClient_WithOptions(t *testing.T) {
 		)
 	}
 
-	if !transport.DisableKeepAlives {
+	if !tr.DisableKeepAlives {
 		t.Error("expected DisableKeepAlives to be true")
 	}
 
-	if !transport.ForceAttemptHTTP2 {
+	if !tr.ForceAttemptHTTP2 {
 		t.Error("expected ForceAttemptHTTP2 to be true")
 	}
 
-	if transport.TLSClientConfig != tlsCfg {
+	if tr.TLSClientConfig != tlsCfg {
 		t.Error("expected TLSClientConfig to be set correctly")
 	}
 }
