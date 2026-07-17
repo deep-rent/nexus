@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package transport provides an abstraction for building robust HTTP clients.
+// Package transport provides a factory for building robust HTTP clients.
 //
 // It centralizes the configuration of HTTP timeouts, connection pools, and
 // middleware like retry logic and static headers, ensuring standard
@@ -43,7 +43,7 @@ const DefaultTimeout = 5 * time.Second
 
 // DefaultDialTimeout is the maximum amount of time a dial will wait for
 // a connect to complete.
-const DefaultDialTimeout = 5 * time.Second
+const DefaultDialTimeout = 2 * time.Second
 
 // DefaultKeepAlive specifies the interval between keep-alive probes for an
 // active network connection.
@@ -51,7 +51,7 @@ const DefaultKeepAlive = 30 * time.Second
 
 // DefaultTLSHandshakeTimeout specifies the maximum amount of time waiting to
 // wait for a TLS handshake.
-const DefaultTLSHandshakeTimeout = 5 * time.Second
+const DefaultTLSHandshakeTimeout = 2 * time.Second
 
 // DefaultMaxIdleConns specifies the maximum number of idle (keep-alive)
 // connections across all hosts.

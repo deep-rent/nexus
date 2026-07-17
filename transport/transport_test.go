@@ -51,7 +51,7 @@ func TestNewClient_Defaults(t *testing.T) {
 		t.Error("expected TLSClientConfig to be nil by default")
 	}
 
-	if exp, act := 5*time.Second, tr.TLSHandshakeTimeout; exp != act {
+	if exp, act := 2*time.Second, tr.TLSHandshakeTimeout; exp != act {
 		t.Errorf("expected TLSHandshakeTimeout to be %v, got %v", exp, act)
 	}
 
@@ -166,7 +166,7 @@ func TestNewClient_WithNegativeOptions(t *testing.T) {
 		)
 	}
 
-	if exp, act := 5*time.Second, tr.TLSHandshakeTimeout; exp != act {
+	if exp, act := 2*time.Second, tr.TLSHandshakeTimeout; exp != act {
 		t.Errorf(
 			"expected TLSHandshakeTimeout to be default %v, got %v",
 			exp,
