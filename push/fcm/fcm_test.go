@@ -96,7 +96,7 @@ func TestFCM_Send(t *testing.T) {
 		&http.Client{Timeout: 1 * time.Second},
 		saJSON,
 		fcm.WithBaseURL(ts.URL+"/v1"),
-		fcm.WithOAuthURL(ts.URL+"/token"),
+		fcm.WithAuthURL(ts.URL+"/token"),
 		fcm.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 

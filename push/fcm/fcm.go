@@ -54,6 +54,7 @@ import (
 const (
 	DefaultScope   = "https://www.googleapis.com/auth/firebase.messaging"
 	DefaultBaseURL = "https://fcm.googleapis.com/v1"
+	DefaultAuthURL = "https://oauth2.googleapis.com/token"
 )
 
 // Sender implements the [push.Sender] interface for Firebase Cloud Messaging
@@ -71,10 +72,10 @@ type Sender struct {
 var _ push.Sender = (*Sender)(nil)
 
 type config struct {
-	baseURL  string
-	oauthURL string
-	logger   *slog.Logger
-	clock    func() time.Time
+	baseURL string
+	authURL string
+	logger  *slog.Logger
+	clock   func() time.Time
 }
 
 // Option defines the functional option pattern for configuring the FCM sender.
@@ -90,12 +91,12 @@ func WithBaseURL(url string) Option {
 	}
 }
 
-// WithOAuthURL allows overriding the Google OAuth 2.0 token endpoint.
+// WithAuthURL allows overriding the Google OAuth 2.0 token endpoint.
 // Useful for mocking. Empty string values are ignored.
-func WithOAuthURL(url string) Option {
+func WithAuthURL(url string) Option {
 	return func(cfg *config) {
 		if url != "" {
-			cfg.oauthURL = url
+			cfg.authURL = url
 		}
 	}
 }
@@ -130,42 +131,39 @@ type serviceAccount struct {
 
 // New creates a configured Firebase Cloud Messaging client implementing the
 // [push.Sender] interface. It requires the raw contents of the Google Service
-// Account
-// JSON credentials file.
+// Account JSON credentials file.
 func New(
 	client *http.Client,
-	credentialsJSON []byte,
+	credentials []byte,
 	opts ...Option,
 ) push.Sender {
 	var sa serviceAccount
-	if err := json.Unmarshal(credentialsJSON, &sa); err != nil {
+	if err := json.Unmarshal(credentials, &sa); err != nil {
 		panic(fmt.Errorf("failed to parse FCM credentials JSON: %w", err))
 	}
 	if sa.ProjectID == "" || sa.PrivateKey == "" || sa.ClientEmail == "" {
-		panic(
-			"credentials JSON is missing project_id, private_key, or client_email",
-		)
+		panic("credentials JSON is missing required fields")
 	}
 
 	signer, err := sign.Decode([]byte(sa.PrivateKey))
 	if err != nil {
 		panic(fmt.Errorf("failed to parse FCM private key: %w", err))
 	}
-	var keyPair jwk.KeyPair
+	var key jwk.KeyPair
 	switch signer.Public().(type) {
 	case *rsa.PublicKey:
-		keyPair = jwk.NewKeyPair(jwa.RS256, "", signer)
+		key = jwk.NewKeyPair(jwa.RS256, "", signer)
 	case *ecdsa.PublicKey:
-		keyPair = jwk.NewKeyPair(jwa.ES256, "", signer)
+		key = jwk.NewKeyPair(jwa.ES256, "", signer)
 	default:
 		panic("unsupported private key type for FCM")
 	}
 
 	cfg := config{
-		baseURL:  DefaultBaseURL,
-		oauthURL: "https://oauth2.googleapis.com/token",
-		logger:   slog.Default(),
-		clock:    time.Now,
+		baseURL: DefaultBaseURL,
+		authURL: DefaultAuthURL,
+		logger:  slog.Default(),
+		clock:   time.Now,
 	}
 
 	for _, opt := range opts {
@@ -190,12 +188,12 @@ func New(
 		}{
 			Iss:   sa.ClientEmail,
 			Scope: DefaultScope,
-			Aud:   cfg.oauthURL,
+			Aud:   cfg.authURL,
 			Iat:   cfg.clock().Unix(),
 			Exp:   cfg.clock().Add(time.Hour).Unix(),
 		}
 
-		assertion, err := jwt.Sign(ctx, keyPair, claims)
+		assertion, err := jwt.Sign(ctx, key, claims)
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf(
 				"failed to sign oauth assertion: %w",
@@ -210,7 +208,7 @@ func New(
 		req, err := http.NewRequestWithContext(
 			ctx,
 			http.MethodPost,
-			cfg.oauthURL,
+			cfg.authURL,
 			strings.NewReader(data.Encode()),
 		)
 		if err != nil {
@@ -225,7 +223,14 @@ func New(
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("oauth request failed: %w", err)
 		}
-		defer res.Body.Close()
+		defer func() {
+			if err := res.Body.Close(); err != nil {
+				s.logger.Error(
+					"failed to close response body",
+					slog.Any("error", err),
+				)
+			}
+		}()
 
 		if res.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(res.Body)
@@ -236,19 +241,19 @@ func New(
 			)
 		}
 
-		var authRes struct {
+		var grant struct {
 			AccessToken string `json:"access_token"`
 			ExpiresIn   int    `json:"expires_in"`
 		}
-		if err := json.UnmarshalRead(res.Body, &authRes); err != nil {
+		if err := json.UnmarshalRead(res.Body, &grant); err != nil {
 			return "", time.Time{}, fmt.Errorf(
 				"failed to decode oauth response: %w",
 				err,
 			)
 		}
 
-		return authRes.AccessToken, cfg.clock().
-				Add(time.Duration(authRes.ExpiresIn) * time.Second),
+		return grant.AccessToken, cfg.clock().
+				Add(time.Duration(grant.ExpiresIn) * time.Second),
 			nil
 	}
 	s.source = token.NewSource(
@@ -271,60 +276,60 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		return fmt.Errorf("failed to obtain oauth token: %w", err)
 	}
 
-	fcmMsg := map[string]any{}
+	out := map[string]any{}
 	if msg.Target.Token != "" {
-		fcmMsg["token"] = msg.Target.Token
+		out["token"] = msg.Target.Token
 	} else if msg.Target.Topic != "" {
-		fcmMsg["topic"] = msg.Target.Topic
+		out["topic"] = msg.Target.Topic
 	}
 
 	if !msg.Silent {
-		fcmMsg["notification"] = map[string]any{
+		out["notification"] = map[string]any{
 			"title": msg.Title,
 			"body":  msg.Body,
 		}
 	}
 
 	if len(msg.Data) > 0 {
-		fcmMsg["data"] = msg.Data
+		out["data"] = msg.Data
 	}
 
 	android := map[string]any{}
-	apnsHdrs := map[string]string{}
+	headers := map[string]string{}
 
 	if msg.Silent {
 		android["priority"] = "NORMAL"
-		apnsHdrs["apns-priority"] = "5"
+		headers["apns-priority"] = "5"
 	} else if msg.Priority == push.PriorityNormal {
 		android["priority"] = "NORMAL"
-		apnsHdrs["apns-priority"] = "5"
+		headers["apns-priority"] = "5"
 	} else if msg.Priority == push.PriorityHigh {
 		android["priority"] = "HIGH"
-		apnsHdrs["apns-priority"] = "10"
+		headers["apns-priority"] = "10"
 	}
 
 	if msg.CollapseID != "" {
 		android["collapse_key"] = msg.CollapseID
-		apnsHdrs["apns-collapse-id"] = msg.CollapseID
+		headers["apns-collapse-id"] = msg.CollapseID
 	}
 
 	if msg.TTL > 0 {
 		android["ttl"] = fmt.Sprintf("%ds", int(msg.TTL.Seconds()))
 		exp := s.clock().Add(msg.TTL).Unix()
-		apnsHdrs["apns-expiration"] = fmt.Sprintf("%d", exp)
+		headers["apns-expiration"] = fmt.Sprintf("%d", exp)
 	}
 
 	if len(android) > 0 {
-		fcmMsg["android"] = android
+		out["android"] = android
 	}
-	if len(apnsHdrs) > 0 {
-		fcmMsg["apns"] = map[string]any{
-			"headers": apnsHdrs,
+	if len(headers) > 0 {
+		out["apns"] = map[string]any{
+			"headers": headers,
 		}
 	}
 
 	payload := map[string]any{
-		"message": fcmMsg,
+		"message": out,
 	}
 
 	var buf bytes.Buffer
