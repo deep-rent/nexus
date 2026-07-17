@@ -127,7 +127,8 @@ type Credentials struct {
 
 // New creates a configured Apple Push Notification Service client implementing
 // the [push.Sender] interface. It requires the ES256 keyID, your Apple teamID,
-// and the PEM-encoded PKCS#8 private key contents.
+// and the PEM-encoded PKCS#8 private key contents. Note that the HTTP client
+// must support HTTP/2.
 func New(
 	client *http.Client,
 	cred Credentials,
@@ -161,7 +162,8 @@ func New(
 		if err != nil {
 			return "", time.Time{}, err
 		}
-		// Apple allows tokens to be used between 20 and 60 minutes.
+		// Apple allows tokens to be used between 20 and 60 minutes so we
+		// settle in the middle.
 		return string(tok), cfg.clock().Add(45 * time.Minute), nil
 	}
 

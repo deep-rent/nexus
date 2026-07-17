@@ -174,7 +174,7 @@ type Sender interface {
 
 // BatchSend concurrently dispatches multiple messages using the provided
 // [Sender]. It limits concurrency to the given workers limit to prevent
-// exhausting system resources. It uses an errgroup with context cancellation
+// exhausting system resources. It uses an error group with context cancellation
 // to abort early if a dispatch fails, and returns a joined error of all
 // failures.
 func BatchSend(
