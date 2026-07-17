@@ -31,7 +31,6 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/cache"
-	"github.com/deep-rent/nexus/retry"
 	"github.com/deep-rent/nexus/schedule"
 )
 
@@ -121,7 +120,7 @@ func TestController_GetAndReady(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	c := cache.NewController(s.URL, mockMapper)
+	c := cache.NewController(&http.Client{}, s.URL, mockMapper)
 
 	_, ok := c.Get()
 	if ok {
@@ -280,11 +279,10 @@ func TestController_Run(t *testing.T) {
 			var buf bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-			c := cache.NewController(s.URL, tt.mapper,
+			c := cache.NewController(&http.Client{}, s.URL, tt.mapper,
 				cache.WithMinInterval(minInt),
 				cache.WithMaxInterval(maxInt),
 				cache.WithLogger(logger),
-				cache.WithRetryOptions(retry.WithAttemptLimit(1)),
 			)
 			d := c.Run(t.Context())
 
@@ -329,7 +327,7 @@ func TestController_Run_ConditionalHeaders(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	c := cache.NewController(s.URL, mockMapper)
+	c := cache.NewController(&http.Client{}, s.URL, mockMapper)
 
 	h.mu.Lock()
 	h.status = http.StatusOK
@@ -395,7 +393,7 @@ func TestController_Get_WithScheduler(t *testing.T) {
 	sched := schedule.New(t.Context())
 	defer sched.Shutdown()
 
-	c := cache.NewController(s.URL, mockMapper)
+	c := cache.NewController(&http.Client{}, s.URL, mockMapper)
 	sched.Dispatch(c)
 
 	select {
@@ -425,7 +423,7 @@ func TestController_Run_ContextCancellation(t *testing.T) {
 
 	s := httptest.NewServer(h)
 	defer s.Close()
-	c := cache.NewController(s.URL, mockMapper)
+	c := cache.NewController(&http.Client{}, s.URL, mockMapper)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
@@ -437,15 +435,12 @@ func TestController_Run_ContextCancellation(t *testing.T) {
 }
 
 func TestNewController_Options(t *testing.T) {
-	t.Run("with client overrides others", func(t *testing.T) {
+	t.Run("uses provided client", func(t *testing.T) {
 		t.Parallel()
 		var used atomic.Bool
 		transport := &mockRoundTripper{
 			roundTrip: func(r *http.Request) (*http.Response, error) {
 				used.Store(true)
-				if got := r.Header.Get("X-Test"); len(got) != 0 {
-					t.Errorf("for header X-Test: got %q; want empty", got)
-				}
 				return &http.Response{
 					StatusCode: http.StatusNoContent,
 					Body:       io.NopCloser(strings.NewReader("")),
@@ -453,42 +448,10 @@ func TestNewController_Options(t *testing.T) {
 			},
 		}
 		cli := &http.Client{Transport: transport}
-		c := cache.NewController("http://a.b", mockMapper,
-			cache.WithClient(cli),
-			cache.WithHeader("X-Test", "value"),
-			cache.WithTimeout(1*time.Nanosecond),
-		)
+		c := cache.NewController(cli, "http://a.b", mockMapper)
 		c.Run(t.Context())
 		if !used.Load() {
 			t.Error("custom client's transport was not used")
-		}
-	})
-
-	t.Run("with header", func(t *testing.T) {
-		t.Parallel()
-		h := &mockHandler{status: http.StatusNoContent}
-		s := httptest.NewServer(h)
-		defer s.Close()
-
-		const (
-			xFoo = "X-Foo"
-			xBaz = "X-Baz"
-		)
-
-		c := cache.NewController(
-			s.URL,
-			mockMapper,
-			cache.WithHeader(xFoo, "bar"),
-			cache.WithHeader(xBaz, "qux"),
-		)
-
-		c.Run(t.Context())
-
-		if got, want := h.RequestHeader(xFoo), "bar"; got != want {
-			t.Errorf("for header %q: got %q; want %q", xFoo, got, want)
-		}
-		if got, want := h.RequestHeader(xBaz), "qux"; got != want {
-			t.Errorf("for header %q: got %q; want %q", xBaz, got, want)
 		}
 	})
 }

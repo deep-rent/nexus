@@ -51,10 +51,10 @@
 //
 //		// 3. Create and configure the cache controller.
 //		ctrl := cache.NewController(
+//			http.DefaultClient,
 //			"https://api.example.com/resource",
 //			mapper,
 //			cache.WithMinInterval(5*time.Minute),
-//			cache.WithHeader("Authorization", "Bearer *****"),
 //		)
 //
 //		// 4. Dispatch the controller to start fetching in the background.
@@ -71,7 +71,6 @@ package cache
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"log/slog"
@@ -80,8 +79,6 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/header"
-	"github.com/deep-rent/nexus/internal/transport"
-	"github.com/deep-rent/nexus/retry"
 	schedule "github.com/deep-rent/nexus/schedule"
 )
 
@@ -130,34 +127,20 @@ type Controller[T any] interface {
 // NewController creates and configures a new cache [Controller].
 //
 // It requires a URL for the resource to fetch and a [Mapper] function to parse
-// the response. If no [http.Client] is provided via options, it creates a
-// default one with a sensible timeout and a retry transport.
+// the response.
 func NewController[T any](
+	client *http.Client,
 	url string,
 	mapper Mapper[T],
 	opts ...Option,
 ) Controller[T] {
 	cfg := config{
-		client:      nil,
-		timeout:     DefaultTimeout,
-		headers:     make([]header.Header, 0, 3),
 		minInterval: DefaultMinInterval,
 		maxInterval: DefaultMaxInterval,
 		logger:      slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
-	}
-
-	client := cfg.client
-	if client == nil {
-		client = transport.NewClient(transport.Options{
-			Timeout:           cfg.timeout,
-			TLSConfig:         cfg.tls,
-			DisableKeepAlives: true,
-			Headers:           cfg.headers,
-			Retry:             cfg.retry,
-		})
 	}
 
 	return &controller[T]{
@@ -326,64 +309,16 @@ var _ Controller[any] = (*controller[any])(nil)
 
 // config holds the internal configuration for the cache controller.
 type config struct {
-	// client is an optional custom HTTP client.
-	client *http.Client
-	// timeout is the default request timeout.
-	timeout time.Duration
-	// headers are static headers applied to every request.
-	headers []header.Header
-	// tls is the TLS configuration for the default client.
-	tls *tls.Config
 	// minInterval is the floor for refresh delays.
 	minInterval time.Duration
 	// maxInterval is the ceiling for refresh delays.
 	maxInterval time.Duration
-	// retry are options for the default transport's retry logic.
-	retry []retry.Option
 	// logger is the destination for internal logs.
 	logger *slog.Logger
 }
 
 // Option is a function that configures the cache [Controller].
 type Option func(*config)
-
-// WithClient provides a custom [http.Client] to be used for requests. This is
-// useful for advanced configurations, such as custom transports or connection
-// pooling. If not provided, a default client with retry logic is created.
-func WithClient(client *http.Client) Option {
-	return func(c *config) {
-		if client != nil {
-			c.client = client
-		}
-	}
-}
-
-// WithTimeout sets the total timeout for a single HTTP fetch attempt, including
-// connection, redirects, and reading the response body. This is ignored if a
-// custom client is provided via [WithClient].
-func WithTimeout(d time.Duration) Option {
-	return func(c *config) {
-		if d > 0 {
-			c.timeout = d
-		}
-	}
-}
-
-// WithHeader adds a static header to every request sent by the controller. This
-// can be called multiple times to add multiple headers.
-func WithHeader(k, v string) Option {
-	return func(c *config) {
-		c.headers = append(c.headers, header.New(k, v))
-	}
-}
-
-// WithTLSConfig provides a custom [tls.Config] for the default HTTP transport.
-// This is ignored if a custom client is provided via [WithClient].
-func WithTLSConfig(tls *tls.Config) Option {
-	return func(c *config) {
-		c.tls = tls
-	}
-}
 
 // WithMinInterval sets the minimum duration between refresh attempts. The
 // refresh delay, typically determined by caching headers, will not be shorter
@@ -403,14 +338,6 @@ func WithMaxInterval(d time.Duration) Option {
 		if d > 0 {
 			c.maxInterval = d
 		}
-	}
-}
-
-// WithRetryOptions configures the retry mechanism for the default HTTP client.
-// These options are ignored if a custom client is provided via [WithClient].
-func WithRetryOptions(opts ...retry.Option) Option {
-	return func(c *config) {
-		c.retry = append(c.retry, opts...)
 	}
 }
 
