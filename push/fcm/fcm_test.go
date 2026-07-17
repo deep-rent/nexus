@@ -47,14 +47,7 @@ func generate(t *testing.T) []byte {
 func TestFCM_Send(t *testing.T) {
 	t.Parallel()
 
-	pemData := generate(t)
-	sa := map[string]string{
-		"project_id":   "my-project",
-		"private_key":  string(pemData),
-		"client_email": "test@my-project.iam.gserviceaccount.com",
-	}
-	saJSON, _ := json.Marshal(sa)
-
+	key := generate(t)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -94,7 +87,11 @@ func TestFCM_Send(t *testing.T) {
 
 	sender := fcm.New(
 		&http.Client{Timeout: 1 * time.Second},
-		saJSON,
+		fcm.Credentials{
+			ProjectID:   "my-project",
+			ClientEmail: "test@my-project.iam.gserviceaccount.com",
+			PrivateKey:  key,
+		},
 		fcm.WithBaseURL(ts.URL+"/v1"),
 		fcm.WithAuthURL(ts.URL+"/token"),
 		fcm.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),

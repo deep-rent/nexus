@@ -24,9 +24,11 @@
 //
 //	sender := apns.New(
 //		http.DefaultClient,
-//		"ABC123DEFG",
-//		"DEF123GHIJ",
-//		key, // PEM format
+//		apns.Credentials{
+//			KeyID:      "4F92S8D7W1",
+//			TeamID:     "8M349Z7F2A",
+//			PrivateKey: key, // PEM format
+//		},
 //		apns.WithBaseURL(apns.SandboxBaseURL),
 //	)
 //	err := sender.Send(ctx, msg)
@@ -113,25 +115,30 @@ func WithClock(clock func() time.Time) Option {
 	}
 }
 
+// Credentials contains the necessary credentials for authenticating with APNs.
+type Credentials struct {
+	// KeyID specifies the ES256 key ID from your Apple Developer account.
+	KeyID string
+	// TeamID is your Apple team ID.
+	TeamID string
+	// PrivateKey stores the PEM-encoded PKCS#8 private key contents.
+	PrivateKey []byte
+}
+
 // New creates a configured Apple Push Notification Service client implementing
 // the [push.Sender] interface. It requires the ES256 keyID, your Apple teamID,
-// and
-// the PEM-encoded PKCS#8 private key contents.
+// and the PEM-encoded PKCS#8 private key contents.
 func New(
 	client *http.Client,
-	keyID, teamID string,
-	privateKeyPEM []byte,
+	cred Credentials,
 	opts ...Option,
 ) push.Sender {
-	if keyID == "" || teamID == "" {
-		panic("keyID and teamID are required")
-	}
-	signer, err := sign.Decode(privateKeyPEM)
+	signer, err := sign.Decode(cred.PrivateKey)
 	if err != nil {
 		panic(fmt.Errorf("failed to parse APNs private key: %w", err))
 	}
 
-	keyPair := jwk.NewKeyPair(jwa.ES256, keyID, signer)
+	key := jwk.NewKeyPair(jwa.ES256, cred.KeyID, signer)
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
@@ -147,10 +154,10 @@ func New(
 		claims := struct {
 			jwt.Reserved
 		}{
-			Iss: teamID,
+			Iss: cred.TeamID,
 			Iat: cfg.clock(),
 		}
-		tok, err := jwt.Sign(ctx, keyPair, claims)
+		tok, err := jwt.Sign(ctx, key, claims)
 		if err != nil {
 			return "", time.Time{}, err
 		}

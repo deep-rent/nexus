@@ -47,8 +47,7 @@ func generate(t *testing.T) []byte {
 func TestAPNS_Send(t *testing.T) {
 	t.Parallel()
 
-	pemData := generate(t)
-
+	key := generate(t)
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.HasPrefix(r.URL.Path, "/3/device/") {
@@ -69,9 +68,11 @@ func TestAPNS_Send(t *testing.T) {
 
 	sender := apns.New(
 		&http.Client{Timeout: 1 * time.Second},
-		"keyID",
-		"teamID",
-		pemData,
+		apns.Credentials{
+			KeyID:      "keyID",
+			TeamID:     "teamID",
+			PrivateKey: key,
+		},
 		apns.WithBaseURL(ts.URL),
 		apns.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)

@@ -19,12 +19,16 @@
 //
 // # Usage
 //
-// Create a sender by providing the raw contents of your Google Service Account
+// Create a sender by providing the contents of your Google Service Account
 // JSON credentials file.
 //
 //	sender := fcm.New(
 //		http.DefaultClient,
-//		credentials, // Google Service Account JSON
+//		fcm.Credentials{
+//			ProjectID:   "my-project",
+//			ClientEmail: "test@my-project.iam.gserviceaccount.com",
+//			PrivateKey:  string(key), // PEM data
+//		},
 //	)
 //	err := sender.Send(ctx, msg)
 package fcm
@@ -124,12 +128,15 @@ func WithClock(clock func() time.Time) Option {
 	}
 }
 
-// serviceAccount represents the structure of a Google Service Account JSON
-// file.
-type serviceAccount struct {
-	ProjectID   string `json:"project_id"`
-	PrivateKey  string `json:"private_key"`
+// Credentials holds the necessary credentials for authenticating with FCM.
+// It mirrors the JSON-structure of a Google Service Account file.
+type Credentials struct {
+	// ProjectID specifies your Google Cloud project ID.
+	ProjectID string `json:"project_id"`
+	// ClientEmail is the email address of the service account.
 	ClientEmail string `json:"client_email"`
+	// PrivateKey stores the PEM-encoded PKCS#8 private key contents.
+	PrivateKey []byte `json:"private_key"`
 }
 
 // New creates a configured Firebase Cloud Messaging client implementing the
@@ -137,18 +144,10 @@ type serviceAccount struct {
 // Account JSON credentials file.
 func New(
 	client *http.Client,
-	credentials []byte,
+	cred Credentials,
 	opts ...Option,
 ) push.Sender {
-	var sa serviceAccount
-	if err := json.Unmarshal(credentials, &sa); err != nil {
-		panic(fmt.Errorf("failed to parse FCM credentials JSON: %w", err))
-	}
-	if sa.ProjectID == "" || sa.PrivateKey == "" || sa.ClientEmail == "" {
-		panic("credentials JSON is missing required fields")
-	}
-
-	signer, err := sign.Decode([]byte(sa.PrivateKey))
+	signer, err := sign.Decode([]byte(cred.PrivateKey))
 	if err != nil {
 		panic(fmt.Errorf("failed to parse FCM private key: %w", err))
 	}
@@ -174,7 +173,7 @@ func New(
 	}
 
 	s := &Sender{
-		projectID: sa.ProjectID,
+		projectID: cred.ProjectID,
 		url:       cfg.baseURL,
 		logger:    cfg.logger,
 		client:    client,
@@ -189,7 +188,7 @@ func New(
 			Iat   int64  `json:"iat"`
 			Exp   int64  `json:"exp"`
 		}{
-			Iss:   sa.ClientEmail,
+			Iss:   cred.ClientEmail,
 			Scope: DefaultScope,
 			Aud:   cfg.authURL,
 			Iat:   cfg.clock().Unix(),
