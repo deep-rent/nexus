@@ -64,8 +64,11 @@ func (g authCodeGrant) Authorize(
 		}
 	}
 
+	// The store only ever sees the digest of the code.
+	digest := NewDigest(code)
+
 	// Retrieve the authorization code state from the session store.
-	c, err := pro.Sessions.GetAuthCode(ctx, code)
+	c, err := pro.Sessions.GetAuthCode(ctx, digest)
 	if err != nil {
 		return nil, pro.ServerError(
 			ctx,
@@ -85,7 +88,7 @@ func (g authCodeGrant) Authorize(
 
 	// Delete the code immediately to prevent replay attacks. Any failure
 	// past this point intentionally burns the code.
-	if err := pro.Sessions.DeleteAuthCode(ctx, code); err != nil {
+	if err := pro.Sessions.DeleteAuthCode(ctx, digest); err != nil {
 		return nil, pro.ServerError(
 			ctx,
 			"failed to delete authorization code",

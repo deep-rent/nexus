@@ -44,7 +44,7 @@ func TestAuthCodeGrant(t *testing.T) {
 
 	code := func() AuthCode {
 		return AuthCode{
-			Code:                "code-1",
+			Code:                NewDigest("code-1"),
 			ClientID:            clientID,
 			RedirectURI:         "https://app.example.com/callback",
 			Scope:               "read write",
@@ -195,7 +195,7 @@ func TestAuthCodeGrant(t *testing.T) {
 			if !iss.Refreshable {
 				t.Error("issuance should be refreshable")
 			}
-			if _, ok := store.authCodes["code-1"]; ok {
+			if _, ok := store.authCodes[NewDigest("code-1")]; ok {
 				t.Error("authorization code should have been deleted after use")
 			}
 		})
@@ -205,7 +205,7 @@ func TestAuthCodeGrant(t *testing.T) {
 		t.Parallel()
 
 		store := newFakeSessionStore()
-		store.authCodes["code-1"] = code()
+		store.authCodes[NewDigest("code-1")] = code()
 
 		pro := newProposal(client, store, form(), now)
 		if _, err := AuthCodeGrant().Authorize(t.Context(), pro); err != nil {

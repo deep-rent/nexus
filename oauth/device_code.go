@@ -54,7 +54,10 @@ func (g deviceCodeGrant) Authorize(
 		}
 	}
 
-	c, err := pro.Sessions.GetDeviceCode(ctx, code)
+	// The store only ever sees the digest of the code.
+	digest := NewDigest(code)
+
+	c, err := pro.Sessions.GetDeviceCode(ctx, digest)
 	if err != nil {
 		return nil, pro.ServerError(ctx, "failed to retrieve device code", err)
 	}
@@ -79,7 +82,7 @@ func (g deviceCodeGrant) Authorize(
 
 	// Expired codes are of no further use; remove them as a best effort.
 	if c.ExpiresAt != 0 && now > c.ExpiresAt {
-		if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
+		if err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired device code",
@@ -121,7 +124,7 @@ func (g deviceCodeGrant) Authorize(
 		}
 	case DeviceCodeStatusDenied:
 		// The decision is final; remove the code as a best effort.
-		if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
+		if err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete denied device code",
@@ -145,7 +148,7 @@ func (g deviceCodeGrant) Authorize(
 
 	// Delete the code immediately upon successful authorization to
 	// prevent reuse.
-	if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
+	if err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
 		return nil, pro.ServerError(ctx, "failed to delete device code", err)
 	}
 

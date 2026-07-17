@@ -52,8 +52,11 @@ func (g refreshTokenGrant) Authorize(
 		}
 	}
 
+	// The store only ever sees the digest of the token.
+	digest := NewDigest(token)
+
 	// Retrieve the refresh token details from the session store.
-	r, err := pro.Sessions.GetRefreshToken(ctx, token)
+	r, err := pro.Sessions.GetRefreshToken(ctx, digest)
 	if err != nil {
 		return nil, pro.ServerError(
 			ctx,
@@ -74,7 +77,7 @@ func (g refreshTokenGrant) Authorize(
 	// Enforce expiry locally in addition to the store's TTL contract. An
 	// expired token is removed as a best effort.
 	if r.ExpiresAt != 0 && pro.Now().Unix() > r.ExpiresAt {
-		if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
+		if err := pro.Sessions.DeleteRefreshToken(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired refresh token",
@@ -116,7 +119,7 @@ func (g refreshTokenGrant) Authorize(
 
 	// Revoke the old refresh token to ensure rotation security.
 	// New tokens are issued by the [Server] later in the pipeline.
-	if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
+	if err := pro.Sessions.DeleteRefreshToken(ctx, digest); err != nil {
 		return nil, pro.ServerError(
 			ctx,
 			"failed to revoke old refresh token",

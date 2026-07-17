@@ -33,7 +33,7 @@ func TestRefreshTokenGrant(t *testing.T) {
 
 	token := func() RefreshToken {
 		return RefreshToken{
-			Token:     "token-1",
+			Token:     NewDigest("token-1"),
 			ClientID:  clientID,
 			SubjectID: subjectID,
 			Scope:     "read write",
@@ -149,7 +149,7 @@ func TestRefreshTokenGrant(t *testing.T) {
 			if !iss.Refreshable {
 				t.Error("issuance should be refreshable")
 			}
-			if _, ok := store.refreshTokens["token-1"]; ok {
+			if _, ok := store.refreshTokens[NewDigest("token-1")]; ok {
 				t.Error("refresh token should have been rotated out")
 			}
 		})
@@ -159,7 +159,7 @@ func TestRefreshTokenGrant(t *testing.T) {
 		t.Parallel()
 
 		store := newFakeSessionStore()
-		store.refreshTokens["token-1"] = token()
+		store.refreshTokens[NewDigest("token-1")] = token()
 
 		data := url.Values{"refresh_token": {"token-1"}}
 

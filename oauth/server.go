@@ -331,8 +331,14 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 			http.MethodGet+" "+prefix+PathExternalLogin,
 			s.ExternalLogin,
 		)
+		// Callbacks arrive as GET (query response mode) or POST (form_post
+		// response mode, e.g. Sign in with Apple).
 		r.HandleFunc(
 			http.MethodGet+" "+prefix+PathExternalCallback,
+			s.ExternalCallback,
+		)
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathExternalCallback,
 			s.ExternalCallback,
 		)
 	}
@@ -814,7 +820,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 	if err := s.sessions.CreateAuthCode(
 		e.Context(),
 		AuthCode{
-			Code:                code,
+			Code:                NewDigest(code),
 			ClientID:            client.ID(),
 			RedirectURI:         redirectURI,
 			Scope:               scope,
@@ -960,7 +966,7 @@ func (s *Server) token(e *router.Exchange) error {
 		}
 
 		if err := s.sessions.CreateRefreshToken(e.Context(), RefreshToken{
-			Token:     token,
+			Token:     NewDigest(token),
 			ClientID:  clientID,
 			SubjectID: iss.Subject,
 			Scope:     iss.Scope,
@@ -1005,8 +1011,11 @@ func (s *Server) revoke(e *router.Exchange) error {
 		}
 	}
 
+	// The store only ever sees the digest of the token.
+	digest := NewDigest(token)
+
 	// Validate token ownership before revocation per RFC 7009 Section 2.1
-	r, err := s.sessions.GetRefreshToken(e.Context(), token)
+	r, err := s.sessions.GetRefreshToken(e.Context(), digest)
 	if err != nil {
 		return s.serverError(e.Context(), "failed to retrieve token", err)
 	}
@@ -1016,7 +1025,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 		return nil
 	}
 
-	if err := s.sessions.DeleteRefreshToken(e.Context(), token); err != nil {
+	if err := s.sessions.DeleteRefreshToken(e.Context(), digest); err != nil {
 		s.logger.ErrorContext(
 			e.Context(),
 			"Failed to delete refresh token during revocation",
@@ -1087,8 +1096,8 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 	interval := int64(s.devicePollInterval.Seconds())
 
 	if err := s.sessions.CreateDeviceCode(e.Context(), DeviceCode{
-		DeviceCode: deviceCode,
-		UserCode:   userCode,
+		DeviceCode: NewDigest(deviceCode),
+		UserCode:   NewDigest(userCode),
 		ClientID:   pro.Client.ID(),
 		Scope:      scope,
 		Status:     DeviceCodeStatusPending,
@@ -1137,7 +1146,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 
 	code, err := s.sessions.GetDeviceCodeByUserCode(
 		e.Context(),
-		normalizeUserCode(req.UserCode),
+		NewDigest(normalizeUserCode(req.UserCode)),
 	)
 	if err != nil {
 		return s.internalError(

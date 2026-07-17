@@ -225,6 +225,37 @@ func TestExternalFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("form post callback", func(t *testing.T) {
+		t.Parallel()
+		env := newEnv(t, &fakeIDP{identity: Claimant{Subject: "ext-123"}})
+
+		cookie, state := login(t, env)
+
+		// Sign in with Apple delivers the callback as a cross-site POST
+		// carrying the state in the form body (response_mode=form_post).
+		form := url.Values{"state": {state}, "code": {"abc"}}
+		req := httptest.NewRequest(
+			http.MethodPost,
+			testPrefix+"/callback/acme",
+			strings.NewReader(form.Encode()),
+		)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(cookie)
+
+		w := env.do(req)
+		if w.Code != http.StatusFound {
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusFound,
+				w.Body,
+			)
+		}
+		if session := sessionCookie(w); session == nil || session.Value == "" {
+			t.Fatal("missing session cookie")
+		}
+	})
+
 	t.Run("state mismatch redirects to login terminal", func(t *testing.T) {
 		t.Parallel()
 		env := newEnv(t, &fakeIDP{identity: Claimant{Subject: "ext-123"}})

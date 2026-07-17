@@ -126,7 +126,13 @@ func (s *Server) ExternalLogin(e *router.Exchange) error {
 		return s.internalError(e.Context(), "failed to generate state", err)
 	}
 
-	e.SetCookie(s.newCookie(s.stateCookieName, state, 300))
+	// Some providers (e.g., Sign in with Apple) deliver the callback as a
+	// cross-site POST (response_mode=form_post). Lax cookies are not sent on
+	// cross-site POST requests, so the short-lived state cookie must opt out
+	// of same-site enforcement.
+	cookie := s.newCookie(s.stateCookieName, state, 300)
+	cookie.SameSite = http.SameSiteNoneMode
+	e.SetCookie(cookie)
 
 	authURL, err := idp.AuthURL(e.Context(), state)
 	if err != nil {
@@ -198,8 +204,10 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 	// Clear the state cookie immediately to prevent replay attacks.
 	e.SetCookie(s.newCookie(s.stateCookieName, "", -1))
 
-	queryState := e.Query().Get("state")
-	if queryState != cookie.Value {
+	// FormValue transparently covers both query-mode (GET) and form_post
+	// (POST) callback responses.
+	state := e.R.FormValue("state")
+	if state != cookie.Value {
 		return &router.Error{
 			Status:      http.StatusBadRequest,
 			Reason:      router.ReasonValidationFailed,

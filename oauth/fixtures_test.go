@@ -194,23 +194,23 @@ var _ SubjectStore = (*fakeSubjectStore)(nil)
 
 // fakeSessionStore is an in-memory [SessionStore].
 type fakeSessionStore struct {
-	authCodes     map[string]AuthCode
-	refreshTokens map[string]RefreshToken
-	deviceCodes   map[string]DeviceCode
+	authCodes     map[Digest]AuthCode
+	refreshTokens map[Digest]RefreshToken
+	deviceCodes   map[Digest]DeviceCode
 	err           error
 }
 
 func newFakeSessionStore() *fakeSessionStore {
 	return &fakeSessionStore{
-		authCodes:     make(map[string]AuthCode),
-		refreshTokens: make(map[string]RefreshToken),
-		deviceCodes:   make(map[string]DeviceCode),
+		authCodes:     make(map[Digest]AuthCode),
+		refreshTokens: make(map[Digest]RefreshToken),
+		deviceCodes:   make(map[Digest]DeviceCode),
 	}
 }
 
 func (s *fakeSessionStore) GetAuthCode(
 	_ context.Context,
-	code string,
+	code Digest,
 ) (AuthCode, error) {
 	if s.err != nil {
 		return AuthCode{}, s.err
@@ -231,7 +231,7 @@ func (s *fakeSessionStore) CreateAuthCode(
 
 func (s *fakeSessionStore) DeleteAuthCode(
 	_ context.Context,
-	code string,
+	code Digest,
 ) error {
 	if s.err != nil {
 		return s.err
@@ -242,7 +242,7 @@ func (s *fakeSessionStore) DeleteAuthCode(
 
 func (s *fakeSessionStore) GetRefreshToken(
 	_ context.Context,
-	token string,
+	token Digest,
 ) (RefreshToken, error) {
 	if s.err != nil {
 		return RefreshToken{}, s.err
@@ -263,7 +263,7 @@ func (s *fakeSessionStore) CreateRefreshToken(
 
 func (s *fakeSessionStore) DeleteRefreshToken(
 	_ context.Context,
-	token string,
+	token Digest,
 ) error {
 	if s.err != nil {
 		return s.err
@@ -274,7 +274,7 @@ func (s *fakeSessionStore) DeleteRefreshToken(
 
 func (s *fakeSessionStore) GetDeviceCode(
 	_ context.Context,
-	code string,
+	code Digest,
 ) (DeviceCode, error) {
 	if s.err != nil {
 		return DeviceCode{}, s.err
@@ -284,7 +284,7 @@ func (s *fakeSessionStore) GetDeviceCode(
 
 func (s *fakeSessionStore) GetDeviceCodeByUserCode(
 	_ context.Context,
-	userCode string,
+	userCode Digest,
 ) (DeviceCode, error) {
 	if s.err != nil {
 		return DeviceCode{}, s.err
@@ -321,7 +321,7 @@ func (s *fakeSessionStore) UpdateDeviceCode(
 
 func (s *fakeSessionStore) DeleteDeviceCode(
 	_ context.Context,
-	code string,
+	code Digest,
 ) error {
 	if s.err != nil {
 		return s.err

@@ -33,8 +33,8 @@ func TestDeviceCodeGrant(t *testing.T) {
 
 	code := func(status DeviceCodeStatus) DeviceCode {
 		return DeviceCode{
-			DeviceCode: "device-1",
-			UserCode:   "BCDF-GHJK",
+			DeviceCode: NewDigest("device-1"),
+			UserCode:   NewDigest("BCDF-GHJK"),
 			ClientID:   clientID,
 			SubjectID:  subjectID,
 			Scope:      "read",
@@ -149,7 +149,7 @@ func TestDeviceCodeGrant(t *testing.T) {
 			iss, err := DeviceCodeGrant().Authorize(t.Context(), pro)
 
 			if tt.wantDelete {
-				if _, ok := store.deviceCodes["device-1"]; ok {
+				if _, ok := store.deviceCodes[NewDigest("device-1")]; ok {
 					t.Error("device code should have been deleted")
 				}
 			}
@@ -185,7 +185,7 @@ func TestDeviceCodeGrant(t *testing.T) {
 		t.Parallel()
 
 		store := newFakeSessionStore()
-		store.deviceCodes["device-1"] = code(DeviceCodeStatusPending)
+		store.deviceCodes[NewDigest("device-1")] = code(DeviceCodeStatusPending)
 
 		pro := newProposal(client, store, form, now)
 		_, err := DeviceCodeGrant().Authorize(t.Context(), pro)
@@ -197,7 +197,7 @@ func TestDeviceCodeGrant(t *testing.T) {
 			)
 		}
 
-		if got := store.deviceCodes["device-1"].LastPolledAt; got != now.Unix() {
+		if got := store.deviceCodes[NewDigest("device-1")].LastPolledAt; got != now.Unix() {
 			t.Errorf("got last polled at %d; want %d", got, now.Unix())
 		}
 

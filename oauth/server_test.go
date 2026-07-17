@@ -749,8 +749,8 @@ func TestRevoke(t *testing.T) {
 	t.Run("own token", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.refreshTokens["token-1"] = RefreshToken{
-			Token:     "token-1",
+		env.sessions.refreshTokens[NewDigest("token-1")] = RefreshToken{
+			Token:     NewDigest("token-1"),
 			ClientID:  env.client.id,
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
 		}
@@ -762,7 +762,7 @@ func TestRevoke(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
 		}
-		if _, ok := env.sessions.refreshTokens["token-1"]; ok {
+		if _, ok := env.sessions.refreshTokens[NewDigest("token-1")]; ok {
 			t.Error("refresh token should have been revoked")
 		}
 	})
@@ -770,8 +770,8 @@ func TestRevoke(t *testing.T) {
 	t.Run("foreign token", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.refreshTokens["token-2"] = RefreshToken{
-			Token:     "token-2",
+		env.sessions.refreshTokens[NewDigest("token-2")] = RefreshToken{
+			Token:     NewDigest("token-2"),
 			ClientID:  uuid.New(), // some other client
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
 		}
@@ -784,7 +784,7 @@ func TestRevoke(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
 		}
-		if _, ok := env.sessions.refreshTokens["token-2"]; !ok {
+		if _, ok := env.sessions.refreshTokens[NewDigest("token-2")]; !ok {
 			t.Error("foreign refresh token should not have been revoked")
 		}
 	})
@@ -864,7 +864,7 @@ func TestDeviceFlow(t *testing.T) {
 		)
 	}
 
-	stored := env.sessions.deviceCodes[res.DeviceCode]
+	stored := env.sessions.deviceCodes[NewDigest(res.DeviceCode)]
 	if stored.Status != DeviceCodeStatusAuthorized {
 		t.Fatalf(
 			"got status %q; want %q",
@@ -889,7 +889,7 @@ func TestDeviceFlow(t *testing.T) {
 	if claims.Sub != env.subject.id {
 		t.Errorf("got sub %v; want %v", claims.Sub, env.subject.id)
 	}
-	if _, ok := env.sessions.deviceCodes[res.DeviceCode]; ok {
+	if _, ok := env.sessions.deviceCodes[NewDigest(res.DeviceCode)]; ok {
 		t.Error("device code should have been deleted after issuance")
 	}
 }
@@ -941,9 +941,9 @@ func TestDeviceVerifyErrors(t *testing.T) {
 	t.Run("already decided", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.deviceCodes["device-1"] = DeviceCode{
-			DeviceCode: "device-1",
-			UserCode:   "BCDF-GHJK",
+		env.sessions.deviceCodes[NewDigest("device-1")] = DeviceCode{
+			DeviceCode: NewDigest("device-1"),
+			UserCode:   NewDigest("BCDF-GHJK"),
 			ClientID:   env.client.id,
 			Status:     DeviceCodeStatusAuthorized,
 			ExpiresAt:  env.now.Add(10 * time.Minute).Unix(),

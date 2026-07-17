@@ -65,6 +65,7 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"log/slog"
 	"net/http"
@@ -205,13 +206,30 @@ type SubjectStore interface {
 	DeleteSession(ctx context.Context, key string) error
 }
 
+// Digest is the SHA-256 fingerprint of a bearer artifact (authorization
+// code, refresh token, device code, or user code), encoded as an unpadded
+// base64url string.
+//
+// The [Server] hashes every artifact before it crosses the [SessionStore]
+// boundary, so implementations never see plaintext bearer secrets: a leaked
+// datastore cannot be replayed against the server. Implementations should
+// treat digests as opaque keys and persist them as-is.
+type Digest string
+
+// NewDigest computes the [Digest] of the given artifact value.
+func NewDigest(value string) Digest {
+	sum := sha256.Sum256([]byte(value))
+	return Digest(base64.RawURLEncoding.EncodeToString(sum[:]))
+}
+
 // AuthCode holds the temporary state bound to an authorization code.
 //
 // These objects should have a short lifespan (usually 1–10 minutes) and
 // must be deleted immediately after a single use to prevent replay attacks.
 type AuthCode struct {
-	// Code is the unique, high-entropy string sent to the client.
-	Code string `json:"code"`
+	// Code is the digest of the high-entropy code sent to the client. The
+	// plaintext value never reaches the store.
+	Code Digest `json:"code"`
 	// ClientID is the ID of the client that requested the code.
 	ClientID uuid.UUID `json:"client_id"`
 	// RedirectURI is the URI provided during the initial authorization
@@ -237,8 +255,9 @@ type AuthCode struct {
 // re-authenticating the subject. They generally have a much longer
 // lifespan than authorization codes.
 type RefreshToken struct {
-	// Token is the unique, high-entropy string representing the refresh token.
-	Token string `json:"token"`
+	// Token is the digest of the high-entropy refresh token issued to the
+	// client. The plaintext value never reaches the store.
+	Token Digest `json:"token"`
 	// ClientID is the identifier of the client authorized to use this token.
 	ClientID uuid.UUID `json:"client_id"`
 	// SubjectID identifies the subject who authorized the initial request.
@@ -278,11 +297,12 @@ const (
 // longer period until the resource owner completes the authorization on a
 // separate device.
 type DeviceCode struct {
-	// DeviceCode is the unique, high-entropy string polled by the client.
-	DeviceCode string `json:"device_code"`
-	// UserCode is the short, user-friendly string entered by the resource
-	// owner.
-	UserCode string `json:"user_code"`
+	// DeviceCode is the digest of the high-entropy code polled by the client.
+	// The plaintext value never reaches the store.
+	DeviceCode Digest `json:"device_code"`
+	// UserCode is the digest of the short, user-friendly code entered by the
+	// resource owner. The plaintext value never reaches the store.
+	UserCode Digest `json:"user_code"`
 	// ClientID is the ID of the client that requested the code.
 	ClientID uuid.UUID `json:"client_id"`
 	// SubjectID is the unique identifier of the authenticated resource owner.
@@ -309,18 +329,16 @@ type DeviceCode struct {
 // Implementations must handle the lifecycle of authorization codes and
 // refresh tokens. These artifacts usually have a limited TTL.
 //
-// Security note: The artifact values (authorization codes, refresh tokens,
-// and device codes) are bearer secrets. Implementations are encouraged to
-// persist only a cryptographic digest of these values and perform lookups
-// against the digest, so that a leaked datastore does not expose usable
-// credentials.
+// All artifacts are keyed by their [Digest]; the [Server] hashes plaintext
+// values before every store interaction. Implementations therefore never
+// handle bearer secrets and can persist digests directly as primary keys.
 type SessionStore interface {
-	// GetAuthCode retrieves an authorization code by its value.
+	// GetAuthCode retrieves an authorization code by its digest.
 	//
 	// If found, it must return the data and nil.
 	// If not found or expired, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
-	GetAuthCode(ctx context.Context, code string) (AuthCode, error)
+	GetAuthCode(ctx context.Context, code Digest) (AuthCode, error)
 	// CreateAuthCode stores a new authorization code.
 	//
 	// It should return an error only if the persistence operation fails.
@@ -329,38 +347,38 @@ type SessionStore interface {
 	// ensure single-use of authorization codes, thus preventing replay attacks.
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteAuthCode(ctx context.Context, code string) error
-	// GetRefreshToken retrieves a refresh token by its value.
+	DeleteAuthCode(ctx context.Context, code Digest) error
+	// GetRefreshToken retrieves a refresh token by its digest.
 	//
 	// If found, it must return the data and nil.
 	// If not found or expired, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
-	GetRefreshToken(ctx context.Context, token string) (RefreshToken, error)
+	GetRefreshToken(ctx context.Context, token Digest) (RefreshToken, error)
 	// CreateRefreshToken stores a new refresh token.
 	//
 	// It should return an error only if the persistence operation fails.
 	CreateRefreshToken(ctx context.Context, data RefreshToken) error
-	// DeleteRefreshToken removes a refresh token (e.g., during recovation or
+	// DeleteRefreshToken removes a refresh token (e.g., during revocation or
 	// rotation).
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteRefreshToken(ctx context.Context, token string) error
-	// GetDeviceCode retrieves a device code by its value.
+	DeleteRefreshToken(ctx context.Context, token Digest) error
+	// GetDeviceCode retrieves a device code by its digest.
 	//
 	// If found, it must return the data and nil.
 	// If not found, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
-	GetDeviceCode(ctx context.Context, code string) (DeviceCode, error)
-	// GetDeviceCodeByUserCode retrieves a device code by its associated
-	// user code. It is used by the verification endpoint where the resource
-	// owner enters the user code displayed on the device.
+	GetDeviceCode(ctx context.Context, code Digest) (DeviceCode, error)
+	// GetDeviceCodeByUserCode retrieves a device code by the digest of its
+	// associated user code. It is used by the verification endpoint where the
+	// resource owner enters the user code displayed on the device.
 	//
 	// If found, it must return the data and nil.
 	// If not found, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
 	GetDeviceCodeByUserCode(
 		ctx context.Context,
-		userCode string,
+		userCode Digest,
 	) (DeviceCode, error)
 	// CreateDeviceCode stores a new device code.
 	//
@@ -372,10 +390,10 @@ type SessionStore interface {
 	//
 	// It should return an error only if the persistence operation fails.
 	UpdateDeviceCode(ctx context.Context, data DeviceCode) error
-	// DeleteDeviceCode removes a device code.
+	// DeleteDeviceCode removes a device code by its digest.
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteDeviceCode(ctx context.Context, code string) error
+	DeleteDeviceCode(ctx context.Context, code Digest) error
 }
 
 const (
