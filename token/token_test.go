@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deep-rent/nexus/schedule"
 	"github.com/deep-rent/nexus/token"
 )
 
@@ -124,5 +125,37 @@ func TestSource_Get_Error(t *testing.T) {
 	_, err := source.Get(t.Context())
 	if !errors.Is(err, wantErr) {
 		t.Errorf("got %v, want %v", err, wantErr)
+	}
+}
+
+func TestSource_WithScheduler(t *testing.T) {
+	t.Parallel()
+
+	var fetches atomic.Int32
+	fetch := func(ctx context.Context) (string, time.Time, error) {
+		fetches.Add(1)
+		return "foobar", time.Now().Add(10 * time.Millisecond), nil
+	}
+
+	sched := schedule.Once(t.Context())
+
+	source := token.NewSource(fetch,
+		token.WithBufferTime(5*time.Millisecond),
+		token.WithScheduler(sched),
+	)
+
+	// The first tick should have triggered a fetch because the expiration time
+	// is zero.
+	if exp, act := int32(1), fetches.Load(); exp != act {
+		t.Fatalf("expected %d fetches after scheduler init, got %d", exp, act)
+	}
+
+	// Subsequent calls should return the fetched token.
+	tok, err := source.Get(t.Context())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tok != "foobar" {
+		t.Errorf("got %q, want foobar", tok)
 	}
 }

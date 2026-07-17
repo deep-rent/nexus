@@ -44,6 +44,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
+
+	"github.com/deep-rent/nexus/schedule"
 )
 
 // DefaultBufferTime is the default duration to preemptively refresh tokens.
@@ -58,23 +60,38 @@ type Fetcher func(ctx context.Context) (string, time.Time, error)
 type config struct {
 	buf   time.Duration
 	clock func() time.Time
+	sched schedule.Scheduler
 }
 
 // Option modifies the token cache configuration.
 type Option func(*config)
 
 // WithBufferTime sets a custom buffer time for proactive token refreshing.
-// If not specified, DefaultBufferTime is used.
+// If not specified or nonpositive, [DefaultBufferTime] is used.
 func WithBufferTime(d time.Duration) Option {
 	return func(c *config) {
-		c.buf = d
+		if d > 0 {
+			c.buf = d
+		}
 	}
 }
 
 // WithClock injects a custom clock function, primarily used for testing.
+// If not provided, [time.Now] is used; nil values will be ignored.
 func WithClock(clock func() time.Time) Option {
 	return func(c *config) {
-		c.clock = clock
+		if clock != nil {
+			c.clock = clock
+		}
+	}
+}
+
+// WithScheduler configures the Source to eagerly fetch and proactively refresh
+// tokens in the background using the provided scheduler. If not provided,
+// tokens are refreshed synchronously during the Get call.
+func WithScheduler(sched schedule.Scheduler) Option {
+	return func(c *config) {
+		c.sched = sched
 	}
 }
 
@@ -89,12 +106,10 @@ type Source struct {
 	tok string
 	exp time.Time
 
-	group singleflight.Group
+	grp singleflight.Group
 }
 
-// NewSource creates a new token cache. The provided buffer duration is
-// subtracted from the token's actual expiration time to proactively trigger a
-// refresh before the token is rejected by the server.
+// NewSource creates a new token cache around the given [Fetcher].
 func NewSource(fetch Fetcher, opts ...Option) *Source {
 	cfg := config{
 		buf:   DefaultBufferTime,
@@ -104,11 +119,17 @@ func NewSource(fetch Fetcher, opts ...Option) *Source {
 		opt(&cfg)
 	}
 
-	return &Source{
+	src := &Source{
 		fetch: fetch,
 		buf:   cfg.buf,
 		clock: cfg.clock,
 	}
+
+	if s := cfg.sched; s != nil {
+		s.Dispatch(schedule.TickFn(src.refresh))
+	}
+
+	return src
 }
 
 // Get returns the current valid token, or fetches a new one if it is missing or
@@ -123,7 +144,11 @@ func (s *Source) Get(ctx context.Context) (string, error) {
 	}
 	s.mu.RUnlock()
 
-	ch := s.group.DoChan("fetch", func() (interface{}, error) {
+	return s.get(ctx)
+}
+
+func (s *Source) get(ctx context.Context) (string, error) {
+	ch := s.grp.DoChan("fetch", func() (any, error) {
 		tok, exp, err := s.fetch(ctx)
 		if err != nil {
 			return "", err
@@ -146,4 +171,28 @@ func (s *Source) Get(ctx context.Context) (string, error) {
 		}
 		return res.Val.(string), nil
 	}
+}
+
+// refresh is a background job that periodically fetches the token just before
+// it expires.
+func (s *Source) refresh(ctx context.Context) time.Duration {
+	s.mu.RLock()
+	exp := s.exp
+	s.mu.RUnlock()
+
+	now := s.clock()
+	refreshAt := exp.Add(-s.buf)
+
+	if exp.IsZero() || !now.Before(refreshAt) {
+		_, err := s.get(ctx)
+		if err != nil {
+			// On error, wait a short backoff before retrying.
+			return 5 * time.Second
+		}
+		// Trigger immediately to recalculate wait time based on the new
+		// expiration time.
+		return 0
+	}
+
+	return refreshAt.Sub(now)
 }
