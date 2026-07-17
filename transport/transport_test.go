@@ -105,6 +105,39 @@ func TestNewClient_WithOptions(t *testing.T) {
 	}
 }
 
+func TestNewClient_WithZeroTimeout(t *testing.T) {
+	client := NewClient(WithTimeout(0))
+
+	if client.Timeout != 0 {
+		t.Errorf("expected timeout to be 0, got %v", client.Timeout)
+	}
+}
+
+func TestNewClient_WithNegativeOptions(t *testing.T) {
+	client := NewClient(
+		WithTimeout(-10*time.Second),
+		WithMaxIdleConns(-200),
+		WithMaxIdleConnsPerHost(-50),
+	)
+
+	if client.Timeout != 5*time.Second {
+		t.Errorf("expected timeout to be default 5s, got %v", client.Timeout)
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected transport to be *http.Transport, got %T", client.Transport)
+	}
+
+	if tr.MaxIdleConns != 100 {
+		t.Errorf("expected MaxIdleConns to be default 100, got %d", tr.MaxIdleConns)
+	}
+
+	if tr.MaxIdleConnsPerHost != 100 {
+		t.Errorf("expected MaxIdleConnsPerHost to be default 100, got %d", tr.MaxIdleConnsPerHost)
+	}
+}
+
 func TestNewClient_WithHeadersAndRetry(t *testing.T) {
 	client := NewClient(
 		WithHeader(header.New("X-Test", "true")),
