@@ -78,7 +78,7 @@ var _ push.Sender = (*Sender)(nil)
 type config struct {
 	baseURL string
 	logger  *slog.Logger
-	clock   func() time.Time
+	now     func() time.Time
 }
 
 // Option defines the functional option pattern for configuring the APNs sender.
@@ -107,10 +107,10 @@ func WithLogger(logger *slog.Logger) Option {
 
 // WithClock injects a custom clock function for JWT generation and caching.
 // Nil values are ignored.
-func WithClock(clock func() time.Time) Option {
+func WithClock(now func() time.Time) Option {
 	return func(cfg *config) {
-		if clock != nil {
-			cfg.clock = clock
+		if now != nil {
+			cfg.now = now
 		}
 	}
 }
@@ -144,7 +144,7 @@ func New(
 	cfg := config{
 		baseURL: DefaultBaseURL,
 		logger:  slog.Default(),
-		clock:   time.Now,
+		now:     time.Now,
 	}
 
 	for _, opt := range opts {
@@ -156,7 +156,7 @@ func New(
 			jwt.Reserved
 		}{
 			Iss: cred.TeamID,
-			Iat: cfg.clock(),
+			Iat: cfg.now(),
 		}
 		tok, err := jwt.Sign(ctx, key, claims)
 		if err != nil {
@@ -164,13 +164,13 @@ func New(
 		}
 		// Apple allows tokens to be used between 20 and 60 minutes so we
 		// settle in the middle.
-		return string(tok), cfg.clock().Add(45 * time.Minute), nil
+		return string(tok), cfg.now().Add(45 * time.Minute), nil
 	}
 
 	source := token.NewSource(
 		fetch,
 		token.WithBufferTime(5*time.Minute),
-		token.WithClock(cfg.clock),
+		token.WithClock(cfg.now),
 	)
 
 	s := &Sender{
@@ -178,7 +178,7 @@ func New(
 		url:    cfg.baseURL,
 		logger: cfg.logger,
 		client: client,
-		clock:  cfg.clock,
+		clock:  cfg.now,
 	}
 
 	return s

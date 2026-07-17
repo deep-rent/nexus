@@ -63,7 +63,7 @@ type Fetcher func(ctx context.Context) (string, time.Time, error)
 // config defines the configuration options for a [Source].
 type config struct {
 	buf   time.Duration
-	clock func() time.Time
+	now   func() time.Time
 	sched schedule.Scheduler
 }
 
@@ -82,10 +82,10 @@ func WithBufferTime(d time.Duration) Option {
 
 // WithClock injects a custom clock function, primarily used for testing.
 // If not provided, [time.Now] is used; nil values will be ignored.
-func WithClock(clock func() time.Time) Option {
+func WithClock(now func() time.Time) Option {
 	return func(c *config) {
-		if clock != nil {
-			c.clock = clock
+		if now != nil {
+			c.now = now
 		}
 	}
 }
@@ -104,7 +104,7 @@ func WithScheduler(sched schedule.Scheduler) Option {
 type Source struct {
 	fetch Fetcher
 	buf   time.Duration
-	clock func() time.Time
+	now   func() time.Time
 
 	mu  sync.RWMutex
 	tok string
@@ -116,8 +116,8 @@ type Source struct {
 // NewSource creates a new token cache around the given [Fetcher].
 func NewSource(fetch Fetcher, opts ...Option) *Source {
 	cfg := config{
-		buf:   DefaultBufferTime,
-		clock: time.Now,
+		buf: DefaultBufferTime,
+		now: time.Now,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -126,7 +126,7 @@ func NewSource(fetch Fetcher, opts ...Option) *Source {
 	src := &Source{
 		fetch: fetch,
 		buf:   cfg.buf,
-		clock: cfg.clock,
+		now:   cfg.now,
 	}
 
 	if s := cfg.sched; s != nil {
@@ -141,7 +141,7 @@ func NewSource(fetch Fetcher, opts ...Option) *Source {
 func (s *Source) Get(ctx context.Context) (string, error) {
 	s.mu.RLock()
 	// Consider the token expired if we are within the buffer window.
-	if s.tok != "" && s.clock().Add(s.buf).Before(s.exp) {
+	if s.tok != "" && s.now().Add(s.buf).Before(s.exp) {
 		tok := s.tok
 		s.mu.RUnlock()
 		return tok, nil
@@ -185,7 +185,7 @@ func (s *Source) refresh(ctx context.Context) time.Duration {
 	exp := s.exp
 	s.mu.RUnlock()
 
-	now := s.clock()
+	now := s.now()
 	refreshAt := exp.Add(-s.buf)
 
 	if exp.IsZero() || !now.Before(refreshAt) {

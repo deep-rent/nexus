@@ -73,7 +73,7 @@ type Sender struct {
 	url       string
 	client    *http.Client
 	logger    *slog.Logger
-	clock     func() time.Time
+	now       func() time.Time
 }
 
 var _ push.Sender = (*Sender)(nil)
@@ -82,7 +82,7 @@ type config struct {
 	baseURL string
 	authURL string
 	logger  *slog.Logger
-	clock   func() time.Time
+	now     func() time.Time
 }
 
 // Option defines the functional option pattern for configuring the FCM sender.
@@ -120,10 +120,10 @@ func WithLogger(logger *slog.Logger) Option {
 
 // WithClock injects a custom clock function for JWT generation and caching.
 // Nil values are ignored.
-func WithClock(clock func() time.Time) Option {
+func WithClock(now func() time.Time) Option {
 	return func(cfg *config) {
-		if clock != nil {
-			cfg.clock = clock
+		if now != nil {
+			cfg.now = now
 		}
 	}
 }
@@ -165,7 +165,7 @@ func New(
 		baseURL: DefaultBaseURL,
 		authURL: DefaultAuthURL,
 		logger:  slog.Default(),
-		clock:   time.Now,
+		now:     time.Now,
 	}
 
 	for _, opt := range opts {
@@ -177,7 +177,7 @@ func New(
 		url:       cfg.baseURL,
 		logger:    cfg.logger,
 		client:    client,
-		clock:     cfg.clock,
+		now:       cfg.now,
 	}
 
 	fetch := func(ctx context.Context) (string, time.Time, error) {
@@ -191,8 +191,8 @@ func New(
 			Iss:   cred.ClientEmail,
 			Scope: DefaultScope,
 			Aud:   cfg.authURL,
-			Iat:   cfg.clock().Unix(),
-			Exp:   cfg.clock().Add(time.Hour).Unix(),
+			Iat:   cfg.now().Unix(),
+			Exp:   cfg.now().Add(time.Hour).Unix(),
 		}
 
 		assertion, err := jwt.Sign(ctx, key, claims)
@@ -254,14 +254,14 @@ func New(
 			)
 		}
 
-		return grant.AccessToken, cfg.clock().
+		return grant.AccessToken, cfg.now().
 				Add(time.Duration(grant.ExpiresIn) * time.Second),
 			nil
 	}
 	s.source = token.NewSource(
 		fetch,
 		token.WithBufferTime(60*time.Second),
-		token.WithClock(cfg.clock),
+		token.WithClock(cfg.now),
 	)
 
 	return s
@@ -317,7 +317,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 
 	if msg.TTL > 0 {
 		android["ttl"] = fmt.Sprintf("%ds", int(msg.TTL.Seconds()))
-		exp := s.clock().Add(msg.TTL).Unix()
+		exp := s.now().Add(msg.TTL).Unix()
 		headers["apns-expiration"] = fmt.Sprintf("%d", exp)
 	}
 
@@ -362,12 +362,12 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		slog.Any("target", msg.Target),
 	)
 
-	start := s.clock()
+	start := s.now()
 	res, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	delta := s.clock().Sub(start)
+	delta := s.now().Sub(start)
 
 	defer func() {
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
