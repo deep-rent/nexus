@@ -70,9 +70,9 @@ type Target[Tx any] struct {
 	InTx func(t *testing.T, fn func(ctx context.Context, tx Tx) error)
 	// SeedUser registers a user and returns its id, satisfying the foreign
 	// keys of a real driver. It is a no-op allocator on the mock.
-	SeedUser func(t *testing.T) string
+	SeedUser func(t *testing.T) uuid.UUID
 	// SeedTeam registers a team and returns its id.
-	SeedTeam func(t *testing.T) string
+	SeedTeam func(t *testing.T) uuid.UUID
 	// Caps advertises optional reference-driver behaviors.
 	Caps Caps
 }
@@ -118,13 +118,13 @@ type harness[Tx any] struct {
 }
 
 // user registers a fresh user and returns its id.
-func (h *harness[Tx]) user() string { return h.tg.SeedUser(h.t) }
+func (h *harness[Tx]) user() uuid.UUID { return h.tg.SeedUser(h.t) }
 
 // team registers a fresh team and returns its id.
-func (h *harness[Tx]) team() string { return h.tg.SeedTeam(h.t) }
+func (h *harness[Tx]) team() uuid.UUID { return h.tg.SeedTeam(h.t) }
 
 // scope builds an authorization scope from a user and its teams.
-func scope(user string, teams ...string) diff.Scope {
+func scope(user uuid.UUID, teams ...uuid.UUID) diff.Scope {
 	return diff.Scope{UserID: user, Teams: teams}
 }
 
@@ -278,8 +278,8 @@ func (h *harness[Tx]) wantAbsent(
 // the given marker.
 func upsertOp(
 	id uuid.UUID,
-	owner string,
-	team string,
+	owner uuid.UUID,
+	team uuid.UUID,
 	time diff.Stamp,
 	data string,
 ) diff.Op {
@@ -294,8 +294,8 @@ func upsertOp(
 // deleteOp builds a delete operation.
 func deleteOp(
 	id uuid.UUID,
-	owner string,
-	team string,
+	owner uuid.UUID,
+	team uuid.UUID,
 	time diff.Stamp,
 ) diff.Op {
 	return diff.Op{

@@ -213,12 +213,12 @@ func (s *Server) introspect(e *router.Exchange) error {
 	} else {
 		res = IntrospectionResponse{
 			Active:   true,
-			ClientID: claims.Azp,
+			ClientID: claims.Azp.String(),
 			Scope:    claims.Scope.String(),
 			Jti:      claims.Jti,
 			Iss:      claims.Iss,
 			Aud:      claims.Aud,
-			Sub:      claims.Sub,
+			Sub:      claims.Sub.String(),
 			Iat:      UnixTime{claims.IssuedAt()},
 			Exp:      UnixTime{claims.ExpiresAt()},
 			Nbf:      UnixTime{claims.NotBefore()},

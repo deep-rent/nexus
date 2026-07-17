@@ -83,7 +83,7 @@ func TestTable_WithTableSchema(t *testing.T) {
 	scope := scopeOf(owner)
 	id := uuid.NewV7()
 	applyUpserts(t, s, things, scope,
-		upsertOp(id, owner, "", 10, assetDoc(id, 1)))
+		upsertOp(id, owner, uuid.Nil(), 10, assetDoc(id, 1)))
 
 	got := fetchAll(t, s, things, scope)
 	if len(got) != 1 || got[0].ID != id {
@@ -168,7 +168,7 @@ func TestStore_Mutate_GrantFence(t *testing.T) {
 	go func() {
 		blocked <- s.Exec(context.Background(),
 			func(ctx context.Context, tx *sql.Tx) error {
-				return s.Lock(ctx, tx, nil, []string{team})
+				return s.Lock(ctx, tx, nil, []uuid.UUID{team})
 			})
 	}()
 
@@ -208,7 +208,7 @@ func TestStore_OffboardTeam(t *testing.T) {
 	// Owner has a personal document and grants the team access to it.
 	doc := uuid.NewV7()
 	applyUpserts(t, s, assets, ownerScope,
-		upsertOp(doc, owner, "", 10, assetDoc(doc, 1)))
+		upsertOp(doc, owner, uuid.Nil(), 10, assetDoc(doc, 1)))
 	grant := uuid.NewV7()
 	applyUpserts(t, s, shares, ownerScope,
 		upsertOp(grant, owner, team, 20, "{}"))
@@ -236,7 +236,7 @@ func TestStore_OffboardTeam(t *testing.T) {
 
 	// The member receives the share tombstone on their next sync.
 	feed := fetchAll(t, s, s.Shares(),
-		diff.Scope{UserID: member, Teams: []string{team}})
+		diff.Scope{UserID: member, Teams: []uuid.UUID{team}})
 	var tomb bool
 	for _, v := range feed {
 		if v.ID == grant && v.Deleted {

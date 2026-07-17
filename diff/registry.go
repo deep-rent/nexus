@@ -125,15 +125,20 @@ type Share struct {
 	// ID is the share identifier (UUIDv7).
 	ID uuid.UUID `json:"id"`
 	// UserID is the granting owner; it must equal the authenticated user.
-	UserID string `json:"user_id"`
+	UserID uuid.UUID `json:"user_id"`
 	// TeamID is the team being granted access.
-	TeamID string `json:"team_id"`
+	TeamID uuid.UUID `json:"team_id"`
 }
 
-// Validate implements the [valid.Validatable] interface.
+// Validate implements the [valid.Validatable] interface. The typed decode
+// already enforces UUID format; only missing values remain to reject.
 func (s *Share) Validate(v *valid.Validator) {
-    v.UUID("user_id", s.UserID)
-    v.UUID("team_id", s.TeamID)
+	if s.UserID == uuid.Nil() {
+		v.Fail("user_id", "must not be empty")
+	}
+	if s.TeamID == uuid.Nil() {
+		v.Fail("team_id", "must not be empty")
+	}
 }
 
 var _ valid.Validatable = (*Share)(nil)

@@ -19,6 +19,8 @@ import (
 	"database/sql"
 	"testing"
 
+	"uuid"
+
 	"github.com/deep-rent/nexus/diff/driver/drivertest"
 )
 
@@ -40,8 +42,8 @@ func TestEquivalence(t *testing.T) {
 			InTx: func(t *testing.T, fn func(ctx context.Context, tx *sql.Tx) error) {
 				inTx(t, s, fn)
 			},
-			SeedUser: func(t *testing.T) string { return newUser(t, db) },
-			SeedTeam: func(t *testing.T) string { return newTeam(t, db) },
+			SeedUser: func(t *testing.T) uuid.UUID { return newUser(t, db) },
+			SeedTeam: func(t *testing.T) uuid.UUID { return newTeam(t, db) },
 			Caps:     drivertest.Caps{DepartureTombstones: true},
 		}
 	}

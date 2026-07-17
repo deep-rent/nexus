@@ -111,7 +111,7 @@ func provisionSchema(t *testing.T, db *sql.DB) {
 		}
 	}
 
-	execScript(t, db, "1_create_document_tables.up.sql")
+	execScript(t, db, "1_document.up.sql")
 }
 
 // execScript reads the named reference migration file from disk and executes
@@ -132,11 +132,11 @@ func execScript(t *testing.T, db *sql.DB, name string) {
 
 // newUser registers a fresh user and returns its id, satisfying the foreign
 // keys of the bookkeeping and document tables.
-func newUser(t *testing.T, db *sql.DB) string {
+func newUser(t *testing.T, db *sql.DB) uuid.UUID {
 	t.Helper()
-	id := uuid.NewV7().String()
+	id := uuid.NewV7()
 	if _, err := db.Exec(
-		"INSERT INTO users (id) VALUES ($1::uuid)", id,
+		"INSERT INTO users (id) VALUES ($1)", id,
 	); err != nil {
 		t.Fatalf("insert user: should not have returned an error: %v", err)
 	}
@@ -145,11 +145,11 @@ func newUser(t *testing.T, db *sql.DB) string {
 
 // newTeam registers a fresh team and returns its id, satisfying the foreign
 // keys of the bookkeeping and document tables.
-func newTeam(t *testing.T, db *sql.DB) string {
+func newTeam(t *testing.T, db *sql.DB) uuid.UUID {
 	t.Helper()
-	id := uuid.NewV7().String()
+	id := uuid.NewV7()
 	if _, err := db.Exec(
-		"INSERT INTO teams (id) VALUES ($1::uuid)", id,
+		"INSERT INTO teams (id) VALUES ($1)", id,
 	); err != nil {
 		t.Fatalf("insert team: should not have returned an error: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestMigrations_Reference(t *testing.T) {
 	// The reference up migration must apply cleanly against the
 	// application-owned users and teams tables, and stay idempotent.
 	provisionSchema(t, db)
-	execScript(t, db, "1_create_document_tables.up.sql")
+	execScript(t, db, "1_document.up.sql")
 
 	// The store must be functional on the provisioned schema.
 	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
@@ -201,8 +201,8 @@ func TestMigrations_Reference(t *testing.T) {
 
 	// The reference down migration must revert cleanly, and the schema must
 	// re-apply afterwards.
-	execScript(t, db, "1_create_document_tables.down.sql")
-	execScript(t, db, "1_create_document_tables.up.sql")
+	execScript(t, db, "1_document.down.sql")
+	execScript(t, db, "1_document.up.sql")
 }
 
 func TestStore_ExecRollback(t *testing.T) {
@@ -387,9 +387,9 @@ func TestStore_Sequence(t *testing.T) {
 func TestStore_Lock_Concurrent(t *testing.T) {
 	_, s := setupStore(t)
 
-	keys := make([]string, 5)
+	keys := make([]uuid.UUID, 5)
 	for i := range keys {
-		keys[i] = uuid.NewV7().String()
+		keys[i] = uuid.NewV7()
 	}
 	reversed := slices.Clone(keys)
 	slices.Reverse(reversed)
@@ -398,8 +398,8 @@ func TestStore_Lock_Concurrent(t *testing.T) {
 	// serialize without deadlocking, because Lock sorts the derived keys
 	// internally.
 	errs := make(chan error, 2)
-	for _, set := range [][]string{keys, reversed} {
-		go func(set []string) {
+	for _, set := range [][]uuid.UUID{keys, reversed} {
+		go func(set []uuid.UUID) {
 			errs <- s.Exec(context.Background(),
 				func(ctx context.Context, tx *sql.Tx) error {
 					if err := s.Lock(ctx, tx, nil, set); err != nil {
@@ -422,11 +422,13 @@ func TestStore_Lock_SharedExclusive(t *testing.T) {
 	_, s := setupStore(t)
 
 	ctx := context.Background()
-	key := uuid.NewV7().String()
+	key := uuid.NewV7()
 
 	// hold acquires the given locks in a background transaction, signals
 	// once they are held, and keeps the transaction open until released.
-	hold := func(shared, exclusive []string) (held, release chan struct{}, done chan error) {
+	hold := func(
+		shared, exclusive []uuid.UUID,
+	) (held, release chan struct{}, done chan error) {
 		held = make(chan struct{})
 		release = make(chan struct{})
 		done = make(chan error, 1)
@@ -445,7 +447,7 @@ func TestStore_Lock_SharedExclusive(t *testing.T) {
 
 	// acquire attempts the given locks in a background transaction and
 	// reports completion.
-	acquire := func(shared, exclusive []string) chan error {
+	acquire := func(shared, exclusive []uuid.UUID) chan error {
 		ch := make(chan error, 1)
 		go func() {
 			ch <- s.Exec(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -456,10 +458,10 @@ func TestStore_Lock_SharedExclusive(t *testing.T) {
 	}
 
 	// Two shared lockers on a common key proceed concurrently.
-	held, release, done := hold([]string{key}, nil)
+	held, release, done := hold([]uuid.UUID{key}, nil)
 	<-held
 	select {
-	case err := <-acquire([]string{key}, nil):
+	case err := <-acquire([]uuid.UUID{key}, nil):
 		if err != nil {
 			t.Fatalf("shared lock: should not have returned an error: %v", err)
 		}
@@ -469,7 +471,7 @@ func TestStore_Lock_SharedExclusive(t *testing.T) {
 
 	// An exclusive locker blocks on the shared holder and proceeds once the
 	// reader releases.
-	writer := acquire(nil, []string{key})
+	writer := acquire(nil, []uuid.UUID{key})
 	select {
 	case err := <-writer:
 		t.Fatalf("exclusive lock: should have blocked on a shared holder"+
@@ -495,9 +497,9 @@ func TestStore_Lock_SharedExclusive(t *testing.T) {
 
 	// A key listed in both sets is locked exclusively: a shared locker
 	// blocks on it.
-	held, release, done = hold([]string{key}, []string{key})
+	held, release, done = hold([]uuid.UUID{key}, []uuid.UUID{key})
 	<-held
-	reader := acquire([]string{key}, nil)
+	reader := acquire([]uuid.UUID{key}, nil)
 	select {
 	case err := <-reader:
 		t.Fatalf("shared lock: should have blocked on a mixed-mode holder"+
@@ -529,8 +531,8 @@ func TestStore_Grants(t *testing.T) {
 	teamB := newTeam(t, db)
 
 	seed := []struct {
-		user string
-		team string
+		user uuid.UUID
+		team uuid.UUID
 	}{
 		{owner1, teamA},
 		{owner1, teamB},
@@ -539,15 +541,15 @@ func TestStore_Grants(t *testing.T) {
 	for i, g := range seed {
 		if _, err := db.Exec(
 			"INSERT INTO document_shares (id, user_id, team_id, hlc, seq)"+
-				" VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)",
-			uuid.NewV7().String(), g.user, g.team, 10+i, i+1,
+				" VALUES ($1, $2, $3, $4, $5)",
+			uuid.NewV7(), g.user, g.team, 10+i, i+1,
 		); err != nil {
 			t.Fatalf("insert share: should not have returned an error: %v", err)
 		}
 	}
 
 	inTx(t, s, func(ctx context.Context, tx *sql.Tx) error {
-		grants, err := s.Grants(ctx, tx, []string{owner1, owner2, other})
+		grants, err := s.Grants(ctx, tx, []uuid.UUID{owner1, owner2, other})
 		if err != nil {
 			return err
 		}
@@ -555,13 +557,13 @@ func TestStore_Grants(t *testing.T) {
 			t.Errorf("got %d granted owners; want %d", got, want)
 		}
 		teams := grants[owner1]
-		slices.Sort(teams)
-		want := []string{teamA, teamB}
-		slices.Sort(want)
+		slices.SortFunc(teams, uuid.UUID.Compare)
+		want := []uuid.UUID{teamA, teamB}
+		slices.SortFunc(want, uuid.UUID.Compare)
 		if !slices.Equal(teams, want) {
 			t.Errorf("got teams %v for owner1; want %v", teams, want)
 		}
-		if got := grants[owner2]; !slices.Equal(got, []string{teamA}) {
+		if got := grants[owner2]; !slices.Equal(got, []uuid.UUID{teamA}) {
 			t.Errorf("got teams %v for owner2; want [%v]", got, teamA)
 		}
 		if got, exists := grants[other]; exists {
@@ -583,7 +585,7 @@ func TestStore_Grants(t *testing.T) {
 func TestStore_Mutate(t *testing.T) {
 	_, s := setupStore(t)
 
-	scope := scopeOf(uuid.NewV7().String(), uuid.NewV7().String())
+	scope := scopeOf(uuid.NewV7(), uuid.NewV7())
 
 	called := false
 	err := s.Mutate(context.Background(), scope,

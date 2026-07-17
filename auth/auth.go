@@ -60,6 +60,8 @@ import (
 	"slices"
 	"strings"
 
+	"uuid"
+
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
@@ -141,7 +143,7 @@ type AccessClaims interface {
 	HasScope(name string) bool
 	// Memberships returns the identifiers of all teams the subject belongs
 	// to, taken from the "teams" claim.
-	Memberships() []string
+	Memberships() []uuid.UUID
 	// Delegated reports whether the token was issued to a client acting on
 	// behalf of an end user rather than to the client itself.
 	Delegated() bool
@@ -178,7 +180,7 @@ type Claims struct {
 	jwt.Reserved
 	// Azp represents the authorized party to which the token was issued.
 	// It typically identifies the client application.
-	Azp string `json:"azp,omitempty"`
+	Azp uuid.UUID `json:"azp,omitzero"`
 	// Roles represents the application-specific roles assigned to the subject,
 	// used for Role-Based Access Control (RBAC).
 	Roles []string `json:"roles,omitempty"`
@@ -186,7 +188,7 @@ type Claims struct {
 	// RFC 6749, typically used for delegated authorization.
 	Scope Scope `json:"scope,omitempty"`
 	// Teams lists the identifiers of all teams the subject is a member of.
-	Teams []string `json:"teams,omitempty"`
+	Teams []uuid.UUID `json:"teams,omitempty"`
 }
 
 // HasRole implements the [AccessClaims] interface.
@@ -200,7 +202,7 @@ func (c *Claims) HasScope(name string) bool {
 }
 
 // Memberships implements the [AccessClaims] interface.
-func (c *Claims) Memberships() []string {
+func (c *Claims) Memberships() []uuid.UUID {
 	return c.Teams
 }
 
@@ -210,7 +212,7 @@ func (c *Claims) Memberships() []string {
 // This is useful for distinguishing between a client acting on its own behalf
 // (machine-to-machine) and a client acting on behalf of a user (delegation).
 func (c *Claims) Delegated() bool {
-	return c.Azp != "" && c.Azp != c.Sub
+	return c.Azp != uuid.Nil() && c.Azp != c.Sub
 }
 
 var _ AccessClaims = (*Claims)(nil)

@@ -41,8 +41,8 @@ func mockTarget(t *testing.T) drivertest.Target[*mock.Tx] {
 				t.Fatalf("exec: should not have returned an error: %v", err)
 			}
 		},
-		SeedUser: func(*testing.T) string { return uuid.NewV7().String() },
-		SeedTeam: func(*testing.T) string { return uuid.NewV7().String() },
+		SeedUser: func(*testing.T) uuid.UUID { return uuid.NewV7() },
+		SeedTeam: func(*testing.T) uuid.UUID { return uuid.NewV7() },
 		Caps:     drivertest.Caps{DepartureTombstones: false},
 	}
 }

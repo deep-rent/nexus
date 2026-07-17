@@ -63,6 +63,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -87,6 +88,10 @@ const (
 	// DefaultSequence is the default name of the global feed sequence.
 	DefaultSequence = "document_seq"
 )
+
+// zeroUUID is the SQL literal of the zero UUID, the sentinel for personal
+// documents: NULL team columns read as the zero UUID and vice versa.
+const zeroUUID = "'00000000-0000-0000-0000-000000000000'::uuid"
 
 // config holds the internal configuration options for the PostgreSQL store.
 type config struct {
@@ -307,7 +312,7 @@ func (s *Store) Exec(
 func (s *Store) Lock(
 	ctx context.Context,
 	tx *sql.Tx,
-	shared, exclusive []string,
+	shared, exclusive []uuid.UUID,
 ) error {
 	// Fold both sets into one mode map; exclusive wins on overlap.
 	modes := make(map[int64]bool, len(shared)+len(exclusive))
@@ -356,10 +361,10 @@ func (s *Store) Lock(
 
 // lockKey derives a positive 64-bit advisory lock key from an opaque scope
 // identifier.
-func lockKey(key string) int64 {
+func lockKey(key uuid.UUID) int64 {
 	h := sha256.New()
 	h.Write([]byte("diff:scope:"))
-	h.Write([]byte(key))
+	h.Write(key[:])
 	sum := h.Sum(nil)
 	return int64(binary.BigEndian.Uint64(sum[:8]) & 0x7FFFFFFFFFFFFFFF)
 }
@@ -407,7 +412,7 @@ func (s *Store) Watermark(ctx context.Context, tx *sql.Tx) (int64, error) {
 func (s *Store) Claim(
 	ctx context.Context,
 	tx *sql.Tx,
-	userID string,
+	userID uuid.UUID,
 	ids []uuid.UUID,
 ) ([]uuid.UUID, error) {
 	if len(ids) == 0 {
@@ -416,9 +421,9 @@ func (s *Store) Claim(
 
 	query := "INSERT INTO " + s.mutations + " (id, user_id)" +
 		" SELECT unnest($1::uuid[]), $2::uuid" +
-		" ON CONFLICT (id) DO NOTHING RETURNING id::text"
+		" ON CONFLICT (id) DO NOTHING RETURNING id"
 
-	rows, err := tx.QueryContext(ctx, query, toStrings(ids), userID)
+	rows, err := tx.QueryContext(ctx, query, ids, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim mutations: %w", err)
 	}
@@ -426,13 +431,9 @@ func (s *Store) Claim(
 
 	var claimed []uuid.UUID
 	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("failed to scan claimed mutation: %w", err)
-		}
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse claimed mutation: %w", err)
 		}
 		claimed = append(claimed, id)
 	}
@@ -448,14 +449,14 @@ func (s *Store) Claim(
 func (s *Store) Grants(
 	ctx context.Context,
 	tx *sql.Tx,
-	owners []string,
-) (map[string][]string, error) {
-	out := make(map[string][]string, len(owners))
+	owners []uuid.UUID,
+) (map[uuid.UUID][]uuid.UUID, error) {
+	out := make(map[uuid.UUID][]uuid.UUID, len(owners))
 	if len(owners) == 0 {
 		return out, nil
 	}
 
-	query := "SELECT user_id::text, team_id::text FROM " + s.shares +
+	query := "SELECT user_id, team_id FROM " + s.shares +
 		" WHERE user_id = ANY($1::uuid[])"
 	rows, err := tx.QueryContext(ctx, query, owners)
 	if err != nil {
@@ -464,7 +465,7 @@ func (s *Store) Grants(
 	defer close(rows, s.logger)
 
 	for rows.Next() {
-		var owner, team string
+		var owner, team uuid.UUID
 		if err := rows.Scan(&owner, &team); err != nil {
 			return nil, fmt.Errorf("failed to scan grant: %w", err)
 		}
@@ -485,7 +486,7 @@ func (s *Store) Grants(
 func (s *Store) Touch(
 	ctx context.Context,
 	tx *sql.Tx,
-	ownerID string,
+	ownerID uuid.UUID,
 ) error {
 	for _, t := range s.order {
 		query := "UPDATE " + t.ident + " SET seq = " + s.nextval +
@@ -533,7 +534,7 @@ func (s *Store) Mutate(
 	fn func(ctx context.Context, tx *sql.Tx) error,
 ) error {
 	return s.Exec(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		keys := make([]string, 0, len(scope.Teams)+1)
+		keys := make([]uuid.UUID, 0, len(scope.Teams)+1)
 		keys = append(keys, scope.UserID)
 		keys = append(keys, scope.Teams...)
 
@@ -541,7 +542,7 @@ func (s *Store) Mutate(
 		// through live grants; those teams' members read under a shared
 		// lock on the team key, so a backend write must hold it exclusively
 		// too. This mirrors the engine's fence (see Engine.assemble).
-		grants, err := s.Grants(ctx, tx, []string{scope.UserID})
+		grants, err := s.Grants(ctx, tx, []uuid.UUID{scope.UserID})
 		if err != nil {
 			return err
 		}
@@ -576,7 +577,7 @@ func (s *Store) Mutate(
 // carried out through the normal sync handlers before the team is removed.
 func (s *Store) OffboardTeam(
 	ctx context.Context,
-	teamID string,
+	teamID uuid.UUID,
 	at hlc.Time,
 ) (int64, error) {
 	var buried int64
@@ -586,14 +587,14 @@ func (s *Store) OffboardTeam(
 		// key (whose members read the tombstones under a shared lock) plus
 		// each granting owner.
 		rows, err := tx.QueryContext(ctx,
-			"SELECT user_id::text FROM "+s.shares+
+			"SELECT user_id FROM "+s.shares+
 				" WHERE team_id = $1::uuid", teamID)
 		if err != nil {
 			return fmt.Errorf("failed to list team grants: %w", err)
 		}
-		var owners []string
+		var owners []uuid.UUID
 		for rows.Next() {
-			var owner string
+			var owner uuid.UUID
 			if err := rows.Scan(&owner); err != nil {
 				_ = rows.Close()
 				return fmt.Errorf("failed to scan grant owner: %w", err)
@@ -732,10 +733,10 @@ func (h *shares) Upsert(
 	// newest grant per pair is applied, the losers are tombstoned under the
 	// winner's timestamp, exactly as if they had landed first and been
 	// superseded in a later request.
-	type pair struct{ user, team string }
+	type pair struct{ user, team uuid.UUID }
 	best := make(map[pair]diff.Op, len(ops))
 	for _, op := range ops {
-		if op.Meta.TeamID == "" {
+		if op.Meta.TeamID == uuid.Nil() {
 			return errors.New("share is missing team_id")
 		}
 		k := pair{user: op.Meta.UserID, team: op.Meta.TeamID}
@@ -753,7 +754,7 @@ func (h *shares) Upsert(
 			wins = append(wins, op)
 		} else {
 			losers = append(losers, move{
-				id:   op.Meta.ID.String(),
+				id:   op.Meta.ID,
 				user: op.Meta.UserID,
 				team: op.Meta.TeamID,
 				hlc:  int64(w.Time),
@@ -762,12 +763,12 @@ func (h *shares) Upsert(
 	}
 
 	n := len(wins)
-	ids := make([]string, n)
-	users := make([]string, n)
-	teams := make([]string, n)
+	ids := make([]uuid.UUID, n)
+	users := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
 	for i, op := range wins {
-		ids[i] = op.Meta.ID.String()
+		ids[i] = op.Meta.ID
 		users[i] = op.Meta.UserID
 		teams[i] = op.Meta.TeamID
 		hlcs[i] = int64(op.Time)
@@ -842,7 +843,7 @@ func (h *shares) Upsert(
 		" team_id = EXCLUDED.team_id, hlc = EXCLUDED.hlc," +
 		" seq = EXCLUDED.seq" +
 		" WHERE EXCLUDED.hlc > s.hlc AND s.user_id = $5::uuid" +
-		" RETURNING s.id::text, s.user_id::text, s.team_id::text, s.hlc"
+		" RETURNING s.id, s.user_id, s.team_id, s.hlc"
 
 	if _, err := tx.ExecContext(ctx, supersede,
 		ids, users, teams, hlcs, scope.UserID, diff.ModelShare,
@@ -870,7 +871,7 @@ func (h *shares) Upsert(
 			moves = append(moves, move{
 				id:   l.id,
 				user: l.user,
-				team: old.String, // old.Valid always: team_id is NOT NULL
+				team: old, // never zero: team_id is NOT NULL
 				hlc:  l.hlc,
 			})
 		}
@@ -906,10 +907,10 @@ func (h *shares) Upsert(
 func (h *shares) snapshot(
 	ctx context.Context,
 	tx *sql.Tx,
-	ids []string,
-) (map[string]sql.NullString, error) {
+	ids []uuid.UUID,
+) (map[uuid.UUID]uuid.UUID, error) {
 	s := h.store
-	query := "SELECT id::text, team_id::text FROM " + s.shares +
+	query := "SELECT id, team_id FROM " + s.shares +
 		" WHERE id = ANY($1::uuid[])"
 	rows, err := tx.QueryContext(ctx, query, ids)
 	if err != nil {
@@ -919,7 +920,7 @@ func (h *shares) snapshot(
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]sql.NullString, len(states))
+	out := make(map[uuid.UUID]uuid.UUID, len(states))
 	for _, st := range states {
 		out[st.id] = st.team
 	}
@@ -941,20 +942,21 @@ func (h *shares) Delete(
 	s := h.store
 
 	n := len(ops)
-	ids := make([]string, n)
+	ids := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
-	users := make([]string, n)
-	teams := make([]string, n)
+	users := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	for i, op := range ops {
-		ids[i] = op.Meta.ID.String()
+		ids[i] = op.Meta.ID
 		hlcs[i] = int64(op.Time)
 		users[i] = op.Meta.UserID
 		teams[i] = op.Meta.TeamID
 	}
 
 	query := "WITH incoming AS (" +
-		" SELECT t.id, t.hlc, t.user_id, nullif(t.team_id, '')::uuid AS team_id" +
-		" FROM unnest($1::uuid[], $2::bigint[], $3::uuid[], $4::text[])" +
+		" SELECT t.id, t.hlc, t.user_id," +
+		" nullif(t.team_id, " + zeroUUID + ") AS team_id" +
+		" FROM unnest($1::uuid[], $2::bigint[], $3::uuid[], $4::uuid[])" +
 		" AS t(id, hlc, user_id, team_id)" +
 		"), victims AS (" +
 		" DELETE FROM " + s.shares + " s USING incoming i" +
@@ -1017,12 +1019,12 @@ func (h *shares) Fetch(
 		"'id', id, 'user_id', user_id, 'team_id', team_id" +
 		") AS data"
 	live := func(cond string) string {
-		return "SELECT id::text, seq, hlc, FALSE AS deleted, " + data +
+		return "SELECT id, seq, hlc, FALSE AS deleted, " + data +
 			" FROM " + s.shares +
 			" WHERE " + cond + " AND seq > $2 AND seq < $3"
 	}
 	dead := func(cond string) string {
-		return "SELECT id::text, seq, hlc, TRUE, NULL::jsonb" +
+		return "SELECT id, seq, hlc, TRUE, NULL::jsonb" +
 			" FROM " + s.tombstones +
 			" WHERE type = $4::text AND " + cond +
 			" AND seq > $2 AND seq < $3"
@@ -1070,7 +1072,7 @@ func (h *shares) Resolve(
 	ids []uuid.UUID,
 ) (map[uuid.UUID]diff.Meta, error) {
 	s := h.store
-	query := "SELECT id::text, user_id::text, team_id::text FROM " +
+	query := "SELECT id, user_id, team_id FROM " +
 		s.shares + " WHERE id = ANY($1::uuid[])"
 	return resolve(ctx, tx, query, ids, s.logger)
 }
@@ -1079,9 +1081,9 @@ func (h *shares) Resolve(
 // carried before it moved (or, for superseded grants, before it was
 // replaced), together with the timestamp of the displacing write.
 type move struct {
-	id   string
-	user string
-	team string // empty for personal documents
+	id   uuid.UUID
+	user uuid.UUID
+	team uuid.UUID // zero for personal documents
 	hlc  int64
 }
 
@@ -1101,9 +1103,9 @@ func (s *Store) entomb(
 	}
 
 	n := len(moves)
-	ids := make([]string, n)
-	users := make([]string, n)
-	teams := make([]string, n)
+	ids := make([]uuid.UUID, n)
+	users := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
 	for i, m := range moves {
 		ids[i] = m.id
@@ -1114,9 +1116,10 @@ func (s *Store) entomb(
 
 	query := "INSERT INTO " + s.tombstones + " AS ts" +
 		" (type, id, user_id, team_id, hlc, seq)" +
-		" SELECT $1::text, m.id, m.user_id, nullif(m.team_id, '')::uuid," +
+		" SELECT $1::text, m.id, m.user_id," +
+		" nullif(m.team_id, " + zeroUUID + ")," +
 		" m.hlc, " + s.nextval +
-		" FROM unnest($2::uuid[], $3::uuid[], $4::text[], $5::bigint[])" +
+		" FROM unnest($2::uuid[], $3::uuid[], $4::uuid[], $5::bigint[])" +
 		" AS m(id, user_id, team_id, hlc)" +
 		" ON CONFLICT (type, id) DO UPDATE SET" +
 		" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
@@ -1132,11 +1135,12 @@ func (s *Store) entomb(
 }
 
 // stamp is one written row as reported by a RETURNING clause: its
-// post-write identity and timestamp.
+// post-write identity and timestamp. A zero team denotes a personal
+// document (NULL team column).
 type stamp struct {
-	id   string
-	user string
-	team sql.NullString
+	id   uuid.UUID
+	user uuid.UUID
+	team uuid.UUID
 	hlc  int64
 }
 
@@ -1166,18 +1170,14 @@ func collect(rows *sql.Rows, logger *slog.Logger) ([]diff.Version, error) {
 	var out []diff.Version
 	for rows.Next() {
 		var (
-			raw     string
+			id      uuid.UUID
 			seq     int64
 			ts      int64
 			deleted bool
 			data    []byte
 		)
-		if err := rows.Scan(&raw, &seq, &ts, &deleted, &data); err != nil {
+		if err := rows.Scan(&id, &seq, &ts, &deleted, &data); err != nil {
 			return nil, fmt.Errorf("failed to scan feed row: %w", err)
-		}
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse document id: %w", err)
 		}
 		v := diff.Version{
 			ID:      id,
@@ -1210,24 +1210,18 @@ func resolve(
 		return out, nil
 	}
 
-	rows, err := tx.QueryContext(ctx, query, toStrings(ids))
+	rows, err := tx.QueryContext(ctx, query, ids)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve documents: %w", err)
 	}
 	defer close(rows, logger)
 
 	for rows.Next() {
-		var rawID, user string
-		var rawTeam sql.NullString
-		if err := rows.Scan(&rawID, &user, &rawTeam); err != nil {
+		var id, user, team uuid.UUID
+		if err := rows.Scan(&id, &user, &team); err != nil {
 			return nil, fmt.Errorf("failed to scan document identity: %w", err)
 		}
-		id, err := uuid.Parse(rawID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse document id: %w", err)
-		}
-		meta := diff.Meta{ID: id, UserID: user, TeamID: rawTeam.String}
-		out[id] = meta
+		out[id] = diff.Meta{ID: id, UserID: user, TeamID: team}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read document identities: %w", err)
@@ -1241,16 +1235,6 @@ func close(rows *sql.Rows, logger *slog.Logger) {
 	if err := rows.Close(); err != nil {
 		logger.Error("Failed to close rows", slog.Any("error", err))
 	}
-}
-
-// toStrings renders UUIDs into their canonical textual form for array
-// parameters.
-func toStrings(ids []uuid.UUID) []string {
-	out := make([]string, len(ids))
-	for i, id := range ids {
-		out[i] = id.String()
-	}
-	return out
 }
 
 var (

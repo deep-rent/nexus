@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
@@ -47,8 +49,9 @@ func TestSignVerify(t *testing.T) {
 	k := mockKeyPair(t)
 	set := jwk.Singleton(k)
 
+	sub := uuid.NewV7()
 	claims := map[string]any{
-		"sub": "alice",
+		"sub": sub.String(),
 		"rol": "admin",
 	}
 
@@ -62,8 +65,8 @@ func TestSignVerify(t *testing.T) {
 		t.Fatalf("verification: should not have returned an error: %v", err)
 	}
 
-	if got, want := out.Subject(), "alice"; got != want {
-		t.Errorf("subject: got %q; want %q", got, want)
+	if got, want := out.Subject(), sub; got != want {
+		t.Errorf("subject: got %v; want %v", got, want)
 	}
 	if got, want := out.Role, "admin"; got != want {
 		t.Errorf("role: got %q; want %q", got, want)
@@ -225,7 +228,7 @@ func TestDynamicClaims(t *testing.T) {
 	set := jwk.Singleton(k)
 
 	input := map[string]any{
-		"sub":    "alice",
+		"sub":    uuid.NewV7().String(),
 		"str":    "nexus",
 		"num":    42,
 		"flag":   true,

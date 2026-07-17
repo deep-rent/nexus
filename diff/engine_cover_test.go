@@ -108,12 +108,12 @@ func TestEngine_Options(t *testing.T) {
 		diff.WithDefaultLimit(0),        // ignored (non-positive)
 	)
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	var changes []diff.Change
 	for range 5 {
 		changes = append(changes,
-			upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)))
+			upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)))
 	}
 	if _, err := engine.Sync(t.Context(), scope,
 		&diff.Request{Changes: changes}); err != nil {
@@ -141,13 +141,13 @@ func TestEngine_Options(t *testing.T) {
 func TestEngine_Sync_Prefilter(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	t.Run("drops already-seen ids", func(t *testing.T) {
 		t.Parallel()
-		seen := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1))
-		fresh := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(2))
+		seen := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
+		fresh := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(2))
 
 		pf := &prefilter{drop: map[uuid.UUID]struct{}{seen.ID: {}}}
 		f2 := setup(diff.WithPrefilter(pf))
@@ -176,7 +176,7 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 		pf := &prefilter{filErr: errors.New("valkey down")}
 		f := setup(diff.WithPrefilter(pf),
 			diff.WithLogger(slog.New(slog.DiscardHandler)))
-		c := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1))
+		c := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
 		if _, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{c},
 		}); err != nil {
@@ -193,7 +193,7 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 		pf := &prefilter{markErr: errors.New("valkey down")}
 		f := setup(diff.WithPrefilter(pf),
 			diff.WithLogger(slog.New(slog.DiscardHandler)))
-		c := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1))
+		c := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
 		if _, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{c},
 		}); err != nil {
@@ -205,10 +205,10 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 func TestEngine_Sync_DriftRetry(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
-	teamA := uuid.NewV7().String()
-	teamB := uuid.NewV7().String()
-	scope := diff.Scope{UserID: owner, Teams: []string{teamA, teamB}}
+	owner := uuid.NewV7()
+	teamA := uuid.NewV7()
+	teamB := uuid.NewV7()
+	scope := diff.Scope{UserID: owner, Teams: []uuid.UUID{teamA, teamB}}
 
 	t.Run("recovers after one retry", func(t *testing.T) {
 		t.Parallel()
@@ -298,12 +298,12 @@ func TestEngine_Sync_ConcurrentPrune(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	// Seed a document so the feed scan runs (and triggers OnFetch).
 	sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-		upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
+		upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
 	}})
 
 	// A prune advances the floor above the request cursor while the feed
@@ -326,13 +326,13 @@ func TestEngine_Sync_ConcurrentPrune(t *testing.T) {
 func TestEngine_Sync_StoreErrors(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	boom := errors.New("store down")
 
 	req := func() *diff.Request {
 		return &diff.Request{Changes: []diff.Change{
-			upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
+			upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
 		}}
 	}
 
@@ -363,7 +363,7 @@ func TestEngine_Sync_StoreErrors(t *testing.T) {
 func TestEngine_Sync_ChildEnvelopeErrors(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	t.Run("malformed child payload", func(t *testing.T) {
@@ -426,15 +426,16 @@ func TestEngine_Sync_ChildEnvelopeErrors(t *testing.T) {
 func TestShare_Validate(t *testing.T) {
 	t.Parallel()
 
-	team := uuid.NewV7().String()
+	user := uuid.NewV7()
+	team := uuid.NewV7()
 	tests := []struct {
 		name  string
 		share diff.Share
 		ok    bool
 	}{
-		{"valid", diff.Share{TeamID: team}, true},
-		{"empty team", diff.Share{}, false},
-		{"non-uuid team", diff.Share{TeamID: "not-a-uuid"}, false},
+		{"valid", diff.Share{UserID: user, TeamID: team}, true},
+		{"empty team", diff.Share{UserID: user}, false},
+		{"empty user", diff.Share{TeamID: team}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -454,15 +455,15 @@ func TestEngine_Sync_DuplicateMutationID(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	// Two changes sharing one mutation ID: the second is rejected as
 	// invalid, protecting the idempotency dedup granularity.
 	id := uuid.NewV7()
-	a := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1))
+	a := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
 	a.ID = id
-	b := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(2))
+	b := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(2))
 	b.ID = id
 
 	_, err := f.engine.Sync(t.Context(), scope,
@@ -482,13 +483,13 @@ func TestEngine_Sync_LogicalOverflow(t *testing.T) {
 	clock := hlc.New(func() time.Time { return time.Unix(int64(base), 0) })
 	f := setup(diff.WithClock(clock))
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	// A remote stamp in the same second with the counter already maxed
 	// forces ErrLogicalOverflow inside clock.Update.
 	overflow := diff.Stamp(hlc.Pack(base, (1<<20)-1))
-	c := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), overflow)
+	c := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), overflow)
 
 	_, err := f.engine.Sync(t.Context(), scope,
 		&diff.Request{Changes: []diff.Change{c}})

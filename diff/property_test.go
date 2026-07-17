@@ -92,7 +92,7 @@ func TestProperty_Pagination_NoSkipWithTombstones(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	const n = 40
@@ -101,7 +101,7 @@ func TestProperty_Pagination_NoSkipWithTombstones(t *testing.T) {
 	for i := range n {
 		id := uuid.NewV7()
 		tick++
-		doc := assetDoc(id, owner, "")
+		doc := assetDoc(id, owner, uuid.Nil())
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			upsert("asset", doc, stamp(tick)),
 		}})
@@ -137,12 +137,12 @@ func TestProperty_Pagination_NoSkipWithTombstones(t *testing.T) {
 func TestProperty_Convergence_WithDeletes(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	idA, idB := uuid.NewV7(), uuid.NewV7()
-	docA := assetDoc(idA, owner, "")
-	docB := assetDoc(idB, owner, "")
+	docA := assetDoc(idA, owner, uuid.Nil())
+	docB := assetDoc(idB, owner, uuid.Nil())
 
 	upsA := upsert("asset", docA, stamp(30)) // A: upsert wins (later)
 	delA := remove("asset", docA, stamp(10))

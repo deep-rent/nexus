@@ -25,40 +25,38 @@ import (
 )
 
 // Scope is the authorization boundary of a single sync call: the
-// authenticated user and the teams they belong to. Identifiers are opaque
-// strings taken from the verified token; payload identifiers are validated
-// to be UUIDs at ingestion before they are compared against the scope.
+// authenticated user and the teams they belong to, as typed UUIDs taken
+// from the verified token.
 type Scope struct {
 	// UserID identifies the authenticated user.
-	UserID string
+	UserID uuid.UUID
 	// Teams lists the identifiers of all teams the user is a member of.
-	Teams []string
+	Teams []uuid.UUID
 }
 
 // Allows reports whether a document owned by userID and assigned to teamID
 // (empty for personal documents) is directly accessible within the scope.
 // Grant-based visibility of foreign personal documents is evaluated by the
 // store, not here.
-func (s Scope) Allows(userID, teamID string) bool {
+func (s Scope) Allows(userID, teamID uuid.UUID) bool {
 	if userID == s.UserID {
 		return true
 	}
-	return teamID != "" && slices.Contains(s.Teams, teamID)
+	return teamID != uuid.Nil() && slices.Contains(s.Teams, teamID)
 }
 
 // Meta is the identifying envelope of a root document payload. Child
 // documents carry only their ID; their ownership is inferred from the parent
-// chain. User and team identifiers are strings, validated to be UUIDs at
-// ingestion.
+// chain.
 type Meta struct {
 	// ID is the document identifier (UUIDv7).
 	ID uuid.UUID `json:"id"`
 	// UserID is the immutable owner of the document.
-	UserID string `json:"user_id"`
-	// TeamID optionally assigns the document to a team. An empty string
+	UserID uuid.UUID `json:"user_id"`
+	// TeamID optionally assigns the document to a team. The zero UUID
 	// denotes a personal document with no team; identifiers are never
-	// empty, so the empty value is an unambiguous sentinel.
-	TeamID string `json:"team_id,omitzero"`
+	// zero, so the zero value is an unambiguous sentinel.
+	TeamID uuid.UUID `json:"team_id,omitzero"`
 }
 
 // Op is a single compacted, validated, and authorized operation passed to a
@@ -151,7 +149,7 @@ type Store[Tx any] interface {
 	// Writers and readers of a key serialize; concurrent readers do not.
 	// Implementations must acquire all keys in one global sort order,
 	// regardless of mode, to stay deadlock-free.
-	Lock(ctx context.Context, tx Tx, shared, exclusive []string) error
+	Lock(ctx context.Context, tx Tx, shared, exclusive []uuid.UUID) error
 	// Floor returns the minimum valid cursor. Requests starting below it
 	// must trigger a full resync.
 	Floor(ctx context.Context, tx Tx) (int64, error)
@@ -165,7 +163,7 @@ type Store[Tx any] interface {
 	Claim(
 		ctx context.Context,
 		tx Tx,
-		userID string,
+		userID uuid.UUID,
 		ids []uuid.UUID,
 	) ([]uuid.UUID, error)
 	// Grants returns, for each of the given owners, the identifiers of
@@ -176,8 +174,8 @@ type Store[Tx any] interface {
 	Grants(
 		ctx context.Context,
 		tx Tx,
-		owners []string,
-	) (map[string][]string, error)
+		owners []uuid.UUID,
+	) (map[uuid.UUID][]uuid.UUID, error)
 }
 
 // Prefilter is an optional fast-path duplicate filter (e.g. backed by

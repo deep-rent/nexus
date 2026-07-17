@@ -269,7 +269,9 @@ func (mockStore) Exec(
 	return nil
 }
 
-func (mockStore) Lock(context.Context, struct{}, []string, []string) error {
+func (mockStore) Lock(
+	context.Context, struct{}, []uuid.UUID, []uuid.UUID,
+) error {
 	return nil
 }
 
@@ -289,14 +291,14 @@ func (mockStore) Watermark(context.Context, struct{}) (int64, error) {
 }
 
 func (mockStore) Claim(
-	context.Context, struct{}, string, []uuid.UUID,
+	context.Context, struct{}, uuid.UUID, []uuid.UUID,
 ) ([]uuid.UUID, error) {
 	return nil, nil
 }
 
 func (mockStore) Grants(
-	context.Context, struct{}, []string,
-) (map[string][]string, error) {
+	context.Context, struct{}, []uuid.UUID,
+) (map[uuid.UUID][]uuid.UUID, error) {
 	return nil, nil
 }
 

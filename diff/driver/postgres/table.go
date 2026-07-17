@@ -269,9 +269,10 @@ func (t *Table) buildSQL() {
 	// clearing it additionally requires the row to be dead, so departure
 	// tombstones of live rows survive for late syncers.
 	t.upsertSQL = "WITH incoming AS (" +
-		" SELECT t.id, t.user_id, nullif(t.team_id, '')::uuid AS team_id," +
+		" SELECT t.id, t.user_id," +
+		" nullif(t.team_id, " + zeroUUID + ") AS team_id," +
 		" t.hlc, t.data" +
-		" FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::bigint[]," +
+		" FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::bigint[]," +
 		" $5::jsonb[]) AS t(id, user_id, team_id, hlc, data)" +
 		"), alive AS (" +
 		" SELECT i.* FROM incoming i" +
@@ -291,16 +292,17 @@ func (t *Table) buildSQL() {
 		" SELECT " + sel + " FROM alive a" +
 		" ON CONFLICT (id) DO UPDATE SET " + set +
 		" WHERE EXCLUDED.hlc > d.hlc AND " + guard +
-		" RETURNING d.id::text, d." + t.userCol + "::text," +
-		" d." + t.teamCol + "::text, d.hlc"
+		" RETURNING d.id, d." + t.userCol + "," +
+		" COALESCE(d." + t.teamCol + ", " + zeroUUID + "), d.hlc"
 
 	// The scoped variant backs Delete; the unscoped variant backs the
 	// backend-write helper Bury. Their argument lists differ: the scope
 	// occupies $5 and $6 in the scoped variant, shifting the model name.
 	remove := func(guard, model string) string {
 		return "WITH incoming AS (" +
-			" SELECT t.id, t.hlc, t.user_id, nullif(t.team_id, '')::uuid AS team_id" +
-			" FROM unnest($1::uuid[], $2::bigint[], $3::uuid[], $4::text[])" +
+			" SELECT t.id, t.hlc, t.user_id," +
+			" nullif(t.team_id, " + zeroUUID + ") AS team_id" +
+			" FROM unnest($1::uuid[], $2::bigint[], $3::uuid[], $4::uuid[])" +
 			" AS t(id, hlc, user_id, team_id)" +
 			"), victims AS (" +
 			" DELETE FROM " + t.ident + " a USING incoming i" +
@@ -322,7 +324,8 @@ func (t *Table) buildSQL() {
 			" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
 			" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
 			" WHERE EXCLUDED.hlc > ts.hlc" +
-			" RETURNING ts.id::text, ts.user_id::text, ts.team_id::text, ts.hlc"
+			" RETURNING ts.id, ts.user_id," +
+			" COALESCE(ts.team_id, " + zeroUUID + "), ts.hlc"
 	}
 	t.deleteSQL = remove(
 		" AND (a."+t.userCol+" = $5::uuid"+
@@ -331,12 +334,12 @@ func (t *Table) buildSQL() {
 	)
 	t.burySQL = remove("", "$5")
 
-	t.resolveSQL = "SELECT id::text, " + t.userCol + "::text," +
-		" " + t.teamCol + "::text FROM " + t.ident +
+	t.resolveSQL = "SELECT id, " + t.userCol + "," +
+		" COALESCE(" + t.teamCol + ", " + zeroUUID + ") FROM " + t.ident +
 		" WHERE id = ANY($1::uuid[])"
 
-	t.snapshotSQL = "SELECT id::text, " + t.teamCol + "::text FROM " +
-		t.ident + " WHERE id = ANY($1::uuid[])"
+	t.snapshotSQL = "SELECT id, COALESCE(" + t.teamCol + ", " + zeroUUID +
+		") FROM " + t.ident + " WHERE id = ANY($1::uuid[])"
 
 	t.reseqSQL = "UPDATE " + t.ident + " SET seq = " + s.nextval +
 		" WHERE id = ANY($1::uuid[])"
@@ -362,13 +365,13 @@ func (t *Table) Upsert(
 	}
 
 	n := len(ops)
-	ids := make([]string, n)
-	users := make([]string, n)
-	teams := make([]string, n)
+	ids := make([]uuid.UUID, n)
+	users := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
 	datas := make([]string, n)
 	for i, op := range ops {
-		ids[i] = op.Meta.ID.String()
+		ids[i] = op.Meta.ID
 		users[i] = op.Meta.UserID
 		teams[i] = op.Meta.TeamID
 		hlcs[i] = int64(op.Time)
@@ -408,7 +411,7 @@ func (t *Table) Upsert(
 		moves = append(moves, move{
 			id:   st.id,
 			user: st.user,
-			team: old.String,
+			team: old,
 			hlc:  st.hlc,
 		})
 		moved = append(moved, st)
@@ -429,8 +432,8 @@ func (t *Table) Upsert(
 func (t *Table) snapshot(
 	ctx context.Context,
 	tx *sql.Tx,
-	ids []string,
-) (map[string]sql.NullString, error) {
+	ids []uuid.UUID,
+) (map[uuid.UUID]uuid.UUID, error) {
 	rows, err := tx.QueryContext(ctx, t.snapshotSQL, ids)
 	if err != nil {
 		return nil, fmt.Errorf("failed to snapshot documents: %w", err)
@@ -439,17 +442,18 @@ func (t *Table) snapshot(
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]sql.NullString, len(states))
+	out := make(map[uuid.UUID]uuid.UUID, len(states))
 	for _, st := range states {
 		out[st.id] = st.team
 	}
 	return out, nil
 }
 
-// state pairs a document ID with its team assignment.
+// state pairs a document ID with its team assignment; a zero team denotes
+// a personal document (NULL team column).
 type state struct {
-	id   string
-	team sql.NullString
+	id   uuid.UUID
+	team uuid.UUID
 }
 
 // scanStates consumes rows of the shape (id, team_id).
@@ -510,15 +514,18 @@ func (t *Table) Bury(
 }
 
 // deleteArgs renders delete operations into the parallel array parameters
-// shared by Delete and Bury.
-func deleteArgs(ops []diff.Op) ([]string, []int64, []string, []string) {
+// shared by Delete and Bury. Team arrays carry the zero-UUID sentinel for
+// personal documents.
+func deleteArgs(
+	ops []diff.Op,
+) ([]uuid.UUID, []int64, []uuid.UUID, []uuid.UUID) {
 	n := len(ops)
-	ids := make([]string, n)
+	ids := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
-	users := make([]string, n)
-	teams := make([]string, n)
+	users := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	for i, op := range ops {
-		ids[i] = op.Meta.ID.String()
+		ids[i] = op.Meta.ID
 		hlcs[i] = int64(op.Time)
 		users[i] = op.Meta.UserID
 		teams[i] = op.Meta.TeamID
@@ -561,7 +568,7 @@ func (t *Table) Reseq(
 	if len(ids) == 0 {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, t.reseqSQL, toStrings(ids)); err != nil {
+	if _, err := tx.ExecContext(ctx, t.reseqSQL, ids); err != nil {
 		return fmt.Errorf("failed to reseq documents: %w", err)
 	}
 	return nil
@@ -600,12 +607,12 @@ func (t *Table) fetchQuery(n int) string {
 	s := t.store
 	tomb := s.tombstones
 	live := func(cond string) string {
-		return "SELECT id::text, seq, hlc, FALSE AS deleted, data" +
+		return "SELECT id, seq, hlc, FALSE AS deleted, data" +
 			" FROM " + t.ident +
 			" WHERE " + cond + " AND seq > $3 AND seq < $4"
 	}
 	dead := func(cond string) string {
-		return "SELECT id::text, seq, hlc, TRUE AS deleted, NULL::jsonb AS data" +
+		return "SELECT id, seq, hlc, TRUE AS deleted, NULL::jsonb AS data" +
 			" FROM " + tomb +
 			" WHERE type = $5::text AND " + cond +
 			" AND seq > $3 AND seq < $4"
@@ -715,12 +722,12 @@ func (t *Table) cascadeTeam(
 	moved []stamp,
 ) error {
 	n := len(moved)
-	ids := make([]string, n)
-	teams := make([]string, n)
+	ids := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
 	for i, m := range moved {
 		ids[i] = m.id
-		teams[i] = m.team.String // NULL scans to the empty string
+		teams[i] = m.team // zero sentinel for personal documents
 		hlcs[i] = m.hlc
 	}
 
@@ -729,8 +736,8 @@ func (t *Table) cascadeTeam(
 		// the move tombstones: within one statement, o reads the snapshot
 		// taken at statement start.
 		query := "WITH roots AS (" +
-			" SELECT r.id, nullif(r.team, '')::uuid AS team, r.hlc" +
-			" FROM unnest($1::uuid[], $2::text[], $3::bigint[])" +
+			" SELECT r.id, nullif(r.team, " + zeroUUID + ") AS team, r.hlc" +
+			" FROM unnest($1::uuid[], $2::uuid[], $3::bigint[])" +
 			" AS r(id, team, hlc)" +
 			"), moved AS (" +
 			" UPDATE " + d.table.ident + " c" +
@@ -770,22 +777,23 @@ func (t *Table) cascadeDelete(
 	victims []stamp,
 ) error {
 	n := len(victims)
-	ids := make([]string, n)
-	users := make([]string, n)
-	teams := make([]string, n)
+	ids := make([]uuid.UUID, n)
+	users := make([]uuid.UUID, n)
+	teams := make([]uuid.UUID, n)
 	hlcs := make([]int64, n)
 	for i, v := range victims {
 		ids[i] = v.id
 		users[i] = v.user
-		teams[i] = v.team.String // NULL scans to the empty string
+		teams[i] = v.team // zero sentinel for personal documents
 		hlcs[i] = v.hlc
 	}
 
 	ds := t.descendants()
 	for _, d := range slices.Backward(ds) {
 		query := "WITH roots AS (" +
-			" SELECT r.id, r.user_id, nullif(r.team, '')::uuid AS team_id, r.hlc" +
-			" FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::bigint[])" +
+			" SELECT r.id, r.user_id," +
+			" nullif(r.team, " + zeroUUID + ") AS team_id, r.hlc" +
+			" FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::bigint[])" +
 			" AS r(id, user_id, team, hlc)" +
 			"), doomed AS (" +
 			" DELETE FROM " + d.table.ident + " c USING roots r" +

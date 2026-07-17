@@ -57,8 +57,8 @@ func (r *recorder) Delete(
 // asset is a root document model with payload validation.
 type asset struct {
 	ID     uuid.UUID `json:"id"`
-	UserID string    `json:"user_id"`
-	TeamID *string   `json:"team_id,omitzero"`
+	UserID uuid.UUID `json:"user_id"`
+	TeamID uuid.UUID `json:"team_id,omitzero"`
 	Name   string    `json:"name"`
 }
 
@@ -103,14 +103,14 @@ func stamp(n uint64) diff.Stamp {
 	return diff.Stamp(hlc.Pack(uint64(time.Now().Unix()), n))
 }
 
-func assetDoc(id uuid.UUID, owner, team string) jsontext.Value {
+func assetDoc(id uuid.UUID, owner, team uuid.UUID) jsontext.Value {
 	doc := map[string]any{
 		"id":      id.String(),
-		"user_id": owner,
+		"user_id": owner.String(),
 		"name":    "doc",
 	}
-	if team != "" {
-		doc["team_id"] = team
+	if team != uuid.Nil() {
+		doc["team_id"] = team.String()
 	}
 	b, err := json.Marshal(doc)
 	if err != nil {
@@ -187,14 +187,14 @@ func TestEngine_Sync_PushPull(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	id := uuid.NewV7()
 
 	// Device A pushes one asset; its own write must not echo back.
 	res := sync(t, f, scope, &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(id, owner, ""), stamp(1)),
+			upsert("asset", assetDoc(id, owner, uuid.Nil()), stamp(1)),
 		},
 	})
 	if len(res.Patches) != 0 {
@@ -233,13 +233,13 @@ func TestEngine_Sync_IdempotentReplay(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	id := uuid.NewV7()
 
 	req := &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(id, owner, ""), stamp(1)),
+			upsert("asset", assetDoc(id, owner, uuid.Nil()), stamp(1)),
 		},
 	}
 
@@ -271,10 +271,10 @@ func TestEngine_Sync_Compaction(t *testing.T) {
 	t.Run("upsert then delete", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
+		owner := uuid.NewV7()
 		scope := diff.Scope{UserID: owner}
 		id := uuid.NewV7()
-		doc := assetDoc(id, owner, "")
+		doc := assetDoc(id, owner, uuid.Nil())
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			upsert("asset", doc, stamp(10)),
 			remove("asset", doc, stamp(20)),
@@ -290,10 +290,10 @@ func TestEngine_Sync_Compaction(t *testing.T) {
 	t.Run("delete then newer upsert", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
+		owner := uuid.NewV7()
 		scope := diff.Scope{UserID: owner}
 		id := uuid.NewV7()
-		doc := assetDoc(id, owner, "")
+		doc := assetDoc(id, owner, uuid.Nil())
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			remove("asset", doc, stamp(10)),
 			upsert("asset", doc, stamp(20)),
@@ -311,7 +311,7 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	const total = 10
@@ -321,7 +321,7 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 		id := uuid.NewV7()
 		want[id] = true
 		changes = append(changes,
-			upsert("asset", assetDoc(id, owner, ""), stamp(uint64(i+1))))
+			upsert("asset", assetDoc(id, owner, uuid.Nil()), stamp(uint64(i+1))))
 	}
 	sync(t, f, scope, &diff.Request{Changes: changes})
 
@@ -371,13 +371,13 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 func TestEngine_Sync_Convergence(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	id := uuid.NewV7()
 
 	// Two devices edit the same document concurrently; regardless of
 	// arrival order, the highest HLC timestamp must win everywhere.
-	editA := upsert("asset", assetDoc(id, owner, ""), stamp(10))
+	editA := upsert("asset", assetDoc(id, owner, uuid.Nil()), stamp(10))
 	editB := upsert("asset", jsontext.Value(fmt.Sprintf(
 		`{"id":%q,"user_id":%q,"name":"winner"}`, id, owner,
 	)), stamp(20))
@@ -415,13 +415,13 @@ func TestEngine_Sync_Convergence(t *testing.T) {
 func TestEngine_Sync_ChildResolution(t *testing.T) {
 	t.Parallel()
 
-	team := uuid.NewV7().String()
+	team := uuid.NewV7()
 
 	t.Run("in-batch parent", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
-		scope := diff.Scope{UserID: owner, Teams: []string{team}}
+		owner := uuid.NewV7()
+		scope := diff.Scope{UserID: owner, Teams: []uuid.UUID{team}}
 		assetID, contractID := uuid.NewV7(), uuid.NewV7()
 
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
@@ -451,12 +451,12 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 	t.Run("stored parent", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
+		owner := uuid.NewV7()
 		scope := diff.Scope{UserID: owner}
 		assetID, contractID := uuid.NewV7(), uuid.NewV7()
 
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-			upsert("asset", assetDoc(assetID, owner, ""), stamp(1)),
+			upsert("asset", assetDoc(assetID, owner, uuid.Nil()), stamp(1)),
 		}})
 		sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 			upsert("contract", contractDoc(contractID, assetID), stamp(2)),
@@ -470,7 +470,7 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 	t.Run("missing parent", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
+		owner := uuid.NewV7()
 		scope := diff.Scope{UserID: owner}
 
 		c := upsert("contract",
@@ -484,13 +484,13 @@ func TestEngine_Sync_ChildResolution(t *testing.T) {
 	t.Run("foreign root", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
-		outsider := uuid.NewV7().String()
+		owner := uuid.NewV7()
+		outsider := uuid.NewV7()
 		assetID := uuid.NewV7()
 
 		sync(t, f, diff.Scope{UserID: owner}, &diff.Request{
 			Changes: []diff.Change{
-				upsert("asset", assetDoc(assetID, owner, ""), stamp(1)),
+				upsert("asset", assetDoc(assetID, owner, uuid.Nil()), stamp(1)),
 			},
 		})
 
@@ -509,9 +509,9 @@ func TestEngine_Sync_Shares(t *testing.T) {
 	t.Run("grant touches personal documents", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
-		team := uuid.NewV7().String()
-		scope := diff.Scope{UserID: owner, Teams: []string{team}}
+		owner := uuid.NewV7()
+		team := uuid.NewV7()
+		scope := diff.Scope{UserID: owner, Teams: []uuid.UUID{team}}
 
 		share := jsontext.Value(fmt.Sprintf(
 			`{"id":%q,"user_id":%q,"team_id":%q}`,
@@ -529,12 +529,12 @@ func TestEngine_Sync_Shares(t *testing.T) {
 	t.Run("foreign share is denied", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		owner := uuid.NewV7().String()
-		team := uuid.NewV7().String()
+		owner := uuid.NewV7()
+		team := uuid.NewV7()
 		// The caller is a member of the team but not the granting owner.
 		scope := diff.Scope{
-			UserID: uuid.NewV7().String(),
-			Teams:  []string{team},
+			UserID: uuid.NewV7(),
+			Teams:  []uuid.UUID{team},
 		}
 
 		share := jsontext.Value(fmt.Sprintf(
@@ -554,10 +554,10 @@ func TestEngine_Sync_LockSet(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
-	other := uuid.NewV7().String() // owner of a foreign doc in a shared team
-	scope := diff.Scope{UserID: owner, Teams: []string{team}}
+	owner := uuid.NewV7()
+	team := uuid.NewV7()
+	other := uuid.NewV7() // owner of a foreign doc in a shared team
+	scope := diff.Scope{UserID: owner, Teams: []uuid.UUID{team}}
 
 	sync(t, f, scope, &diff.Request{Changes: []diff.Change{
 		upsert("asset", assetDoc(uuid.NewV7(), other, team), stamp(1)),
@@ -567,7 +567,7 @@ func TestEngine_Sync_LockSet(t *testing.T) {
 		t.Fatal("sync should have acquired locks")
 	}
 	locked := f.store.Locked[len(f.store.Locked)-1]
-	for _, key := range []string{owner, team, other} {
+	for _, key := range []uuid.UUID{owner, team, other} {
 		if !slices.Contains(locked, key) {
 			t.Errorf("lock set %v should contain %v", locked, key)
 		}
@@ -577,7 +577,7 @@ func TestEngine_Sync_LockSet(t *testing.T) {
 func TestEngine_Sync_Errors(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	t.Run("too many changes", func(t *testing.T) {
@@ -585,8 +585,8 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		f := setup(diff.WithMaxChanges(1))
 		_, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{
-				upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
-				upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(2)),
+				upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
+				upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(2)),
 			},
 		})
 		if !errors.Is(err, diff.ErrTooManyChanges) {
@@ -597,7 +597,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 	t.Run("unknown type", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		c := upsert("vehicle", assetDoc(uuid.NewV7(), owner, ""), stamp(1))
+		c := upsert("vehicle", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -607,8 +607,10 @@ func TestEngine_Sync_Errors(t *testing.T) {
 	t.Run("scope violation", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		foreign := uuid.NewV7().String()
-		c := upsert("asset", assetDoc(uuid.NewV7(), foreign, ""), stamp(1))
+		foreign := uuid.NewV7()
+		c := upsert(
+			"asset", assetDoc(uuid.NewV7(), foreign, uuid.Nil()), stamp(1),
+		)
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -636,7 +638,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		t.Parallel()
 		f := setup()
 
-		doc := assetDoc(uuid.NewV7(), owner, "")
+		doc := assetDoc(uuid.NewV7(), owner, uuid.Nil())
 		badID := upsert("asset", doc, stamp(1))
 		badID.ID = uuid.NewV4() // not a UUIDv7
 		badAction := upsert("asset", doc, stamp(2))
@@ -671,7 +673,7 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		t.Parallel()
 		f := setup()
 		future := diff.Stamp(hlc.Pack(uint64(time.Now().Unix())+7200, 0))
-		c := upsert("asset", assetDoc(uuid.NewV7(), owner, ""), future)
+		c := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), future)
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -712,13 +714,13 @@ func TestEngine_Sync_ApplyOrder(t *testing.T) {
 		diff.Owner("asset", "asset_id"))
 	engine := diff.New[*mock.Tx](store, reg)
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	assetID, contractID := uuid.NewV7(), uuid.NewV7()
 
 	// Push child before parent, and delete parent before child: the engine
 	// must reorder both along the dependency graph.
-	doc := assetDoc(assetID, owner, "")
+	doc := assetDoc(assetID, owner, uuid.Nil())
 	if _, err := engine.Sync(t.Context(), scope, &diff.Request{
 		Changes: []diff.Change{
 			upsert("contract", contractDoc(contractID, assetID), stamp(2)),
@@ -749,12 +751,12 @@ func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	// Seed one document so the sequence has advanced past zero.
 	sync(t, f, scope, &diff.Request{Changes: []diff.Change{
-		upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
+		upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
 	}})
 
 	before, err := f.store.Watermark(t.Context(), &mock.Tx{})
@@ -782,7 +784,7 @@ func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
 	// A pure replay (all mutation ids already claimed) is likewise a zero-
 	// write request and must not advance the sequence either.
 	replay := &diff.Request{Changes: []diff.Change{
-		upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(2)),
+		upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(2)),
 	}}
 	sync(t, f, scope, replay)
 	seeded, err := f.store.Watermark(t.Context(), &mock.Tx{})
@@ -811,8 +813,8 @@ type countingStore struct {
 func (c *countingStore) Grants(
 	ctx context.Context,
 	tx *mock.Tx,
-	owners []string,
-) (map[string][]string, error) {
+	owners []uuid.UUID,
+) (map[uuid.UUID][]uuid.UUID, error) {
 	c.grants++
 	return c.Store.Grants(ctx, tx, owners)
 }
@@ -828,13 +830,13 @@ func TestEngine_Sync_GrantsResolvedOncePerSync(t *testing.T) {
 	reg.Register[asset]("asset", assets, diff.Root())
 	engine := diff.New[*mock.Tx](cs, reg)
 
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := uuid.NewV7()
+	team := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 
 	// The owner has already granted a team access to their personal
 	// documents.
-	inner.Granted[owner] = []string{team}
+	inner.Granted[owner] = []uuid.UUID{team}
 
 	// Writing a personal document folds the granted team into the lock set.
 	// assemble runs twice (pre-lock and post-lock verify), but the grant set
@@ -843,7 +845,7 @@ func TestEngine_Sync_GrantsResolvedOncePerSync(t *testing.T) {
 	// held.
 	if _, err := engine.Sync(t.Context(), scope, &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(uuid.NewV7(), owner, ""), stamp(1)),
+			upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
 		},
 	}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)

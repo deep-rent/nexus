@@ -19,9 +19,10 @@ import (
 	"errors"
 	"net/http"
 
+	"uuid"
+
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/router"
-	"github.com/deep-rent/nexus/valid"
 )
 
 // Error reasons emitted by the sync endpoint, complementing the reasons
@@ -83,27 +84,15 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 					"machine tokens cannot sync documents.",
 			}
 		}
+		// Subjects and memberships are typed UUIDs end to end; a token
+		// whose sub claim failed to parse never verifies, so only the
+		// zero value needs rejecting here.
 		sub := claims.Subject()
-		if !valid.UUID(sub) {
+		if sub == uuid.Nil() {
 			return &router.Error{
 				Status:      http.StatusUnauthorized,
 				Reason:      auth.ReasonInvalidToken,
 				Description: "The token subject is not a user identifier.",
-			}
-		}
-
-		// Team memberships flow into ::uuid casts throughout the store, so
-		// a single malformed value would fail the whole transaction as a
-		// raw 500. Reject the token cleanly instead, symmetric with the
-		// subject check above.
-		teams := claims.Memberships()
-		for _, team := range teams {
-			if !valid.UUID(team) {
-				return &router.Error{
-					Status:      http.StatusUnauthorized,
-					Reason:      auth.ReasonInvalidToken,
-					Description: "A team membership is not a valid identifier.",
-				}
 			}
 		}
 
@@ -112,7 +101,7 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 			return aerr
 		}
 
-		scope := Scope{UserID: sub, Teams: teams}
+		scope := Scope{UserID: sub, Teams: claims.Memberships()}
 		resp, err := s.Sync(e.Context(), scope, &req)
 		if err != nil {
 			return translate(err)

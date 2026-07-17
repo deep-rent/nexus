@@ -29,8 +29,8 @@ import (
 
 func op(
 	id uuid.UUID,
-	owner string,
-	team string,
+	owner uuid.UUID,
+	team uuid.UUID,
 	time diff.Stamp,
 ) diff.Op {
 	return diff.Op{
@@ -47,18 +47,18 @@ func TestHandler_LWW(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	id := uuid.NewV7()
 	ctx := t.Context()
 
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
-		[]diff.Op{op(id, owner, "", 100)}); err != nil {
+		[]diff.Op{op(id, owner, uuid.Nil(), 100)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	// A stale upsert must lose against the newer row.
-	stale := op(id, owner, "", 50)
+	stale := op(id, owner, uuid.Nil(), 50)
 	stale.Data = jsontext.Value(`{"stale":true}`)
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
 		[]diff.Op{stale}); err != nil {
@@ -69,7 +69,7 @@ func TestHandler_LWW(t *testing.T) {
 	}
 
 	// A newer delete wins and leaves a tombstone.
-	del := op(id, owner, "", 200)
+	del := op(id, owner, uuid.Nil(), 200)
 	del.Action = diff.ActionDelete
 	del.Data = nil
 	if err := h.Delete(ctx, &mock.Tx{}, scope,
@@ -85,14 +85,14 @@ func TestHandler_LWW(t *testing.T) {
 
 	// A stale upsert must not resurrect; a newer one must.
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
-		[]diff.Op{op(id, owner, "", 150)}); err != nil {
+		[]diff.Op{op(id, owner, uuid.Nil(), 150)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if _, alive := h.Rows()[id]; alive {
 		t.Error("stale upsert should not have resurrected the row")
 	}
 	if err := h.Upsert(ctx, &mock.Tx{}, scope,
-		[]diff.Op{op(id, owner, "", 300)}); err != nil {
+		[]diff.Op{op(id, owner, uuid.Nil(), 300)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	if _, alive := h.Rows()[id]; !alive {
@@ -109,19 +109,19 @@ func TestHandler_HijackGuard(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7().String()
-	attacker := uuid.NewV7().String()
+	owner := uuid.NewV7()
+	attacker := uuid.NewV7()
 	id := uuid.NewV7()
 	ctx := t.Context()
 
 	if err := h.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
-		[]diff.Op{op(id, owner, "", 100)}); err != nil {
+		[]diff.Op{op(id, owner, uuid.Nil(), 100)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	// The attacker forges the owner's identity in the payload but syncs
 	// under their own scope: the existing row must stay untouched.
-	forged := op(id, owner, "", 200)
+	forged := op(id, owner, uuid.Nil(), 200)
 	forged.Data = jsontext.Value(`{"hijacked":true}`)
 	if err := h.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: attacker},
 		[]diff.Op{forged}); err != nil {
@@ -131,7 +131,7 @@ func TestHandler_HijackGuard(t *testing.T) {
 		t.Errorf("after forged upsert: got payload %s; want {}", got)
 	}
 
-	del := op(id, owner, "", 300)
+	del := op(id, owner, uuid.Nil(), 300)
 	del.Action = diff.ActionDelete
 	del.Data = nil
 	if err := h.Delete(ctx, &mock.Tx{}, diff.Scope{UserID: attacker},
@@ -149,7 +149,7 @@ func TestHandler_Fetch_Window(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}
 	ctx := t.Context()
 
@@ -157,8 +157,14 @@ func TestHandler_Fetch_Window(t *testing.T) {
 	for i := range 5 {
 		id := uuid.NewV7()
 		ids = append(ids, id)
-		if err := h.Upsert(ctx, &mock.Tx{}, scope,
-			[]diff.Op{op(id, owner, "", diff.Stamp(100+i))}); err != nil {
+		if err := h.Upsert(
+			ctx,
+			&mock.Tx{},
+			scope,
+			[]diff.Op{
+				op(id, owner, uuid.Nil(), diff.Stamp(100+i)),
+			},
+		); err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
 	}
@@ -190,19 +196,19 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 	store := mock.New()
 	h := mock.NewHandler(store)
 
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
-	member := uuid.NewV7().String()
+	owner := uuid.NewV7()
+	team := uuid.NewV7()
+	member := uuid.NewV7()
 	ctx := t.Context()
 
 	id := uuid.NewV7()
 	if err := h.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
-		[]diff.Op{op(id, owner, "", 100)}); err != nil {
+		[]diff.Op{op(id, owner, uuid.Nil(), 100)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
 	window := diff.Window{Since: 0, Until: 1 << 60, Limit: 10}
-	memberScope := diff.Scope{UserID: member, Teams: []string{team}}
+	memberScope := diff.Scope{UserID: member, Teams: []uuid.UUID{team}}
 
 	got, err := h.Fetch(ctx, &mock.Tx{}, memberScope, window)
 	if err != nil {
@@ -212,7 +218,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 		t.Fatal("personal document should be invisible before the grant")
 	}
 
-	store.Granted[owner] = []string{team}
+	store.Granted[owner] = []uuid.UUID{team}
 
 	got, err = h.Fetch(ctx, &mock.Tx{}, memberScope, window)
 	if err != nil {
@@ -223,7 +229,7 @@ func TestHandler_Fetch_Grants(t *testing.T) {
 	}
 }
 
-func shareOp(id uuid.UUID, owner, team string, time diff.Stamp) diff.Op {
+func shareOp(id, owner, team uuid.UUID, time diff.Stamp) diff.Op {
 	return diff.Op{
 		Meta:   diff.Meta{ID: id, UserID: owner, TeamID: team},
 		Action: diff.ActionUpsert,
@@ -240,13 +246,13 @@ func TestShares_WriteThrough(t *testing.T) {
 	// A personal document to be re-sequenced when a grant lands.
 	docs := mock.NewHandler(store)
 
-	owner := uuid.NewV7().String()
-	team := uuid.NewV7().String()
+	owner := uuid.NewV7()
+	team := uuid.NewV7()
 	ctx := t.Context()
 
 	docID := uuid.NewV7()
 	if err := docs.Upsert(ctx, &mock.Tx{}, diff.Scope{UserID: owner},
-		[]diff.Op{op(docID, owner, "", 1)}); err != nil {
+		[]diff.Op{op(docID, owner, uuid.Nil(), 1)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	seqBefore := docs.Rows()[docID].Seq
@@ -254,13 +260,13 @@ func TestShares_WriteThrough(t *testing.T) {
 	// A landing grant writes through to Granted and re-sequences the owner's
 	// personal documents (Touch).
 	shareID := uuid.NewV7()
-	scope := diff.Scope{UserID: owner, Teams: []string{team}}
+	scope := diff.Scope{UserID: owner, Teams: []uuid.UUID{team}}
 	if err := shares.Upsert(ctx, &mock.Tx{}, scope,
 		[]diff.Op{shareOp(shareID, owner, team, 10)}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
-	granted, err := store.Grants(ctx, &mock.Tx{}, []string{owner})
+	granted, err := store.Grants(ctx, &mock.Tx{}, []uuid.UUID{owner})
 	if err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
@@ -297,7 +303,7 @@ func TestShares_WriteThrough(t *testing.T) {
 	); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
-	granted, err = store.Grants(ctx, &mock.Tx{}, []string{owner})
+	granted, err = store.Grants(ctx, &mock.Tx{}, []uuid.UUID{owner})
 	if err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
@@ -325,12 +331,17 @@ func TestStore_ErrorInjection(t *testing.T) {
 		}
 		s = mock.New()
 		s.ErrLock = boom
-		if err := s.Lock(ctx, tx, nil, []string{"k"}); !errors.Is(err, boom) {
+		key := uuid.NewV7()
+		if err := s.Lock(
+			ctx, tx, nil, []uuid.UUID{key},
+		); !errors.Is(err, boom) {
 			t.Errorf("lock: got %v; want %v", err, boom)
 		}
 		s = mock.New()
 		s.ErrGrants = boom
-		if _, err := s.Grants(ctx, tx, []string{"o"}); !errors.Is(err, boom) {
+		if _, err := s.Grants(
+			ctx, tx, []uuid.UUID{key},
+		); !errors.Is(err, boom) {
 			t.Errorf("grants: got %v; want %v", err, boom)
 		}
 	})

@@ -23,6 +23,8 @@ import (
 	"slices"
 	"testing"
 
+	"uuid"
+
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/router"
@@ -56,7 +58,7 @@ func TestClaims_HasRole(t *testing.T) {
 func TestClaims_Memberships(t *testing.T) {
 	t.Parallel()
 
-	teams := []string{"team-a", "team-b"}
+	teams := []uuid.UUID{uuid.NewV7(), uuid.NewV7()}
 	c := &auth.Claims{Teams: teams}
 
 	got := c.Memberships()
@@ -126,14 +128,15 @@ func TestClaims_Delegated(t *testing.T) {
 		t.Error("for empty claims: got true; want false")
 	}
 
-	c2 := &auth.Claims{Azp: "client1"}
-	c2.Sub = "client1"
+	client := uuid.NewV7()
+	c2 := &auth.Claims{Azp: client}
+	c2.Sub = client
 	if c2.Delegated() {
 		t.Error("when azp equals sub: got true; want false")
 	}
 
-	c3 := &auth.Claims{Azp: "client1"}
-	c3.Sub = "user1"
+	c3 := &auth.Claims{Azp: client}
+	c3.Sub = uuid.NewV7()
 	if !c3.Delegated() {
 		t.Error("when azp differs from sub: got false; want true")
 	}

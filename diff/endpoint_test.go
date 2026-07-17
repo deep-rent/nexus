@@ -57,10 +57,10 @@ func serve(
 }
 
 // claimsFor builds delegated end-user claims for the given user.
-func claimsFor(userID string, teams ...string) *auth.Claims {
+func claimsFor(userID uuid.UUID, teams ...uuid.UUID) *auth.Claims {
 	c := &auth.Claims{Teams: teams}
 	c.Sub = userID
-	c.Azp = "test-client" // azp != sub: acting on behalf of the user
+	c.Azp = uuid.NewV7() // azp != sub: acting on behalf of the user
 	return c
 }
 
@@ -96,10 +96,10 @@ func TestEndpoint_Sync(t *testing.T) {
 	t.Parallel()
 
 	f := setup()
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 	srv := serve(t, f, claimsFor(owner))
 
-	doc := assetDoc(uuid.NewV7(), owner, "")
+	doc := assetDoc(uuid.NewV7(), owner, uuid.Nil())
 	code, body := post(t, srv, fmt.Sprintf(
 		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
 			`"data":%s,"time":%d}]}`,
@@ -121,13 +121,13 @@ func TestEndpoint_Sync(t *testing.T) {
 func TestEndpoint_Errors(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.NewV7().String()
+	owner := uuid.NewV7()
 
 	valid := func() string {
 		return fmt.Sprintf(
 			`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 				`"type":"asset","data":%s,"time":%d}]}`,
-			uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
+			uuid.NewV7(), assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1),
 		)
 	}
 
@@ -141,9 +141,10 @@ func TestEndpoint_Errors(t *testing.T) {
 		{
 			name: "machine token",
 			claims: func() *auth.Claims {
+				svc := uuid.NewV7()
 				c := &auth.Claims{}
-				c.Sub = "svc-account"
-				c.Azp = "svc-account" // azp == sub: not delegated
+				c.Sub = svc
+				c.Azp = svc // azp == sub: not delegated
 				return c
 			}(),
 			body:       valid(),
@@ -151,11 +152,10 @@ func TestEndpoint_Errors(t *testing.T) {
 			wantReason: auth.ReasonDelegationRequired,
 		},
 		{
-			name: "non-uuid subject",
+			name: "zero subject",
 			claims: func() *auth.Claims {
 				c := &auth.Claims{}
-				c.Sub = "not-a-uuid"
-				c.Azp = "test-client"
+				c.Azp = uuid.NewV7() // delegated, but no usable subject
 				return c
 			}(),
 			body:       valid(),
@@ -175,7 +175,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			body: fmt.Sprintf(
 				`{"since":-1,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"asset","data":%s,"time":%d}]}`,
-				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
+				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
 			wantReason: router.ReasonValidationFailed,
@@ -186,7 +186,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			body: fmt.Sprintf(
 				`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"vehicle","data":%s,"time":%d}]}`,
-				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
+				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
 			wantReason: diff.ReasonChangesRejected,
@@ -200,8 +200,8 @@ func TestEndpoint_Errors(t *testing.T) {
 				uuid.NewV7(),
 				assetDoc(
 					uuid.NewV7(),
-					uuid.NewV7().String(),
-					"",
+					uuid.NewV7(),
+					uuid.Nil(),
 				), // foreign owner
 				stamp(1),
 			),
@@ -278,27 +278,4 @@ func TestEndpoint_Errors(t *testing.T) {
 				got, diff.ReasonResyncRequired)
 		}
 	})
-}
-
-func TestEndpoint_MalformedMembership(t *testing.T) {
-	t.Parallel()
-
-	owner := uuid.NewV7().String()
-	// A token carrying a non-UUID team membership must be rejected cleanly
-	// as an invalid token, never reaching the store as a broken ::uuid cast.
-	claims := claimsFor(owner, "not-a-uuid")
-	srv := serve(t, setup(), claims)
-
-	code, body := post(t, srv, fmt.Sprintf(
-		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
-			`"data":%s,"time":%d}]}`,
-		uuid.NewV7(), assetDoc(uuid.NewV7(), owner, ""), stamp(1),
-	))
-	if code != http.StatusUnauthorized {
-		t.Errorf("status: got %d; want %d (body %v)",
-			code, http.StatusUnauthorized, body)
-	}
-	if got := body["reason"]; got != auth.ReasonInvalidToken {
-		t.Errorf("reason: got %v; want %q", got, auth.ReasonInvalidToken)
-	}
 }

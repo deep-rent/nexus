@@ -50,17 +50,17 @@ type Store struct {
 	// personal documents. It emulates the driver-side share lookup; the
 	// shares handler writes through to it, and tests may also populate it
 	// directly.
-	Granted map[string][]string
+	Granted map[uuid.UUID][]uuid.UUID
 
 	// Locked records the deduplicated, sorted union of shared and
 	// exclusive keys of every Lock call.
-	Locked [][]string
+	Locked [][]uuid.UUID
 	// Exclusive records the deduplicated, sorted exclusive keys of every
 	// Lock call.
-	Exclusive [][]string
+	Exclusive [][]uuid.UUID
 	// Touched records every owner whose personal documents were
 	// re-sequenced by a landing share grant.
-	Touched []string
+	Touched []uuid.UUID
 
 	// Error injection: when set, the corresponding method fails.
 	ErrExec      error
@@ -82,7 +82,7 @@ type Store struct {
 func New() *Store {
 	return &Store{
 		claimed: make(map[uuid.UUID]struct{}),
-		Granted: make(map[string][]string),
+		Granted: make(map[uuid.UUID][]uuid.UUID),
 	}
 }
 
@@ -108,16 +108,17 @@ func (s *Store) Exec(
 func (s *Store) Lock(
 	_ context.Context,
 	_ *Tx,
-	shared, exclusive []string,
+	shared, exclusive []uuid.UUID,
 ) error {
 	if s.ErrLock != nil {
 		return s.ErrLock
 	}
+	compare := func(a, b uuid.UUID) int { return a.Compare(b) }
 	all := slices.Concat(shared, exclusive)
-	slices.Sort(all)
+	slices.SortFunc(all, compare)
 	all = slices.Compact(all)
 	write := slices.Clone(exclusive)
-	slices.Sort(write)
+	slices.SortFunc(write, compare)
 	write = slices.Compact(write)
 
 	s.mu.Lock()
@@ -167,7 +168,7 @@ func (s *Store) Watermark(_ context.Context, _ *Tx) (int64, error) {
 func (s *Store) Claim(
 	_ context.Context,
 	_ *Tx,
-	_ string,
+	_ uuid.UUID,
 	ids []uuid.UUID,
 ) ([]uuid.UUID, error) {
 	if s.ErrClaim != nil {
@@ -190,15 +191,15 @@ func (s *Store) Claim(
 func (s *Store) Grants(
 	_ context.Context,
 	_ *Tx,
-	owners []string,
-) (map[string][]string, error) {
+	owners []uuid.UUID,
+) (map[uuid.UUID][]uuid.UUID, error) {
 	if s.ErrGrants != nil {
 		return nil, s.ErrGrants
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	out := make(map[string][]string, len(owners))
+	out := make(map[uuid.UUID][]uuid.UUID, len(owners))
 	for _, owner := range owners {
 		if teams := s.Granted[owner]; len(teams) > 0 {
 			out[owner] = slices.Clone(teams)
@@ -210,7 +211,7 @@ func (s *Store) Grants(
 // touch re-sequences all personal documents of the given owner across
 // every registered handler. The shares handler invokes it when a grant
 // lands.
-func (s *Store) touch(ownerID string) error {
+func (s *Store) touch(ownerID uuid.UUID) error {
 	if s.ErrTouch != nil {
 		return s.ErrTouch
 	}
@@ -220,7 +221,7 @@ func (s *Store) touch(ownerID string) error {
 
 	for _, h := range s.handlers {
 		for _, r := range h.rows {
-			if r.meta.UserID == ownerID && r.meta.TeamID == "" {
+			if r.meta.UserID == ownerID && r.meta.TeamID == uuid.Nil() {
 				s.seq++
 				r.seq = s.seq
 			}
@@ -239,7 +240,7 @@ func (s *Store) next() int64 {
 
 // grants reports whether a personal document of the given owner is visible
 // to any of the given teams.
-func (s *Store) granted(owner string, teams []string) bool {
+func (s *Store) granted(owner uuid.UUID, teams []uuid.UUID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, team := range s.Granted[owner] {
@@ -405,7 +406,7 @@ func (h *Handler) Fetch(
 		if scope.Allows(meta.UserID, meta.TeamID) {
 			return true
 		}
-		return meta.TeamID == "" &&
+		return meta.TeamID == uuid.Nil() &&
 			h.store.granted(meta.UserID, scope.Teams)
 	}
 
@@ -546,7 +547,7 @@ func (h *Shares) sync() {
 	defer h.store.mu.Unlock()
 	clear(h.store.Granted)
 	for _, r := range h.rows {
-		if r.meta.TeamID != "" {
+		if r.meta.TeamID != uuid.Nil() {
 			h.store.Granted[r.meta.UserID] = append(
 				h.store.Granted[r.meta.UserID], r.meta.TeamID,
 			)

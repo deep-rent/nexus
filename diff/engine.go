@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/internal/hlc"
@@ -159,7 +158,7 @@ func (e *Engine[Tx]) Now() hlc.Time {
 	return e.cfg.clock.Now()
 }
 
-// change extends Op with ingestion bookkeeping.
+// change extends [Op] with ingestion bookkeeping.
 type change struct {
 	Op
 	model    string
@@ -226,7 +225,7 @@ func (e *Engine[Tx]) Sync(
 	// resolve, lock, then re-verify; on drift, retry once with the union of
 	// both lock sets before giving up.
 	var resp *Response
-	extra := make(map[string]struct{})
+	extra := make(map[uuid.UUID]struct{})
 	for attempt := 0; ; attempt++ {
 		err := e.store.Exec(ctx, func(ctx context.Context, tx Tx) error {
 			shared, exclusive, err := e.assemble(
@@ -252,7 +251,7 @@ func (e *Engine[Tx]) Sync(
 			if err != nil {
 				return err
 			}
-			held := make(map[string]struct{}, len(exclusive))
+			held := make(map[uuid.UUID]struct{}, len(exclusive))
 			for _, k := range exclusive {
 				held[k] = struct{}{}
 			}
@@ -285,7 +284,7 @@ func (e *Engine[Tx]) Sync(
 	}
 
 	e.cfg.logger.Info("sync completed",
-		slog.String("user", scope.UserID),
+		slog.String("user", scope.UserID.String()),
 		slog.Int("received", len(req.Changes)),
 		slog.Int("applied", len(winners)),
 		slog.Int("patches", len(resp.Patches)),
@@ -376,14 +375,13 @@ func (e *Engine[Tx]) screen(
 				)
 				continue
 			}
-			// Owner and team identifiers must be well-formed UUIDs before
-			// they participate in scope checks or lock derivation.
-			if !valid.UUID(meta.UserID) ||
-				(meta.TeamID != "" && !valid.UUID(meta.TeamID)) {
+			// The typed decode already enforces UUID format; only a
+			// missing owner remains to reject.
+			if meta.UserID == uuid.Nil() {
 				rejected.reject(
 					in.ID,
 					Cause{Code: CodeInvalid, Fields: valid.Error{
-						"data": {"owner and team must be valid UUIDs"},
+						"data": {"owner must not be empty"},
 					}},
 				)
 				continue
@@ -517,20 +515,20 @@ func (e *Engine[Tx]) assemble(
 	tx Tx,
 	scope Scope,
 	winners []*change,
-	extra map[string]struct{},
+	extra map[uuid.UUID]struct{},
 	grants bool,
-) (shared, exclusive []string, err error) {
+) (shared, exclusive []uuid.UUID, err error) {
 	if err := e.resolve(ctx, tx, winners); err != nil {
 		return nil, nil, err
 	}
 
-	write := make(map[string]struct{})
+	write := make(map[uuid.UUID]struct{})
 	owners := make(
-		map[string]struct{},
+		map[uuid.UUID]struct{},
 	) // owners whose personal docs are written
-	include := func(userID, teamID string) {
+	include := func(userID, teamID uuid.UUID) {
 		write[userID] = struct{}{}
-		if teamID != "" {
+		if teamID != uuid.Nil() {
 			write[teamID] = struct{}{}
 		} else {
 			owners[userID] = struct{}{}
@@ -563,11 +561,11 @@ func (e *Engine[Tx]) assemble(
 	// owner that newly appears under the lock is caught by its own key in the
 	// drift check below, before its grants could ever matter.
 	if grants && len(owners) > 0 {
-		ids := make([]string, 0, len(owners))
+		ids := make([]uuid.UUID, 0, len(owners))
 		for owner := range owners {
 			ids = append(ids, owner)
 		}
-		slices.Sort(ids)
+		slices.SortFunc(ids, func(a, b uuid.UUID) int { return a.Compare(b) })
 		granted, err := e.store.Grants(ctx, tx, ids)
 		if err != nil {
 			return nil, nil, err
@@ -583,7 +581,7 @@ func (e *Engine[Tx]) assemble(
 		write[k] = struct{}{}
 	}
 
-	read := make(map[string]struct{})
+	read := make(map[uuid.UUID]struct{})
 	if _, ok := write[scope.UserID]; !ok {
 		read[scope.UserID] = struct{}{}
 	}
@@ -593,16 +591,17 @@ func (e *Engine[Tx]) assemble(
 		}
 	}
 
-	shared = make([]string, 0, len(read))
+	shared = make([]uuid.UUID, 0, len(read))
 	for k := range read {
 		shared = append(shared, k)
 	}
-	exclusive = make([]string, 0, len(write))
+	exclusive = make([]uuid.UUID, 0, len(write))
 	for k := range write {
 		exclusive = append(exclusive, k)
 	}
-	slices.Sort(shared)
-	slices.Sort(exclusive)
+	compare := func(a, b uuid.UUID) int { return a.Compare(b) }
+	slices.SortFunc(shared, compare)
+	slices.SortFunc(exclusive, compare)
 	return shared, exclusive, nil
 }
 
@@ -621,8 +620,8 @@ func (e *Engine[Tx]) resolve(
 		c.stored = nil
 		if c.child {
 			c.resolved = false
-			c.Meta.UserID = ""
-			c.Meta.TeamID = ""
+			c.Meta.UserID = uuid.Nil()
+			c.Meta.TeamID = uuid.Nil()
 		}
 	}
 
