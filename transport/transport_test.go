@@ -51,6 +51,18 @@ func TestNewClient_Defaults(t *testing.T) {
 		t.Error("expected TLSClientConfig to be nil by default")
 	}
 
+	if tr.TLSHandshakeTimeout != 10*time.Second {
+		t.Errorf("expected TLSHandshakeTimeout to be 10s, got %v", tr.TLSHandshakeTimeout)
+	}
+
+	if tr.ExpectContinueTimeout != 1*time.Second {
+		t.Errorf("expected ExpectContinueTimeout to be 1s, got %v", tr.ExpectContinueTimeout)
+	}
+
+	if tr.IdleConnTimeout != 90*time.Second {
+		t.Errorf("expected IdleConnTimeout to be 90s, got %v", tr.IdleConnTimeout)
+	}
+
 	if tr.MaxIdleConns != 100 {
 		t.Errorf("expected MaxIdleConns to be 100, got %d", tr.MaxIdleConns)
 	}
@@ -65,6 +77,11 @@ func TestNewClient_WithOptions(t *testing.T) {
 
 	client := NewClient(
 		WithTimeout(10*time.Second),
+		WithDialTimeout(15*time.Second),
+		WithKeepAlive(16*time.Second),
+		WithTLSHandshakeTimeout(17*time.Second),
+		WithExpectContinueTimeout(18*time.Second),
+		WithIdleConnTimeout(19*time.Second),
 		WithTLSConfig(tlsCfg),
 		WithDisableKeepAlives(true),
 		WithForceAttemptHTTP2(true),
@@ -96,6 +113,18 @@ func TestNewClient_WithOptions(t *testing.T) {
 		t.Error("expected TLSClientConfig to be set correctly")
 	}
 
+	if tr.TLSHandshakeTimeout != 17*time.Second {
+		t.Errorf("expected TLSHandshakeTimeout to be 17s, got %v", tr.TLSHandshakeTimeout)
+	}
+
+	if tr.ExpectContinueTimeout != 18*time.Second {
+		t.Errorf("expected ExpectContinueTimeout to be 18s, got %v", tr.ExpectContinueTimeout)
+	}
+
+	if tr.IdleConnTimeout != 19*time.Second {
+		t.Errorf("expected IdleConnTimeout to be 19s, got %v", tr.IdleConnTimeout)
+	}
+
 	if tr.MaxIdleConns != 200 {
 		t.Errorf("expected MaxIdleConns to be 200, got %d", tr.MaxIdleConns)
 	}
@@ -116,6 +145,11 @@ func TestNewClient_WithZeroTimeout(t *testing.T) {
 func TestNewClient_WithNegativeOptions(t *testing.T) {
 	client := NewClient(
 		WithTimeout(-10*time.Second),
+		WithDialTimeout(-1*time.Second),
+		WithKeepAlive(-1*time.Second),
+		WithTLSHandshakeTimeout(-1*time.Second),
+		WithExpectContinueTimeout(-1*time.Second),
+		WithIdleConnTimeout(-1*time.Second),
 		WithMaxIdleConns(-200),
 		WithMaxIdleConnsPerHost(-50),
 	)
@@ -127,6 +161,18 @@ func TestNewClient_WithNegativeOptions(t *testing.T) {
 	tr, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("expected transport to be *http.Transport, got %T", client.Transport)
+	}
+
+	if tr.TLSHandshakeTimeout != 10*time.Second {
+		t.Errorf("expected TLSHandshakeTimeout to be default 10s, got %v", tr.TLSHandshakeTimeout)
+	}
+
+	if tr.ExpectContinueTimeout != 1*time.Second {
+		t.Errorf("expected ExpectContinueTimeout to be default 1s, got %v", tr.ExpectContinueTimeout)
+	}
+
+	if tr.IdleConnTimeout != 90*time.Second {
+		t.Errorf("expected IdleConnTimeout to be default 90s, got %v", tr.IdleConnTimeout)
 	}
 
 	if tr.MaxIdleConns != 100 {

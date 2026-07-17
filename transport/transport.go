@@ -25,7 +25,6 @@
 //	client := transport.NewClient(
 //		transport.WithTimeout(10 * time.Second),
 //		transport.WithDisableKeepAlives(true),
-//		transport.WithForceAttemptHTTP2(true),
 //	)
 package transport
 
@@ -72,25 +71,87 @@ const DefaultIdleConnTimeout = 90 * time.Second
 const DefaultExpectContinueTimeout = 1 * time.Second
 
 type config struct {
-	timeout             time.Duration
-	tlsConfig           *tls.Config
-	disableKeepAlives   bool
-	forceAttemptHTTP2   bool
-	headers             []header.Header
-	retry               []retry.Option
-	maxIdleConns        int
-	maxIdleConnsPerHost int
+	timeout               time.Duration
+	dialTimeout           time.Duration
+	keepAlive             time.Duration
+	tlsHandshakeTimeout   time.Duration
+	expectContinueTimeout time.Duration
+	idleConnTimeout       time.Duration
+	tlsConfig             *tls.Config
+	disableKeepAlives     bool
+	forceAttemptHTTP2     bool
+	headers               []header.Header
+	retry                 []retry.Option
+	maxIdleConns          int
+	maxIdleConnsPerHost   int
 }
 
 // Option configures an [http.Client] via [NewClient].
 type Option func(*config)
 
 // WithTimeout sets the overall client timeout. Defaults to [DefaultTimeout]
-// if unspecified. A timeout of zero means no timeout. Negative values are ignored.
+// if unspecified. A timeout of zero means no timeout. Negative values are
+// ignored.
 func WithTimeout(d time.Duration) Option {
 	return func(c *config) {
 		if d >= 0 {
 			c.timeout = d
+		}
+	}
+}
+
+// WithDialTimeout specifies the maximum amount of time a dial will wait for
+// a connect to complete. Defaults to [DefaultDialTimeout].
+// Negative values are ignored.
+func WithDialTimeout(d time.Duration) Option {
+	return func(c *config) {
+		if d >= 0 {
+			c.dialTimeout = d
+		}
+	}
+}
+
+// WithKeepAlive specifies the interval between keep-alive probes for an
+// active network connection. Defaults to [DefaultKeepAlive].
+// Negative values are ignored.
+func WithKeepAlive(d time.Duration) Option {
+	return func(c *config) {
+		if d >= 0 {
+			c.keepAlive = d
+		}
+	}
+}
+
+// WithTLSHandshakeTimeout specifies the maximum amount of time waiting to
+// wait for a TLS handshake. Defaults to [DefaultTLSHandshakeTimeout].
+// Negative values are ignored.
+func WithTLSHandshakeTimeout(d time.Duration) Option {
+	return func(c *config) {
+		if d >= 0 {
+			c.tlsHandshakeTimeout = d
+		}
+	}
+}
+
+// WithExpectContinueTimeout specifies the amount of time to wait for
+// a server's first response headers after fully writing the request headers if
+// the request has an "Expect: 100-continue" header. Defaults to [DefaultExpectContinueTimeout].
+// Negative values are ignored.
+func WithExpectContinueTimeout(d time.Duration) Option {
+	return func(c *config) {
+		if d >= 0 {
+			c.expectContinueTimeout = d
+		}
+	}
+}
+
+// WithIdleConnTimeout specifies the maximum amount of time an idle
+// (keep-alive) connection will remain idle before closing itself.
+// Defaults to [DefaultIdleConnTimeout]. Negative values are ignored.
+func WithIdleConnTimeout(d time.Duration) Option {
+	return func(c *config) {
+		if d >= 0 {
+			c.idleConnTimeout = d
 		}
 	}
 }
@@ -145,17 +206,22 @@ func WithMaxIdleConnsPerHost(max int) Option {
 // NewClient creates a new [*http.Client] configured with the provided options.
 func NewClient(opts ...Option) *http.Client {
 	cfg := config{
-		timeout:             DefaultTimeout,
-		maxIdleConns:        DefaultMaxIdleConns,
-		maxIdleConnsPerHost: DefaultMaxIdleConnsPerHost,
+		timeout:               DefaultTimeout,
+		dialTimeout:           DefaultDialTimeout,
+		keepAlive:             DefaultKeepAlive,
+		tlsHandshakeTimeout:   DefaultTLSHandshakeTimeout,
+		expectContinueTimeout: DefaultExpectContinueTimeout,
+		idleConnTimeout:       DefaultIdleConnTimeout,
+		maxIdleConns:          DefaultMaxIdleConns,
+		maxIdleConnsPerHost:   DefaultMaxIdleConnsPerHost,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
 	d := &net.Dialer{
-		Timeout:   DefaultDialTimeout,
-		KeepAlive: DefaultKeepAlive,
+		Timeout:   cfg.dialTimeout,
+		KeepAlive: cfg.keepAlive,
 	}
 
 	if cfg.disableKeepAlives {
@@ -167,11 +233,11 @@ func NewClient(opts ...Option) *http.Client {
 		DialContext:           d.DialContext,
 		ForceAttemptHTTP2:     cfg.forceAttemptHTTP2,
 		TLSClientConfig:       cfg.tlsConfig,
-		TLSHandshakeTimeout:   DefaultTLSHandshakeTimeout,
-		ExpectContinueTimeout: DefaultExpectContinueTimeout,
+		TLSHandshakeTimeout:   cfg.tlsHandshakeTimeout,
+		ExpectContinueTimeout: cfg.expectContinueTimeout,
 		MaxIdleConns:          cfg.maxIdleConns,
 		MaxIdleConnsPerHost:   cfg.maxIdleConnsPerHost,
-		IdleConnTimeout:       DefaultIdleConnTimeout,
+		IdleConnTimeout:       cfg.idleConnTimeout,
 		DisableKeepAlives:     cfg.disableKeepAlives,
 	}
 
