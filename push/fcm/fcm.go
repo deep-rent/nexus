@@ -370,7 +370,13 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	delta := time.Since(start)
 
 	defer func() {
-		_, _ = io.Copy(io.Discard, res.Body)
+		if _, err := io.Copy(io.Discard, res.Body); err != nil {
+			s.logger.WarnContext(
+				ctx,
+				"Failed to drain response body",
+				slog.Any("error", err),
+			)
+		}
 		if err := res.Body.Close(); err != nil {
 			s.logger.WarnContext(
 				ctx,
