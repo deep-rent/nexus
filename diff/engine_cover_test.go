@@ -22,7 +22,6 @@ import (
 	"log/slog"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -121,19 +120,19 @@ func TestEngine_Options(t *testing.T) {
 	}
 
 	// A fresh device requesting limit 1000 must be capped at WithMaxPatches(2).
-	resp, err := engine.Sync(t.Context(), scope,
+	res, err := engine.Sync(t.Context(), scope,
 		&diff.Request{Limit: 1000})
 	if err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 	total := 0
-	for _, p := range resp.Patches {
+	for _, p := range res.Patches {
 		total += len(p.Update)
 	}
 	if total > 2 {
 		t.Errorf("got %d rows; want at most the capped 2", total)
 	}
-	if !resp.More {
+	if !res.More {
 		t.Error("more: got false; want true (capped page leaves a backlog)")
 	}
 }
@@ -412,13 +411,13 @@ func TestEngine_Sync_ChildEnvelopeErrors(t *testing.T) {
 		// sync rather than a rejection.
 		c := remove("contract",
 			jsontext.Value(`{"id":"`+uuid.NewV7().String()+`"}`), stamp(1))
-		resp, err := f.engine.Sync(t.Context(), scope,
+		res, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
-		if len(resp.Patches) != 0 {
-			t.Errorf("got %d patches; want 0", len(resp.Patches))
+		if len(res.Patches) != 0 {
+			t.Errorf("got %d patches; want 0", len(res.Patches))
 		}
 	})
 }

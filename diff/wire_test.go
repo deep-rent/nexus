@@ -26,7 +26,7 @@ import (
 func TestStamp_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	want := hlc.Time(hlc.Max) // 2^53 - 1, the critical precision boundary
+	want := hlc.Time(hlc.Max) // Critical precision boundary
 
 	b, err := json.Marshal(want)
 	if err != nil {

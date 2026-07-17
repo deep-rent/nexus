@@ -107,7 +107,7 @@ func (r *Registry[Tx]) Register[T any](
 		panic("model name is required")
 	}
 	if name == ModelShare {
-		panic("model name is reserved, use RegisterShares")
+		panic("model name is reserved")
 	}
 	register[Tx, T](r, name, h, constraints...)
 }

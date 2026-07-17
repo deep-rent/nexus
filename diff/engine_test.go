@@ -23,7 +23,6 @@ import (
 	"slices"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -192,24 +191,24 @@ func TestEngine_Sync_PushPull(t *testing.T) {
 	id := uuid.NewV7()
 
 	// Device A pushes one asset; its own write must not echo back.
-	resp := sync(t, f, scope, &diff.Request{
+	res := sync(t, f, scope, &diff.Request{
 		Changes: []diff.Change{
 			upsert("asset", assetDoc(id, owner, ""), stamp(1)),
 		},
 	})
-	if len(resp.Patches) != 0 {
+	if len(res.Patches) != 0 {
 		t.Errorf("own writes should not echo; got %d patches",
-			len(resp.Patches))
+			len(res.Patches))
 	}
-	if resp.More {
+	if res.More {
 		t.Error("more: got true; want false")
 	}
-	if resp.Next <= 0 {
-		t.Errorf("next: got %d; want positive cursor", resp.Next)
+	if res.Next <= 0 {
+		t.Errorf("next: got %d; want positive cursor", res.Next)
 	}
 
 	// Device A syncs again from the returned cursor: still nothing.
-	again := sync(t, f, scope, &diff.Request{Since: resp.Next})
+	again := sync(t, f, scope, &diff.Request{Since: res.Next})
 	if len(again.Patches) != 0 {
 		t.Errorf("after catch-up: got %d patches; want 0", len(again.Patches))
 	}
@@ -330,8 +329,8 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 	got := make(map[uuid.UUID]int)
 	var since diff.Cursor
 	for range 20 {
-		resp := sync(t, f, scope, &diff.Request{Since: since, Limit: 3})
-		for _, p := range resp.Patches {
+		res := sync(t, f, scope, &diff.Request{Since: since, Limit: 3})
+		for _, p := range res.Patches {
 			for _, row := range p.Update {
 				var meta struct {
 					ID uuid.UUID `json:"id"`
@@ -345,12 +344,12 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 				got[meta.ID]++
 			}
 		}
-		if resp.Next <= since && resp.More {
+		if res.Next <= since && res.More {
 			t.Fatalf("cursor did not advance: got %d after %d",
-				resp.Next, since)
+				res.Next, since)
 		}
-		since = resp.Next
-		if !resp.More {
+		since = res.Next
+		if !res.More {
 			break
 		}
 	}
@@ -765,7 +764,7 @@ func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
 	// A poll that applies zero writes must not consume a barrier: the global
 	// sequence stays exactly where it was, yet the poll still delivers the
 	// document the device is missing.
-	resp := sync(t, f, scope, &diff.Request{Since: 0})
+	res := sync(t, f, scope, &diff.Request{Since: 0})
 	after, err := f.store.Watermark(t.Context(), &mock.Tx{})
 	if err != nil {
 		t.Fatalf("watermark: should not have returned an error: %v", err)
@@ -774,9 +773,9 @@ func TestEngine_Sync_ZeroChangeKeepsSequence(t *testing.T) {
 		t.Errorf("got sequence %d; want %d (a no-op poll must not advance it)",
 			after, before)
 	}
-	if len(resp.Patches) != 1 {
+	if len(res.Patches) != 1 {
 		t.Errorf("got %d patches; want 1 (the missed document)",
-			len(resp.Patches))
+			len(res.Patches))
 	}
 
 	// A pure replay (all mutation ids already claimed) is likewise a zero-

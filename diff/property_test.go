@@ -18,7 +18,6 @@ import (
 	"encoding/json/v2"
 	"slices"
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -144,16 +143,16 @@ func TestProperty_Convergence_WithDeletes(t *testing.T) {
 	docA := assetDoc(idA, owner, "")
 	docB := assetDoc(idB, owner, "")
 
-	upA := upsert("asset", docA, stamp(30)) // A: upsert wins (later)
+	upsA := upsert("asset", docA, stamp(30)) // A: upsert wins (later)
 	delA := remove("asset", docA, stamp(10))
-	upB := upsert("asset", docB, stamp(10))
+	upsB := upsert("asset", docB, stamp(10))
 	delB := remove("asset", docB, stamp(30)) // B: delete wins (later)
 
 	orders := [][]diff.Change{
-		{upA, delA, upB, delB},
-		{delB, upB, delA, upA},
-		{delA, delB, upA, upB},
-		{upB, upA, delB, delA},
+		{upsA, delA, upsB, delB},
+		{delB, upsB, delA, upsA},
+		{delA, delB, upsA, upsB},
+		{upsB, upsA, delB, delA},
 	}
 
 	type state struct{ aLive, bLive bool }

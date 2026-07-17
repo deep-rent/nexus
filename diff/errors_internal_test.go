@@ -18,7 +18,6 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/router"
@@ -46,8 +45,8 @@ func TestTranslate(t *testing.T) {
 	forbidden := &Error{}
 	forbidden.reject(uuid.NewV7(), Cause{Code: CodeForbidden})
 
-	badPayload := &Error{}
-	badPayload.reject(uuid.NewV7(), Cause{Code: CodeInvalid})
+	invalid := &Error{}
+	invalid.reject(uuid.NewV7(), Cause{Code: CodeInvalid})
 
 	tests := []struct {
 		name       string
@@ -63,7 +62,7 @@ func TestTranslate(t *testing.T) {
 		},
 		{
 			name:       "rejected invalid stays 400",
-			err:        badPayload,
+			err:        invalid,
 			wantStatus: http.StatusBadRequest,
 			wantReason: ReasonChangesRejected,
 		},

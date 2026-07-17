@@ -18,7 +18,6 @@ import (
 	"context"
 	"slices"
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
@@ -219,7 +218,7 @@ func TestNew_ChecksHandlerDescription(t *testing.T) {
 		return func() {
 			r := diff.NewRegistry[struct{}]()
 			r.Register[doc]("asset", h, opts...)
-			diff.New[struct{}](stubStore{}, r)
+			diff.New[struct{}](mockStore{}, r)
 		}
 	}
 
@@ -260,44 +259,44 @@ func TestNew_ChecksHandlerDescription(t *testing.T) {
 	}
 }
 
-// stubStore is a minimal no-op diff.Store for construction tests.
-type stubStore struct{}
+// mockStore is a minimal no-op diff.Store for construction tests.
+type mockStore struct{}
 
-func (stubStore) Exec(
+func (mockStore) Exec(
 	context.Context, func(context.Context, struct{}) error,
 ) error {
 	return nil
 }
 
-func (stubStore) Lock(context.Context, struct{}, []string, []string) error {
+func (mockStore) Lock(context.Context, struct{}, []string, []string) error {
 	return nil
 }
 
-func (stubStore) Floor(
+func (mockStore) Floor(
 	context.Context,
 	struct{},
 ) (int64, error) {
 	return 0, nil
 }
 
-func (stubStore) Barrier(context.Context, struct{}) (int64, error) {
+func (mockStore) Barrier(context.Context, struct{}) (int64, error) {
 	return 0, nil
 }
 
-func (stubStore) Watermark(context.Context, struct{}) (int64, error) {
+func (mockStore) Watermark(context.Context, struct{}) (int64, error) {
 	return 0, nil
 }
 
-func (stubStore) Claim(
+func (mockStore) Claim(
 	context.Context, struct{}, string, []uuid.UUID,
 ) ([]uuid.UUID, error) {
 	return nil, nil
 }
 
-func (stubStore) Grants(
+func (mockStore) Grants(
 	context.Context, struct{}, []string,
 ) (map[string][]string, error) {
 	return nil, nil
 }
 
-var _ diff.Store[struct{}] = stubStore{}
+var _ diff.Store[struct{}] = mockStore{}
