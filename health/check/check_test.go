@@ -147,7 +147,11 @@ func TestHTTP(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
 			defer server.Close()
 
-			chk := check.HTTP(tt.client, server.URL)
+			client := tt.client
+			if client == nil {
+				client = &http.Client{}
+			}
+			chk := check.HTTP(client, server.URL)
 			status, err := chk(t.Context())
 
 			if status != tt.wantStatus {
@@ -169,7 +173,7 @@ func TestHTTP_Unreachable(t *testing.T) {
 	t.Parallel()
 
 	const url = "http://127.0.0.1:0/invalid"
-	chk := check.HTTP(nil, url)
+	chk := check.HTTP(&http.Client{}, url)
 	status, err := chk(t.Context())
 
 	if got, want := status, health.StatusSick; got != want {

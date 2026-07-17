@@ -53,7 +53,6 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/health"
-	"github.com/deep-rent/nexus/internal/transport"
 )
 
 // TCP returns a health check that attempts to establish a TCP connection
@@ -75,7 +74,7 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 
 // HTTP returns a health check that performs a GET request to the specified URL.
 //
-// If client is nil, [http.DefaultClient] is employed. The check logic includes:
+// The check logic includes:
 //
 //  1. Fallback Timeout: If neither the client nor the request context has a
 //     deadline, a 10-second timeout is applied.
@@ -85,10 +84,6 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 //     healthy.
 func HTTP(client *http.Client, url string) health.CheckFunc {
 	const defaultTimeout = 10 * time.Second
-
-	if client == nil {
-		client = transport.NewClient(transport.Options{})
-	}
 
 	return func(ctx context.Context) (health.Status, error) {
 		child := ctx
