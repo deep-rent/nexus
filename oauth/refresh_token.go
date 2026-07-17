@@ -18,8 +18,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-
-	"github.com/deep-rent/nexus/router"
+	"slices"
+	"strings"
 )
 
 // refreshTokenGrant implements the [Grant] interface for token rotation.
@@ -28,7 +28,7 @@ type refreshTokenGrant struct{}
 // RefreshTokenGrant returns a new grant implementation for the Refresh Token
 // flow.
 //
-// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
+// Pass the result to [New] using [WithGrant] to enable this grant.
 func RefreshTokenGrant() Grant {
 	return refreshTokenGrant{}
 }
@@ -55,25 +55,32 @@ func (g refreshTokenGrant) Authorize(
 	// Retrieve the refresh token details from the session store.
 	r, err := pro.Sessions.GetRefreshToken(ctx, token)
 	if err != nil {
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
+		return nil, pro.ServerError(
 			ctx,
-			"Failed to retrieve refresh token",
-			slog.String("error_id", id),
-			slog.Any("error", err),
+			"failed to retrieve refresh token",
+			err,
 		)
+	}
 
+	// Ensure the token exists.
+	if r.Token == "" {
 		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "failed to retrieve refresh token",
-			ID:          id,
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidGrant,
+			Description: "invalid or expired refresh token",
 		}
 	}
 
-	// Ensure the token is valid and not yet expired.
-	if r.Token == "" {
+	// Enforce expiry locally in addition to the store's TTL contract. An
+	// expired token is removed as a best effort.
+	if r.ExpiresAt != 0 && pro.Now().Unix() > r.ExpiresAt {
+		if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
+			pro.Logger.ErrorContext(
+				ctx,
+				"Failed to delete expired refresh token",
+				slog.Any("error", err),
+			)
+		}
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidGrant,
@@ -90,29 +97,36 @@ func (g refreshTokenGrant) Authorize(
 		}
 	}
 
-	// Revoke the old refresh token to ensure rotation security.
-	// New tokens are issued by the [Provider] later in the pipeline.
-	if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
-			ctx,
-			"Failed to revoke old refresh token",
-			slog.String("error_id", id),
-			slog.Any("error", err),
-		)
-
-		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "failed to revoke old refresh token",
-			ID:          id,
+	// RFC 6749 Section 6: the client may request a narrower scope than
+	// originally granted, but never a broader one.
+	scope := r.Scope
+	if requested := pro.Get("scope"); requested != "" {
+		granted := strings.Fields(r.Scope)
+		for _, sc := range strings.Fields(requested) {
+			if !slices.Contains(granted, sc) {
+				return nil, &Error{
+					Status:      http.StatusBadRequest,
+					Code:        ErrorCodeInvalidScope,
+					Description: "requested scope exceeds original grant",
+				}
+			}
 		}
+		scope = requested
+	}
+
+	// Revoke the old refresh token to ensure rotation security.
+	// New tokens are issued by the [Server] later in the pipeline.
+	if err := pro.Sessions.DeleteRefreshToken(ctx, token); err != nil {
+		return nil, pro.ServerError(
+			ctx,
+			"failed to revoke old refresh token",
+			err,
+		)
 	}
 
 	return &Issuance{
 		Subject:     r.SubjectID,
-		Scope:       r.Scope,
+		Scope:       scope,
 		Refreshable: true,
 	}, nil
 }

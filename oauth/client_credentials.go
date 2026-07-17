@@ -26,7 +26,7 @@ type clientCredentialsGrant struct{}
 // ClientCredentialsGrant returns a new grant implementation for the Client
 // Credentials flow.
 //
-// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
+// Pass the result to [New] using [WithGrant] to enable this grant.
 func ClientCredentialsGrant() Grant {
 	return clientCredentialsGrant{}
 }
@@ -43,7 +43,7 @@ func (g clientCredentialsGrant) Authorize(
 ) (*Issuance, error) {
 	// Validate that the client is permitted to use the requested scopes.
 	scope := pro.Get("scope")
-	if scope != "" && !pro.Client.CanUseScope(scope) {
+	if scope != "" && !canUseScope(pro.Client, scope) {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeInvalidScope,
@@ -51,8 +51,8 @@ func (g clientCredentialsGrant) Authorize(
 		}
 	}
 
+	// The zero Subject marks the client itself as the token subject.
 	return &Issuance{
-		Subject:     "",
 		Scope:       scope,
 		Refreshable: false,
 	}, nil

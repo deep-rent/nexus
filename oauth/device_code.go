@@ -16,11 +16,9 @@ package oauth
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
-
-	"github.com/deep-rent/nexus/router"
 )
 
 // deviceCodeGrant implements the [Grant] interface for the Device
@@ -30,7 +28,7 @@ type deviceCodeGrant struct{}
 // DeviceCodeGrant returns a new grant implementation for the Device
 // Authorization flow.
 //
-// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
+// Pass the result to [New] using [WithGrant] to enable this grant.
 // Bear in mind that it requires the [Config.VerificationURI] option to be
 // specified.
 func DeviceCodeGrant() Grant {
@@ -58,21 +56,7 @@ func (g deviceCodeGrant) Authorize(
 
 	c, err := pro.Sessions.GetDeviceCode(ctx, code)
 	if err != nil {
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
-			ctx,
-			"Failed to retrieve device code",
-			slog.String("error_id", id),
-			slog.Any("error", err),
-		)
-
-		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "failed to retrieve device code",
-			ID:          id,
-		}
+		return nil, pro.ServerError(ctx, "failed to retrieve device code", err)
 	}
 
 	if c.DeviceCode == "" {
@@ -91,7 +75,17 @@ func (g deviceCodeGrant) Authorize(
 		}
 	}
 
-	if time.Now().After(c.ExpiresAt) {
+	now := pro.Now().Unix()
+
+	// Expired codes are of no further use; remove them as a best effort.
+	if c.ExpiresAt != 0 && now > c.ExpiresAt {
+		if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
+			pro.Logger.ErrorContext(
+				ctx,
+				"Failed to delete expired device code",
+				slog.Any("error", err),
+			)
+		}
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeExpiredToken,
@@ -99,14 +93,40 @@ func (g deviceCodeGrant) Authorize(
 		}
 	}
 
+	// RFC 8628 Section 3.5: clients polling faster than the announced
+	// interval must back off.
+	if c.Interval > 0 && c.LastPolledAt != 0 && now-c.LastPolledAt < c.Interval {
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeSlowDown,
+			Description: "polling too frequently",
+		}
+	}
+
 	switch status := c.Status; status {
 	case DeviceCodeStatusPending:
+		c.LastPolledAt = now
+		if err := pro.Sessions.UpdateDeviceCode(ctx, c); err != nil {
+			pro.Logger.ErrorContext(
+				ctx,
+				"Failed to record device code poll",
+				slog.Any("error", err),
+			)
+		}
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeAuthorizationPending,
 			Description: "authorization pending",
 		}
 	case DeviceCodeStatusDenied:
+		// The decision is final; remove the code as a best effort.
+		if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
+			pro.Logger.ErrorContext(
+				ctx,
+				"Failed to delete denied device code",
+				slog.Any("error", err),
+			)
+		}
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
 			Code:        ErrorCodeAccessDenied,
@@ -115,42 +135,17 @@ func (g deviceCodeGrant) Authorize(
 	case DeviceCodeStatusAuthorized:
 		// Proceed to token issuance below.
 	default:
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
+		return nil, pro.ServerError(
 			ctx,
-			"Encountered an illegal device code code status",
-			slog.String("status", string(status)),
-			slog.String("error_id", id),
-			slog.Any("error", err),
+			"illegal device code status",
+			fmt.Errorf("unexpected status %q", status),
 		)
-
-		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "illegal device code status",
-			ID:          id,
-		}
 	}
 
 	// Delete the code immediately upon successful authorization to
 	// prevent reuse.
 	if err := pro.Sessions.DeleteDeviceCode(ctx, code); err != nil {
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
-			ctx,
-			"Failed to delete device code",
-			slog.String("error_id", id),
-			slog.Any("error", err),
-		)
-
-		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "failed to delete device code",
-			ID:          id,
-		}
+		return nil, pro.ServerError(ctx, "failed to delete device code", err)
 	}
 
 	return &Issuance{

@@ -22,7 +22,7 @@
 // session management.
 //
 // Architecture:
-// The core of the package is the [Provider], which manages the lifecycle of
+// The core of the package is the [Server], which manages the lifecycle of
 // authorization requests and token issuance. It relies on a set of interfaces
 // ([ClientStore], [SubjectStore], [SessionStore]) that must be implemented to
 // bridge the library with the underlying database or persistence layer.
@@ -30,32 +30,33 @@
 // # Usage
 //
 // To use this package, define a [Config] with your store implementations
-// and initialize a [Provider] using the desired [Grant] types as options.
+// and initialize a [Server] using the desired [Grant] types as options.
 //
 // Example:
 //
-//	// 1. Define the configuration with mandatory stores and signers.
+//	// 1. Define the configuration with mandatory stores and key vault.
 //	cfg := oauth.Config{
-//	  Signer:           mySigner,
-//	  Verifier:         myVerifier,
+//	  Vault:            myVault,
 //	  Clients:          myClientStore,
 //	  Sessions:         mySessionStore,
 //	  Subjects:         mySubjectStore,
+//	  Issuer:           "https://id.example.com",
 //	  LoginTerminalURI: "https://app.example.com/login",
 //	  LoginRedirectURI: "https://app.example.com/dashboard",
 //	}
 //
-//	// 2. Initialize the provider and register grants or identity providers.
-//	p := oauth.NewProvider(cfg,
+//	// 2. Initialize the server and register grants or identity providers.
+//	s, err := oauth.New(cfg,
 //	  oauth.WithGrant(oauth.AuthCodeGrant()),
 //	  oauth.WithGrant(oauth.ClientCredentialsGrant()),
 //	  oauth.WithGrant(oauth.RefreshTokenGrant()),
 //	  oauth.WithIdentityProvider("google", myGoogleProvider),
 //	)
+//	if err != nil { /* handle configuration error */ }
 //
 //	// 3. Mount the endpoints onto a router.
 //	r := router.New()
-//	p.Mount(r)
+//	s.Mount(r, "/oauth")
 //
 //	// 4. Start serving.
 //	http.ListenAndServe(":8080", r)
@@ -65,14 +66,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
+	"uuid"
+
+	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -97,7 +99,7 @@ const (
 // whitelists and secrets.
 type Client interface {
 	// ID returns the unique identifier for the client.
-	ID() string
+	ID() uuid.UUID
 	// Public indicates if the client is capable of keeping a secret (e.g.,
 	// false for SPAs, true for confidential services).
 	Public() bool
@@ -115,8 +117,20 @@ type Client interface {
 	// type.
 	CanUseGrant(grant GrantType) bool
 	// CanUseScope checks if the client is allowed to request the specified
-	// scope.
+	// scope. It receives a single scope token (never a space-delimited list);
+	// the server splits requested scopes and consults this method per token.
 	CanUseScope(scope string) bool
+}
+
+// canUseScope reports whether the client may use every scope token in the
+// space-delimited scope string.
+func canUseScope(c Client, scope string) bool {
+	for _, s := range strings.Fields(scope) {
+		if !c.CanUseScope(s) {
+			return false
+		}
+	}
+	return true
 }
 
 // ClientStore provides data access for registered OAuth 2.0 clients.
@@ -128,7 +142,7 @@ type ClientStore interface {
 	// If the client is found, it must return the client and nil.
 	// If the client is not found, it must return nil and nil.
 	// It should return an error only if the underlying storage lookup fails.
-	GetClient(ctx context.Context, id string) (Client, error)
+	GetClient(ctx context.Context, id uuid.UUID) (Client, error)
 }
 
 // Subject represents an authenticated resource owner, typically a user.
@@ -137,7 +151,7 @@ type ClientStore interface {
 // via [SubjectStore].
 type Subject interface {
 	// ID returns the unique identifier for the subject.
-	ID() string
+	ID() uuid.UUID
 	// Roles returns the list of roles assigned to the subject, used to populate
 	// the roles claim in access tokens.
 	Roles() []string
@@ -145,7 +159,7 @@ type Subject interface {
 
 // SubjectStore provides data access and authentication for resource owners.
 //
-// It is used by the [Provider] to authenticate subjects during the login flow
+// It is used by the [Server] to authenticate subjects during the login flow
 // and to resolve identities during authorization and token issuance.
 type SubjectStore interface {
 	// Authenticate validates subject credentials.
@@ -163,7 +177,7 @@ type SubjectStore interface {
 	// If the user is found, it must return the subject and nil.
 	// If the user is not found, it must return nil and nil.
 	// It should return an error only if the storage lookup fails.
-	GetSubject(ctx context.Context, id string) (Subject, error)
+	GetSubject(ctx context.Context, id uuid.UUID) (Subject, error)
 	// GetSubjectByExternalID retrieves a subject linked to an external
 	// identity provider.
 	//
@@ -184,7 +198,7 @@ type SubjectStore interface {
 	// CreateSession stores the session mapping for the authenticated user.
 	//
 	// It should return an error only if the persistence operation fails.
-	CreateSession(ctx context.Context, key, userID string) error
+	CreateSession(ctx context.Context, key string, subjectID uuid.UUID) error
 	// DeleteSession removes the session mapping associated with the key.
 	//
 	// It should return an error only if the removal operation fails.
@@ -199,7 +213,7 @@ type AuthCode struct {
 	// Code is the unique, high-entropy string sent to the client.
 	Code string `json:"code"`
 	// ClientID is the ID of the client that requested the code.
-	ClientID string `json:"client_id"`
+	ClientID uuid.UUID `json:"client_id"`
 	// RedirectURI is the URI provided during the initial authorization
 	// request. It must be stored to ensure the token exchange request
 	// uses the exact same URI.
@@ -207,13 +221,14 @@ type AuthCode struct {
 	// Scope is the list of permissions approved by the resource owner.
 	Scope string `json:"scope"`
 	// SubjectID is the unique identifier of the authenticated resource owner.
-	SubjectID string `json:"subject_id"`
+	SubjectID uuid.UUID `json:"subject_id"`
 	// CodeChallenge is the challenge string used for PKCE validation.
 	CodeChallenge string `json:"code_challenge"`
 	// CodeChallengeMethod is the hashing algorithm used for PKCE validation.
 	CodeChallengeMethod string `json:"code_challenge_method"`
-	// ExpiresAt defines when this code expires.
-	ExpiresAt time.Time `json:"expires_at"`
+	// ExpiresAt defines when this code expires, as a UNIX timestamp in
+	// seconds.
+	ExpiresAt int64 `json:"expires_at"`
 }
 
 // RefreshToken holds the state bound to a refresh token.
@@ -225,15 +240,16 @@ type RefreshToken struct {
 	// Token is the unique, high-entropy string representing the refresh token.
 	Token string `json:"token"`
 	// ClientID is the identifier of the client authorized to use this token.
-	ClientID string `json:"client_id"`
+	ClientID uuid.UUID `json:"client_id"`
 	// SubjectID identifies the subject who authorized the initial request.
-	// This remains empty for Client Credentials grants.
-	SubjectID string `json:"subject_id"`
+	// This remains the zero UUID for Client Credentials grants.
+	SubjectID uuid.UUID `json:"subject_id,omitzero"`
 	// Scope represents the permissions granted for the duration of
 	// this session.
 	Scope string `json:"scope"`
-	// ExpiresAt defines when this specific token expires.
-	ExpiresAt time.Time `json:"expires_at"`
+	// ExpiresAt defines when this specific token expires, as a UNIX timestamp
+	// in seconds.
+	ExpiresAt int64 `json:"expires_at"`
 }
 
 // DeviceCodeStatus represents the state of a device authorization request
@@ -268,16 +284,23 @@ type DeviceCode struct {
 	// owner.
 	UserCode string `json:"user_code"`
 	// ClientID is the ID of the client that requested the code.
-	ClientID string `json:"client_id"`
+	ClientID uuid.UUID `json:"client_id"`
 	// SubjectID is the unique identifier of the authenticated resource owner.
-	// It remains empty until the user authorizes the request.
-	SubjectID string `json:"subject_id"`
+	// It remains the zero UUID until the user authorizes the request.
+	SubjectID uuid.UUID `json:"subject_id,omitzero"`
 	// Scope is the list of permissions approved by the resource owner.
 	Scope string `json:"scope"`
 	// Status indicates the current state: "pending", "authorized", or "denied".
 	Status DeviceCodeStatus `json:"status"`
-	// ExpiresAt defines when this code is no longer valid.
-	ExpiresAt time.Time `json:"expires_at"`
+	// ExpiresAt defines when this code is no longer valid, as a UNIX timestamp
+	// in seconds.
+	ExpiresAt int64 `json:"expires_at"`
+	// Interval is the minimum number of seconds the client must wait between
+	// polling attempts (RFC 8628 Section 3.5). Zero disables rate limiting.
+	Interval int64 `json:"interval,omitzero"`
+	// LastPolledAt records the UNIX timestamp (in seconds) of the client's
+	// most recent poll. It is used to enforce the polling interval.
+	LastPolledAt int64 `json:"last_polled_at,omitzero"`
 }
 
 // SessionStore abstracts the persistence layer for ephemeral authorization
@@ -285,6 +308,12 @@ type DeviceCode struct {
 //
 // Implementations must handle the lifecycle of authorization codes and
 // refresh tokens. These artifacts usually have a limited TTL.
+//
+// Security note: The artifact values (authorization codes, refresh tokens,
+// and device codes) are bearer secrets. Implementations are encouraged to
+// persist only a cryptographic digest of these values and perform lookups
+// against the digest, so that a leaked datastore does not expose usable
+// credentials.
 type SessionStore interface {
 	// GetAuthCode retrieves an authorization code by its value.
 	//
@@ -322,10 +351,24 @@ type SessionStore interface {
 	// If not found, it must return an empty value and nil.
 	// It should return an error only if the storage lookup fails.
 	GetDeviceCode(ctx context.Context, code string) (DeviceCode, error)
+	// GetDeviceCodeByUserCode retrieves a device code by its associated
+	// user code. It is used by the verification endpoint where the resource
+	// owner enters the user code displayed on the device.
+	//
+	// If found, it must return the data and nil.
+	// If not found, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetDeviceCodeByUserCode(ctx context.Context, userCode string) (DeviceCode, error)
 	// CreateDeviceCode stores a new device code.
 	//
 	// It should return an error only if the persistence operation fails.
 	CreateDeviceCode(ctx context.Context, data DeviceCode) error
+	// UpdateDeviceCode replaces the stored state of a device code, keyed by
+	// [DeviceCode.DeviceCode]. It is used to record status transitions and
+	// polling activity.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateDeviceCode(ctx context.Context, data DeviceCode) error
 	// DeleteDeviceCode removes a device code.
 	//
 	// It should return an error only if the removal operation fails.
@@ -400,6 +443,9 @@ type Proposal struct {
 	Sessions SessionStore
 	// Logger provides a context-aware logger for the grant handler.
 	Logger *slog.Logger
+	// Now returns the current time. Grants must use it instead of [time.Now]
+	// so that temporal checks stay consistent with the server clock.
+	Now func() time.Time
 	// data contains the raw form values.
 	data url.Values
 }
@@ -411,13 +457,39 @@ func (p *Proposal) Get(key string) string { return p.data.Get(key) }
 // Has checks if a grant-specific field is present in the HTTP request body.
 func (p *Proposal) Has(key string) bool { return p.data.Has(key) }
 
+// ServerError logs the given error under a fresh trace ID and returns an
+// opaque internal server [Error] carrying the same trace ID and description.
+// Grants should use it to report unexpected storage or infrastructure
+// failures without leaking details to the client.
+func (p *Proposal) ServerError(
+	ctx context.Context,
+	desc string,
+	err error,
+) *Error {
+	id := router.ErrorID()
+
+	p.Logger.ErrorContext(
+		ctx,
+		desc,
+		slog.String("error_id", id),
+		slog.Any("error", err),
+	)
+
+	return &Error{
+		Status:      http.StatusInternalServerError,
+		Code:        ErrorCodeServerError,
+		Description: desc,
+		ID:          id,
+	}
+}
+
 // Issuance defines the parameters for issuing tokens after a successful grant
 // authorization.
 type Issuance struct {
-	// Subject identifies subject of the issued tokens. For machine-to-machine
-	// requests, this field should be left empty to treat the client itself as
-	// the subject.
-	Subject string
+	// Subject identifies the subject of the issued tokens. For
+	// machine-to-machine requests, this field should be left as the zero UUID
+	// to treat the client itself as the subject.
+	Subject uuid.UUID
 	// Scope represents the finalized, space-delimited list of permissions
 	// granted to the client. This may be a subset of the requested scopes
 	// based on server policy or user consent.
@@ -466,7 +538,7 @@ type Claimant struct {
 // providers (e.g., Google, GitHub, Apple).
 //
 // Implementations are responsible for defining the provider-specific OAuth 2.0
-// or OIDC flows. The core [Provider] manages CSRF protection (state generation
+// or OIDC flows. The core [Server] manages CSRF protection (state generation
 // and validation) and the final local session creation, allowing
 // implementations to focus purely on the external exchange.
 type IdentityProvider interface {
@@ -481,7 +553,7 @@ type IdentityProvider interface {
 	//
 	// Implementations should extract the authorization code from the request
 	// and exchange it securely via the external provider's API. Note that the
-	// core [Provider] already validates the state parameter against a secure
+	// core [Server] already validates the state parameter against a secure
 	// cookie prior to calling this method, so implementations do not need to
 	// perform additional CSRF checks.
 	Process(ctx context.Context, req *http.Request) (Claimant, error)
@@ -508,46 +580,20 @@ type DeviceAuthorizationResponse struct {
 }
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload returned
-// UnixTime is a wrapper around time.Time that marshals to a Unix timestamp.
-type UnixTime struct {
-	time.Time
-}
-
-// MarshalJSON implements json.Marshaler.
-func (u UnixTime) MarshalJSON() ([]byte, error) {
-	if u.IsZero() {
-		return []byte("null"), nil
-	}
-	return strconv.AppendInt(nil, u.Unix(), 10), nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (u *UnixTime) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		u.Time = time.Time{}
-		return nil
-	}
-	i, err := strconv.ParseInt(string(b), 10, 64)
-	if err != nil {
-		return err
-	}
-	u.Time = time.Unix(i, 0)
-	return nil
-}
-
-// IntrospectionResponse represents the JSON response structure returned
-// from the token introspection endpoint.
+// from the token introspection endpoint. All timestamps are UNIX epoch
+// integers in seconds.
 type IntrospectionResponse struct {
-	Active   bool     `json:"active"`
-	ClientID string   `json:"client_id,omitempty"`
-	Scope    string   `json:"scope,omitempty"`
-	Jti      string   `json:"jti,omitempty"`
-	Iss      string   `json:"iss,omitempty"`
-	Aud      []string `json:"aud,omitempty"`
-	Sub      string   `json:"sub,omitempty"`
-	Iat      UnixTime `json:"iat,omitzero"`
-	Exp      UnixTime `json:"exp,omitzero"`
-	Nbf      UnixTime `json:"nbf,omitzero"`
+	Active    bool     `json:"active"`
+	ClientID  string   `json:"client_id,omitempty"`
+	TokenType string   `json:"token_type,omitempty"`
+	Scope     string   `json:"scope,omitempty"`
+	Jti       string   `json:"jti,omitempty"`
+	Iss       string   `json:"iss,omitempty"`
+	Aud       []string `json:"aud,omitempty"`
+	Sub       string   `json:"sub,omitempty"`
+	Iat       int64    `json:"iat,omitzero"`
+	Exp       int64    `json:"exp,omitzero"`
+	Nbf       int64    `json:"nbf,omitzero"`
 }
 
 // LoginRequest represents the payload for the resource owner login endpoint.
@@ -572,12 +618,50 @@ func (r *LoginRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*LoginRequest)(nil)
 
-// Path constants define the specific endpoints managed by the [Provider].
+const (
+	// DeviceVerificationApprove signals that the resource owner approves the
+	// pending device authorization request.
+	DeviceVerificationApprove = "approve"
+	// DeviceVerificationDeny signals that the resource owner rejects the
+	// pending device authorization request.
+	DeviceVerificationDeny = "deny"
+)
+
+// DeviceVerificationRequest represents the payload for the device
+// verification endpoint (RFC 8628 Section 3.3).
+//
+// It is consumed by [Server.DeviceVerify] to let an authenticated resource
+// owner approve or deny a pending device authorization request identified by
+// its user code.
+type DeviceVerificationRequest struct {
+	// UserCode is the code displayed on the device, entered by the resource
+	// owner. Case and embedded whitespace are ignored.
+	UserCode string `json:"user_code"`
+	// Action is either [DeviceVerificationApprove] or
+	// [DeviceVerificationDeny].
+	Action string `json:"action"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *DeviceVerificationRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("user_code", r.UserCode)
+	v.Whitelist(
+		"action",
+		r.Action,
+		DeviceVerificationApprove,
+		DeviceVerificationDeny,
+	)
+}
+
+var _ valid.Validatable = (*DeviceVerificationRequest)(nil)
+
+// Path constants define the specific endpoints managed by the [Server].
 const (
 	PathAuthorize           = "/authorize"
 	PathToken               = "/token"
 	PathRevoke              = "/revoke"
 	PathDeviceAuthorization = "/device_authorization"
+	PathDeviceVerify        = "/device"
 	PathLogin               = "/login"
 	PathLogout              = "/logout"
 	PathIntrospect          = "/introspect"
@@ -600,6 +684,7 @@ type AuthorizationServerMetadata struct {
 	GrantTypesSupported               []string `json:"grant_types_supported,omitempty"`
 	ResponseTypesSupported            []string `json:"response_types_supported,omitempty"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported,omitempty"`
 }
 
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
@@ -730,6 +815,10 @@ func matchSegment(s, pattern string) bool {
 	return true
 }
 
+// TokenGeneratorFn produces opaque, high-entropy artifact strings (session
+// keys, authorization codes, refresh tokens, device codes, user codes, and
+// state parameters). The default implementations can be overridden per
+// artifact via the corresponding [Option] values.
 type TokenGeneratorFn func(context.Context) (string, error)
 
 // GenerateSessionKey returns a random 43-character, base64url-encoded string
@@ -762,15 +851,44 @@ func GenerateState(context.Context) (string, error) {
 	return opaque()
 }
 
+// userCodeAlphabet is the character set for user codes, as recommended by
+// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
+// prevent accidental words) and visually ambiguous characters.
+const userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
+
 // GenerateUserCode generates a random 9-character string of the form XXXX-XXXX
-// for use as a user code.
+// for use as a user code. Characters are drawn uniformly from
+// [userCodeAlphabet].
 func GenerateUserCode(context.Context) (string, error) {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+	const n = 8
+	var out [n + 1]byte
+	out[4] = '-'
+
+	// Rejection sampling keeps the character distribution uniform:
+	// only bytes below the largest multiple of len(alphabet) are used.
+	limit := byte(256 - 256%len(userCodeAlphabet))
+	buf := make([]byte, 16)
+	i := 0
+	for i < n {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if b >= limit {
+				continue
+			}
+			pos := i
+			if i >= 4 {
+				pos++ // skip the hyphen
+			}
+			out[pos] = userCodeAlphabet[int(b)%len(userCodeAlphabet)]
+			i++
+			if i == n {
+				break
+			}
+		}
 	}
-	s := strings.ToUpper(hex.EncodeToString(b))
-	return s[:4] + "-" + s[4:], nil
+	return string(out[:]), nil
 }
 
 // opaque generates a high-entropy, base64url-encoded string suitable for

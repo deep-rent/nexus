@@ -16,11 +16,9 @@ package oauth
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/deep-rent/nexus/pkce"
-	"github.com/deep-rent/nexus/router"
 )
 
 // authCodeGrant implements the [Grant] interface for the Authorization Code
@@ -33,7 +31,7 @@ type authCodeGrant struct{}
 // Note: This implementation strictly mandates PKCE (RFC 7636) to mitigate
 // authorization code injection and interception attacks.
 //
-// Pass the result to [NewProvider] using [WithGrant] to enable this grant.
+// Pass the result to [New] using [WithGrant] to enable this grant.
 func AuthCodeGrant() Grant {
 	return authCodeGrant{}
 }
@@ -69,24 +67,14 @@ func (g authCodeGrant) Authorize(
 	// Retrieve the authorization code state from the session store.
 	c, err := pro.Sessions.GetAuthCode(ctx, code)
 	if err != nil {
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
+		return nil, pro.ServerError(
 			ctx,
-			"Failed to retrieve authorization code",
-			slog.String("error_id", id),
-			slog.Any("error", err),
+			"failed to retrieve authorization code",
+			err,
 		)
-
-		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "failed to retrieve authorization code",
-			ID:          id,
-		}
 	}
 
-	// Ensure the code exists and has not expired.
+	// Ensure the code exists.
 	if c.Code == "" {
 		return nil, &Error{
 			Status:      http.StatusBadRequest,
@@ -95,22 +83,22 @@ func (g authCodeGrant) Authorize(
 		}
 	}
 
-	// Delete the code immediately to prevent replay attacks.
+	// Delete the code immediately to prevent replay attacks. Any failure
+	// past this point intentionally burns the code.
 	if err := pro.Sessions.DeleteAuthCode(ctx, code); err != nil {
-		id := router.ErrorID()
-
-		pro.Logger.ErrorContext(
+		return nil, pro.ServerError(
 			ctx,
-			"Failed to delete authorization code",
-			slog.String("error_id", id),
-			slog.Any("error", err),
+			"failed to delete authorization code",
+			err,
 		)
+	}
 
+	// Enforce expiry locally in addition to the store's TTL contract.
+	if c.ExpiresAt != 0 && pro.Now().Unix() > c.ExpiresAt {
 		return nil, &Error{
-			Status:      http.StatusInternalServerError,
-			Code:        ErrorCodeServerError,
-			Description: "failed to delete authorization code",
-			ID:          id,
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidGrant,
+			Description: "invalid or expired authorization code",
 		}
 	}
 
