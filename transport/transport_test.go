@@ -1,17 +1,3 @@
-// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package transport
 
 import (
@@ -24,19 +10,12 @@ import (
 	"github.com/deep-rent/nexus/retry"
 )
 
-func TestNewClient_Defaults(t *testing.T) {
-	client := NewClient()
+func TestNew_Defaults(t *testing.T) {
+	rt := New()
 
-	if exp, act := 5*time.Second, client.Timeout; exp != act {
-		t.Errorf("expected default timeout to be %v, got %v", exp, act)
-	}
-
-	tr, ok := client.Transport.(*http.Transport)
+	tr, ok := rt.(*http.Transport)
 	if !ok {
-		t.Fatalf(
-			"expected transport to be *http.Transport, got %T",
-			client.Transport,
-		)
+		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
 	}
 
 	if tr.DisableKeepAlives {
@@ -72,11 +51,10 @@ func TestNewClient_Defaults(t *testing.T) {
 	}
 }
 
-func TestNewClient_WithOptions(t *testing.T) {
+func TestNew_WithOptions(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true}
 
-	client := NewClient(
-		WithTimeout(10*time.Second),
+	rt := New(
 		WithDialTimeout(15*time.Second),
 		WithKeepAlive(16*time.Second),
 		WithTLSHandshakeTimeout(17*time.Second),
@@ -89,16 +67,9 @@ func TestNewClient_WithOptions(t *testing.T) {
 		WithMaxIdleConnsPerHost(50),
 	)
 
-	if exp, act := 10*time.Second, client.Timeout; exp != act {
-		t.Errorf("expected timeout to be %v, got %v", exp, act)
-	}
-
-	tr, ok := client.Transport.(*http.Transport)
+	tr, ok := rt.(*http.Transport)
 	if !ok {
-		t.Fatalf(
-			"expected transport to be *http.Transport, got %T",
-			client.Transport,
-		)
+		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
 	}
 
 	if !tr.DisableKeepAlives {
@@ -134,17 +105,8 @@ func TestNewClient_WithOptions(t *testing.T) {
 	}
 }
 
-func TestNewClient_WithZeroTimeout(t *testing.T) {
-	client := NewClient(WithTimeout(0))
-
-	if exp, act := time.Duration(0), client.Timeout; exp != act {
-		t.Errorf("expected timeout to be %v, got %v", exp, act)
-	}
-}
-
-func TestNewClient_WithNegativeOptions(t *testing.T) {
-	client := NewClient(
-		WithTimeout(-10*time.Second),
+func TestNew_WithNegativeOptions(t *testing.T) {
+	rt := New(
 		WithDialTimeout(-1*time.Second),
 		WithKeepAlive(-1*time.Second),
 		WithTLSHandshakeTimeout(-1*time.Second),
@@ -154,16 +116,9 @@ func TestNewClient_WithNegativeOptions(t *testing.T) {
 		WithMaxIdleConnsPerHost(-50),
 	)
 
-	if exp, act := 5*time.Second, client.Timeout; exp != act {
-		t.Errorf("expected timeout to be default %v, got %v", exp, act)
-	}
-
-	tr, ok := client.Transport.(*http.Transport)
+	tr, ok := rt.(*http.Transport)
 	if !ok {
-		t.Fatalf(
-			"expected transport to be *http.Transport, got %T",
-			client.Transport,
-		)
+		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
 	}
 
 	if exp, act := 2*time.Second, tr.TLSHandshakeTimeout; exp != act {
@@ -199,16 +154,32 @@ func TestNewClient_WithNegativeOptions(t *testing.T) {
 	}
 }
 
-func TestNewClient_WithHeadersAndRetry(t *testing.T) {
-	client := NewClient(
+func TestNew_WithHeadersAndRetry(t *testing.T) {
+	rt := New(
 		WithHeader(header.New("X-Test", "true")),
 		WithRetry(retry.WithAttemptLimit(3)),
 	)
 
-	// The transport should be wrapped by retry, and then header.
-	// Since we don't expose internal wrappers easily, we just ensure it's not
-	// the base transport.
-	if _, ok := client.Transport.(*http.Transport); ok {
+	if _, ok := rt.(*http.Transport); ok {
 		t.Error("expected transport to be wrapped by middlewares")
+	}
+}
+
+func TestNewClient_Timeout(t *testing.T) {
+	client := NewClient(10 * time.Second)
+	if exp, act := 10*time.Second, client.Timeout; exp != act {
+		t.Errorf("expected timeout to be %v, got %v", exp, act)
+	}
+
+	// Test default fallback for zero timeout
+	clientZero := NewClient(0)
+	if exp, act := 5*time.Second, clientZero.Timeout; exp != act {
+		t.Errorf("expected timeout to be %v, got %v", exp, act)
+	}
+
+	// Test default fallback for negative timeout
+	clientNegative := NewClient(-1 * time.Second)
+	if exp, act := 5*time.Second, clientNegative.Timeout; exp != act {
+		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
 }

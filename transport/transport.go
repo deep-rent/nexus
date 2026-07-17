@@ -20,10 +20,10 @@
 //
 // # Usage
 //
-// Define the desired options and build an [http.Client]:
+// Define the desired timeout and options and build an [http.Client]:
 //
 //	client := transport.NewClient(
-//		transport.WithTimeout(10 * time.Second),
+//		10 * time.Second,
 //		transport.WithDisableKeepAlives(true),
 //	)
 package transport
@@ -74,7 +74,6 @@ const DefaultExpectContinueTimeout = 1 * time.Second
 const DefaultForceAttemptHTTP2 = true
 
 type config struct {
-	timeout               time.Duration
 	dialTimeout           time.Duration
 	keepAlive             time.Duration
 	tlsHandshakeTimeout   time.Duration
@@ -91,17 +90,6 @@ type config struct {
 
 // Option configures an [http.Client] via [NewClient].
 type Option func(*config)
-
-// WithTimeout sets the overall client timeout. Defaults to [DefaultTimeout]
-// if unspecified. A timeout of zero means no timeout. Negative values are
-// ignored.
-func WithTimeout(d time.Duration) Option {
-	return func(c *config) {
-		if d >= 0 {
-			c.timeout = d
-		}
-	}
-}
 
 // WithDialTimeout specifies the maximum amount of time a dial will wait for
 // a connect to complete. Defaults to [DefaultDialTimeout].
@@ -212,10 +200,9 @@ func WithMaxIdleConnsPerHost(max int) Option {
 	}
 }
 
-// eval processes the provided options and returns a populated config.
-func eval(opts []Option) config {
+// New creates a new [http.RoundTripper] configured with the provided options.
+func New(opts ...Option) http.RoundTripper {
 	cfg := config{
-		timeout:               DefaultTimeout,
 		dialTimeout:           DefaultDialTimeout,
 		keepAlive:             DefaultKeepAlive,
 		tlsHandshakeTimeout:   DefaultTLSHandshakeTimeout,
@@ -228,12 +215,6 @@ func eval(opts []Option) config {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return cfg
-}
-
-// New creates a new [http.RoundTripper] configured with the provided options.
-func New(opts ...Option) http.RoundTripper {
-	cfg := eval(opts)
 
 	d := &net.Dialer{
 		Timeout:   cfg.dialTimeout,
@@ -270,12 +251,16 @@ func New(opts ...Option) http.RoundTripper {
 	return t
 }
 
-// NewClient creates a new HTTP client configured with sensible defaults that
-// can be tuned with the provided options.
-func NewClient(opts ...Option) *http.Client {
-	cfg := eval(opts)
+// NewClient creates a new HTTP client configured with the given overall timeout
+// and sensible defaults that can be tuned with the provided options. If the
+// specified timeout is nonpositive, the [DefaultTimeout] will be applied
+// instead.
+func NewClient(timeout time.Duration, opts ...Option) *http.Client {
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
 	return &http.Client{
-		Timeout:   cfg.timeout,
+		Timeout:   timeout,
 		Transport: New(opts...),
 	}
 }
