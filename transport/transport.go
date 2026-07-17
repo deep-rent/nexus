@@ -73,22 +73,49 @@ const DefaultExpectContinueTimeout = 1 * time.Second
 // DefaultForceAttemptHTTP2 specifies whether to attempt HTTP/2 by default.
 const DefaultForceAttemptHTTP2 = true
 
+// DefaultMaxConnsPerHost optionally limits the total number of connections per
+// host.
+const DefaultMaxConnsPerHost = 1024
+
+// DefaultResponseHeaderTimeout specifies the amount of time to wait for a
+// server's response headers.
+const DefaultResponseHeaderTimeout = 0
+
+// DefaultMaxResponseHeaderBytes specifies a limit on how many response bytes
+// are allowed in the server's response header.
+const DefaultMaxResponseHeaderBytes = 64 * 1024 // 64 KB
+
+// DefaultWriteBufferSize specifies the size of the write buffer used.
+const DefaultWriteBufferSize = 4 * 1024 // 4 KB
+
+// DefaultReadBufferSize specifies the size of the read buffer used.
+const DefaultReadBufferSize = 4 * 1024 // 4 KB
+
+// config is used to hold the configuration for a [Transport].
 type config struct {
-	dialTimeout           time.Duration
-	keepAlive             time.Duration
-	tlsHandshakeTimeout   time.Duration
-	expectContinueTimeout time.Duration
-	idleConnTimeout       time.Duration
-	tlsConfig             *tls.Config
-	disableKeepAlives     bool
-	forceAttemptHTTP2     bool
-	headers               []header.Header
-	retry                 []retry.Option
-	maxIdleConns          int
-	maxIdleConnsPerHost   int
+	dialTimeout            time.Duration
+	keepAlive              time.Duration
+	tlsHandshakeTimeout    time.Duration
+	expectContinueTimeout  time.Duration
+	idleConnTimeout        time.Duration
+	tlsConfig              *tls.Config
+	disableKeepAlives      bool
+	forceAttemptHTTP2      bool
+	disableCompression     bool
+	headers                []header.Header
+	retry                  []retry.Option
+	maxIdleConns           int
+	maxIdleConnsPerHost    int
+	maxConnsPerHost        int
+	responseHeaderTimeout  time.Duration
+	maxResponseHeaderBytes int64
+	writeBufferSize        int
+	readBufferSize         int
+	http2Config            *http.HTTP2Config
+	protocols              *http.Protocols
 }
 
-// Option configures an [http.Client] via [NewClient].
+// Option configures an [http.Transport] via [New].
 type Option func(*config)
 
 // WithDialTimeout specifies the maximum amount of time a dial will wait for
@@ -163,6 +190,59 @@ func WithForceAttemptHTTP2(force bool) Option {
 	return func(c *config) { c.forceAttemptHTTP2 = force }
 }
 
+// WithDisableCompression prevents the Transport from requesting compression.
+func WithDisableCompression(disable bool) Option {
+	return func(c *config) { c.disableCompression = disable }
+}
+
+// WithResponseHeaderTimeout specifies the amount of time to wait for a server's
+// response headers.
+func WithResponseHeaderTimeout(d time.Duration) Option {
+	return func(c *config) {
+		if d >= 0 {
+			c.responseHeaderTimeout = d
+		}
+	}
+}
+
+// WithMaxResponseHeaderBytes specifies a limit on how many response bytes are
+// allowed in the server's response header.
+func WithMaxResponseHeaderBytes(max int64) Option {
+	return func(c *config) {
+		if max >= 0 {
+			c.maxResponseHeaderBytes = max
+		}
+	}
+}
+
+// WithWriteBufferSize specifies the size of the write buffer used.
+func WithWriteBufferSize(size int) Option {
+	return func(c *config) {
+		if size >= 0 {
+			c.writeBufferSize = size
+		}
+	}
+}
+
+// WithReadBufferSize specifies the size of the read buffer used.
+func WithReadBufferSize(size int) Option {
+	return func(c *config) {
+		if size >= 0 {
+			c.readBufferSize = size
+		}
+	}
+}
+
+// WithHTTP2Config configures HTTP/2 connections.
+func WithHTTP2Config(cfg *http.HTTP2Config) Option {
+	return func(c *config) { c.http2Config = cfg }
+}
+
+// WithProtocols specifies the set of protocols supported by the transport.
+func WithProtocols(protocols *http.Protocols) Option {
+	return func(c *config) { c.protocols = protocols }
+}
+
 // WithHeader defines static headers applied to every request.
 func WithHeader(h ...header.Header) Option {
 	return func(c *config) { c.headers = append(c.headers, h...) }
@@ -200,17 +280,33 @@ func WithMaxIdleConnsPerHost(max int) Option {
 	}
 }
 
+// WithMaxConnsPerHost optionally limits the total number of connections per
+// host.
+// Negative values are ignored.
+func WithMaxConnsPerHost(max int) Option {
+	return func(c *config) {
+		if max >= 0 {
+			c.maxConnsPerHost = max
+		}
+	}
+}
+
 // New creates a new [http.RoundTripper] configured with the provided options.
 func New(opts ...Option) http.RoundTripper {
 	cfg := config{
-		dialTimeout:           DefaultDialTimeout,
-		keepAlive:             DefaultKeepAlive,
-		tlsHandshakeTimeout:   DefaultTLSHandshakeTimeout,
-		expectContinueTimeout: DefaultExpectContinueTimeout,
-		idleConnTimeout:       DefaultIdleConnTimeout,
-		maxIdleConns:          DefaultMaxIdleConns,
-		maxIdleConnsPerHost:   DefaultMaxIdleConnsPerHost,
-		forceAttemptHTTP2:     DefaultForceAttemptHTTP2,
+		dialTimeout:            DefaultDialTimeout,
+		keepAlive:              DefaultKeepAlive,
+		tlsHandshakeTimeout:    DefaultTLSHandshakeTimeout,
+		expectContinueTimeout:  DefaultExpectContinueTimeout,
+		idleConnTimeout:        DefaultIdleConnTimeout,
+		maxIdleConns:           DefaultMaxIdleConns,
+		maxIdleConnsPerHost:    DefaultMaxIdleConnsPerHost,
+		forceAttemptHTTP2:      DefaultForceAttemptHTTP2,
+		maxConnsPerHost:        DefaultMaxConnsPerHost,
+		responseHeaderTimeout:  DefaultResponseHeaderTimeout,
+		maxResponseHeaderBytes: DefaultMaxResponseHeaderBytes,
+		writeBufferSize:        DefaultWriteBufferSize,
+		readBufferSize:         DefaultReadBufferSize,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -226,16 +322,24 @@ func New(opts ...Option) http.RoundTripper {
 	}
 
 	var t http.RoundTripper = &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           d.DialContext,
-		ForceAttemptHTTP2:     cfg.forceAttemptHTTP2,
-		TLSClientConfig:       cfg.tlsConfig,
-		TLSHandshakeTimeout:   cfg.tlsHandshakeTimeout,
-		ExpectContinueTimeout: cfg.expectContinueTimeout,
-		MaxIdleConns:          cfg.maxIdleConns,
-		MaxIdleConnsPerHost:   cfg.maxIdleConnsPerHost,
-		IdleConnTimeout:       cfg.idleConnTimeout,
-		DisableKeepAlives:     cfg.disableKeepAlives,
+		Proxy:                  http.ProxyFromEnvironment,
+		DialContext:            d.DialContext,
+		ForceAttemptHTTP2:      cfg.forceAttemptHTTP2,
+		TLSClientConfig:        cfg.tlsConfig,
+		TLSHandshakeTimeout:    cfg.tlsHandshakeTimeout,
+		ExpectContinueTimeout:  cfg.expectContinueTimeout,
+		MaxIdleConns:           cfg.maxIdleConns,
+		MaxIdleConnsPerHost:    cfg.maxIdleConnsPerHost,
+		MaxConnsPerHost:        cfg.maxConnsPerHost,
+		IdleConnTimeout:        cfg.idleConnTimeout,
+		DisableKeepAlives:      cfg.disableKeepAlives,
+		DisableCompression:     cfg.disableCompression,
+		ResponseHeaderTimeout:  cfg.responseHeaderTimeout,
+		MaxResponseHeaderBytes: cfg.maxResponseHeaderBytes,
+		WriteBufferSize:        cfg.writeBufferSize,
+		ReadBufferSize:         cfg.readBufferSize,
+		HTTP2:                  cfg.http2Config,
+		Protocols:              cfg.protocols,
 	}
 
 	// Add headers if any.
