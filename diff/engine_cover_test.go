@@ -112,8 +112,14 @@ func TestEngine_Options(t *testing.T) {
 	scope := diff.Scope{UserID: owner}
 	var changes []diff.Change
 	for range 5 {
-		changes = append(changes,
-			upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)))
+		changes = append(
+			changes,
+			upsert(
+				"asset",
+				assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+				stamp(1),
+			),
+		)
 	}
 	if _, err := engine.Sync(t.Context(), scope,
 		&diff.Request{Changes: changes}); err != nil {
@@ -146,8 +152,16 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 
 	t.Run("drops already-seen ids", func(t *testing.T) {
 		t.Parallel()
-		seen := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
-		fresh := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(2))
+		seen := upsert(
+			"asset",
+			assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+			stamp(1),
+		)
+		fresh := upsert(
+			"asset",
+			assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+			stamp(2),
+		)
 
 		pf := &prefilter{drop: map[uuid.UUID]struct{}{seen.ID: {}}}
 		f2 := setup(diff.WithPrefilter(pf))
@@ -176,7 +190,11 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 		pf := &prefilter{filErr: errors.New("valkey down")}
 		f := setup(diff.WithPrefilter(pf),
 			diff.WithLogger(slog.New(slog.DiscardHandler)))
-		c := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
+		c := upsert(
+			"asset",
+			assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+			stamp(1),
+		)
 		if _, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{c},
 		}); err != nil {
@@ -193,7 +211,11 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 		pf := &prefilter{markErr: errors.New("valkey down")}
 		f := setup(diff.WithPrefilter(pf),
 			diff.WithLogger(slog.New(slog.DiscardHandler)))
-		c := upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
+		c := upsert(
+			"asset",
+			assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+			stamp(1),
+		)
 		if _, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{c},
 		}); err != nil {
@@ -332,7 +354,11 @@ func TestEngine_Sync_StoreErrors(t *testing.T) {
 
 	req := func() *diff.Request {
 		return &diff.Request{Changes: []diff.Change{
-			upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
+			upsert(
+				"asset",
+				assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+				stamp(1),
+			),
 		}}
 	}
 

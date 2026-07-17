@@ -175,7 +175,9 @@ func TestEndpoint_Errors(t *testing.T) {
 			body: fmt.Sprintf(
 				`{"since":-1,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"asset","data":%s,"time":%d}]}`,
-				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1),
+				uuid.NewV7(),
+				assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+				stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
 			wantReason: router.ReasonValidationFailed,
@@ -186,7 +188,9 @@ func TestEndpoint_Errors(t *testing.T) {
 			body: fmt.Sprintf(
 				`{"since":0,"changes":[{"id":%q,"action":"upsert",`+
 					`"type":"vehicle","data":%s,"time":%d}]}`,
-				uuid.NewV7(), assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1),
+				uuid.NewV7(),
+				assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+				stamp(1),
 			),
 			wantStatus: http.StatusBadRequest,
 			wantReason: diff.ReasonChangesRejected,

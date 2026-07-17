@@ -103,7 +103,7 @@ func stamp(n uint64) diff.Stamp {
 	return diff.Stamp(hlc.Pack(uint64(time.Now().Unix()), n))
 }
 
-func assetDoc(id uuid.UUID, owner, team uuid.UUID) jsontext.Value {
+func assetDoc(id, owner, team uuid.UUID) jsontext.Value {
 	doc := map[string]any{
 		"id":      id.String(),
 		"user_id": owner.String(),
@@ -320,8 +320,14 @@ func TestEngine_Sync_Pagination(t *testing.T) {
 	for i := range total {
 		id := uuid.NewV7()
 		want[id] = true
-		changes = append(changes,
-			upsert("asset", assetDoc(id, owner, uuid.Nil()), stamp(uint64(i+1))))
+		changes = append(
+			changes,
+			upsert(
+				"asset",
+				assetDoc(id, owner, uuid.Nil()),
+				stamp(uint64(i+1)),
+			),
+		)
 	}
 	sync(t, f, scope, &diff.Request{Changes: changes})
 
@@ -585,8 +591,16 @@ func TestEngine_Sync_Errors(t *testing.T) {
 		f := setup(diff.WithMaxChanges(1))
 		_, err := f.engine.Sync(t.Context(), scope, &diff.Request{
 			Changes: []diff.Change{
-				upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
-				upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(2)),
+				upsert(
+					"asset",
+					assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+					stamp(1),
+				),
+				upsert(
+					"asset",
+					assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+					stamp(2),
+				),
 			},
 		})
 		if !errors.Is(err, diff.ErrTooManyChanges) {
@@ -597,7 +611,11 @@ func TestEngine_Sync_Errors(t *testing.T) {
 	t.Run("unknown type", func(t *testing.T) {
 		t.Parallel()
 		f := setup()
-		c := upsert("vehicle", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1))
+		c := upsert(
+			"vehicle",
+			assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+			stamp(1),
+		)
 		_, err := f.engine.Sync(t.Context(), scope,
 			&diff.Request{Changes: []diff.Change{c}})
 
@@ -845,7 +863,11 @@ func TestEngine_Sync_GrantsResolvedOncePerSync(t *testing.T) {
 	// held.
 	if _, err := engine.Sync(t.Context(), scope, &diff.Request{
 		Changes: []diff.Change{
-			upsert("asset", assetDoc(uuid.NewV7(), owner, uuid.Nil()), stamp(1)),
+			upsert(
+				"asset",
+				assetDoc(uuid.NewV7(), owner, uuid.Nil()),
+				stamp(1),
+			),
 		},
 	}); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)

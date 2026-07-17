@@ -722,8 +722,19 @@ func TestTable_FetchWindow(t *testing.T) {
 	docs := make([]uuid.UUID, 3)
 	for i := range docs {
 		docs[i] = uuid.NewV7()
-		applyUpserts(t, s, assets, scope,
-			upsertOp(docs[i], owner, uuid.Nil(), uint64(10+i), assetDoc(docs[i], i)))
+		applyUpserts(
+			t,
+			s,
+			assets,
+			scope,
+			upsertOp(
+				docs[i],
+				owner,
+				uuid.Nil(),
+				uint64(10+i),
+				assetDoc(docs[i], i),
+			),
+		)
 	}
 	gone := uuid.NewV7()
 	applyDeletes(t, s, assets, scope, deleteOp(gone, owner, uuid.Nil(), 20))
@@ -1126,7 +1137,13 @@ func TestTable_ResurrectionScopeGuard(t *testing.T) {
 
 	applyUpserts(t, s, assets, scopeOf(owner),
 		upsertOp(x, owner, uuid.Nil(), 10, assetDoc(x, 1)))
-	applyDeletes(t, s, assets, scopeOf(owner), deleteOp(x, owner, uuid.Nil(), 20))
+	applyDeletes(
+		t,
+		s,
+		assets,
+		scopeOf(owner),
+		deleteOp(x, owner, uuid.Nil(), 20),
+	)
 
 	// A caller outside the tombstone's identity scope cannot resurrect the
 	// document, even with a newer timestamp and a forged payload identity.
@@ -1468,7 +1485,11 @@ func TestTable_Bury(t *testing.T) {
 	// given operations and cascades to descendants, without scope checks.
 	err := s.Mutate(context.Background(), scope,
 		func(ctx context.Context, tx *sql.Tx) error {
-			return assets.Bury(ctx, tx, []diff.Op{deleteOp(x, owner, uuid.Nil(), 50)})
+			return assets.Bury(
+				ctx,
+				tx,
+				[]diff.Op{deleteOp(x, owner, uuid.Nil(), 50)},
+			)
 		})
 	if err != nil {
 		t.Fatalf("bury: should not have returned an error: %v", err)
@@ -1506,7 +1527,11 @@ func TestTable_Bury(t *testing.T) {
 	)
 	err = s.Mutate(context.Background(), scope,
 		func(ctx context.Context, tx *sql.Tx) error {
-			return assets.Bury(ctx, tx, []diff.Op{deleteOp(y, owner, uuid.Nil(), 55)})
+			return assets.Bury(
+				ctx,
+				tx,
+				[]diff.Op{deleteOp(y, owner, uuid.Nil(), 55)},
+			)
 		})
 	if err != nil {
 		t.Fatalf("bury: should not have returned an error: %v", err)
