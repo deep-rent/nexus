@@ -18,7 +18,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +118,14 @@ func TestNewSender_Panics(t *testing.T) {
 	}
 }
 
+type mockTransport struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return m.fn(r)
+}
+
 func TestSender_Send(t *testing.T) {
 	t.Parallel()
 
@@ -158,39 +165,42 @@ func TestSender_Send(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf("got method %s; want POST", r.Method)
-				}
+			tr := &mockTransport{
+				fn: func(r *http.Request) (*http.Response, error) {
+					if r.Method != http.MethodPost {
+						t.Errorf("got method %s; want POST", r.Method)
+					}
 
-				u, p, ok := r.BasicAuth()
-				if !ok || u != "sid" || p != "token" {
-					t.Errorf("invalid basic auth")
-				}
+					u, p, ok := r.BasicAuth()
+					if !ok || u != "sid" || p != "token" {
+						t.Errorf("invalid basic auth")
+					}
 
-				if got := r.Header.Get(
-					"Content-Type",
-				); got != "application/x-www-form-urlencoded" {
-					t.Errorf("got Content-Type %q", got)
-				}
+					if got := r.Header.Get(
+						"Content-Type",
+					); got != "application/x-www-form-urlencoded" {
+						t.Errorf("got Content-Type %q", got)
+					}
 
-				body, _ := io.ReadAll(r.Body)
-				if !strings.Contains(string(body), "To=%2B123") &&
-					tt.status != http.StatusOK {
-					//
-				}
+					body, _ := io.ReadAll(r.Body)
+					if !strings.Contains(string(body), "To=%2B123") &&
+						tt.status != http.StatusOK {
+						//
+					}
 
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.body))
-			})
-
-			ts := httptest.NewServer(h)
-			defer ts.Close()
+					return &http.Response{
+						StatusCode: tt.status,
+						Body:       io.NopCloser(strings.NewReader(tt.body)),
+						Header:     make(http.Header),
+					}, nil
+				},
+			}
 
 			sender := sms.NewSender(&http.Client{
-				Timeout: 1 * time.Second,
+				Timeout:   1 * time.Second,
+				Transport: tr,
 			}, "sid", "token",
-				sms.WithBaseURL(ts.URL),
+				sms.WithBaseURL("http://example.com"),
 				sms.WithLogger(log.Silent()),
 			)
 
