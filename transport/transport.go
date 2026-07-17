@@ -43,7 +43,7 @@ const DefaultTimeout = 5 * time.Second
 
 // DefaultDialTimeout is the maximum amount of time a dial will wait for
 // a connect to complete.
-const DefaultDialTimeout = 30 * time.Second
+const DefaultDialTimeout = 5 * time.Second
 
 // DefaultKeepAlive specifies the interval between keep-alive probes for an
 // active network connection.
@@ -51,15 +51,15 @@ const DefaultKeepAlive = 30 * time.Second
 
 // DefaultTLSHandshakeTimeout specifies the maximum amount of time waiting to
 // wait for a TLS handshake.
-const DefaultTLSHandshakeTimeout = 10 * time.Second
+const DefaultTLSHandshakeTimeout = 5 * time.Second
 
 // DefaultMaxIdleConns specifies the maximum number of idle (keep-alive)
 // connections across all hosts.
-const DefaultMaxIdleConns = 100
+const DefaultMaxIdleConns = 1024
 
 // DefaultMaxIdleConnsPerHost specifies the maximum number of idle (keep-alive)
 // connections per host.
-const DefaultMaxIdleConnsPerHost = 100
+const DefaultMaxIdleConnsPerHost = 1024
 
 // DefaultIdleConnTimeout specifies the maximum amount of time an idle
 // (keep-alive) connection will remain idle before closing itself.
@@ -69,6 +69,9 @@ const DefaultIdleConnTimeout = 90 * time.Second
 // a server's first response headers after fully writing the request headers if
 // the request has an "Expect: 100-continue" header.
 const DefaultExpectContinueTimeout = 1 * time.Second
+
+// DefaultForceAttemptHTTP2 specifies whether to attempt HTTP/2 by default.
+const DefaultForceAttemptHTTP2 = true
 
 type config struct {
 	timeout               time.Duration
@@ -135,7 +138,8 @@ func WithTLSHandshakeTimeout(d time.Duration) Option {
 
 // WithExpectContinueTimeout specifies the amount of time to wait for
 // a server's first response headers after fully writing the request headers if
-// the request has an "Expect: 100-continue" header. Defaults to [DefaultExpectContinueTimeout].
+// the request has an "Expect: 100-continue" header. Defaults to
+// [DefaultExpectContinueTimeout].
 // Negative values are ignored.
 func WithExpectContinueTimeout(d time.Duration) Option {
 	return func(c *config) {
@@ -176,6 +180,11 @@ func WithHeader(h ...header.Header) Option {
 	return func(c *config) { c.headers = append(c.headers, h...) }
 }
 
+// WithUserAgent defines the User-Agent header applied to every request.
+func WithUserAgent(userAgent string) Option {
+	return WithHeader(header.New("User-Agent", userAgent))
+}
+
 // WithRetry configures the HTTP retry mechanism.
 func WithRetry(opts ...retry.Option) Option {
 	return func(c *config) { c.retry = append(c.retry, opts...) }
@@ -203,8 +212,8 @@ func WithMaxIdleConnsPerHost(max int) Option {
 	}
 }
 
-// NewClient creates a new [*http.Client] configured with the provided options.
-func NewClient(opts ...Option) *http.Client {
+// eval processes the provided options and returns a populated config.
+func eval(opts []Option) config {
 	cfg := config{
 		timeout:               DefaultTimeout,
 		dialTimeout:           DefaultDialTimeout,
@@ -214,10 +223,17 @@ func NewClient(opts ...Option) *http.Client {
 		idleConnTimeout:       DefaultIdleConnTimeout,
 		maxIdleConns:          DefaultMaxIdleConns,
 		maxIdleConnsPerHost:   DefaultMaxIdleConnsPerHost,
+		forceAttemptHTTP2:     DefaultForceAttemptHTTP2,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	return cfg
+}
+
+// New creates a new [http.RoundTripper] configured with the provided options.
+func New(opts ...Option) http.RoundTripper {
+	cfg := eval(opts)
 
 	d := &net.Dialer{
 		Timeout:   cfg.dialTimeout,
@@ -251,8 +267,15 @@ func NewClient(opts ...Option) *http.Client {
 		t = retry.NewTransport(t, cfg.retry...)
 	}
 
+	return t
+}
+
+// NewClient creates a new HTTP client configured with sensible defaults that
+// can be tuned with the provided options.
+func NewClient(opts ...Option) *http.Client {
+	cfg := eval(opts)
 	return &http.Client{
 		Timeout:   cfg.timeout,
-		Transport: t,
+		Transport: New(opts...),
 	}
 }

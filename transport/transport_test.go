@@ -27,8 +27,8 @@ import (
 func TestNewClient_Defaults(t *testing.T) {
 	client := NewClient()
 
-	if client.Timeout != 5*time.Second {
-		t.Errorf("expected default timeout to be 5s, got %v", client.Timeout)
+	if exp, act := 5*time.Second, client.Timeout; exp != act {
+		t.Errorf("expected default timeout to be %v, got %v", exp, act)
 	}
 
 	tr, ok := client.Transport.(*http.Transport)
@@ -43,32 +43,32 @@ func TestNewClient_Defaults(t *testing.T) {
 		t.Error("expected DisableKeepAlives to be false by default")
 	}
 
-	if tr.ForceAttemptHTTP2 {
-		t.Error("expected ForceAttemptHTTP2 to be false by default")
+	if !tr.ForceAttemptHTTP2 {
+		t.Error("expected ForceAttemptHTTP2 to be true by default")
 	}
 
 	if tr.TLSClientConfig != nil {
 		t.Error("expected TLSClientConfig to be nil by default")
 	}
 
-	if tr.TLSHandshakeTimeout != 10*time.Second {
-		t.Errorf("expected TLSHandshakeTimeout to be 10s, got %v", tr.TLSHandshakeTimeout)
+	if exp, act := 5*time.Second, tr.TLSHandshakeTimeout; exp != act {
+		t.Errorf("expected TLSHandshakeTimeout to be %v, got %v", exp, act)
 	}
 
-	if tr.ExpectContinueTimeout != 1*time.Second {
-		t.Errorf("expected ExpectContinueTimeout to be 1s, got %v", tr.ExpectContinueTimeout)
+	if exp, act := 1*time.Second, tr.ExpectContinueTimeout; exp != act {
+		t.Errorf("expected ExpectContinueTimeout to be %v, got %v", exp, act)
 	}
 
-	if tr.IdleConnTimeout != 90*time.Second {
-		t.Errorf("expected IdleConnTimeout to be 90s, got %v", tr.IdleConnTimeout)
+	if exp, act := 90*time.Second, tr.IdleConnTimeout; exp != act {
+		t.Errorf("expected IdleConnTimeout to be %v, got %v", exp, act)
 	}
 
-	if tr.MaxIdleConns != 100 {
-		t.Errorf("expected MaxIdleConns to be 100, got %d", tr.MaxIdleConns)
+	if exp, act := 1024, tr.MaxIdleConns; exp != act {
+		t.Errorf("expected MaxIdleConns to be %v, got %v", exp, act)
 	}
 
-	if tr.MaxIdleConnsPerHost != 100 {
-		t.Errorf("expected MaxIdleConnsPerHost to be 100, got %d", tr.MaxIdleConnsPerHost)
+	if exp, act := 1024, tr.MaxIdleConnsPerHost; exp != act {
+		t.Errorf("expected MaxIdleConnsPerHost to be %v, got %v", exp, act)
 	}
 }
 
@@ -89,8 +89,8 @@ func TestNewClient_WithOptions(t *testing.T) {
 		WithMaxIdleConnsPerHost(50),
 	)
 
-	if client.Timeout != 10*time.Second {
-		t.Errorf("expected timeout to be 10s, got %v", client.Timeout)
+	if exp, act := 10*time.Second, client.Timeout; exp != act {
+		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
 
 	tr, ok := client.Transport.(*http.Transport)
@@ -113,32 +113,32 @@ func TestNewClient_WithOptions(t *testing.T) {
 		t.Error("expected TLSClientConfig to be set correctly")
 	}
 
-	if tr.TLSHandshakeTimeout != 17*time.Second {
-		t.Errorf("expected TLSHandshakeTimeout to be 17s, got %v", tr.TLSHandshakeTimeout)
+	if exp, act := 17*time.Second, tr.TLSHandshakeTimeout; exp != act {
+		t.Errorf("expected TLSHandshakeTimeout to be %v, got %v", exp, act)
 	}
 
-	if tr.ExpectContinueTimeout != 18*time.Second {
-		t.Errorf("expected ExpectContinueTimeout to be 18s, got %v", tr.ExpectContinueTimeout)
+	if exp, act := 18*time.Second, tr.ExpectContinueTimeout; exp != act {
+		t.Errorf("expected ExpectContinueTimeout to be %v, got %v", exp, act)
 	}
 
-	if tr.IdleConnTimeout != 19*time.Second {
-		t.Errorf("expected IdleConnTimeout to be 19s, got %v", tr.IdleConnTimeout)
+	if exp, act := 19*time.Second, tr.IdleConnTimeout; exp != act {
+		t.Errorf("expected IdleConnTimeout to be %v, got %v", exp, act)
 	}
 
-	if tr.MaxIdleConns != 200 {
-		t.Errorf("expected MaxIdleConns to be 200, got %d", tr.MaxIdleConns)
+	if exp, act := 200, tr.MaxIdleConns; exp != act {
+		t.Errorf("expected MaxIdleConns to be %v, got %v", exp, act)
 	}
 
-	if tr.MaxIdleConnsPerHost != 50 {
-		t.Errorf("expected MaxIdleConnsPerHost to be 50, got %d", tr.MaxIdleConnsPerHost)
+	if exp, act := 50, tr.MaxIdleConnsPerHost; exp != act {
+		t.Errorf("expected MaxIdleConnsPerHost to be %v, got %v", exp, act)
 	}
 }
 
 func TestNewClient_WithZeroTimeout(t *testing.T) {
 	client := NewClient(WithTimeout(0))
 
-	if client.Timeout != 0 {
-		t.Errorf("expected timeout to be 0, got %v", client.Timeout)
+	if exp, act := time.Duration(0), client.Timeout; exp != act {
+		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
 }
 
@@ -154,33 +154,48 @@ func TestNewClient_WithNegativeOptions(t *testing.T) {
 		WithMaxIdleConnsPerHost(-50),
 	)
 
-	if client.Timeout != 5*time.Second {
-		t.Errorf("expected timeout to be default 5s, got %v", client.Timeout)
+	if exp, act := 5*time.Second, client.Timeout; exp != act {
+		t.Errorf("expected timeout to be default %v, got %v", exp, act)
 	}
 
 	tr, ok := client.Transport.(*http.Transport)
 	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", client.Transport)
+		t.Fatalf(
+			"expected transport to be *http.Transport, got %T",
+			client.Transport,
+		)
 	}
 
-	if tr.TLSHandshakeTimeout != 10*time.Second {
-		t.Errorf("expected TLSHandshakeTimeout to be default 10s, got %v", tr.TLSHandshakeTimeout)
+	if exp, act := 5*time.Second, tr.TLSHandshakeTimeout; exp != act {
+		t.Errorf(
+			"expected TLSHandshakeTimeout to be default %v, got %v",
+			exp,
+			act,
+		)
 	}
 
-	if tr.ExpectContinueTimeout != 1*time.Second {
-		t.Errorf("expected ExpectContinueTimeout to be default 1s, got %v", tr.ExpectContinueTimeout)
+	if exp, act := 1*time.Second, tr.ExpectContinueTimeout; exp != act {
+		t.Errorf(
+			"expected ExpectContinueTimeout to be default %v, got %v",
+			exp,
+			act,
+		)
 	}
 
-	if tr.IdleConnTimeout != 90*time.Second {
-		t.Errorf("expected IdleConnTimeout to be default 90s, got %v", tr.IdleConnTimeout)
+	if exp, act := 90*time.Second, tr.IdleConnTimeout; exp != act {
+		t.Errorf("expected IdleConnTimeout to be default %v, got %v", exp, act)
 	}
 
-	if tr.MaxIdleConns != 100 {
-		t.Errorf("expected MaxIdleConns to be default 100, got %d", tr.MaxIdleConns)
+	if exp, act := 1024, tr.MaxIdleConns; exp != act {
+		t.Errorf("expected MaxIdleConns to be default %v, got %v", exp, act)
 	}
 
-	if tr.MaxIdleConnsPerHost != 100 {
-		t.Errorf("expected MaxIdleConnsPerHost to be default 100, got %d", tr.MaxIdleConnsPerHost)
+	if exp, act := 1024, tr.MaxIdleConnsPerHost; exp != act {
+		t.Errorf(
+			"expected MaxIdleConnsPerHost to be default %v, got %v",
+			exp,
+			act,
+		)
 	}
 }
 
