@@ -63,7 +63,7 @@ func TestNew(t *testing.T) {
 						t.Errorf("panic value: got %v; want %q", r, tt.want)
 					}
 				}()
-				update.New(tt.give)
+				update.New(&http.Client{}, tt.give)
 			})
 		}
 
@@ -73,7 +73,7 @@ func TestNew(t *testing.T) {
 					t.Error("should have panicked")
 				}
 			}()
-			update.New(&update.Config{
+			update.New(&http.Client{}, &update.Config{
 				Owner:   "o",
 				Repo:    "r",
 				Current: "invalid",
@@ -84,7 +84,7 @@ func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 
-		u := update.New(&update.Config{
+		u := update.New(&http.Client{}, &update.Config{
 			Owner:   "o",
 			Repo:    "r",
 			Current: "1.0.0",
@@ -183,7 +183,7 @@ func TestCheck(t *testing.T) {
 				Current: tt.current,
 			}
 
-			got, err := update.Check(t.Context(), cfg)
+			got, err := update.Check(t.Context(), &http.Client{}, cfg)
 
 			if tt.wantErr != "" {
 				if err == nil {
@@ -228,10 +228,13 @@ func TestCheck_NetworkError(t *testing.T) {
 		Owner:   "o",
 		Repo:    "r",
 		Current: "v1.0.0",
-		Timeout: 100 * time.Millisecond,
 	}
 
-	_, err := update.Check(t.Context(), cfg)
+	_, err := update.Check(
+		t.Context(),
+		&http.Client{Timeout: 100 * time.Millisecond},
+		cfg,
+	)
 	if err == nil {
 		t.Fatal("should have returned a network error")
 	}
@@ -265,7 +268,7 @@ func TestCheck_UserAgent(t *testing.T) {
 		UserAgent: want,
 	}
 
-	if _, err := update.Check(t.Context(), cfg); err != nil {
+	if _, err := update.Check(t.Context(), &http.Client{}, cfg); err != nil {
 		t.Errorf("should not have returned an error: %v", err)
 	}
 }
@@ -292,7 +295,7 @@ func TestCheck_Token(t *testing.T) {
 		Token:   "my-secret-token",
 	}
 
-	if _, err := update.Check(t.Context(), cfg); err != nil {
+	if _, err := update.Check(t.Context(), &http.Client{}, cfg); err != nil {
 		t.Errorf("should not have returned an error: %v", err)
 	}
 }
