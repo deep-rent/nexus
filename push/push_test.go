@@ -101,8 +101,8 @@ func TestBatchSend_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "mock error") {
-		t.Errorf("expected joined error to contain 'mock error', got %v", err)
+	if exp, act := "mock error", err.Error(); !strings.Contains(act, exp) {
+		t.Errorf("expected joined error to contain %q, got %q", exp, act)
 	}
 }
 
