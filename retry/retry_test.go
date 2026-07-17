@@ -283,9 +283,9 @@ func TestTransport_RoundTrip(t *testing.T) {
 		m := &mockRoundTripper{trips: []mockTrip{
 			{res: mockResponse(http.StatusOK, "ok")},
 		}}
-		transport := retry.NewTransport(m)
+		tr := retry.NewTransport(m)
 		req, _ := http.NewRequest("GET", "/", nil)
-		res, err := transport.RoundTrip(req)
+		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -305,9 +305,9 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(m, retry.WithAttemptLimit(3))
+		tr := retry.NewTransport(m, retry.WithAttemptLimit(3))
 		req, _ := http.NewRequest("GET", "/", nil)
-		res, err := transport.RoundTrip(req)
+		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -327,9 +327,9 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(m, retry.WithAttemptLimit(3))
+		tr := retry.NewTransport(m, retry.WithAttemptLimit(3))
 		req, _ := http.NewRequest("GET", "/", nil)
-		res, err := transport.RoundTrip(req)
+		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -350,9 +350,9 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusServiceUnavailable, "fail3")},
 			},
 		}
-		transport := retry.NewTransport(m, retry.WithAttemptLimit(2))
+		tr := retry.NewTransport(m, retry.WithAttemptLimit(2))
 		req, _ := http.NewRequest("GET", "/", nil)
-		res, err := transport.RoundTrip(req)
+		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -371,7 +371,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
 			},
 		}
-		transport := retry.NewTransport(m, retry.WithBackoff(
+		tr := retry.NewTransport(m, retry.WithBackoff(
 			backoff.Constant(100*time.Millisecond),
 		))
 		ctx, cancel := context.WithCancel(t.Context())
@@ -382,7 +382,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			cancel()
 		}()
 
-		_, err := transport.RoundTrip(req)
+		_, err := tr.RoundTrip(req)
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("error: got %v; want %v", err, context.Canceled)
 		}
@@ -398,9 +398,9 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
 			},
 		}
-		transport := retry.NewTransport(m)
+		tr := retry.NewTransport(m)
 		req, _ := http.NewRequest("PUT", "/", http.NoBody)
-		res, err := transport.RoundTrip(req)
+		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -420,13 +420,13 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(m)
+		tr := retry.NewTransport(m)
 		body := "body"
 		req, _ := http.NewRequest("PUT", "/", strings.NewReader(body))
 		req.GetBody = func() (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(body)), nil
 		}
-		res, err := transport.RoundTrip(req)
+		res, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -450,14 +450,14 @@ func TestTransport_RoundTrip(t *testing.T) {
 				{res: mockResponse(http.StatusOK, "ok")},
 			},
 		}
-		transport := retry.NewTransport(m,
+		tr := retry.NewTransport(m,
 			retry.WithBackoff(backoff.Constant(100*time.Millisecond)),
 			retry.WithClock(func() time.Time { return now }),
 		)
 		req, _ := http.NewRequest("GET", "/", nil)
 
 		start := time.Now()
-		_, err := transport.RoundTrip(req)
+		_, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -478,7 +478,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 		}
 		var seen, seenBackoff bool
-		transport := retry.NewTransport(m,
+		tr := retry.NewTransport(m,
 			retry.WithPolicy(func(retry.Attempt) bool {
 				seen = true
 				return false
@@ -493,7 +493,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 		)
 
 		req, _ := http.NewRequest("GET", "/", nil)
-		_, err := transport.RoundTrip(req)
+		_, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
@@ -523,10 +523,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 		))
 
-		transport := retry.NewTransport(m, retry.WithLogger(logger))
+		tr := retry.NewTransport(m, retry.WithLogger(logger))
 		req, _ := http.NewRequest("GET", "/", nil)
 
-		_, err := transport.RoundTrip(req)
+		_, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("should not have returned an error: %v", err)
 		}
