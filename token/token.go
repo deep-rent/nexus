@@ -151,6 +151,7 @@ func (s *Source) Get(ctx context.Context) (string, error) {
 	return s.get(ctx)
 }
 
+// get returns the token without locking the mutex.
 func (s *Source) get(ctx context.Context) (string, error) {
 	ch := s.grp.DoChan("fetch", func() (any, error) {
 		tok, exp, err := s.fetch(ctx)
