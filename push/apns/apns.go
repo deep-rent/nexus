@@ -266,7 +266,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	delta := time.Since(start)
+	delta := s.clock().Sub(start)
 
 	defer func() {
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
