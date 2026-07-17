@@ -18,6 +18,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/router"
