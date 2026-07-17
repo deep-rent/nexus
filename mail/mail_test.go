@@ -24,7 +24,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/deep-rent/nexus/mail"
 )
@@ -271,7 +270,7 @@ func TestNewSender_Panics(t *testing.T) {
 					t.Error("should have panicked")
 				}
 			}()
-			_ = mail.NewSender(tt.apiKey, tt.opts...)
+			_ = mail.NewSender(http.DefaultClient, tt.apiKey, tt.opts...)
 		})
 	}
 }
@@ -329,10 +328,9 @@ func TestSender_Send(t *testing.T) {
 
 			client := mockHTTPClient(t, tt.mockRes, tt.mockErr)
 			sender := mail.NewSender(
+				client,
 				"test-key",
-				mail.WithClient(client),
 				mail.WithUserAgent("TestAgent/1.0"),
-				mail.WithTimeout(1*time.Second),
 			)
 
 			err := sender.Send(t.Context(), tt.msg)
@@ -376,8 +374,8 @@ func TestSender_CustomLogger(t *testing.T) {
 	}, nil)
 
 	sender := mail.NewSender(
+		client,
 		"test-key",
-		mail.WithClient(client),
 		mail.WithLogger(logger),
 	)
 
@@ -398,7 +396,7 @@ func TestSender_CustomLogger(t *testing.T) {
 	}
 }
 
-func TestSender_DefaultClientCreation(t *testing.T) {
+func TestSender_Send_WithBaseURL(t *testing.T) {
 	t.Parallel()
 
 	h := func(w http.ResponseWriter, r *http.Request) {
@@ -412,6 +410,7 @@ func TestSender_DefaultClientCreation(t *testing.T) {
 	defer s.Close()
 
 	sender := mail.NewSender(
+		&http.Client{},
 		"test-key",
 		mail.WithBaseURL(s.URL),
 	)

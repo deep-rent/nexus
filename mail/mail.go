@@ -28,7 +28,9 @@
 // Example:
 //
 //	// 1. Initialize the default SendGrid sender with a custom User-Agent.
-//	sender := mail.NewSender("your-api-key", mail.WithUserAgent("MyApp/1.0"))
+//	sender := mail.NewSender(&http.Client{}, "your-api-key",
+//
+// mail.WithUserAgent("MyApp/1.0"))
 //
 //	// 2. Construct the email message.
 //	msg := mail.NewMessage(
@@ -53,9 +55,6 @@ import (
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/deep-rent/nexus/internal/transport"
-	"github.com/deep-rent/nexus/retry"
 )
 
 const (
@@ -269,41 +268,22 @@ type sender struct {
 	client *http.Client
 	// logger is used for structured diagnostic output.
 	logger *slog.Logger
-	// retry contains the retry configuration options.
-	retry []retry.Option
 }
 
 var _ Sender = (*sender)(nil)
 
 // config holds the optional configuration for the [sender].
 type config struct {
-	// client holds a custom [http.Client], if provided.
-	client *http.Client
 	// baseURL overrides the default SendGrid API endpoint.
 	baseURL string
 	// userAgent defines the User-Agent header value for outgoing requests.
 	userAgent string
-	// timeout sets the maximum [time.Duration] for HTTP requests.
-	timeout time.Duration
-	// retry stores options for the HTTP transport retry mechanism.
-	retry []retry.Option
 	// logger specifies the custom structured [slog.Logger].
 	logger *slog.Logger
 }
 
 // Option defines the functional option pattern for configuring the [sender].
 type Option func(*config)
-
-// WithClient allows passing a custom [http.Client] to the [sender].
-// If provided, it overrides the [WithTimeout] setting. Nil values will be
-// ignored.
-func WithClient(client *http.Client) Option {
-	return func(c *config) {
-		if client != nil {
-			c.client = client
-		}
-	}
-}
 
 // WithBaseURL allows overriding the SendGrid API base URL for testing or
 // mocking.
@@ -318,22 +298,6 @@ func WithBaseURL(url string) Option {
 func WithUserAgent(v string) Option {
 	return func(c *config) {
 		c.userAgent = v
-	}
-}
-
-// WithTimeout configures the timeout for the default [http.Client].
-func WithTimeout(d time.Duration) Option {
-	return func(c *config) {
-		c.timeout = d
-	}
-}
-
-// WithRetryOptions configures the retry mechanism for the default HTTP client.
-// If a custom HTTP client is provided via [WithClient], these options are
-// ignored.
-func WithRetryOptions(opts ...retry.Option) Option {
-	return func(c *config) {
-		c.retry = append(c.retry, opts...)
 	}
 }
 
@@ -356,14 +320,13 @@ func WithLogger(logger *slog.Logger) Option {
 // an internal client optimized for API calls with connection pooling and
 // automatic retry capabilities. It panics if the API key is empty or the base
 // URL is invalid.
-func NewSender(apiKey string, opts ...Option) Sender {
+func NewSender(client *http.Client, apiKey string, opts ...Option) Sender {
 	if apiKey == "" {
 		panic("API key is required")
 	}
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		timeout: DefaultTimeout,
 		logger:  slog.Default(),
 	}
 
@@ -381,22 +344,7 @@ func NewSender(apiKey string, opts ...Option) Sender {
 		url:       endpoint,
 		userAgent: cfg.userAgent,
 		logger:    cfg.logger,
-		retry:     cfg.retry,
-	}
-
-	// Initialize the default HTTP client if a custom one wasn't provided.
-	if cfg.client == nil {
-		s.client = transport.NewClient(transport.Options{
-			Timeout: cfg.timeout,
-			Retry:   cfg.retry,
-		})
-	} else {
-		if len(cfg.retry) > 0 {
-			s.logger.Warn(
-				"Custom client provided; retry options will be ignored",
-			)
-		}
-		s.client = cfg.client
+		client:    client,
 	}
 
 	return s
