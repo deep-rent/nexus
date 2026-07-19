@@ -62,6 +62,9 @@ const (
 	SandboxBaseURL = "https://api.sandbox.push.apple.com"
 )
 
+// maxResponseSize limits the API response body size.
+const maxResponseSize = 1 << 16
+
 // Sender implements the [push.Sender] interface for the Apple Push Notification
 // service (APNs). It handles authentication, payload construction, and
 // dispatching of push notifications to APNs endpoints.
@@ -286,7 +289,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	}()
 
 	if res.StatusCode >= http.StatusBadRequest {
-		buf, err := io.ReadAll(io.LimitReader(res.Body, 1<<16))
+		buf, err := io.ReadAll(io.LimitReader(res.Body, maxResponseSize))
 		var body string
 		if err != nil {
 			s.logger.WarnContext(
