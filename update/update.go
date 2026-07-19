@@ -56,8 +56,6 @@ import (
 const (
 	// DefaultBaseURL is the default GitHub API base URL.
 	DefaultBaseURL = "https://api.github.com"
-	// DefaultTimeout is the default timeout for HTTP requests (5 seconds).
-	DefaultTimeout = 5 * time.Second
 )
 
 // Release represents a published release on GitHub.
