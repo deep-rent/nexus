@@ -24,8 +24,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/valid"
 )
@@ -874,101 +872,6 @@ func TestRouter_MiddlewareHeader(t *testing.T) {
 	}
 }
 
-func TestHandler_ChainMiddleware(t *testing.T) {
-	t.Parallel()
-
-	appendHeader := func(val string) router.Middleware {
-		return func(next router.Handler) router.Handler {
-			return router.HandlerFunc(func(e *router.Exchange) error {
-				current := e.W.Header().Get("X-Chain")
-				e.SetHeader("X-Chain", current+val)
-				return next.ServeHTTP(e)
-			})
-		}
-	}
-
-	h := router.Chain(
-		router.HandlerFunc(func(e *router.Exchange) error {
-			current := e.W.Header().Get("X-Chain")
-			e.SetHeader("X-Chain", current+"C")
-			return nil
-		}),
-		appendHeader("A"),
-		appendHeader("B"),
-	)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	e := &router.Exchange{R: req, W: router.NewResponseWriter(rec)}
-
-	if err := h.ServeHTTP(e); err != nil {
-		t.Fatalf("should not have returned an error: %v", err)
-	}
-	if got, want := rec.Header().Get("X-Chain"), "ABC"; got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestHandler_WrapStd(t *testing.T) {
-	t.Parallel()
-
-	stdHandler := http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Wrapped", "true")
-			w.WriteHeader(http.StatusAccepted)
-		},
-	)
-
-	r := router.New()
-	r.Handle("GET /wrap", router.Wrap(stdHandler))
-
-	srv := httptest.NewServer(r)
-	defer srv.Close()
-
-	res, err := http.Get(srv.URL + "/wrap")
-	if err != nil {
-		t.Fatalf("should not have returned an error: %v", err)
-	}
-	if got, want := res.StatusCode, http.StatusAccepted; got != want {
-		t.Errorf("status code: got %d; want %d", got, want)
-	}
-	if got, want := res.Header.Get("X-Wrapped"), "true"; got != want {
-		t.Errorf("header \"X-Wrapped\": got %q; want %q", got, want)
-	}
-}
-
-func TestHandler_AdaptStdMiddleware(t *testing.T) {
-	t.Parallel()
-
-	var capturedStatus int
-	pipe := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
-			if rw, ok := w.(router.ResponseWriter); ok {
-				capturedStatus = rw.Status()
-			}
-		})
-	}
-
-	r := router.New(router.WithMiddleware(router.Adapt(pipe)))
-	r.HandleFunc("GET /adapt", func(e *router.Exchange) error {
-		return errors.New("boom")
-	})
-
-	srv := httptest.NewServer(r)
-	defer srv.Close()
-
-	res, err := http.Get(srv.URL + "/adapt")
-	if err != nil {
-		t.Fatalf("should not have returned an error: %v", err)
-	}
-	if got, want := res.StatusCode, http.StatusInternalServerError; got != want {
-		t.Errorf("response status: got %d; want %d", got, want)
-	}
-	if got, want := capturedStatus, http.StatusInternalServerError; got != want {
-		t.Errorf("captured status: got %d; want %d", got, want)
-	}
-}
 
 func TestResponseWriter_UnwrapStd(t *testing.T) {
 	t.Parallel()
@@ -1026,35 +929,6 @@ func TestExchange_NoContent(t *testing.T) {
 	}
 }
 
-func TestMiddleware_Connectivity(t *testing.T) {
-	t.Parallel()
-
-	logger := log.Silent()
-	tests := []struct {
-		name string
-		fn   any
-	}{
-		{"Recover", router.Recover(logger)},
-		{"RequestID", router.RequestID()},
-		{"Log", router.Log(logger)},
-		{"Volatile", router.Volatile()},
-		{"Secure", router.Secure(middleware.DefaultSecurityConfig)},
-		{"CORS", router.CORS()},
-		{"Gzip", router.Gzip()},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if tt.fn == nil {
-				t.Fatal("factory: got nil; want non-nil")
-			}
-			if _, ok := tt.fn.(router.Middleware); !ok {
-				t.Error("should satisfy router.Middleware")
-			}
-		})
-	}
-}
 
 func TestErrorID(t *testing.T) {
 	id := router.ErrorID()

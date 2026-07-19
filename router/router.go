@@ -58,15 +58,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"uuid"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/internal/bind"
 	"github.com/deep-rent/nexus/internal/snake"
-	"github.com/deep-rent/nexus/middleware"
-	"github.com/deep-rent/nexus/middleware/cors"
-	"github.com/deep-rent/nexus/middleware/gzip"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -90,6 +86,8 @@ const (
 	ReasonServerError = "server_error"
     // ReasonNotFound indicates that the requested resource does not exist.
     ReasonNotFound = "not_found"
+    // ReasonRateLimit indicates that the rate limit has been exceeded.
+    ReasonRateLimit = "rate_limit"
 )
 
 // Standard media types used in the Content-Type header.
@@ -460,102 +458,6 @@ var _ Handler = HandlerFunc(nil)
 
 // ErrorHandler defines a function that handles errors returned by routes.
 type ErrorHandler func(e *Exchange, err error)
-
-// Middleware defines a function that wraps a [Handler].
-//
-// It allows custom logic to be executed before and/or after the next handler.
-// Unlike standard HTTP middleware, this natively supports returning API errors.
-type Middleware func(Handler) Handler
-
-// Chain combines a handler with multiple [Middleware] functions.
-//
-// The functions are applied in reverse order, meaning the first middleware in
-// the list is the outermost and executes first.
-func Chain(h Handler, mws ...Middleware) Handler {
-	for _, mw := range slices.Backward(mws) {
-		if mw != nil {
-			h = mw(h)
-		}
-	}
-	return h
-}
-
-// Wrap converts a standard [http.Handler] into a router [Handler].
-func Wrap(h http.Handler) Handler {
-	return HandlerFunc(func(e *Exchange) error {
-		h.ServeHTTP(e.W, e.R)
-		return nil
-	})
-}
-
-// Adapt converts a standard [middleware.Pipe] into a [Middleware].
-//
-// This bridges low-level HTTP transport middlewares into the router's
-// ecosystem. It ensuring that any modifications made to the request or response
-// writer by the transport middleware are preserved.
-func Adapt(pipe middleware.Pipe) Middleware {
-	return func(next Handler) Handler {
-		return HandlerFunc(func(e *Exchange) error {
-			var nextErr error
-
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				e.R = r
-				if rw, ok := w.(ResponseWriter); ok {
-					e.W = rw
-				} else {
-					e.W = NewResponseWriter(w)
-				}
-
-				nextErr = next.ServeHTTP(e)
-
-				// Resolve the error immediately so transport middlewares
-				// (like Logger) observe the correct HTTP status code.
-				if nextErr != nil && e.errorHandler != nil {
-					e.errorHandler(e, nextErr)
-					nextErr = nil // Prevent double-handling upstream
-				}
-			})
-
-			pipe(h).ServeHTTP(e.W, e.R)
-			return nextErr
-		})
-	}
-}
-
-// Recover mirrors [middleware.Recover] for use in the router.
-func Recover(logger *slog.Logger) Middleware {
-	return Adapt(middleware.Recover(logger))
-}
-
-// RequestID mirrors [middleware.RequestID] for use in the router.
-func RequestID() Middleware {
-	return Adapt(middleware.RequestID())
-}
-
-// Log mirrors [middleware.Log] for use in the router.
-func Log(logger *slog.Logger) Middleware {
-	return Adapt(middleware.Log(logger))
-}
-
-// Volatile mirrors [middleware.Volatile] for use in the router.
-func Volatile() Middleware {
-	return Adapt(middleware.Volatile())
-}
-
-// Secure mirrors [middleware.Secure] for use in the router.
-func Secure(cfg middleware.SecurityConfig) Middleware {
-	return Adapt(middleware.Secure(cfg))
-}
-
-// CORS mirrors the middleware created by [cors.New] for use in the router.
-func CORS(opts ...cors.Option) Middleware {
-	return Adapt(cors.New(opts...))
-}
-
-// Gzip mirrors the middleware created by [gzip.New] for use in the router.
-func Gzip(opts ...gzip.Option) Middleware {
-	return Adapt(gzip.New(opts...))
-}
 
 // Option defines a functional configuration option for the [Router].
 type Option func(*Router)
