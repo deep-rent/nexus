@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -1058,7 +1059,10 @@ func (s *Server) revoke(e *router.Exchange) error {
 		return nil
 	}
 
-	if _, err := s.sessions.DeleteRefreshToken(e.Context(), digest); err != nil {
+	if _, err := s.sessions.DeleteRefreshToken(
+		e.Context(),
+		digest,
+	); err != nil {
 		s.logger.ErrorContext(
 			e.Context(),
 			"Failed to delete refresh token during revocation",

@@ -349,7 +349,10 @@ func TestWellKnown(t *testing.T) {
 			http.StatusOK,
 		)
 	}
-	if root := decodeJSON[AuthorizationServerMetadata](t, w); root.Issuer != testIssuer {
+	if root := decodeJSON[AuthorizationServerMetadata](
+		t,
+		w,
+	); root.Issuer != testIssuer {
 		t.Errorf("got issuer %q; want %q", root.Issuer, testIssuer)
 	}
 }
@@ -517,7 +520,12 @@ func TestTokenErrors(t *testing.T) {
 
 		w := env.do(req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 	})
 
