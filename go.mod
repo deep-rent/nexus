@@ -10,6 +10,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
 	golang.org/x/mod v0.38.0
 	golang.org/x/sync v0.22.0
+	golang.org/x/time v0.15.0
 )
 
 require (
