@@ -54,6 +54,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"math"
 	"net/http"
 	"runtime/debug"
 	"slices"
@@ -365,14 +366,27 @@ func RateLimit(limiter *rate.Limiter) Pipe {
 func RateLimitFunc(supply func(*http.Request) *rate.Limiter) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			limiter := supply(r)
-			if limiter != nil && !limiter.Allow() {
-				http.Error(
-					w,
-					http.StatusText(http.StatusTooManyRequests),
-					http.StatusTooManyRequests,
-				)
-				return
+			if limiter := supply(r); limiter != nil {
+				res := limiter.Reserve()
+				if !res.OK() {
+					http.Error(
+						w,
+						http.StatusText(http.StatusTooManyRequests),
+						http.StatusTooManyRequests,
+					)
+					return
+				}
+				if delay := res.Delay(); delay > 0 {
+					res.Cancel()
+					sec := int(math.Ceil(delay.Seconds()))
+					w.Header().Set("Retry-After", strconv.Itoa(sec))
+					http.Error(
+						w,
+						http.StatusText(http.StatusTooManyRequests),
+						http.StatusTooManyRequests,
+					)
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})

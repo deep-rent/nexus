@@ -537,6 +537,9 @@ func TestRateLimitFunc(t *testing.T) {
 		if got, want := rr2.Code, http.StatusTooManyRequests; got != want {
 			t.Errorf("second request status code: got %d; want %d", got, want)
 		}
+		if got := rr2.Header().Get("Retry-After"); got == "" {
+			t.Errorf("missing Retry-After header")
+		}
 	})
 }
 
@@ -558,5 +561,8 @@ func TestRateLimit(t *testing.T) {
 	h.ServeHTTP(rr2, httptest.NewRequest(http.MethodGet, "/", nil))
 	if got, want := rr2.Code, http.StatusTooManyRequests; got != want {
 		t.Errorf("second request status code: got %d; want %d", got, want)
+	}
+	if got := rr2.Header().Get("Retry-After"); got == "" {
+		t.Errorf("missing Retry-After header")
 	}
 }
