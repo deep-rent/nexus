@@ -130,15 +130,40 @@ func TestClaims_Delegated(t *testing.T) {
 
 	client := uuid.NewV7()
 	c2 := &auth.Claims{Azp: client}
-	c2.Sub = client
+	c2.Sub = client.String()
 	if c2.Delegated() {
 		t.Error("when azp equals sub: got true; want false")
 	}
 
 	c3 := &auth.Claims{Azp: client}
-	c3.Sub = uuid.NewV7()
+	c3.Sub = uuid.NewV7().String()
 	if !c3.Delegated() {
 		t.Error("when azp differs from sub: got false; want true")
+	}
+}
+
+func TestClaims_UserID(t *testing.T) {
+	t.Parallel()
+
+	client := uuid.NewV7()
+	user := uuid.NewV7()
+
+	delegated := &auth.Claims{Azp: client}
+	delegated.Sub = user.String()
+	if got := delegated.UserID(); got != user {
+		t.Errorf("for delegated claims: got %v; want %v", got, user)
+	}
+
+	machine := &auth.Claims{Azp: client}
+	machine.Sub = client.String()
+	if got := machine.UserID(); got != uuid.Nil() {
+		t.Errorf("for machine claims: got %v; want the zero UUID", got)
+	}
+
+	external := &auth.Claims{Azp: client}
+	external.Sub = "not-a-uuid"
+	if got := external.UserID(); got != uuid.Nil() {
+		t.Errorf("for non-UUID subject: got %v; want the zero UUID", got)
 	}
 }
 

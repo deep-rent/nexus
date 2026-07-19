@@ -429,7 +429,7 @@ func TestTokenClientCredentials(t *testing.T) {
 	if claims.Azp != env.client.id {
 		t.Errorf("got azp %v; want %v", claims.Azp, env.client.id)
 	}
-	if claims.Sub != env.client.id {
+	if claims.Sub != env.client.id.String() {
 		t.Errorf("got sub %v; want the client %v", claims.Sub, env.client.id)
 	}
 	if got := claims.Scope.String(); got != "read" {
@@ -651,7 +651,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	}
 
 	claims := env.verifyToken(t, res.AccessToken)
-	if claims.Sub != env.subject.id {
+	if claims.Sub != env.subject.id.String() {
 		t.Errorf("got sub %v; want %v", claims.Sub, env.subject.id)
 	}
 	if claims.Azp != env.client.id {
@@ -987,7 +987,7 @@ func TestDeviceFlow(t *testing.T) {
 
 	token := decodeJSON[TokenResponse](t, w)
 	claims := env.verifyToken(t, token.AccessToken)
-	if claims.Sub != env.subject.id {
+	if claims.Sub != env.subject.id.String() {
 		t.Errorf("got sub %v; want %v", claims.Sub, env.subject.id)
 	}
 	if _, ok := env.sessions.deviceCodes[NewDigest(res.DeviceCode)]; ok {

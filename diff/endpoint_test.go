@@ -59,7 +59,7 @@ func serve(
 // claimsFor builds delegated end-user claims for the given user.
 func claimsFor(userID uuid.UUID, teams ...uuid.UUID) *auth.Claims {
 	c := &auth.Claims{Teams: teams}
-	c.Sub = userID
+	c.Sub = userID.String()
 	c.Azp = uuid.NewV7() // azp != sub: acting on behalf of the user
 	return c
 }
@@ -170,7 +170,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			claims: func() *auth.Claims {
 				svc := uuid.NewV7()
 				c := &auth.Claims{}
-				c.Sub = svc
+				c.Sub = svc.String()
 				c.Azp = svc // azp == sub: not delegated
 				return c
 			}(),
@@ -381,7 +381,7 @@ func TestEndpoint_Document_Errors(t *testing.T) {
 			claims: func() *auth.Claims {
 				svc := uuid.NewV7()
 				c := &auth.Claims{}
-				c.Sub = svc
+				c.Sub = svc.String()
 				c.Azp = svc // azp == sub: not delegated
 				return c
 			}(),

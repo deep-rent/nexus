@@ -166,10 +166,10 @@ func scopeFrom[C auth.AccessClaims](e *router.Exchange) (Scope, *router.Error) {
 				"machine tokens cannot access documents.",
 		}
 	}
-	// Subjects and memberships are typed UUIDs end to end; a token
-	// whose sub claim failed to parse never verifies, so only the
-	// zero value needs rejecting here.
-	sub := claims.Subject()
+	// The raw sub claim is an opaque string; UserID performs the UUID
+	// parse and returns the zero value for anything that is not a
+	// well-formed, delegated user identifier.
+	sub := claims.UserID()
 	if sub == uuid.Nil() {
 		return Scope{}, &router.Error{
 			Status:      http.StatusUnauthorized,

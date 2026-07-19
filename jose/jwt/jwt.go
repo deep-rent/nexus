@@ -83,8 +83,6 @@ import (
 	"strings"
 	"time"
 
-	"uuid"
-
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
@@ -225,9 +223,11 @@ func (a *Audience) UnmarshalJSON(b []byte) error {
 type Claims interface {
 	// ID returns the "jti" (JWT ID) claim, or an empty string if absent.
 	ID() string
-	// Subject returns the "sub" (Subject) claim, or the zero UUID if
-	// absent. Subjects are user identifiers and are enforced to be UUIDs.
-	Subject() uuid.UUID
+	// Subject returns the "sub" (Subject) claim, or an empty string if
+	// absent. The claim is treated as an opaque, issuer-scoped string;
+	// parsing it into a richer identifier type (e.g., a UUID) is left to
+	// the claims implementation.
+	Subject() string
 	// Issuer returns the "iss" (Issuer) claim, or an empty string if absent.
 	Issuer() string
 	// Audience returns the "aud" (Audience) claim, or nil if absent.
@@ -250,7 +250,7 @@ type MutableClaims interface {
 	// SetID sets the "jti" (JWT ID) claim.
 	SetID(id string)
 	// SetSubject sets the "sub" (Subject) claim.
-	SetSubject(sub uuid.UUID)
+	SetSubject(sub string)
 	// SetIssuer sets the "iss" (Issuer) claim.
 	SetIssuer(iss string)
 	// SetAudience sets the "aud" (Audience) claim.
@@ -268,7 +268,7 @@ type MutableClaims interface {
 // enable standard claim handling.
 type Reserved struct {
 	Jti string    `json:"jti,omitempty"` // JWT ID
-	Sub uuid.UUID `json:"sub,omitzero"`  // Subject
+	Sub string    `json:"sub,omitempty"` // Subject
 	Iss string    `json:"iss,omitempty"` // Issuer
 	Aud Audience  `json:"aud,omitempty"` // Audience
 	Iat time.Time `json:"iat,omitzero"`  // Issued At
@@ -283,10 +283,10 @@ func (r *Reserved) ID() string { return r.Jti }
 func (r *Reserved) SetID(id string) { r.Jti = id }
 
 // Subject implements [Claims].
-func (r *Reserved) Subject() uuid.UUID { return r.Sub }
+func (r *Reserved) Subject() string { return r.Sub }
 
 // SetSubject implements [MutableClaims].
-func (r *Reserved) SetSubject(sub uuid.UUID) { r.Sub = sub }
+func (r *Reserved) SetSubject(sub string) { r.Sub = sub }
 
 // Issuer implements [Claims].
 func (r *Reserved) Issuer() string { return r.Iss }

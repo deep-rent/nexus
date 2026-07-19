@@ -147,6 +147,13 @@ type AccessClaims interface {
 	// Delegated reports whether the token was issued to a client acting on
 	// behalf of an end user rather than to the client itself.
 	Delegated() bool
+	// UserID returns the "sub" claim parsed into the user's UUID.
+	//
+	// First-party tokens identify end users by UUID, but the raw subject
+	// claim is an opaque string; this accessor performs the parse. It
+	// returns the zero UUID when the token is not delegated (the subject is
+	// the client itself) or when the subject is not a valid UUID.
+	UserID() uuid.UUID
 }
 
 // Scope represents the "scope" claim of a JWT as defined in RFC 6749.
@@ -212,7 +219,19 @@ func (c *Claims) Memberships() []uuid.UUID {
 // This is useful for distinguishing between a client acting on its own behalf
 // (machine-to-machine) and a client acting on behalf of a user (delegation).
 func (c *Claims) Delegated() bool {
-	return c.Azp != uuid.Nil() && c.Azp != c.Sub
+	return c.Azp != uuid.Nil() && c.Azp.String() != c.Sub
+}
+
+// UserID implements the [AccessClaims] interface.
+func (c *Claims) UserID() uuid.UUID {
+	if !c.Delegated() {
+		return uuid.Nil()
+	}
+	id, err := uuid.Parse(c.Sub)
+	if err != nil {
+		return uuid.Nil()
+	}
+	return id
 }
 
 var _ AccessClaims = (*Claims)(nil)

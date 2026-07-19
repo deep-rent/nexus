@@ -669,9 +669,7 @@ func (s *Server) introspect(e *router.Exchange) error {
 		if claims.Azp != uuid.Nil() {
 			res.ClientID = claims.Azp.String()
 		}
-		if claims.Sub != uuid.Nil() {
-			res.Sub = claims.Sub.String()
-		}
+		res.Sub = claims.Sub
 	}
 
 	return e.JSON(http.StatusOK, res)
@@ -944,14 +942,14 @@ func (s *Server) token(e *router.Exchange) error {
 
 	// Populate claims based on the context of the grant.
 	if iss.Subject == uuid.Nil() {
-		claims.Sub = clientID // The subject is the client itself
+		claims.Sub = clientID.String() // The subject is the client itself
 	} else if sub, err := s.subjects.GetSubject(
 		e.Context(),
 		iss.Subject,
 	); err != nil {
 		return s.serverError(e.Context(), "failed to retrieve subject", err)
 	} else if sub != nil {
-		claims.Sub = sub.ID()
+		claims.Sub = sub.ID().String()
 		claims.Roles = sub.Roles()
 	} else {
 		s.logger.ErrorContext(

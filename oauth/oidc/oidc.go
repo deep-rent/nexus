@@ -17,9 +17,9 @@
 //
 // It contains the protocol primitives common to all OIDC relying parties:
 // a lenient [IDToken] claims structure that tolerates provider quirks
-// (polymorphic audiences via [jwt.Audience], stringified booleans, non-UUID
-// subjects), and a token endpoint [Exchange] helper that swaps an
-// authorization code for an [oauth.TokenResponse].
+// (polymorphic audiences via [jwt.Audience], stringified booleans), and a
+// token endpoint [Exchange] helper that swaps an authorization code for an
+// [oauth.TokenResponse].
 //
 // Concrete providers built on top of this package live under oauth/social.
 package oidc
@@ -35,7 +35,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"uuid"
 
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/oauth"
@@ -63,10 +62,6 @@ func (b *Boolish) UnmarshalJSON(data []byte) error {
 // IDToken models the claims of an OIDC ID token issued by an external
 // provider. It implements [jwt.Claims] so it can be validated with a
 // [jwt.Verifier].
-//
-// Unlike first-party tokens, external subjects are arbitrary provider-scoped
-// strings rather than UUIDs; use the Sub field directly instead of the
-// [jwt.Claims] Subject accessor.
 type IDToken struct {
 	// Jti is the unique token identifier, if the provider issues one.
 	Jti string `json:"jti,omitempty"`
@@ -95,9 +90,8 @@ type IDToken struct {
 // ID implements [jwt.Claims].
 func (t *IDToken) ID() string { return t.Jti }
 
-// Subject implements [jwt.Claims]. External subjects are not UUIDs, so this
-// always returns the zero UUID; read the Sub field instead.
-func (t *IDToken) Subject() uuid.UUID { return uuid.Nil() }
+// Subject implements [jwt.Claims].
+func (t *IDToken) Subject() string { return t.Sub }
 
 // Issuer implements [jwt.Claims].
 func (t *IDToken) Issuer() string { return t.Iss }

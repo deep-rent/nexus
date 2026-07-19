@@ -65,7 +65,7 @@ func TestSignVerify(t *testing.T) {
 		t.Fatalf("verification: should not have returned an error: %v", err)
 	}
 
-	if got, want := out.Subject(), sub; got != want {
+	if got, want := out.Subject(), sub.String(); got != want {
 		t.Errorf("subject: got %v; want %v", got, want)
 	}
 	if got, want := out.Role, "admin"; got != want {
