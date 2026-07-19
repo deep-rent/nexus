@@ -200,3 +200,174 @@ func TestExchange(t *testing.T) {
 		}
 	})
 }
+
+func TestCallback(t *testing.T) {
+	t.Parallel()
+
+	key, err := jwk.Generate(jwa.ES256)
+	if err != nil {
+		t.Fatalf("failed to generate signing key: %v", err)
+	}
+
+	now := time.Now()
+
+	idToken, err := jwt.Sign(t.Context(), key, &IDToken{
+		Sub: "ext-123",
+		Iss: "https://idp.example.com",
+		Aud: jwt.Audience{"client-1"},
+		Iat: now,
+		Exp: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("failed to sign id token: %v", err)
+	}
+
+	verifier := jwt.NewVerifier[*IDToken](
+		jwk.Singleton(key),
+		jwt.WithIssuers("https://idp.example.com"),
+		jwt.WithAudiences("client-1"),
+	)
+
+	credentials := func() url.Values {
+		return url.Values{
+			"client_id":     {"client-1"},
+			"client_secret": {"s3cret"},
+		}
+	}
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		srv := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				// Callback must fill in the protocol parameters while
+				// preserving the provided client credentials.
+				if got := r.FormValue("grant_type"); got != "authorization_code" {
+					t.Errorf("got grant_type %q; want authorization_code", got)
+				}
+				if got := r.FormValue("code"); got != "abc" {
+					t.Errorf("got code %q; want %q", got, "abc")
+				}
+				if got := r.FormValue("redirect_uri"); got != "https://rp.example.com/cb" {
+					t.Errorf("got redirect_uri %q; want the configured URI", got)
+				}
+				if got := r.FormValue("client_secret"); got != "s3cret" {
+					t.Errorf("got client_secret %q; want %q", got, "s3cret")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"id_token":"` + string(idToken) + `"}`))
+			},
+		))
+		defer srv.Close()
+
+		req := httptest.NewRequest(http.MethodGet, "/cb?code=abc", nil)
+
+		claims, err := Callback(
+			t.Context(),
+			srv.Client(),
+			srv.URL,
+			req,
+			credentials(),
+			"https://rp.example.com/cb",
+			verifier,
+		)
+		if err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if claims.Sub != "ext-123" {
+			t.Errorf("got sub %q; want %q", claims.Sub, "ext-123")
+		}
+	})
+
+	t.Run("authorization error", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(
+			http.MethodGet,
+			"/cb?error=access_denied",
+			nil,
+		)
+		_, err := Callback(
+			t.Context(),
+			http.DefaultClient,
+			"http://invalid.invalid",
+			req,
+			credentials(),
+			"https://rp.example.com/cb",
+			verifier,
+		)
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+	})
+
+	t.Run("missing code", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodGet, "/cb", nil)
+		_, err := Callback(
+			t.Context(),
+			http.DefaultClient,
+			"http://invalid.invalid",
+			req,
+			credentials(),
+			"https://rp.example.com/cb",
+			verifier,
+		)
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+	})
+
+	t.Run("missing id token", func(t *testing.T) {
+		t.Parallel()
+
+		srv := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"access_token":"at"}`))
+			},
+		))
+		defer srv.Close()
+
+		req := httptest.NewRequest(http.MethodGet, "/cb?code=abc", nil)
+		_, err := Callback(
+			t.Context(),
+			srv.Client(),
+			srv.URL,
+			req,
+			credentials(),
+			"https://rp.example.com/cb",
+			verifier,
+		)
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+	})
+
+	t.Run("verification failure", func(t *testing.T) {
+		t.Parallel()
+
+		srv := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"id_token":"garbage"}`))
+			},
+		))
+		defer srv.Close()
+
+		req := httptest.NewRequest(http.MethodGet, "/cb?code=abc", nil)
+		_, err := Callback(
+			t.Context(),
+			srv.Client(),
+			srv.URL,
+			req,
+			credentials(),
+			"https://rp.example.com/cb",
+			verifier,
+		)
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+	})
+}

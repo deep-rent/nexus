@@ -61,6 +61,19 @@
 //
 //	// 4. Start serving.
 //	http.ListenAndServe(":8080", r)
+//
+// # Operational notes
+//
+// The server issues stateless JWT access tokens; only refresh tokens can be
+// revoked. The authorization endpoint grants implicit consent: any resource
+// owner with an active session is treated as having approved the requested
+// scopes, which is appropriate for first-party clients only.
+//
+// Deployments must provide the protections that fall outside this package:
+// serve all endpoints over TLS (cookies are marked Secure), rate limit the
+// login and token endpoints (e.g., via middleware), and back the store
+// interfaces with implementations that honor the atomicity and TTL
+// contracts documented on [SessionStore].
 package oauth
 
 import (
@@ -111,6 +124,11 @@ type Client interface {
 	Audience() []string
 	// VerifySecret checks if the provided secret matches the client's
 	// registered secret.
+	//
+	// Implementations must compare in constant time and should persist only
+	// a cryptographic hash of the secret — e.g., compare digests with
+	// [crypto/subtle.ConstantTimeCompare] — so that neither timing nor a
+	// leaked client registry reveals usable credentials.
 	VerifySecret(secret string) bool
 	// VerifyRedirectURI checks if the specified URI is an allowed redirect
 	// destination for the client.

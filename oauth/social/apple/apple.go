@@ -207,7 +207,10 @@ func parseKey(pemBytes []byte, kid string) (jwk.KeyPair, error) {
 //	s.Dispatch(p.Keys())
 //
 // Until the first successful fetch completes, ID token verification fails
-// with [jwt.ErrKeyNotFound].
+// with [jwt.ErrKeyNotFound]; block on the set's Ready channel during
+// startup to guarantee keys are available before serving logins:
+//
+//	<-p.Keys().Ready()
 func (p *Provider) Keys() jwk.CacheSet { return p.keys }
 
 // AuthURL implements [oauth.IdentityProvider].

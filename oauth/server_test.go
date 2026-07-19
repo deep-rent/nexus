@@ -15,7 +15,9 @@
 package oauth
 
 import (
+	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1121,4 +1123,209 @@ func TestNormalizeUserCode(t *testing.T) {
 			t.Errorf("normalizeUserCode(%q) = %q; want %q", tt.in, got, tt.want)
 		}
 	}
+}
+
+// failingGenerator simulates an exhausted entropy source.
+func failingGenerator(context.Context) (string, error) {
+	return "", errors.New("boom")
+}
+
+// wantServerError asserts an opaque 500 response carrying a trace ID.
+func wantServerError(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf(
+			"got status %d; want %d: %s",
+			w.Code,
+			http.StatusInternalServerError,
+			w.Body,
+		)
+	}
+	res := decodeJSON[Error](t, w)
+	if res.Code != ErrorCodeServerError {
+		t.Errorf("got error %q; want %q", res.Code, ErrorCodeServerError)
+	}
+	if res.ID == "" {
+		t.Error("missing trace ID on internal error")
+	}
+}
+
+func TestInternalFailures(t *testing.T) {
+	t.Parallel()
+
+	t.Run("client lookup failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+		env.clients.err = errors.New("db down")
+
+		w := env.postForm(PathToken, url.Values{
+			"grant_type": {string(GrantTypeClientCredentials)},
+		}, env.client, "s3cret")
+
+		wantServerError(t, w)
+	})
+
+	t.Run("session store failure during exchange", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+		env.sessions.err = errors.New("db down")
+
+		w := env.postForm(PathToken, url.Values{
+			"grant_type":    {string(GrantTypeRefreshToken)},
+			"refresh_token": {"token-1"},
+		}, env.client, "s3cret")
+
+		wantServerError(t, w)
+	})
+
+	t.Run("auth code generation failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, WithAuthCodeGenerator(failingGenerator))
+
+		q := url.Values{
+			"client_id":             {env.client.id.String()},
+			"redirect_uri":          {testRedirect},
+			"response_type":         {"code"},
+			"code_challenge":        {"challenge"},
+			"code_challenge_method": {pkce.MethodPlain},
+		}
+		req := httptest.NewRequest(
+			http.MethodGet,
+			testPrefix+PathAuthorize+"?"+q.Encode(),
+			nil,
+		)
+		req.AddCookie(env.login())
+
+		wantServerError(t, env.do(req))
+	})
+
+	t.Run("refresh token generation failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, WithRefreshTokenGenerator(failingGenerator))
+		env.sessions.refreshTokens[NewDigest("rt-1")] = RefreshToken{
+			Token:     NewDigest("rt-1"),
+			ClientID:  env.client.id,
+			SubjectID: env.subject.id,
+			Scope:     "read",
+			ExpiresAt: env.now.Add(time.Hour).Unix(),
+		}
+
+		w := env.postForm(PathToken, url.Values{
+			"grant_type":    {string(GrantTypeRefreshToken)},
+			"refresh_token": {"rt-1"},
+		}, env.client, "s3cret")
+
+		wantServerError(t, w)
+	})
+
+	t.Run("session key generation failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, WithSessionKeyGenerator(failingGenerator))
+
+		w := postJSON(
+			env,
+			PathLogin,
+			`{"username":"alice","password":"wonderland"}`,
+		)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusInternalServerError,
+			)
+		}
+	})
+
+	t.Run("device code generation failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, WithDeviceCodeGenerator(failingGenerator))
+
+		w := env.postForm(
+			PathDeviceAuthorization,
+			url.Values{},
+			env.client,
+			"s3cret",
+		)
+
+		wantServerError(t, w)
+	})
+
+	t.Run("user code generation failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, WithUserCodeGenerator(failingGenerator))
+
+		w := env.postForm(
+			PathDeviceAuthorization,
+			url.Values{},
+			env.client,
+			"s3cret",
+		)
+
+		wantServerError(t, w)
+	})
+
+	t.Run("state generation failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(
+			t,
+			WithIdentityProvider("acme", &fakeIDP{}),
+			WithStateGenerator(failingGenerator),
+		)
+
+		w := env.do(httptest.NewRequest(
+			http.MethodGet,
+			testPrefix+"/login/acme",
+			nil,
+		))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusInternalServerError,
+			)
+		}
+	})
+
+	t.Run("subject lookup failure during login", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+		env.subjects.err = errors.New("db down")
+
+		w := postJSON(
+			env,
+			PathLogin,
+			`{"username":"alice","password":"wonderland"}`,
+		)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusInternalServerError,
+			)
+		}
+	})
+
+	t.Run("subject lookup failure during verification", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+		cookie := env.login()
+		env.subjects.err = errors.New("db down")
+
+		req := httptest.NewRequest(
+			http.MethodPost,
+			testPrefix+PathDeviceVerify,
+			strings.NewReader(`{"user_code":"BCDF-GHJK","action":"deny"}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+
+		w := env.do(req)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusInternalServerError,
+			)
+		}
+	})
 }

@@ -135,3 +135,20 @@ func TestVerifyRedirectURI(t *testing.T) {
 		})
 	}
 }
+
+func TestErrorString(t *testing.T) {
+	t.Parallel()
+
+	bare := Error{Code: ErrorCodeInvalidGrant}
+	if got, want := bare.Error(), "invalid_grant"; got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+
+	described := Error{
+		Code:        ErrorCodeInvalidGrant,
+		Description: "code expired",
+	}
+	if got, want := described.Error(), "invalid_grant: code expired"; got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
