@@ -53,8 +53,6 @@ import (
 const (
 	// DefaultBaseURL is the standard API endpoint for Twilio Messaging.
 	DefaultBaseURL = "https://api.twilio.com/2010-04-01"
-	// DefaultTimeout is the default timeout for API requests (5 seconds).
-	DefaultTimeout = 5 * time.Second
 )
 
 // maxResponseSize limits the API response body size.
