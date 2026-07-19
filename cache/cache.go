@@ -83,8 +83,6 @@ import (
 )
 
 const (
-	// DefaultTimeout is the default timeout for a single HTTP request.
-	DefaultTimeout = 30 * time.Second
 	// DefaultMinInterval is the default lower bound for the refresh interval.
 	DefaultMinInterval = 15 * time.Minute
 	// DefaultMaxInterval is the default upper bound for the refresh interval.
