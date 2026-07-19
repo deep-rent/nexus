@@ -57,6 +57,9 @@ const (
 	DefaultTimeout = 5 * time.Second
 )
 
+// maxResponseSize limits the API response body size.
+const maxResponseSize = 1 << 16
+
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
 	ErrNilMessage = errors.New("message cannot be nil")
@@ -295,7 +298,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		apiErr.Status = code
 		// Attempt to parse the JSON error body. If it fails, we just return the
 		// status.
-		r := io.LimitReader(res.Body, 1<<16)
+		r := io.LimitReader(res.Body, maxResponseSize)
 		if err := json.UnmarshalRead(r, &apiErr); err != nil {
 			s.logger.WarnContext(
 				ctx,
