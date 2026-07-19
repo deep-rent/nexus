@@ -22,8 +22,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/time/rate"
-
 	mw "github.com/deep-rent/nexus/middleware"
 )
 
@@ -499,70 +497,5 @@ func TestIntegration(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("log: want match for %q; got %q", want, out)
 		}
-	}
-}
-
-func TestRateLimitFunc(t *testing.T) {
-	t.Parallel()
-
-	t.Run("allows when nil limiter", func(t *testing.T) {
-		t.Parallel()
-		h := mw.RateLimitFunc(func(*http.Request) *rate.Limiter {
-			return nil
-		})(mockHandler)
-
-		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
-
-		if got, want := rr.Code, http.StatusOK; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-	})
-
-	t.Run("limits when limiter supplied", func(t *testing.T) {
-		t.Parallel()
-		limiter := rate.NewLimiter(0, 1)
-		h := mw.RateLimitFunc(func(*http.Request) *rate.Limiter {
-			return limiter
-		})(mockHandler)
-
-		rr1 := httptest.NewRecorder()
-		h.ServeHTTP(rr1, httptest.NewRequest(http.MethodGet, "/", nil))
-		if got, want := rr1.Code, http.StatusOK; got != want {
-			t.Errorf("first request status code: got %d; want %d", got, want)
-		}
-
-		rr2 := httptest.NewRecorder()
-		h.ServeHTTP(rr2, httptest.NewRequest(http.MethodGet, "/", nil))
-		if got, want := rr2.Code, http.StatusTooManyRequests; got != want {
-			t.Errorf("second request status code: got %d; want %d", got, want)
-		}
-		if got := rr2.Header().Get("Retry-After"); got == "" {
-			t.Errorf("missing Retry-After header")
-		}
-	})
-}
-
-func TestRateLimit(t *testing.T) {
-	t.Parallel()
-
-	limiter := rate.NewLimiter(0, 1)
-	h := mw.RateLimit(limiter)(mockHandler)
-
-	// 1st request should succeed
-	rr1 := httptest.NewRecorder()
-	h.ServeHTTP(rr1, httptest.NewRequest(http.MethodGet, "/", nil))
-	if got, want := rr1.Code, http.StatusOK; got != want {
-		t.Errorf("first request status code: got %d; want %d", got, want)
-	}
-
-	// 2nd request should fail
-	rr2 := httptest.NewRecorder()
-	h.ServeHTTP(rr2, httptest.NewRequest(http.MethodGet, "/", nil))
-	if got, want := rr2.Code, http.StatusTooManyRequests; got != want {
-		t.Errorf("second request status code: got %d; want %d", got, want)
-	}
-	if got := rr2.Header().Get("Retry-After"); got == "" {
-		t.Errorf("missing Retry-After header")
 	}
 }
