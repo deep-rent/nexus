@@ -555,11 +555,21 @@ func (s *Store) Mutate(
 	})
 }
 
+// errDrift signals that the grant set changed between its snapshot and the
+// lock acquisition and the offboarding transaction must be retried.
+var errDrift = errors.New("grant set drifted")
+
 // OffboardTeam buries every share that grants the given team access to
 // owners' personal documents. Each grant is removed and tombstoned so the
 // team's members receive a share deletion on their next sync and their
 // clients purge the shared documents (see the client contract). It returns
 // the number of grants buried.
+//
+// OffboardTeam is safe against concurrent grant writes: it locks the team
+// key and every granting owner in one batch, re-verifies the grant set
+// under the locks, and retries once when a grant landed in between. If the
+// set drifts again, it returns an error wrapping [diff.ErrConflict]; the
+// condition is transient, and the call can simply be repeated.
 //
 // Call it before deleting a team row: document_shares references teams with
 // ON DELETE RESTRICT precisely so a team cannot be dropped while grants —
@@ -581,60 +591,134 @@ func (s *Store) OffboardTeam(
 	at hlc.Time,
 ) (int64, error) {
 	var buried int64
-	err := s.Exec(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		// Every owner that granted this team access appears in a tombstone
-		// and has their grant visibility reset, so the lock set is the team
-		// key (whose members read the tombstones under a shared lock) plus
-		// each granting owner.
-		rows, err := tx.QueryContext(ctx,
-			"SELECT user_id FROM "+s.shares+
-				" WHERE team_id = $1::uuid", teamID)
-		if err != nil {
-			return fmt.Errorf("failed to list team grants: %w", err)
-		}
-		var owners []uuid.UUID
-		for rows.Next() {
-			var owner uuid.UUID
-			if err := rows.Scan(&owner); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("failed to scan grant owner: %w", err)
+
+	// Owner keys accumulate across attempts, mirroring the engine's
+	// resolve/lock/verify pattern: all advisory locks must be taken in one
+	// sorted batch (incremental acquisition would break the global lock
+	// order and risk deadlock), so a grant landing between the snapshot and
+	// the lock forces a retry with the union of both lock sets.
+	owners := make(map[uuid.UUID]struct{})
+	for attempt := 0; ; attempt++ {
+		err := s.Exec(ctx, func(ctx context.Context, tx *sql.Tx) error {
+			// Seed the lock set from an unlocked snapshot on the first
+			// attempt; later attempts already carry the drifted set.
+			if attempt == 0 {
+				seed, err := s.grantOwners(ctx, tx, teamID)
+				if err != nil {
+					return err
+				}
+				for _, owner := range seed {
+					owners[owner] = struct{}{}
+				}
 			}
-			owners = append(owners, owner)
-		}
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("failed to list team grants: %w", err)
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("failed to close grant rows: %w", err)
-		}
 
-		if err := s.Lock(ctx, tx, nil, append(owners, teamID)); err != nil {
-			return err
-		}
+			// Every owner that granted this team access appears in a
+			// tombstone and has their grant visibility reset, so the lock
+			// set is the team key (whose members read the tombstones under
+			// a shared lock) plus each granting owner (whose own feed
+			// serves the share row).
+			keys := make([]uuid.UUID, 0, len(owners)+1)
+			keys = append(keys, teamID)
+			for owner := range owners {
+				keys = append(keys, owner)
+			}
+			if err := s.Lock(ctx, tx, nil, keys); err != nil {
+				return err
+			}
 
-		query := "WITH removed AS (" +
-			" DELETE FROM " + s.shares + " WHERE team_id = $1::uuid" +
-			" RETURNING id, user_id, team_id" +
-			") INSERT INTO " + s.tombstones + " AS ts" +
-			" (type, id, user_id, team_id, hlc, seq)" +
-			" SELECT $2::text, id, user_id, team_id, $3, " + s.nextval +
-			" FROM removed" +
-			" ON CONFLICT (type, id) DO UPDATE SET" +
-			" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
-			" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
-			" WHERE EXCLUDED.hlc > ts.hlc"
-		res, err := tx.ExecContext(ctx, query,
-			teamID, diff.ModelShare, int64(at))
-		if err != nil {
-			return fmt.Errorf("failed to bury team grants: %w", err)
+			// Re-verify under the locks: holding the team key exclusively
+			// blocks any further grant for this team (share writes fence on
+			// the team key), so a snapshot that matches the held set is
+			// final. Any owner that slipped in between joins the next
+			// attempt's lock set.
+			current, err := s.grantOwners(ctx, tx, teamID)
+			if err != nil {
+				return err
+			}
+			drifted := false
+			for _, owner := range current {
+				if _, held := owners[owner]; !held {
+					owners[owner] = struct{}{}
+					drifted = true
+				}
+			}
+			if drifted {
+				return errDrift
+			}
+
+			return s.buryGrants(ctx, tx, teamID, at, &buried)
+		})
+		if errors.Is(err, errDrift) && attempt == 0 {
+			continue
 		}
-		buried, err = res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("failed to count buried grants: %w", err)
+		if errors.Is(err, errDrift) {
+			return 0, fmt.Errorf("offboard team: %w", diff.ErrConflict)
 		}
-		return nil
-	})
-	return buried, err
+		return buried, err
+	}
+}
+
+// grantOwners returns the owners currently granting the given team access
+// to their personal documents.
+func (s *Store) grantOwners(
+	ctx context.Context,
+	tx *sql.Tx,
+	teamID uuid.UUID,
+) ([]uuid.UUID, error) {
+	rows, err := tx.QueryContext(ctx,
+		"SELECT user_id FROM "+s.shares+
+			" WHERE team_id = $1::uuid", teamID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list team grants: %w", err)
+	}
+	defer close(rows, s.logger)
+
+	var owners []uuid.UUID
+	for rows.Next() {
+		var owner uuid.UUID
+		if err := rows.Scan(&owner); err != nil {
+			return nil, fmt.Errorf("failed to scan grant owner: %w", err)
+		}
+		owners = append(owners, owner)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list team grants: %w", err)
+	}
+	return owners, nil
+}
+
+// buryGrants removes and tombstones every grant of the given team, storing
+// the number of buried grants in buried. Callers must hold the team key and
+// every granting owner's key exclusively.
+func (s *Store) buryGrants(
+	ctx context.Context,
+	tx *sql.Tx,
+	teamID uuid.UUID,
+	at hlc.Time,
+	buried *int64,
+) error {
+	query := "WITH removed AS (" +
+		" DELETE FROM " + s.shares + " WHERE team_id = $1::uuid" +
+		" RETURNING id, user_id, team_id" +
+		") INSERT INTO " + s.tombstones + " AS ts" +
+		" (type, id, user_id, team_id, hlc, seq)" +
+		" SELECT $2::text, id, user_id, team_id, $3, " + s.nextval +
+		" FROM removed" +
+		" ON CONFLICT (type, id) DO UPDATE SET" +
+		" user_id = EXCLUDED.user_id, team_id = EXCLUDED.team_id," +
+		" hlc = EXCLUDED.hlc, seq = EXCLUDED.seq" +
+		" WHERE EXCLUDED.hlc > ts.hlc"
+	res, err := tx.ExecContext(ctx, query,
+		teamID, diff.ModelShare, int64(at))
+	if err != nil {
+		return fmt.Errorf("failed to bury team grants: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to count buried grants: %w", err)
+	}
+	*buried = n
+	return nil
 }
 
 // PruneMutations deletes mutation records older than the given age and

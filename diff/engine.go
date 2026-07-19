@@ -752,7 +752,11 @@ func (e *Engine[Tx]) resolve(
 			if !ok {
 				continue
 			}
-			metas, err := entry.handler.Resolve(ctx, tx, ids)
+			// Siblings share parents, so the batch may carry duplicates.
+			slices.SortFunc(ids, func(a, b uuid.UUID) int {
+				return a.Compare(b)
+			})
+			metas, err := entry.handler.Resolve(ctx, tx, slices.Compact(ids))
 			if err != nil {
 				return err
 			}

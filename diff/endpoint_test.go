@@ -17,6 +17,7 @@ package diff_test
 import (
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -440,5 +441,121 @@ func TestEndpoint_Document_Errors(t *testing.T) {
 				t.Errorf("reason: got %v; want %q", got, tt.wantReason)
 			}
 		})
+	}
+}
+
+// getConditional performs a conditional document GET, returning the raw
+// response with its body drained into buf.
+func getConditional(
+	t *testing.T,
+	srv *httptest.Server,
+	path string,
+	ifNoneMatch string,
+) (*http.Response, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer token")
+	if ifNoneMatch != "" {
+		req.Header.Set("If-None-Match", ifNoneMatch)
+	}
+
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	return res, body
+}
+
+func TestEndpoint_Document_Conditional(t *testing.T) {
+	t.Parallel()
+
+	f := setup()
+	owner := uuid.NewV7()
+	srv := serve(t, f, claimsFor(owner))
+
+	id := uuid.NewV7()
+	code, body := post(t, srv, fmt.Sprintf(
+		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
+			`"data":%s,"time":%d}]}`,
+		uuid.NewV7(), assetDoc(id, owner, uuid.Nil()), stamp(1),
+	))
+	if code != http.StatusOK {
+		t.Fatalf("seed status: got %d; want %d (body %v)",
+			code, http.StatusOK, body)
+	}
+	path := "/asset/" + id.String()
+
+	// The initial response carries a strong ETag and private caching.
+	res, _ := getConditional(t, srv, path, "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d; want %d", res.StatusCode, http.StatusOK)
+	}
+	etag := res.Header.Get("ETag")
+	if len(etag) < 3 || !strings.HasPrefix(etag, `"`) ||
+		!strings.HasSuffix(etag, `"`) {
+		t.Fatalf("etag: got %q; want a quoted entity tag", etag)
+	}
+	if got := res.Header.Get("Cache-Control"); got != "private, no-cache" {
+		t.Errorf("cache-control: got %q; want %q", got, "private, no-cache")
+	}
+
+	// Matching validators answer 304 without a body; the ETag survives so
+	// caches can refresh their metadata.
+	for _, match := range []string{
+		etag,
+		"W/" + etag,
+		`"stale", ` + etag,
+		"*",
+	} {
+		res, raw := getConditional(t, srv, path, match)
+		if res.StatusCode != http.StatusNotModified {
+			t.Errorf("if-none-match %q: got status %d; want %d",
+				match, res.StatusCode, http.StatusNotModified)
+		}
+		if len(raw) != 0 {
+			t.Errorf("if-none-match %q: got body %q; want empty", match, raw)
+		}
+		if got := res.Header.Get("ETag"); got != etag {
+			t.Errorf("if-none-match %q: got etag %q; want %q",
+				match, got, etag)
+		}
+	}
+
+	// A stale validator answers the full document.
+	res, raw := getConditional(t, srv, path, `"stale"`)
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("stale validator: got status %d; want %d",
+			res.StatusCode, http.StatusOK)
+	}
+	if len(raw) == 0 {
+		t.Error("stale validator: got empty body; want the document")
+	}
+
+	// A newer write rotates the ETag, so a held validator stops matching.
+	code, body = post(t, srv, fmt.Sprintf(
+		`{"since":0,"changes":[{"id":%q,"action":"upsert","type":"asset",`+
+			`"data":%s,"time":%d}]}`,
+		uuid.NewV7(), assetDoc(id, owner, uuid.Nil()), stamp(2),
+	))
+	if code != http.StatusOK {
+		t.Fatalf("update status: got %d; want %d (body %v)",
+			code, http.StatusOK, body)
+	}
+	res, _ = getConditional(t, srv, path, etag)
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("rotated etag: got status %d; want %d",
+			res.StatusCode, http.StatusOK)
+	}
+	if got := res.Header.Get("ETag"); got == etag {
+		t.Errorf("rotated etag: got unchanged %q; want a new tag", got)
 	}
 }

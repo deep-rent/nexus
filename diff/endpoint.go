@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"uuid"
 
@@ -115,6 +117,10 @@ func Endpoint[C auth.AccessClaims](s Syncer) router.HandlerFunc {
 // The {type} parameter names a registered document model and {id} the
 // document identifier. Absent, deleted, and out-of-scope documents
 // uniformly yield 404 so callers cannot probe foreign document IDs.
+//
+// Responses carry a strong ETag derived from the document's HLC timestamp,
+// and requests may revalidate with If-None-Match: an unchanged document
+// answers 304 Not Modified without a body, so integrators can poll cheaply.
 func DocumentEndpoint[C auth.AccessClaims](g Getter) router.HandlerFunc {
 	if g == nil {
 		panic("getter is required")
@@ -141,8 +147,40 @@ func DocumentEndpoint[C auth.AccessClaims](g Getter) router.HandlerFunc {
 		if err != nil {
 			return translate(err)
 		}
+
+		// The HLC timestamp uniquely versions a document, so it doubles as
+		// a strong entity tag: every applied write carries a strictly
+		// greater stamp than the version it replaced (including
+		// resurrections, which must beat the tombstone), and visibility-only
+		// re-sequencing (team-move cascades, grant touches) never alters the
+		// payload. Caching is private (visibility is per-user) and no-cache
+		// (revalidate on every use), which is exactly the ETag polling loop.
+		etag := `"` + strconv.FormatInt(int64(doc.Time), 10) + `"`
+		e.SetHeader("ETag", etag)
+		e.SetHeader("Cache-Control", "private, no-cache")
+		if matchesETag(e.GetHeader("If-None-Match"), etag) {
+			e.Status(http.StatusNotModified)
+			return nil
+		}
 		return e.JSON(http.StatusOK, doc)
 	}
+}
+
+// matchesETag reports whether an If-None-Match header value matches the
+// given entity tag, using the weak comparison prescribed for If-None-Match
+// (RFC 9110, section 13.1.2): a "W/" prefix is ignored and "*" matches any
+// current representation.
+func matchesETag(header, etag string) bool {
+	if strings.TrimSpace(header) == "*" {
+		return true
+	}
+	for candidate := range strings.SplitSeq(header, ",") {
+		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
+		if candidate == etag {
+			return true
+		}
+	}
+	return false
 }
 
 // scopeFrom extracts the authorization scope from the request's verified
@@ -186,6 +224,15 @@ func scopeFrom[C auth.AccessClaims](e *router.Exchange) (Scope, *router.Error) {
 // "GET /{type}/{id}" alongside it. Pass the auth guard (and any additional
 // route middleware) as mws. For custom patterns, register [Endpoint] and
 // [DocumentEndpoint] with [router.Router.HandleFunc] directly.
+//
+// Note that "GET /{type}/{id}" is a root-level wildcard: it matches EVERY
+// two-segment GET on the router. [http.ServeMux] gives more specific
+// patterns precedence, so explicit sibling routes (say, "GET /teams/{id}")
+// keep winning no matter the registration order — but any two-segment GET
+// no other route claims reaches the document handler and answers 404 with
+// reason "unknown_model" instead of the mux's plain 404. Mount the router
+// under a path prefix (or register [DocumentEndpoint] on a custom pattern)
+// if that catch-all behavior is undesirable.
 func Mount[C auth.AccessClaims](
 	r *router.Router,
 	s Syncer,
