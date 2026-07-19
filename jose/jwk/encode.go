@@ -19,12 +19,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
 
 	"github.com/deep-rent/nexus/jose/jwa"
+	"github.com/deep-rent/nexus/sign"
 )
 
 // writers maps a JWA algorithm name to the function responsible for encoding
@@ -35,14 +37,40 @@ var writers map[string]writer
 // JWT struct.
 type writer func(mat any, r *raw) error
 
-// addWriter helps populate the writers map in a type-safe manner.
-func addWriter[T crypto.PublicKey](alg jwa.Algorithm[T], enc encoder[T]) {
-	writers[alg.String()] = func(mat any, r *raw) error {
+// pairer defines a function that binds a [sign.Signer] to a registered
+// algorithm, producing a [KeyPair]. It returns nil if the signer's public key
+// type does not match the algorithm.
+type pairer func(kid string, s sign.Signer) KeyPair
+
+// pairers maps a JWA algorithm name to the function responsible for building
+// key pairs.
+var pairers map[string]pairer
+
+// register wires up an algorithm's decoding, encoding, and key pair
+// construction in a type-safe manner. Every supported algorithm must be
+// registered exactly once in init.
+func register[T crypto.PublicKey](
+	alg jwa.Algorithm[T],
+	dec decoder[T],
+	enc encoder[T],
+) {
+	name := alg.String()
+	readers[name] = func(r *raw) (Key, error) {
+		mat, err := dec(r)
+		if err != nil {
+			return nil, err
+		}
+		return NewKey(alg, r.Kid, mat), nil
+	}
+	writers[name] = func(mat any, r *raw) error {
 		pub, ok := mat.(T)
 		if !ok {
-			return fmt.Errorf("invalid key for algorithm %q", alg.String())
+			return fmt.Errorf("invalid key for algorithm %q", name)
 		}
 		return enc(pub, r)
+	}
+	pairers[name] = func(kid string, s sign.Signer) KeyPair {
+		return NewKeyPair(alg, kid, s)
 	}
 }
 
@@ -115,31 +143,33 @@ func encodeEdDSA(key ed25519.PublicKey, r *raw) error {
 	return nil
 }
 
-// init initializes the readers and writers maps with supported algorithms.
+// encodeMLDSA populates the ML-DSA-specific field ("pub"). The key type
+// "AKP" (Algorithm Key Pair) is defined in draft-ietf-cose-dilithium.
+func encodeMLDSA(key *mldsa.PublicKey, r *raw) error {
+	r.Kty = "AKP"
+	r.Pub = base64.RawURLEncoding.EncodeToString(key.Bytes())
+	return nil
+}
+
+// init registers all supported algorithms.
 func init() {
-	const size = 10
+	const size = 13
 
 	readers = make(map[string]reader, size)
-	addReader(jwa.RS256, decodeRSA)
-	addReader(jwa.RS384, decodeRSA)
-	addReader(jwa.RS512, decodeRSA)
-	addReader(jwa.PS256, decodeRSA)
-	addReader(jwa.PS384, decodeRSA)
-	addReader(jwa.PS512, decodeRSA)
-	addReader(jwa.ES256, decodeECDSA(elliptic.P256()))
-	addReader(jwa.ES384, decodeECDSA(elliptic.P384()))
-	addReader(jwa.ES512, decodeECDSA(elliptic.P521()))
-	addReader(jwa.EdDSA, decodeEdDSA)
-
 	writers = make(map[string]writer, size)
-	addWriter(jwa.RS256, encodeRSA)
-	addWriter(jwa.RS384, encodeRSA)
-	addWriter(jwa.RS512, encodeRSA)
-	addWriter(jwa.PS256, encodeRSA)
-	addWriter(jwa.PS384, encodeRSA)
-	addWriter(jwa.PS512, encodeRSA)
-	addWriter(jwa.ES256, encodeECDSA)
-	addWriter(jwa.ES384, encodeECDSA)
-	addWriter(jwa.ES512, encodeECDSA)
-	addWriter(jwa.EdDSA, encodeEdDSA)
+	pairers = make(map[string]pairer, size)
+
+	register(jwa.RS256, decodeRSA, encodeRSA)
+	register(jwa.RS384, decodeRSA, encodeRSA)
+	register(jwa.RS512, decodeRSA, encodeRSA)
+	register(jwa.PS256, decodeRSA, encodeRSA)
+	register(jwa.PS384, decodeRSA, encodeRSA)
+	register(jwa.PS512, decodeRSA, encodeRSA)
+	register(jwa.ES256, decodeECDSA(elliptic.P256()), encodeECDSA)
+	register(jwa.ES384, decodeECDSA(elliptic.P384()), encodeECDSA)
+	register(jwa.ES512, decodeECDSA(elliptic.P521()), encodeECDSA)
+	register(jwa.EdDSA, decodeEdDSA, encodeEdDSA)
+	register(jwa.MLDSA44, decodeMLDSA(mldsa.MLDSA44()), encodeMLDSA)
+	register(jwa.MLDSA65, decodeMLDSA(mldsa.MLDSA65()), encodeMLDSA)
+	register(jwa.MLDSA87, decodeMLDSA(mldsa.MLDSA87()), encodeMLDSA)
 }

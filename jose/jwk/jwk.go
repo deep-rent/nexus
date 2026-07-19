@@ -124,17 +124,6 @@ type Key interface {
 	Material() any
 }
 
-// newKey creates a new [Key] programmatically from its constituent parts. The
-// type parameter T must match the public key type expected by the provided
-// algorithm (e.g., [*rsa.PublicKey] for [jwa.RS256]).
-func newKey[T crypto.PublicKey](
-	alg jwa.Algorithm[T],
-	kid string,
-	mat T,
-) Key {
-	return &key[T]{alg: alg, kid: kid, mat: mat}
-}
-
 // key is a concrete implementation of the [Key] interface, generic over the
 // public key type.
 type key[T crypto.PublicKey] struct {
@@ -205,6 +194,27 @@ func NewKeyPair[T crypto.PublicKey](
 		alg: alg, kid: kid, mat: mat,
 		signer: s,
 	}
+}
+
+// NewKeyPairFor creates a signing-capable [KeyPair] by looking up the JWA
+// algorithm by its standard name (e.g., "ES256"). This is useful when the
+// algorithm is only known at runtime, for instance when loading keys from
+// configuration.
+//
+// It returns an error if the algorithm is not supported, or if the signer's
+// public key type does not match the algorithm.
+func NewKeyPairFor(alg, kid string, s sign.Signer) (KeyPair, error) {
+	pair, ok := pairers[alg]
+	if !ok {
+		return nil, fmt.Errorf("unsupported algorithm %q", alg)
+	}
+	kp := pair(kid, s)
+	if kp == nil {
+		return nil, fmt.Errorf(
+			"public key type %T does not match algorithm %q", s.Public(), alg,
+		)
+	}
+	return kp, nil
 }
 
 // ErrIneligibleKey indicates that a key may be syntactically valid but should
@@ -374,16 +384,19 @@ func (s *singletonSet) Keys() iter.Seq[Key] {
 // Len implements [Set] for [singletonSet].
 func (s *singletonSet) Len() int { return 1 }
 
-// Find implements [Set] for [singletonSet].
+// Find implements [Set] for [singletonSet]. It mirrors the semantics of the
+// multi-key set: the hint's key id and algorithm must both match exactly.
 func (s *singletonSet) Find(hint Hint) Key {
+	if hint == nil {
+		return nil
+	}
+	if s.key.KeyID() != hint.KeyID() {
+		return nil
+	}
 	if s.key.Algorithm() != hint.Algorithm() {
 		return nil
 	}
-	kid := hint.KeyID()
-	if kid != "" && s.key.KeyID() == kid {
-		return s.key
-	}
-	return nil
+	return s.key
 }
 
 // ParseSet parses a [Set] from a JWKS JSON input.
@@ -610,6 +623,7 @@ type raw struct {
 	Crv string   `json:"crv,omitempty"`
 	X   string   `json:"x,omitempty"`
 	Y   string   `json:"y,omitempty"`
+	Pub string   `json:"pub,omitempty"`
 }
 
 // Thumbprint generates a deterministic, unique fingerprint from any standard

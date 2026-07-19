@@ -110,6 +110,9 @@ func TestLoad(t *testing.T) {
 		{alg: "ES384", gen: jwa.ES384.Generate},
 		{alg: "ES512", gen: jwa.ES512.Generate},
 		{alg: "EdDSA", gen: jwa.EdDSA.Generate},
+		{alg: "ML-DSA-44", gen: jwa.MLDSA44.Generate},
+		{alg: "ML-DSA-65", gen: jwa.MLDSA65.Generate},
+		{alg: "ML-DSA-87", gen: jwa.MLDSA87.Generate},
 	}
 
 	for _, tt := range tests {

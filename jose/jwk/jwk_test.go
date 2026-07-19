@@ -131,6 +131,21 @@ func TestParse(t *testing.T) {
 			"",
 			"ecdsa_short_coordinate.json",
 		},
+		{
+			"ML-DSA-44",
+			"7tam8FslWbN0Rtzxb_gtJapvB-_lFrKfpC0b5GKBHkM",
+			"ML-DSA-44.json",
+		},
+		{
+			"ML-DSA-65",
+			"VtgbFl3DTb_OEkrxX3OkMC0kGmhg9rv2b476rdUcp-c",
+			"ML-DSA-65.json",
+		},
+		{
+			"ML-DSA-87",
+			"YQNE2_k-gXD8HxVvhhiiN2KZeLX8KX5OGjRLoDG00kA",
+			"ML-DSA-87.json",
+		},
 	}
 
 	for _, tt := range tests {
@@ -187,6 +202,8 @@ func TestParse_Error(t *testing.T) {
 		{"unsupported ECDSA curve", "unsupported_ecdsa_curve.json"},
 		{"unsupported EdDSA curve", "unsupported_eddsa_curve.json"},
 		{"ECDSA point not on curve", "ecdsa_not_on_curve.json"},
+		{"ML-DSA wrong key size", "mldsa_wrong_key_size.json"},
+		{"ML-DSA wrong key type", "mldsa_wrong_key_type.json"},
 	}
 
 	for _, tt := range tests {
@@ -319,6 +336,14 @@ func TestWrite_Errors(t *testing.T) {
 				mat: &rsa.PublicKey{},
 			},
 			wantErr: "invalid key for algorithm \"EdDSA\"",
+		},
+		{
+			name: "mismatched ML-DSA material",
+			key: &mockKey{
+				alg: jwa.MLDSA44.String(),
+				mat: &rsa.PublicKey{},
+			},
+			wantErr: "invalid key for algorithm \"ML-DSA-44\"",
 		},
 		{
 			name: "RSA zero exponent",
@@ -509,6 +534,25 @@ func TestSingletonSet_Find(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("nil hint returns nil", func(t *testing.T) {
+		t.Parallel()
+		set := jwk.Singleton(key)
+		if got := set.Find(nil); got != nil {
+			t.Errorf("got %v; want nil", got)
+		}
+	})
+
+	// A key with an empty kid must be found by an empty-kid hint, matching
+	// the behavior of the multi-key set implementation.
+	t.Run("empty kid matches empty hint", func(t *testing.T) {
+		t.Parallel()
+		anon := &mockKey{alg: "RS256", kid: ""}
+		set := jwk.Singleton(anon)
+		if got := set.Find(mockHint{alg: "RS256", kid: ""}); got != anon {
+			t.Errorf("got %v; want the original key", got)
+		}
+	})
 }
 
 func TestBuilder(t *testing.T) {
@@ -624,6 +668,78 @@ func TestGenerate(t *testing.T) {
 	if !kp.Verify(msg, sig) {
 		t.Error("verification: got false; want true")
 	}
+}
+
+func TestGenerate_MLDSA(t *testing.T) {
+	t.Parallel()
+
+	kp, err := jwk.Generate(jwa.MLDSA44)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if kp.Algorithm() != "ML-DSA-44" {
+		t.Errorf("algorithm: got %q; want %q", kp.Algorithm(), "ML-DSA-44")
+	}
+	if kp.KeyID() == "" {
+		t.Error("got empty key id; want non-empty")
+	}
+
+	msg := []byte("payload")
+	sig, err := kp.Sign(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+	if !kp.Verify(msg, sig) {
+		t.Error("verification: got false; want true")
+	}
+
+	// The public key must survive a JWK round-trip.
+	encoded, err := jwk.Write(kp)
+	if err != nil {
+		t.Fatalf("encoding: should not have returned an error: %v", err)
+	}
+	parsed, err := jwk.Parse(encoded)
+	if err != nil {
+		t.Fatalf("re-parsing: should not have returned an error: %v", err)
+	}
+	if !parsed.Verify(msg, sig) {
+		t.Error("round-trip verification: got false; want true")
+	}
+}
+
+func TestNewKeyPairFor(t *testing.T) {
+	t.Parallel()
+
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+
+	t.Run("known algorithm", func(t *testing.T) {
+		t.Parallel()
+		kp, err := jwk.NewKeyPairFor("ES256", "kid-1", sign.From(k))
+		if err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if got, want := kp.Algorithm(), "ES256"; got != want {
+			t.Errorf("algorithm: got %q; want %q", got, want)
+		}
+	})
+
+	t.Run("unknown algorithm", func(t *testing.T) {
+		t.Parallel()
+		if _, err := jwk.NewKeyPairFor("XY99", "kid-1", sign.From(k)); err == nil {
+			t.Error("should have returned an error")
+		}
+	})
+
+	t.Run("type mismatch", func(t *testing.T) {
+		t.Parallel()
+		if _, err := jwk.NewKeyPairFor("RS256", "kid-1", sign.From(k)); err == nil {
+			t.Error("should have returned an error")
+		}
+	})
 }
 
 func TestHandler(t *testing.T) {

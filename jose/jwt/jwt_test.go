@@ -73,6 +73,37 @@ func TestSignVerify(t *testing.T) {
 	}
 }
 
+func TestSignVerify_MLDSA(t *testing.T) {
+	t.Parallel()
+	k, err := jwk.Generate(jwa.MLDSA44)
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+	set := jwk.Singleton(k)
+
+	claims := map[string]any{
+		"sub": "user_123",
+		"rol": "admin",
+	}
+
+	raw, err := jwt.Sign(t.Context(), k, claims)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+
+	out, err := jwt.Verify[*testClaims](set, raw)
+	if err != nil {
+		t.Fatalf("verification: should not have returned an error: %v", err)
+	}
+
+	if got, want := out.Subject(), "user_123"; got != want {
+		t.Errorf("subject: got %v; want %v", got, want)
+	}
+	if got, want := out.Role, "admin"; got != want {
+		t.Errorf("role: got %q; want %q", got, want)
+	}
+}
+
 func TestVerifier_Validation(t *testing.T) {
 	t.Parallel()
 	k := mockKeyPair(t)

@@ -19,6 +19,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
@@ -241,6 +242,42 @@ func TestEncode(t *testing.T) {
 	}
 	if parsed == nil {
 		t.Fatal("got nil signer; want non-nil")
+	}
+}
+
+func TestEncodeDecode_MLDSA(t *testing.T) {
+	t.Parallel()
+
+	k, err := mldsa.GenerateKey(mldsa.MLDSA44())
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+
+	data, err := sign.Encode(k)
+	if err != nil {
+		t.Fatalf("encoding: should not have returned an error: %v", err)
+	}
+
+	s, err := sign.Decode(data)
+	if err != nil {
+		t.Fatalf("decoding: should not have returned an error: %v", err)
+	}
+
+	pub, ok := s.Public().(*mldsa.PublicKey)
+	if !ok {
+		t.Fatalf("public key: got %T; want *mldsa.PublicKey", s.Public())
+	}
+	if !pub.Equal(k.PublicKey()) {
+		t.Error("public key does not match the generated key")
+	}
+
+	msg := []byte("payload")
+	sig, err := s.Sign(t.Context(), rand.Reader, msg, crypto.Hash(0))
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+	if err := mldsa.Verify(pub, msg, sig, nil); err != nil {
+		t.Errorf("signature should have verified: %v", err)
 	}
 }
 

@@ -15,13 +15,34 @@
 // Package jwa provides implementations for asymmetric JSON Web Algorithms.
 //
 // Package jwa provides implementations for asymmetric JSON Web Algorithms (JWA)
-// as defined in RFC 7518. It provides a unified interface for signature
-// verification using public keys and signature creation using [signer.Signer].
-// This abstraction handles algorithm-specific complexities such as hash
-// function selection, padding schemes (e.g., PSS vs PKCS1v15), and signature
-// format transcoding (e.g., converting ECDSA ASN.1 DER to raw concatenation).
+// as defined in RFC 7518, as well as the post-quantum ML-DSA signature scheme
+// (FIPS 204) registered for JOSE in draft-ietf-cose-dilithium. It provides a
+// unified interface for signature verification using public keys and signature
+// creation using [signer.Signer]. This abstraction handles algorithm-specific
+// complexities such as hash function selection, padding schemes (e.g., PSS vs
+// PKCS1v15), and signature format transcoding (e.g., converting ECDSA ASN.1
+// DER to raw concatenation).
 //
 // Note: Symmetric algorithms (such as HMAC) are not supported.
+//
+// # ML-DSA
+//
+// The ML-DSA algorithms ([MLDSA44], [MLDSA65], [MLDSA87]) implement the
+// post-quantum signature scheme specified in FIPS 204, using the JOSE
+// registrations from draft-ietf-cose-dilithium ("AKP" key type). Two
+// practical caveats apply:
+//
+// FIPS mode: the ML-DSA algorithms are unavailable when the FIPS 140-3 Go
+// Cryptographic Module v1.0.0 is selected (via the GODEBUG fips140
+// setting); every key generation, signing, and verification operation then
+// fails at runtime. Module version v1.26.0 or later is required.
+//
+// Token size: ML-DSA signatures are large (2420, 3309, and 4627 bytes for
+// ML-DSA-44, -65, and -87 respectively), so a signed JWT weighs in at
+// roughly 3.3 to 6.3 KB after base64url encoding. Such tokens exceed the
+// typical 4 KB cookie limit and may exceed default HTTP header size limits
+// of reverse proxies. Prefer ML-DSA-44 where token size matters, and avoid
+// storing ML-DSA tokens in cookies.
 //
 // # Usage
 //
@@ -40,7 +61,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
+	"crypto/sha3"
 	"crypto/rsa"
 	"encoding/asn1"
 	"errors"
@@ -340,6 +363,95 @@ func (a *ed) String() string {
 // EdDSA represents the EdDSA signature algorithm. It supports the Ed25519
 // curve.
 var EdDSA Algorithm[ed25519.PublicKey] = &ed{}
+
+// ml implements the ML-DSA family of algorithms defined in FIPS 204.
+type ml struct {
+	// name is the JWA identifier.
+	name string
+	// params is the fixed ML-DSA parameter set.
+	params mldsa.Parameters
+}
+
+// newML creates a new [Algorithm] for ML-DSA signatures with the given JWA
+// name and parameter set.
+func newML(name string, params mldsa.Parameters) Algorithm[*mldsa.PublicKey] {
+	return &ml{
+		name:   name,
+		params: params,
+	}
+}
+
+// Verify checks an ML-DSA signature. It rejects keys whose parameter set does
+// not match the algorithm to prevent parameter set confusion.
+func (a *ml) Verify(key *mldsa.PublicKey, msg, sig []byte) bool {
+	if key.Parameters() != a.params {
+		return false
+	}
+	return mldsa.Verify(key, msg, sig, nil) == nil
+}
+
+// Sign creates an ML-DSA signature using the provided signer.
+//
+// The message is not forwarded verbatim: it is pre-hashed into the 64-byte
+// μ representative defined in FIPS 204 (external-μ mode, RFC 9881) and
+// passed to the signer with [crypto.MLDSAMu]. The resulting signature is
+// identical to signing the message directly in "pure" mode with an empty
+// context string, as required by the JOSE registration, but remote signers
+// (e.g., KMS or HSM backends) receive a constant-size input regardless of
+// the message length. The signer's public key must be an [*mldsa.PublicKey]
+// whose parameter set matches the algorithm.
+func (a *ml) Sign(
+	ctx context.Context,
+	s sign.Signer,
+	msg []byte,
+) ([]byte, error) {
+	pub, ok := s.Public().(*mldsa.PublicKey)
+	if !ok {
+		return nil, errors.New("signer public key is not ML-DSA")
+	}
+	if pub.Parameters() != a.params {
+		return nil, fmt.Errorf(
+			"signer parameter set %s does not match algorithm %s",
+			pub.Parameters(), a.name,
+		)
+	}
+	return s.Sign(ctx, rand.Reader, mu(pub, msg), crypto.MLDSAMu)
+}
+
+// mu computes the pre-hashed message representative μ as defined in FIPS 204
+// for "pure" ML-DSA with an empty context string:
+//
+//	tr = SHAKE256(pk, 64)
+//	μ  = SHAKE256(tr || 0x00 || 0x00 || msg, 64)
+func mu(pub *mldsa.PublicKey, msg []byte) []byte {
+	h := sha3.NewSHAKE256()
+	h.Write(sha3.SumSHAKE256(pub.Bytes(), 64))
+	// Domain separator (0 = pure ML-DSA) and empty context string length.
+	h.Write([]byte{0, 0})
+	h.Write(msg)
+	out := make([]byte, 64)
+	h.Read(out)
+	return out
+}
+
+// Generate creates a new ML-DSA key pair.
+func (a *ml) Generate() (crypto.Signer, error) {
+	return mldsa.GenerateKey(a.params)
+}
+
+// String returns the JWA algorithm name.
+func (a *ml) String() string {
+	return a.name
+}
+
+// MLDSA44 represents the ML-DSA-44 signature algorithm (FIPS 204).
+var MLDSA44 = newML("ML-DSA-44", mldsa.MLDSA44())
+
+// MLDSA65 represents the ML-DSA-65 signature algorithm (FIPS 204).
+var MLDSA65 = newML("ML-DSA-65", mldsa.MLDSA65())
+
+// MLDSA87 represents the ML-DSA-87 signature algorithm (FIPS 204).
+var MLDSA87 = newML("ML-DSA-87", mldsa.MLDSA87())
 
 // hashPool manages a pool of [hash.Hash] objects to reduce allocations.
 type hashPool struct {

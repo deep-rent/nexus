@@ -29,6 +29,9 @@
 //     ready-to-use [Signer].
 //   - [Encode]: Serializes private keys back into PKCS8 PEM format.
 //
+// PKCS8 covers all standard library key types, including post-quantum
+// ML-DSA seed keys ([*crypto/mldsa.PrivateKey]) as of Go 1.27.
+//
 // Example:
 //
 //	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -131,7 +134,8 @@ func (w *stdWrapper) Sign(
 var _ crypto.Signer = (*stdWrapper)(nil)
 
 // Decode decodes a PEM block and parses the contained private key into a
-// [Signer]. It supports standard PKCS8, EC, and PKCS1 private keys.
+// [Signer]. It supports standard PKCS8 (including ML-DSA seed keys), EC, and
+// PKCS1 private keys.
 func Decode(data []byte) (Signer, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
@@ -170,8 +174,9 @@ func Decode(data []byte) (Signer, error) {
 
 // Encode encodes a cryptographic private key into a standard PKCS8 PEM
 // formatted byte sequence. It accepts standard library private keys (e.g.,
-// [*rsa.PrivateKey], [*ecdsa.PrivateKey], [ed25519.PrivateKey]) or
-// context-aware [Signer] wrappers returned by this package.
+// [*rsa.PrivateKey], [*ecdsa.PrivateKey], [ed25519.PrivateKey],
+// [*crypto/mldsa.PrivateKey]) or context-aware [Signer] wrappers returned
+// by this package.
 func Encode(key any) ([]byte, error) {
 	if w, ok := key.(*ctxWrapper); ok {
 		key = w.signer

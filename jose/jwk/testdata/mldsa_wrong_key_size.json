@@ -1,0 +1,7 @@
+{
+  "kty": "AKP",
+  "alg": "ML-DSA-44",
+  "use": "sig",
+  "kid": "wrong-size",
+  "pub": "c2hvcnQta2V5LW1hdGVyaWFs"
+}

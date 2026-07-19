@@ -49,7 +49,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/rotor"
 	"github.com/deep-rent/nexus/router"
@@ -127,17 +126,11 @@ func Load(config []byte, strategy rotor.Strategy) (Vault, error) {
 				item.Kid, err,
 			)
 		}
-		key, err := newKeyPair(item.Alg, item.Kid, signer)
+		key, err := jwk.NewKeyPairFor(item.Alg, item.Kid, signer)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"failed to build key pair for key %q: %w",
 				item.Kid, err,
-			)
-		}
-		if key == nil {
-			return nil, fmt.Errorf(
-				"public key type mismatch for key %q and algorithm %s",
-				item.Kid, item.Alg,
 			)
 		}
 		keys = append(keys, key)
@@ -159,35 +152,6 @@ func LoadFile(path string, strategy rotor.Strategy) (Vault, error) {
 		return nil, err
 	}
 	return Load(data, strategy)
-}
-
-// newKeyPair creates a new [jwk.KeyPair] from the given algorithm, key
-// identifier, and signer. It returns an error if the algorithm is unsupported.
-func newKeyPair(alg, kid string, signer sign.Signer) (jwk.KeyPair, error) {
-	switch alg {
-	case "RS256":
-		return jwk.NewKeyPair(jwa.RS256, kid, signer), nil
-	case "RS384":
-		return jwk.NewKeyPair(jwa.RS384, kid, signer), nil
-	case "RS512":
-		return jwk.NewKeyPair(jwa.RS512, kid, signer), nil
-	case "PS256":
-		return jwk.NewKeyPair(jwa.PS256, kid, signer), nil
-	case "PS384":
-		return jwk.NewKeyPair(jwa.PS384, kid, signer), nil
-	case "PS512":
-		return jwk.NewKeyPair(jwa.PS512, kid, signer), nil
-	case "ES256":
-		return jwk.NewKeyPair(jwa.ES256, kid, signer), nil
-	case "ES384":
-		return jwk.NewKeyPair(jwa.ES384, kid, signer), nil
-	case "ES512":
-		return jwk.NewKeyPair(jwa.ES512, kid, signer), nil
-	case "EdDSA":
-		return jwk.NewKeyPair(jwa.EdDSA, kid, signer), nil
-	default:
-		return nil, fmt.Errorf("unsupported algorithm: %s", alg)
-	}
 }
 
 // Handler creates a [router.Handler] that exposes the public keys of the

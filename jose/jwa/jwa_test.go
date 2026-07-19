@@ -20,6 +20,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/asn1"
@@ -124,6 +125,76 @@ func TestAlgorithm_EdDSASignVerify(t *testing.T) {
 	})
 }
 
+func TestAlgorithm_MLDSASignVerify(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		a      jwa.Algorithm[*mldsa.PublicKey]
+		params mldsa.Parameters
+	}{
+		{"ML-DSA-44", jwa.MLDSA44, mldsa.MLDSA44()},
+		{"ML-DSA-65", jwa.MLDSA65, mldsa.MLDSA65()},
+		{"ML-DSA-87", jwa.MLDSA87, mldsa.MLDSA87()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			k, err := mldsa.GenerateKey(tt.params)
+			if err != nil {
+				t.Fatalf(
+					"key generation: should not have returned an error: %v",
+					err,
+				)
+			}
+
+			sig, err := tt.a.Sign(t.Context(), sign.From(k), mockMsg)
+			if err != nil {
+				t.Fatalf("signing: should not have returned an error: %v", err)
+			}
+			if !tt.a.Verify(k.PublicKey(), mockMsg, sig) {
+				t.Error("verification: got false; want true")
+			}
+		})
+	}
+}
+
+func TestAlgorithm_MLDSAParameterMismatch(t *testing.T) {
+	t.Parallel()
+
+	k, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+
+	sig, err := jwa.MLDSA65.Sign(t.Context(), sign.From(k), mockMsg)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+	if jwa.MLDSA44.Verify(k.PublicKey(), mockMsg, sig) {
+		t.Error("should have rejected a key with a mismatched parameter set")
+	}
+
+	if _, err := jwa.MLDSA44.Sign(t.Context(), sign.From(k), mockMsg); err == nil {
+		t.Error("signing with a mismatched parameter set should have failed")
+	}
+}
+
+func TestAlgorithm_MLDSASignWrongKeyType(t *testing.T) {
+	t.Parallel()
+
+	_, prv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+
+	_, err = jwa.MLDSA44.Sign(t.Context(), sign.From(prv), mockMsg)
+	if err == nil {
+		t.Error("signing with a non-ML-DSA key should have failed")
+	}
+}
+
 type mockSigner struct {
 	signer crypto.Signer
 	passed bool
@@ -177,6 +248,13 @@ func TestAlgorithm_Sign(t *testing.T) {
 	if !mockEd.passed {
 		t.Error("EdDSA should have propagated the context")
 	}
+
+	mlKey, _ := mldsa.GenerateKey(mldsa.MLDSA44())
+	mockML := &mockSigner{signer: mlKey}
+	_, _ = jwa.MLDSA44.Sign(ctx, mockML, mockMsg)
+	if !mockML.passed {
+		t.Error("ML-DSA-44 should have propagated the context")
+	}
 }
 
 func TestAlgorithm_Generate(t *testing.T) {
@@ -196,6 +274,9 @@ func TestAlgorithm_Generate(t *testing.T) {
 		{"ES384", jwa.ES384.Generate},
 		{"ES512", jwa.ES512.Generate},
 		{"EdDSA", jwa.EdDSA.Generate},
+		{"ML-DSA-44", jwa.MLDSA44.Generate},
+		{"ML-DSA-65", jwa.MLDSA65.Generate},
+		{"ML-DSA-87", jwa.MLDSA87.Generate},
 	}
 
 	for _, tt := range tests {

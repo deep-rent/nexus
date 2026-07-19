@@ -19,13 +19,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
-
-	"github.com/deep-rent/nexus/jose/jwa"
 )
 
 // reader defines a function that decodes the key material from a [raw] JWK
@@ -35,17 +34,6 @@ type reader func(r *raw) (Key, error)
 // readers maps a JWA algorithm name to the function responsible for parsing
 // its key material.
 var readers map[string]reader
-
-// addReader helps populate the readers map in a type-safe manner.
-func addReader[T crypto.PublicKey](alg jwa.Algorithm[T], dec decoder[T]) {
-	readers[alg.String()] = func(r *raw) (Key, error) {
-		mat, err := dec(r)
-		if err != nil {
-			return nil, err
-		}
-		return NewKey(alg, r.Kid, mat), nil
-	}
-}
 
 // decoder decodes the key material for a specific key type T.
 type decoder[T crypto.PublicKey] func(*raw) (T, error)
@@ -148,4 +136,28 @@ func decodeEdDSA(raw *raw) (ed25519.PublicKey, error) {
 		)
 	}
 	return x, nil
+}
+
+// decodeMLDSA creates a [decoder] for the specified ML-DSA parameter set.
+// ML-DSA keys use the "AKP" (Algorithm Key Pair) key type with the public key
+// encoding carried in the "pub" parameter, as defined in
+// draft-ietf-cose-dilithium.
+func decodeMLDSA(params mldsa.Parameters) decoder[*mldsa.PublicKey] {
+	return func(raw *raw) (*mldsa.PublicKey, error) {
+		if raw.Kty != "AKP" {
+			return nil, fmt.Errorf("incompatible key type %q", raw.Kty)
+		}
+		if len(raw.Pub) == 0 {
+			return nil, errors.New("missing public key")
+		}
+		b, err := base64.RawURLEncoding.DecodeString(raw.Pub)
+		if err != nil {
+			return nil, fmt.Errorf("decode public key: %w", err)
+		}
+		pub, err := mldsa.NewPublicKey(params, b)
+		if err != nil {
+			return nil, fmt.Errorf("parse public key: %w", err)
+		}
+		return pub, nil
+	}
 }

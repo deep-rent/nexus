@@ -1,0 +1,7 @@
+{
+  "kty": "OKP",
+  "alg": "ML-DSA-44",
+  "use": "sig",
+  "kid": "wrong-type",
+  "pub": "c2hvcnQta2V5LW1hdGVyaWFs"
+}
