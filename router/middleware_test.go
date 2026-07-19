@@ -114,10 +114,12 @@ func TestHandler_AdaptStdMiddleware(t *testing.T) {
 	if err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
-	if got, want := res.StatusCode, http.StatusInternalServerError; got != want {
+	if got, want := res.StatusCode,
+		http.StatusInternalServerError; got != want {
 		t.Errorf("response status: got %d; want %d", got, want)
 	}
-	if got, want := capturedStatus, http.StatusInternalServerError; got != want {
+	if got, want := capturedStatus,
+		http.StatusInternalServerError; got != want {
 		t.Errorf("captured status: got %d; want %d", got, want)
 	}
 }
@@ -183,13 +185,19 @@ func TestRateLimitFunc(t *testing.T) {
 		})(mockHandler)
 
 		rec1 := httptest.NewRecorder()
-		e1 := &router.Exchange{R: httptest.NewRequest(http.MethodGet, "/", nil), W: router.NewResponseWriter(rec1)}
+		e1 := &router.Exchange{
+			R: httptest.NewRequest(http.MethodGet, "/", nil),
+			W: router.NewResponseWriter(rec1),
+		}
 		if err := h.ServeHTTP(e1); err != nil {
 			t.Fatalf("first request should succeed: %v", err)
 		}
 
 		rec2 := httptest.NewRecorder()
-		e2 := &router.Exchange{R: httptest.NewRequest(http.MethodGet, "/", nil), W: router.NewResponseWriter(rec2)}
+		e2 := &router.Exchange{
+			R: httptest.NewRequest(http.MethodGet, "/", nil),
+			W: router.NewResponseWriter(rec2),
+		}
 		err := h.ServeHTTP(e2)
 		if err == nil {
 			t.Fatal("second request should fail")
@@ -224,14 +232,20 @@ func TestRateLimit(t *testing.T) {
 
 	// 1st request should succeed
 	rec1 := httptest.NewRecorder()
-	e1 := &router.Exchange{R: httptest.NewRequest(http.MethodGet, "/", nil), W: router.NewResponseWriter(rec1)}
+	e1 := &router.Exchange{
+		R: httptest.NewRequest(http.MethodGet, "/", nil),
+		W: router.NewResponseWriter(rec1),
+	}
 	if err := h.ServeHTTP(e1); err != nil {
 		t.Fatalf("first request should succeed: %v", err)
 	}
 
 	// 2nd request should fail
 	rec2 := httptest.NewRecorder()
-	e2 := &router.Exchange{R: httptest.NewRequest(http.MethodGet, "/", nil), W: router.NewResponseWriter(rec2)}
+	e2 := &router.Exchange{
+		R: httptest.NewRequest(http.MethodGet, "/", nil),
+		W: router.NewResponseWriter(rec2),
+	}
 	err := h.ServeHTTP(e2)
 	if err == nil {
 		t.Fatal("second request should fail")
