@@ -525,6 +525,12 @@ func Singleton(key Key) Set {
 type CacheSet interface {
 	Set
 	schedule.Tick
+
+	// Ready returns a channel that is closed once the first successful fetch
+	// of the remote key set has completed. Until then, the set is empty and
+	// every key lookup fails; consumers can block on this channel during
+	// startup to ensure verification keys are available.
+	Ready() <-chan struct{}
 }
 
 // cacheSet is the concrete implementation of the [CacheSet] interface.
@@ -557,6 +563,9 @@ func (s *cacheSet) Find(hint Hint) Key { return s.get().Find(hint) }
 func (s *cacheSet) Run(ctx context.Context) time.Duration {
 	return s.ctrl.Run(ctx)
 }
+
+// Ready implements [CacheSet].
+func (s *cacheSet) Ready() <-chan struct{} { return s.ctrl.Ready() }
 
 var _ CacheSet = (*cacheSet)(nil)
 
