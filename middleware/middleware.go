@@ -60,6 +60,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Pipe is a middleware function.
@@ -336,6 +338,42 @@ func Secure(cfg SecurityConfig) Pipe {
 			// 10. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
 			h.Set("X-Permitted-Cross-Domain-Policies", "none")
 
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RateLimit returns a middleware [Pipe] that applies global rate limiting
+// using the provided [rate.Limiter].
+//
+// If the limit is exceeded, it halts the chain and responds with HTTP 429 Too
+// Many Requests. For more complex strategies like per-client or per-IP
+// limiting, use [RateLimitFunc].
+func RateLimit(limiter *rate.Limiter) Pipe {
+	return RateLimitFunc(func(*http.Request) *rate.Limiter {
+		return limiter
+	})
+}
+
+// RateLimitFunc returns a middleware [Pipe] that applies rate limiting using a
+// dynamic [rate.Limiter] resolved per-request.
+//
+// The supplier callback allows callers to implement arbitrary rate limiting
+// policies (e.g., per-IP, per-user, or tiered limits). If the callback returns
+// nil, the request proceeds without rate limiting. If the limit is exceeded,
+// it responds with HTTP 429 Too Many Requests.
+func RateLimitFunc(supply func(*http.Request) *rate.Limiter) Pipe {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			limiter := supply(r)
+			if limiter != nil && !limiter.Allow() {
+				http.Error(
+					w,
+					http.StatusText(http.StatusTooManyRequests),
+					http.StatusTooManyRequests,
+				)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
