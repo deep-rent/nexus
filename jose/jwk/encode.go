@@ -19,11 +19,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/mldsa"
 	"crypto/rsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
+
+	"crypto/mldsa"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/sign"

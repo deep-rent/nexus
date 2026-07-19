@@ -21,10 +21,11 @@ import (
 	"slices"
 	"strconv"
 
+	"golang.org/x/time/rate"
+
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/middleware/cors"
 	"github.com/deep-rent/nexus/middleware/gzip"
-	"golang.org/x/time/rate"
 )
 
 // Middleware defines a function that wraps a [Handler].

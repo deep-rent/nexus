@@ -19,12 +19,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/mldsa"
 	"crypto/rsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
+
+	"crypto/mldsa"
 )
 
 // reader defines a function that decodes the key material from a [raw] JWK

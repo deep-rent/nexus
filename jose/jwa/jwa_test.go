@@ -20,13 +20,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/asn1"
 	"io"
 	"math/big"
 	"testing"
+
+	"crypto/mldsa"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/sign"
@@ -176,7 +177,11 @@ func TestAlgorithm_MLDSAParameterMismatch(t *testing.T) {
 		t.Error("should have rejected a key with a mismatched parameter set")
 	}
 
-	if _, err := jwa.MLDSA44.Sign(t.Context(), sign.From(k), mockMsg); err == nil {
+	if _, err := jwa.MLDSA44.Sign(
+		t.Context(),
+		sign.From(k),
+		mockMsg,
+	); err == nil {
 		t.Error("signing with a mismatched parameter set should have failed")
 	}
 }

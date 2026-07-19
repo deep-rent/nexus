@@ -19,13 +19,14 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"io"
 	"testing"
+
+	"crypto/mldsa"
 
 	"github.com/deep-rent/nexus/sign"
 )

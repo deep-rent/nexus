@@ -20,10 +20,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"golang.org/x/time/rate"
+
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/middleware"
 	"github.com/deep-rent/nexus/router"
-	"golang.org/x/time/rate"
 )
 
 func TestHandler_ChainMiddleware(t *testing.T) {

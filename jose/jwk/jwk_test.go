@@ -729,14 +729,22 @@ func TestNewKeyPairFor(t *testing.T) {
 
 	t.Run("unknown algorithm", func(t *testing.T) {
 		t.Parallel()
-		if _, err := jwk.NewKeyPairFor("XY99", "kid-1", sign.From(k)); err == nil {
+		if _, err := jwk.NewKeyPairFor(
+			"XY99",
+			"kid-1",
+			sign.From(k),
+		); err == nil {
 			t.Error("should have returned an error")
 		}
 	})
 
 	t.Run("type mismatch", func(t *testing.T) {
 		t.Parallel()
-		if _, err := jwk.NewKeyPairFor("RS256", "kid-1", sign.From(k)); err == nil {
+		if _, err := jwk.NewKeyPairFor(
+			"RS256",
+			"kid-1",
+			sign.From(k),
+		); err == nil {
 			t.Error("should have returned an error")
 		}
 	})

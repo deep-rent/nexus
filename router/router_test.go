@@ -872,7 +872,6 @@ func TestRouter_MiddlewareHeader(t *testing.T) {
 	}
 }
 
-
 func TestResponseWriter_UnwrapStd(t *testing.T) {
 	t.Parallel()
 
@@ -928,7 +927,6 @@ func TestExchange_NoContent(t *testing.T) {
 		t.Error("closed flag: got false; want true")
 	}
 }
-
 
 func TestErrorID(t *testing.T) {
 	id := router.ErrorID()

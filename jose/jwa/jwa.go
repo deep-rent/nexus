@@ -61,16 +61,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/mldsa"
 	"crypto/rand"
-	"crypto/sha3"
 	"crypto/rsa"
+	"crypto/sha3"
 	"encoding/asn1"
 	"errors"
 	"fmt"
 	"hash"
 	"math/big"
 	"sync"
+
+	"crypto/mldsa"
 
 	sign "github.com/deep-rent/nexus/sign"
 )

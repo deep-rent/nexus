@@ -242,14 +242,21 @@ func TestCallback(t *testing.T) {
 			func(w http.ResponseWriter, r *http.Request) {
 				// Callback must fill in the protocol parameters while
 				// preserving the provided client credentials.
-				if got := r.FormValue("grant_type"); got != "authorization_code" {
+				if got := r.FormValue(
+					"grant_type",
+				); got != "authorization_code" {
 					t.Errorf("got grant_type %q; want authorization_code", got)
 				}
 				if got := r.FormValue("code"); got != "abc" {
 					t.Errorf("got code %q; want %q", got, "abc")
 				}
-				if got := r.FormValue("redirect_uri"); got != "https://rp.example.com/cb" {
-					t.Errorf("got redirect_uri %q; want the configured URI", got)
+				if got := r.FormValue(
+					"redirect_uri",
+				); got != "https://rp.example.com/cb" {
+					t.Errorf(
+						"got redirect_uri %q; want the configured URI",
+						got,
+					)
 				}
 				if got := r.FormValue("client_secret"); got != "s3cret" {
 					t.Errorf("got client_secret %q; want %q", got, "s3cret")
