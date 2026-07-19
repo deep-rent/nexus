@@ -44,7 +44,8 @@ func TestNewRetention_PanicsOnNilStore(t *testing.T) {
 func count(t *testing.T, db *sql.DB, table string) int {
 	t.Helper()
 	var n int
-	if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT count(*) FROM " + table).
+		Scan(&n); err != nil {
 		t.Fatalf("count: should not have returned an error: %v", err)
 	}
 	return n
