@@ -22,23 +22,20 @@
 //
 // # Usage
 //
-//	p, err := google.New(google.Config{
+//	p := google.New(google.Config{
 //	  ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 //	  ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 //	  RedirectURI:  "https://id.example.com/oauth/callback/google",
 //	})
-//	if err != nil { /* handle configuration error */ }
 //
 //	// Keep Google's signing keys fresh in the background.
 //	scheduler.Dispatch(p.Keys())
 //
-//	s, err := oauth.New(cfg, oauth.WithIdentityProvider("google", p))
+//	s := oauth.New(cfg, oauth.WithIdentityProvider("google", p))
 package google
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -97,17 +94,18 @@ type Provider struct {
 
 // New assembles a Google [Provider] from the given configuration.
 //
-// It returns an error if a required [Config] field is missing. Remember to
-// dispatch [Provider.Keys] to a scheduler so that ID token verification has
-// fresh signing keys available.
-func New(cfg Config) (*Provider, error) {
+// It panics if a required [Config] field is missing; provider construction
+// happens once at startup, so misconfiguration is a programmer error.
+// Remember to dispatch [Provider.Keys] to a scheduler so that ID token
+// verification has fresh signing keys available.
+func New(cfg Config) *Provider {
 	switch {
 	case cfg.ClientID == "":
-		return nil, errors.New("Config.ClientID is required")
+		panic("google: Config.ClientID is required")
 	case cfg.ClientSecret == "":
-		return nil, errors.New("Config.ClientSecret is required")
+		panic("google: Config.ClientSecret is required")
 	case cfg.RedirectURI == "":
-		return nil, errors.New("Config.RedirectURI is required")
+		panic("google: Config.RedirectURI is required")
 	}
 
 	client := cfg.Client
@@ -137,7 +135,7 @@ func New(cfg Config) (*Provider, error) {
 		),
 		auth:  AuthEndpoint,
 		token: TokenEndpoint,
-	}, nil
+	}
 }
 
 // Keys returns the cached view of Google's remote JWKS used for ID token
@@ -175,45 +173,13 @@ func (p *Provider) Exchange(
 	ctx context.Context,
 	req *http.Request,
 ) (oauth.Claimant, error) {
-	if e := req.FormValue("error"); e != "" {
-		return oauth.Claimant{}, fmt.Errorf(
-			"authorization failed: %s",
-			e,
-		)
-	}
-
-	code := req.FormValue("code")
-	if code == "" {
-		return oauth.Claimant{}, errors.New(
-			"missing authorization code",
-		)
-	}
-
-	tok, err := oidc.Exchange(ctx, p.client, p.token, url.Values{
-		"grant_type":    {"authorization_code"},
-		"code":          {code},
+	claims, err := oidc.Callback(ctx, p.client, p.token, req, url.Values{
 		"client_id":     {p.clientID},
 		"client_secret": {p.clientSecret},
-		"redirect_uri":  {p.redirectURI},
-	})
+	}, p.redirectURI, p.verifier)
 	if err != nil {
 		return oauth.Claimant{}, err
 	}
-
-	if tok.IDToken == "" {
-		return oauth.Claimant{}, errors.New(
-			"token response is missing the id_token",
-		)
-	}
-
-	claims, err := p.verifier.Verify([]byte(tok.IDToken))
-	if err != nil {
-		return oauth.Claimant{}, fmt.Errorf(
-			"id token verification failed: %w",
-			err,
-		)
-	}
-
 	return claims.Claimant(), nil
 }
 

@@ -82,7 +82,7 @@ func (g deviceCodeGrant) Authorize(
 
 	// Expired codes are of no further use; remove them as a best effort.
 	if c.ExpiresAt != 0 && now > c.ExpiresAt {
-		if err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
+		if _, err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired device code",
@@ -109,8 +109,9 @@ func (g deviceCodeGrant) Authorize(
 
 	switch status := c.Status; status {
 	case DeviceCodeStatusPending:
-		c.LastPolledAt = now
-		if err := pro.Sessions.UpdateDeviceCode(ctx, c); err != nil {
+		// TouchDeviceCode only records the poll time, so a concurrent
+		// approval via the verification endpoint can never be overwritten.
+		if err := pro.Sessions.TouchDeviceCode(ctx, digest, now); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to record device code poll",
@@ -124,7 +125,7 @@ func (g deviceCodeGrant) Authorize(
 		}
 	case DeviceCodeStatusDenied:
 		// The decision is final; remove the code as a best effort.
-		if err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
+		if _, err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete denied device code",
@@ -146,10 +147,19 @@ func (g deviceCodeGrant) Authorize(
 		)
 	}
 
-	// Delete the code immediately upon successful authorization to
-	// prevent reuse.
-	if err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
+	// Delete the code immediately upon successful authorization to prevent
+	// reuse. If the code was already gone, a concurrent redemption won the
+	// race and this request must not issue tokens.
+	deleted, err := pro.Sessions.DeleteDeviceCode(ctx, digest)
+	if err != nil {
 		return nil, pro.ServerError(ctx, "failed to delete device code", err)
+	}
+	if !deleted {
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidGrant,
+			Description: "invalid device code",
+		}
 	}
 
 	return &Issuance{

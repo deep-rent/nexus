@@ -129,10 +129,7 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 		WithClock(func() time.Time { return env.now }),
 	}, opts...)
 
-	s, err := New(cfg, opts...)
-	if err != nil {
-		t.Fatalf("failed to construct server: %v", err)
-	}
+	s := New(cfg, opts...)
 
 	env.server = s
 	env.router = router.New()
@@ -256,18 +253,22 @@ func TestNewValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			defer func() {
+				if recover() == nil {
+					t.Error("should have panicked on invalid configuration")
+				}
+			}()
+
 			cfg := valid
 			tt.mutate(&cfg)
-			if _, err := New(cfg, tt.opts...); err == nil {
-				t.Error("should have returned a configuration error")
-			}
+			New(cfg, tt.opts...)
 		})
 	}
 
 	t.Run("valid", func(t *testing.T) {
 		t.Parallel()
-		if _, err := New(valid); err != nil {
-			t.Errorf("should not have returned an error: %v", err)
+		if s := New(valid); s == nil {
+			t.Error("should have returned a server")
 		}
 	})
 }
@@ -335,6 +336,62 @@ func TestWellKnown(t *testing.T) {
 			"code challenge methods %v should include %q",
 			meta.CodeChallengeMethodsSupported,
 			pkce.MethodS256,
+		)
+	}
+
+	// RFC 8414 Section 3: the metadata must also be served at the location
+	// clients derive from the issuer (well-known path inserted at the root).
+	w = env.do(httptest.NewRequest(http.MethodGet, PathWellKnown, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf(
+			"got status %d at root well-known location; want %d",
+			w.Code,
+			http.StatusOK,
+		)
+	}
+	if root := decodeJSON[AuthorizationServerMetadata](t, w); root.Issuer != testIssuer {
+		t.Errorf("got issuer %q; want %q", root.Issuer, testIssuer)
+	}
+}
+
+func TestRefreshScopePreserved(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+	env.sessions.refreshTokens[NewDigest("rt-1")] = RefreshToken{
+		Token:     NewDigest("rt-1"),
+		ClientID:  env.client.id,
+		SubjectID: env.subject.id,
+		Scope:     "read write",
+		ExpiresAt: env.now.Add(time.Hour).Unix(),
+	}
+
+	// RFC 6749 Section 6: narrowing applies to the issued access token only;
+	// the rotated refresh token must keep the original grant scope.
+	w := env.postForm(PathToken, url.Values{
+		"grant_type":    {string(GrantTypeRefreshToken)},
+		"refresh_token": {"rt-1"},
+		"scope":         {"read"},
+	}, env.client, "s3cret")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+	}
+
+	res := decodeJSON[TokenResponse](t, w)
+	if res.Scope != "read" {
+		t.Errorf("got access token scope %q; want %q", res.Scope, "read")
+	}
+
+	stored, ok := env.sessions.refreshTokens[NewDigest(res.RefreshToken)]
+	if !ok {
+		t.Fatal("rotated refresh token should have been stored")
+	}
+	if stored.Scope != "read write" {
+		t.Errorf(
+			"got rotated refresh token scope %q; want the original %q",
+			stored.Scope,
+			"read write",
 		)
 	}
 }
@@ -420,8 +477,10 @@ func TestTokenErrors(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
 
+		// RFC 6749 Section 2.3.1: a second credential (client_secret in the
+		// body alongside HTTP Basic) constitutes a second auth method.
 		f := form(string(GrantTypeClientCredentials))
-		f.Set("client_id", env.client.id.String())
+		f.Set("client_secret", "s3cret")
 		req := httptest.NewRequest(
 			http.MethodPost,
 			testPrefix+PathToken,
@@ -437,6 +496,48 @@ func TestTokenErrors(t *testing.T) {
 		res := decodeJSON[Error](t, w)
 		if res.Code != ErrorCodeInvalidRequest {
 			t.Errorf("got error %q; want %q", res.Code, ErrorCodeInvalidRequest)
+		}
+	})
+
+	t.Run("redundant client id with basic auth", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+
+		// Many client libraries include client_id in the body even when
+		// authenticating via HTTP Basic; a matching value is tolerated.
+		f := form(string(GrantTypeClientCredentials))
+		f.Set("client_id", env.client.id.String())
+		req := httptest.NewRequest(
+			http.MethodPost,
+			testPrefix+PathToken,
+			strings.NewReader(f.Encode()),
+		)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetBasicAuth(env.client.id.String(), "s3cret")
+
+		w := env.do(req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+		}
+	})
+
+	t.Run("mismatched client id with basic auth", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+
+		f := form(string(GrantTypeClientCredentials))
+		f.Set("client_id", env.public.id.String())
+		req := httptest.NewRequest(
+			http.MethodPost,
+			testPrefix+PathToken,
+			strings.NewReader(f.Encode()),
+		)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetBasicAuth(env.client.id.String(), "s3cret")
+
+		w := env.do(req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 		}
 	})
 

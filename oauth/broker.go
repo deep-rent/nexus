@@ -56,6 +56,19 @@ func (s *Server) Login(e *router.Exchange) error {
 		}
 	}
 
+	if err := s.establishSession(e, sub); err != nil {
+		return err
+	}
+
+	e.NoContent()
+
+	return nil
+}
+
+// establishSession generates a high-entropy session key, persists the
+// session mapping for the subject, and sets the session cookie on the
+// user-agent. It is shared by the password login and external login flows.
+func (s *Server) establishSession(e *router.Exchange, sub Subject) error {
 	key, err := s.generateSessionKey(e.Context())
 	if err != nil {
 		return s.internalError(
@@ -73,9 +86,7 @@ func (s *Server) Login(e *router.Exchange) error {
 		)
 	}
 
-	e.SetCookie(s.newCookie(s.sessionCookieName, key, 0))
-
-	e.NoContent()
+	e.SetCookie(s.newSessionCookie(key, 0))
 
 	return nil
 }
@@ -104,7 +115,7 @@ func (s *Server) Logout(e *router.Exchange) error {
 	// Note: The double-quotes around the asterisk are required by the spec.
 	e.SetHeader("Clear-Site-Data", `"*"`)
 
-	e.SetCookie(s.newCookie(s.sessionCookieName, "", -1))
+	e.SetCookie(s.newSessionCookie("", -1))
 
 	e.NoContent()
 
@@ -126,13 +137,7 @@ func (s *Server) ExternalLogin(e *router.Exchange) error {
 		return s.internalError(e.Context(), "failed to generate state", err)
 	}
 
-	// Some providers (e.g., Sign in with Apple) deliver the callback as a
-	// cross-site POST (response_mode=form_post). Lax cookies are not sent on
-	// cross-site POST requests, so the short-lived state cookie must opt out
-	// of same-site enforcement.
-	cookie := s.newCookie(s.stateCookieName, state, 300)
-	cookie.SameSite = http.SameSiteNoneMode
-	e.SetCookie(cookie)
+	e.SetCookie(s.newStateCookie(state, 300))
 
 	authURL, err := idp.AuthURL(e.Context(), state)
 	if err != nil {
@@ -202,7 +207,7 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 	}
 
 	// Clear the state cookie immediately to prevent replay attacks.
-	e.SetCookie(s.newCookie(s.stateCookieName, "", -1))
+	e.SetCookie(s.newStateCookie("", -1))
 
 	// FormValue transparently covers both query-mode (GET) and form_post
 	// (POST) callback responses.
@@ -251,24 +256,9 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 		}
 	}
 
-	key, err := s.generateSessionKey(e.Context())
-	if err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to generate session key",
-			err,
-		)
+	if err := s.establishSession(e, sub); err != nil {
+		return err
 	}
-
-	if err := s.subjects.CreateSession(e.Context(), key, sub.ID()); err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to create subject session",
-			err,
-		)
-	}
-
-	e.SetCookie(s.newCookie(s.sessionCookieName, key, 0))
 
 	return e.Redirect(s.loginRedirectURI, http.StatusFound)
 }

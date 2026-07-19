@@ -98,18 +98,22 @@ func TestNewValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			defer func() {
+				if recover() == nil {
+					t.Error("should have panicked on invalid configuration")
+				}
+			}()
+
 			cfg := testConfig(t)
 			tt.mutate(&cfg)
-			if _, err := New(cfg); err == nil {
-				t.Error("should have returned a configuration error")
-			}
+			New(cfg)
 		})
 	}
 
 	t.Run("valid", func(t *testing.T) {
 		t.Parallel()
-		if _, err := New(testConfig(t)); err != nil {
-			t.Errorf("should not have returned an error: %v", err)
+		if p := New(testConfig(t)); p == nil {
+			t.Error("should have returned a provider")
 		}
 	})
 }
@@ -120,10 +124,7 @@ func TestAuthURL(t *testing.T) {
 	t.Run("with scopes", func(t *testing.T) {
 		t.Parallel()
 
-		p, err := New(testConfig(t))
-		if err != nil {
-			t.Fatalf("failed to construct provider: %v", err)
-		}
+		p := New(testConfig(t))
 
 		raw, err := p.AuthURL(t.Context(), "state-1")
 		if err != nil {
@@ -153,10 +154,7 @@ func TestAuthURL(t *testing.T) {
 
 		cfg := testConfig(t)
 		cfg.Scopes = []string{}
-		p, err := New(cfg)
-		if err != nil {
-			t.Fatalf("failed to construct provider: %v", err)
-		}
+		p := New(cfg)
 
 		raw, err := p.AuthURL(t.Context(), "state-1")
 		if err != nil {
@@ -176,10 +174,7 @@ func TestClientSecret(t *testing.T) {
 	t.Parallel()
 
 	cfg := testConfig(t)
-	p, err := New(cfg)
-	if err != nil {
-		t.Fatalf("failed to construct provider: %v", err)
-	}
+	p := New(cfg)
 
 	now := time.Unix(1_752_000_000, 0)
 	p.now = func() time.Time { return now }
@@ -281,10 +276,7 @@ func TestExchange(t *testing.T) {
 	))
 	defer srv.Close()
 
-	p, err := New(testConfig(t))
-	if err != nil {
-		t.Fatalf("failed to construct provider: %v", err)
-	}
+	p := New(testConfig(t))
 	p.token = srv.URL
 	p.verifier = jwt.NewVerifier[*oidc.IDToken](
 		jwk.Singleton(appleKey),

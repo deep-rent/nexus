@@ -27,6 +27,7 @@ package oidc
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -205,4 +206,51 @@ func Exchange(
 		)
 	}
 	return tok, nil
+}
+
+// Callback drives the relying-party callback pipeline shared by all
+// providers: it validates the authorization response parameters carried by
+// req (covering both query and form_post response modes), exchanges the
+// authorization code at the provider's token endpoint, and verifies the
+// returned ID token.
+//
+// The form must already contain the provider's client credentials
+// (client_id plus client_secret or equivalent); Callback fills in
+// grant_type, code, and redirect_uri.
+func Callback(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	req *http.Request,
+	form url.Values,
+	redirectURI string,
+	verifier jwt.Verifier[*IDToken],
+) (*IDToken, error) {
+	if e := req.FormValue("error"); e != "" {
+		return nil, fmt.Errorf("authorization failed: %s", e)
+	}
+
+	code := req.FormValue("code")
+	if code == "" {
+		return nil, errors.New("missing authorization code")
+	}
+
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", redirectURI)
+
+	tok, err := Exchange(ctx, client, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+
+	if tok.IDToken == "" {
+		return nil, errors.New("token response is missing the id_token")
+	}
+
+	claims, err := verifier.Verify([]byte(tok.IDToken))
+	if err != nil {
+		return nil, fmt.Errorf("id token verification failed: %w", err)
+	}
+	return claims, nil
 }

@@ -77,7 +77,7 @@ func (g refreshTokenGrant) Authorize(
 	// Enforce expiry locally in addition to the store's TTL contract. An
 	// expired token is removed as a best effort.
 	if r.ExpiresAt != 0 && pro.Now().Unix() > r.ExpiresAt {
-		if err := pro.Sessions.DeleteRefreshToken(ctx, digest); err != nil {
+		if _, err := pro.Sessions.DeleteRefreshToken(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired refresh token",
@@ -118,19 +118,32 @@ func (g refreshTokenGrant) Authorize(
 	}
 
 	// Revoke the old refresh token to ensure rotation security.
-	// New tokens are issued by the [Server] later in the pipeline.
-	if err := pro.Sessions.DeleteRefreshToken(ctx, digest); err != nil {
+	// New tokens are issued by the [Server] later in the pipeline. If the
+	// token was already gone, a concurrent rotation won the race and this
+	// request must not issue tokens.
+	deleted, err := pro.Sessions.DeleteRefreshToken(ctx, digest)
+	if err != nil {
 		return nil, pro.ServerError(
 			ctx,
 			"failed to revoke old refresh token",
 			err,
 		)
 	}
+	if !deleted {
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidGrant,
+			Description: "invalid or expired refresh token",
+		}
+	}
 
+	// RefreshScope carries the original grant scope so that a one-time
+	// narrowing does not permanently downgrade the rotated refresh token.
 	return &Issuance{
-		Subject:     r.SubjectID,
-		Scope:       scope,
-		Refreshable: true,
+		Subject:      r.SubjectID,
+		Scope:        scope,
+		RefreshScope: r.Scope,
+		Refreshable:  true,
 	}, nil
 }
 

@@ -21,7 +21,8 @@
 // while allowing developers to provide custom implementations for client and
 // session management.
 //
-// Architecture:
+// # Architecture
+//
 // The core of the package is the [Server], which manages the lifecycle of
 // authorization requests and token issuance. It relies on a set of interfaces
 // ([ClientStore], [SubjectStore], [SessionStore]) that must be implemented to
@@ -46,13 +47,13 @@
 //	}
 //
 //	// 2. Initialize the server and register grants or identity providers.
-//	s, err := oauth.New(cfg,
+//	// New panics on invalid configuration.
+//	s := oauth.New(cfg,
 //	  oauth.WithGrant(oauth.AuthCodeGrant()),
 //	  oauth.WithGrant(oauth.ClientCredentialsGrant()),
 //	  oauth.WithGrant(oauth.RefreshTokenGrant()),
 //	  oauth.WithIdentityProvider("google", myGoogleProvider),
 //	)
-//	if err != nil { /* handle configuration error */ }
 //
 //	// 3. Mount the endpoints onto a router.
 //	r := router.New()
@@ -343,11 +344,14 @@ type SessionStore interface {
 	//
 	// It should return an error only if the persistence operation fails.
 	CreateAuthCode(ctx context.Context, data AuthCode) error
-	// DeleteAuthCode removes an authorization code. This function is used to
-	// ensure single-use of authorization codes, thus preventing replay attacks.
+	// DeleteAuthCode removes an authorization code and reports whether it
+	// was present. The [Server] relies on the returned flag to enforce
+	// single use under concurrent redemption attempts, so implementations
+	// must delete and report atomically (e.g., SQL "DELETE ... RETURNING"
+	// or a Redis DEL count).
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteAuthCode(ctx context.Context, code Digest) error
+	DeleteAuthCode(ctx context.Context, code Digest) (bool, error)
 	// GetRefreshToken retrieves a refresh token by its digest.
 	//
 	// If found, it must return the data and nil.
@@ -359,10 +363,12 @@ type SessionStore interface {
 	// It should return an error only if the persistence operation fails.
 	CreateRefreshToken(ctx context.Context, data RefreshToken) error
 	// DeleteRefreshToken removes a refresh token (e.g., during revocation or
-	// rotation).
+	// rotation) and reports whether it was present. Like [DeleteAuthCode],
+	// the deletion and the report must be atomic so that concurrent rotation
+	// attempts cannot both succeed.
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteRefreshToken(ctx context.Context, token Digest) error
+	DeleteRefreshToken(ctx context.Context, token Digest) (bool, error)
 	// GetDeviceCode retrieves a device code by its digest.
 	//
 	// If found, it must return the data and nil.
@@ -385,15 +391,26 @@ type SessionStore interface {
 	// It should return an error only if the persistence operation fails.
 	CreateDeviceCode(ctx context.Context, data DeviceCode) error
 	// UpdateDeviceCode replaces the stored state of a device code, keyed by
-	// [DeviceCode.DeviceCode]. It is used to record status transitions and
-	// polling activity.
+	// [DeviceCode.DeviceCode]. It is used to record status transitions
+	// performed by the verification endpoint.
 	//
 	// It should return an error only if the persistence operation fails.
 	UpdateDeviceCode(ctx context.Context, data DeviceCode) error
-	// DeleteDeviceCode removes a device code by its digest.
+	// TouchDeviceCode records a client polling attempt by updating only
+	// [DeviceCode.LastPolledAt] for the given code. It is deliberately
+	// separate from [UpdateDeviceCode] so that concurrent polling can never
+	// overwrite a status transition performed by the verification endpoint.
+	// Touching an absent code is a no-op.
+	//
+	// It should return an error only if the persistence operation fails.
+	TouchDeviceCode(ctx context.Context, code Digest, lastPolledAt int64) error
+	// DeleteDeviceCode removes a device code by its digest and reports
+	// whether it was present. Like [DeleteAuthCode], the deletion and the
+	// report must be atomic so that concurrent redemption attempts cannot
+	// both succeed.
 	//
 	// It should return an error only if the removal operation fails.
-	DeleteDeviceCode(ctx context.Context, code Digest) error
+	DeleteDeviceCode(ctx context.Context, code Digest) (bool, error)
 }
 
 const (
@@ -478,6 +495,27 @@ func (p *Proposal) Get(key string) string { return p.data.Get(key) }
 // Has checks if a grant-specific field is present in the HTTP request body.
 func (p *Proposal) Has(key string) bool { return p.data.Has(key) }
 
+// logError records err in the logger under a fresh trace ID and returns
+// that ID. It centralizes the logging convention shared by all internal
+// error helpers in this package.
+func logError(
+	ctx context.Context,
+	logger *slog.Logger,
+	desc string,
+	err error,
+) string {
+	id := router.ErrorID()
+
+	logger.ErrorContext(
+		ctx,
+		desc,
+		slog.String("error_id", id),
+		slog.Any("error", err),
+	)
+
+	return id
+}
+
 // ServerError logs the given error under a fresh trace ID and returns an
 // opaque internal server [Error] carrying the same trace ID and description.
 // Grants should use it to report unexpected storage or infrastructure
@@ -487,20 +525,11 @@ func (p *Proposal) ServerError(
 	desc string,
 	err error,
 ) *Error {
-	id := router.ErrorID()
-
-	p.Logger.ErrorContext(
-		ctx,
-		desc,
-		slog.String("error_id", id),
-		slog.Any("error", err),
-	)
-
 	return &Error{
 		Status:      http.StatusInternalServerError,
 		Code:        ErrorCodeServerError,
 		Description: desc,
-		ID:          id,
+		ID:          logError(ctx, p.Logger, desc, err),
 	}
 }
 
@@ -515,6 +544,12 @@ type Issuance struct {
 	// granted to the client. This may be a subset of the requested scopes
 	// based on server policy or user consent.
 	Scope string
+	// RefreshScope is the scope bound to a replacement refresh token, if one
+	// is issued. It defaults to Scope when empty. The Refresh Token grant
+	// sets it to the original grant scope so that a one-time narrowing of
+	// the access token (RFC 6749 Section 6) does not permanently downgrade
+	// the grant chain.
+	RefreshScope string
 	// Refreshable determines if the authorization server should generate
 	// a refresh token. While usually determined by the grant type, this allows
 	// for granular control based on client policy or requested offline access.
@@ -601,8 +636,8 @@ type DeviceAuthorizationResponse struct {
 	UserCode                string `json:"user_code"`
 	VerificationURI         string `json:"verification_uri"`
 	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
-	ExpiresIn               int    `json:"expires_in"`
-	Interval                int    `json:"interval,omitempty"`
+	ExpiresIn               int64  `json:"expires_in"`
+	Interval                int64  `json:"interval,omitempty"`
 }
 
 // IntrospectionResponse outlines the RFC 7662 compliant JSON payload returned
@@ -818,9 +853,6 @@ func matchSegment(s, pattern string) bool {
 	}
 
 	parts := strings.Split(pattern, "*")
-	if len(parts) == 0 {
-		return true
-	}
 
 	if !strings.HasPrefix(s, parts[0]) {
 		return false
@@ -886,35 +918,27 @@ const userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
 // for use as a user code. Characters are drawn uniformly from
 // [userCodeAlphabet].
 func GenerateUserCode(context.Context) (string, error) {
-	const n = 8
-	var out [n + 1]byte
-	out[4] = '-'
-
 	// Rejection sampling keeps the character distribution uniform:
 	// only bytes below the largest multiple of len(alphabet) are used.
 	limit := byte(256 - 256%len(userCodeAlphabet))
+
+	var chars [8]byte
 	buf := make([]byte, 16)
 	i := 0
-	for i < n {
+	for i < len(chars) {
 		if _, err := rand.Read(buf); err != nil {
 			return "", err
 		}
 		for _, b := range buf {
-			if b >= limit {
-				continue
-			}
-			pos := i
-			if i >= 4 {
-				pos++ // skip the hyphen
-			}
-			out[pos] = userCodeAlphabet[int(b)%len(userCodeAlphabet)]
-			i++
-			if i == n {
-				break
+			if b < limit {
+				chars[i] = userCodeAlphabet[int(b)%len(userCodeAlphabet)]
+				if i++; i == len(chars) {
+					break
+				}
 			}
 		}
 	}
-	return string(out[:]), nil
+	return string(chars[:4]) + "-" + string(chars[4:]), nil
 }
 
 // opaque generates a high-entropy, base64url-encoded string suitable for

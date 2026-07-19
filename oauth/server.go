@@ -25,7 +25,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -200,20 +199,31 @@ func WithStateGenerator(fn TokenGeneratorFn) Option {
 
 // New assembles a [Server] from the given configuration and options.
 //
-// It returns an error if a required [Config] field is missing, or if
-// identity providers are registered without the login URIs they depend on.
-func New(cfg Config, opts ...Option) (*Server, error) {
+// It panics if a required [Config] field is missing, or if identity
+// providers are registered without the login URIs they depend on. Server
+// construction happens once at startup, so misconfiguration is a programmer
+// error rather than a recoverable runtime condition.
+func New(cfg Config, opts ...Option) *Server {
 	switch {
 	case cfg.Vault == nil:
-		return nil, errors.New("oauth: Config.Vault is required")
+		panic("vault is required")
 	case cfg.Clients == nil:
-		return nil, errors.New("oauth: Config.Clients is required")
+		panic("clients is required")
 	case cfg.Sessions == nil:
-		return nil, errors.New("oauth: Config.Sessions is required")
+		panic("sessions is required")
 	case cfg.Subjects == nil:
-		return nil, errors.New("oauth: Config.Subjects is required")
+		panic("subjects is required")
 	case cfg.Issuer == "":
-		return nil, errors.New("oauth: Config.Issuer is required")
+		panic("issuer is required")
+	}
+
+	if _, err := url.Parse(cfg.Issuer); err != nil {
+		panic("issuer is not a valid URL: " + err.Error())
+	}
+	if cfg.VerificationURI != "" {
+		if _, err := url.Parse(cfg.VerificationURI); err != nil {
+			panic("verification URI is not a valid URL: " + err.Error())
+		}
 	}
 
 	logger := cfg.Logger
@@ -277,8 +287,8 @@ func New(cfg Config, opts ...Option) (*Server, error) {
 
 	if len(s.idps) > 0 &&
 		(s.loginTerminalURI == "" || s.loginRedirectURI == "") {
-		return nil, errors.New(
-			"oauth: Config.LoginTerminalURI and Config.LoginRedirectURI are " +
+		panic(
+			"Config.LoginTerminalURI and Config.LoginRedirectURI are " +
 				"required when identity providers are registered",
 		)
 	}
@@ -289,7 +299,7 @@ func New(cfg Config, opts ...Option) (*Server, error) {
 		jwt.WithClock(s.clock),
 	)
 
-	return s, nil
+	return s
 }
 
 // Supports checks whether the given grant type has been registered.
@@ -304,7 +314,19 @@ func (s *Server) Supports(grant GrantType) bool {
 // URI has been configured, and the external login endpoints only when at
 // least one identity provider is registered.
 func (s *Server) Mount(r *router.Router, prefix string) {
-	r.Handle(http.MethodGet+" "+prefix+PathWellKnown, s.WellKnown(prefix))
+	wellKnown := s.WellKnown(prefix)
+	r.Handle(http.MethodGet+" "+prefix+PathWellKnown, wellKnown)
+
+	// RFC 8414 Section 3: clients derive the metadata URL by inserting the
+	// well-known path between the issuer's authority and path components.
+	// Serve that location too whenever it differs from the prefixed route.
+	if u, err := url.Parse(s.issuer); err == nil {
+		root := PathWellKnown + strings.TrimSuffix(u.Path, "/")
+		if root != prefix+PathWellKnown {
+			r.Handle(http.MethodGet+" "+root, wellKnown)
+		}
+	}
+
 	r.Handle(http.MethodGet+" "+prefix+PathKeySet, vault.Handler(s.vault))
 
 	r.HandleFunc(http.MethodGet+" "+prefix+PathAuthorize, s.Authorize)
@@ -395,20 +417,11 @@ func (s *Server) serverError(
 	desc string,
 	err error,
 ) *Error {
-	id := router.ErrorID()
-
-	s.logger.ErrorContext(
-		ctx,
-		desc,
-		slog.String("error_id", id),
-		slog.Any("error", err),
-	)
-
 	return &Error{
 		Status:      http.StatusInternalServerError,
 		Code:        ErrorCodeServerError,
 		Description: desc,
-		ID:          id,
+		ID:          logError(ctx, s.logger, desc, err),
 	}
 }
 
@@ -419,36 +432,46 @@ func (s *Server) internalError(
 	desc string,
 	err error,
 ) *router.Error {
-	id := router.ErrorID()
-
-	s.logger.ErrorContext(
-		ctx,
-		desc,
-		slog.String("error_id", id),
-		slog.Any("error", err),
-	)
-
 	return &router.Error{
 		Status:      http.StatusInternalServerError,
 		Reason:      router.ReasonServerError,
 		Description: desc,
-		ID:          id,
+		ID:          logError(ctx, s.logger, desc, err),
 	}
 }
 
-// newCookie builds a hardened cookie shared by the session and state flows.
-// A maxAge of zero yields a browser-session cookie; negative values delete
-// the cookie on the user-agent.
-func (s *Server) newCookie(name, value string, maxAge int) *http.Cookie {
+// newCookie builds a hardened cookie. A maxAge of zero yields a
+// browser-session cookie; negative values delete the cookie on the
+// user-agent.
+func newCookie(
+	name, value string,
+	maxAge int,
+	sameSite http.SameSite,
+) *http.Cookie {
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 		MaxAge:   maxAge,
 	}
+}
+
+// newSessionCookie builds the cookie carrying the resource owner's session
+// key. SameSite=Lax keeps the cookie out of cross-site subrequests while
+// still covering top-level navigations to the authorization endpoint.
+func (s *Server) newSessionCookie(value string, maxAge int) *http.Cookie {
+	return newCookie(s.sessionCookieName, value, maxAge, http.SameSiteLaxMode)
+}
+
+// newStateCookie builds the CSRF state cookie for external login flows. It
+// opts out of same-site enforcement because providers using the form_post
+// response mode (e.g., Sign in with Apple) deliver the callback as a
+// cross-site POST, which would not carry a Lax cookie.
+func (s *Server) newStateCookie(value string, maxAge int) *http.Cookie {
+	return newCookie(s.stateCookieName, value, maxAge, http.SameSiteNoneMode)
 }
 
 // subjectFromSession resolves the resource owner bound to the session cookie.
@@ -478,7 +501,7 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 		clientID = data.Get("client_id")
 		clientSecret = data.Get("client_secret")
 	} else {
-		if data.Has("client_id") || data.Has("client_secret") {
+		if data.Has("client_secret") {
 			// RFC 6749 Section 2.3.1: MUST NOT use more than one auth method.
 			return nil, &Error{
 				Status:      http.StatusBadRequest,
@@ -503,6 +526,16 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 				Status:      http.StatusUnauthorized,
 				Code:        ErrorCodeInvalidClient,
 				Description: "invalid basic auth client secret encoding",
+			}
+		}
+		// Many client libraries redundantly include client_id in the body
+		// alongside HTTP Basic authentication; tolerate it as long as it
+		// names the same client.
+		if id := data.Get("client_id"); id != "" && id != clientID {
+			return nil, &Error{
+				Status:      http.StatusBadRequest,
+				Code:        ErrorCodeInvalidRequest,
+				Description: "mismatched client id",
 			}
 		}
 	}
@@ -955,7 +988,9 @@ func (s *Server) token(e *router.Exchange) error {
 		Scope:       iss.Scope,
 	}
 
-	if iss.Refreshable && s.Supports(GrantTypeRefreshToken) {
+	if iss.Refreshable &&
+		s.Supports(GrantTypeRefreshToken) &&
+		pro.Client.CanUseGrant(GrantTypeRefreshToken) {
 		token, err := s.generateRefreshToken(e.Context())
 		if err != nil {
 			return s.serverError(
@@ -969,7 +1004,7 @@ func (s *Server) token(e *router.Exchange) error {
 			Token:     NewDigest(token),
 			ClientID:  clientID,
 			SubjectID: iss.Subject,
-			Scope:     iss.Scope,
+			Scope:     cmp.Or(iss.RefreshScope, iss.Scope),
 			ExpiresAt: now.Add(s.refreshTokenLifetime).Unix(),
 		}); err != nil {
 			return s.serverError(
@@ -1025,7 +1060,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 		return nil
 	}
 
-	if err := s.sessions.DeleteRefreshToken(e.Context(), digest); err != nil {
+	if _, err := s.sessions.DeleteRefreshToken(e.Context(), digest); err != nil {
 		s.logger.ErrorContext(
 			e.Context(),
 			"Failed to delete refresh token during revocation",
@@ -1095,9 +1130,12 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 
 	interval := int64(s.devicePollInterval.Seconds())
 
+	// The user code is digested in its canonical form so that the lookup in
+	// DeviceVerify (which normalizes user input the same way) always
+	// matches, regardless of the generator's output format.
 	if err := s.sessions.CreateDeviceCode(e.Context(), DeviceCode{
 		DeviceCode: NewDigest(deviceCode),
-		UserCode:   NewDigest(userCode),
+		UserCode:   NewDigest(normalizeUserCode(userCode)),
 		ClientID:   pro.Client.ID(),
 		Scope:      scope,
 		Status:     DeviceCodeStatusPending,
@@ -1107,14 +1145,24 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 		return s.serverError(e.Context(), "failed to store device code", err)
 	}
 
+	// Config.VerificationURI is validated during construction, so parsing
+	// cannot fail here. Building the complete URI through url.Values keeps
+	// it correct even when the configured URI already carries a query.
+	complete, err := url.Parse(s.verificationURI)
+	if err != nil {
+		return s.serverError(e.Context(), "invalid verification URI", err)
+	}
+	q := complete.Query()
+	q.Set("user_code", userCode)
+	complete.RawQuery = q.Encode()
+
 	res := DeviceAuthorizationResponse{
-		DeviceCode:      deviceCode,
-		UserCode:        userCode,
-		VerificationURI: s.verificationURI,
-		VerificationURIComplete: s.verificationURI +
-			"?user_code=" + url.QueryEscape(userCode),
-		ExpiresIn: int(s.deviceCodeLifetime.Seconds()),
-		Interval:  int(interval),
+		DeviceCode:              deviceCode,
+		UserCode:                userCode,
+		VerificationURI:         s.verificationURI,
+		VerificationURIComplete: complete.String(),
+		ExpiresIn:               int64(s.deviceCodeLifetime.Seconds()),
+		Interval:                interval,
 	}
 
 	return e.JSON(http.StatusOK, res)
@@ -1193,10 +1241,12 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	return nil
 }
 
-// normalizeUserCode canonicalizes user input for user code lookups: embedded
-// whitespace is stripped, letters are uppercased, and a missing hyphen is
-// re-inserted for the default XXXX-XXXX format produced by
-// [GenerateUserCode].
+// normalizeUserCode canonicalizes a user code: embedded whitespace is
+// stripped, letters are uppercased, and a missing hyphen is re-inserted for
+// the default XXXX-XXXX format produced by [GenerateUserCode]. It is applied
+// both when storing the code digest and when looking up user input, so
+// custom generators work as long as their output is stable under this
+// canonicalization.
 func normalizeUserCode(code string) string {
 	code = strings.ToUpper(strings.Join(strings.Fields(code), ""))
 	if !strings.Contains(code, "-") && len(code) == 8 {

@@ -232,12 +232,13 @@ func (s *fakeSessionStore) CreateAuthCode(
 func (s *fakeSessionStore) DeleteAuthCode(
 	_ context.Context,
 	code Digest,
-) error {
+) (bool, error) {
 	if s.err != nil {
-		return s.err
+		return false, s.err
 	}
+	_, ok := s.authCodes[code]
 	delete(s.authCodes, code)
-	return nil
+	return ok, nil
 }
 
 func (s *fakeSessionStore) GetRefreshToken(
@@ -264,12 +265,13 @@ func (s *fakeSessionStore) CreateRefreshToken(
 func (s *fakeSessionStore) DeleteRefreshToken(
 	_ context.Context,
 	token Digest,
-) error {
+) (bool, error) {
 	if s.err != nil {
-		return s.err
+		return false, s.err
 	}
+	_, ok := s.refreshTokens[token]
 	delete(s.refreshTokens, token)
-	return nil
+	return ok, nil
 }
 
 func (s *fakeSessionStore) GetDeviceCode(
@@ -319,15 +321,31 @@ func (s *fakeSessionStore) UpdateDeviceCode(
 	return nil
 }
 
-func (s *fakeSessionStore) DeleteDeviceCode(
+func (s *fakeSessionStore) TouchDeviceCode(
 	_ context.Context,
 	code Digest,
+	lastPolledAt int64,
 ) error {
 	if s.err != nil {
 		return s.err
 	}
-	delete(s.deviceCodes, code)
+	if c, ok := s.deviceCodes[code]; ok {
+		c.LastPolledAt = lastPolledAt
+		s.deviceCodes[code] = c
+	}
 	return nil
+}
+
+func (s *fakeSessionStore) DeleteDeviceCode(
+	_ context.Context,
+	code Digest,
+) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	_, ok := s.deviceCodes[code]
+	delete(s.deviceCodes, code)
+	return ok, nil
 }
 
 var _ SessionStore = (*fakeSessionStore)(nil)

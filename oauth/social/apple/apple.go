@@ -29,27 +29,23 @@
 //
 // # Usage
 //
-//	p, err := apple.New(apple.Config{
+//	p := apple.New(apple.Config{
 //	  ClientID:    "com.example.web",     // Services ID
 //	  TeamID:      "94Z27KF87Q",
 //	  KeyID:       "3JD9C6QQ7A",
 //	  PrivateKey:  keyPEM,                // contents of AuthKey_XXX.p8
 //	  RedirectURI: "https://id.example.com/oauth/callback/apple",
 //	})
-//	if err != nil { /* handle configuration error */ }
 //
 //	// Keep Apple's signing keys fresh in the background.
 //	scheduler.Dispatch(p.Keys())
 //
-//	s, err := oauth.New(cfg, oauth.WithIdentityProvider("apple", p))
+//	s := oauth.New(cfg, oauth.WithIdentityProvider("apple", p))
 package apple
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/x509"
 	"encoding/json/v2"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -124,27 +120,28 @@ type Provider struct {
 
 // New assembles an Apple [Provider] from the given configuration.
 //
-// It returns an error if a required [Config] field is missing or if the
-// private key cannot be parsed as an ES256-capable PKCS#8 key. Remember to
-// dispatch [Provider.Keys] to a scheduler so that ID token verification has
-// fresh signing keys available.
-func New(cfg Config) (*Provider, error) {
+// It panics if a required [Config] field is missing or if the private key
+// cannot be parsed as an ES256-capable PKCS#8 key; provider construction
+// happens once at startup, so misconfiguration is a programmer error.
+// Remember to dispatch [Provider.Keys] to a scheduler so that ID token
+// verification has fresh signing keys available.
+func New(cfg Config) *Provider {
 	switch {
 	case cfg.ClientID == "":
-		return nil, errors.New("Config.ClientID is required")
+		panic("apple: Config.ClientID is required")
 	case cfg.TeamID == "":
-		return nil, errors.New("Config.TeamID is required")
+		panic("apple: Config.TeamID is required")
 	case cfg.KeyID == "":
-		return nil, errors.New("Config.KeyID is required")
+		panic("apple: Config.KeyID is required")
 	case len(cfg.PrivateKey) == 0:
-		return nil, errors.New("Config.PrivateKey is required")
+		panic("apple: Config.PrivateKey is required")
 	case cfg.RedirectURI == "":
-		return nil, errors.New("Config.RedirectURI is required")
+		panic("apple: Config.RedirectURI is required")
 	}
 
 	key, err := parseKey(cfg.PrivateKey, cfg.KeyID)
 	if err != nil {
-		return nil, err
+		panic("apple: " + err.Error())
 	}
 
 	client := cfg.Client
@@ -176,20 +173,13 @@ func New(cfg Config) (*Provider, error) {
 		auth:  AuthEndpoint,
 		token: TokenEndpoint,
 		now:   time.Now,
-	}, nil
+	}
 }
 
-// parseKey decodes the PEM-encoded PKCS#8 private key and wraps it into an
-// ES256 signing key pair carrying the given key ID.
+// parseKey decodes the PEM-encoded private key and wraps it into an ES256
+// signing key pair carrying the given key ID.
 func parseKey(pemBytes []byte, kid string) (jwk.KeyPair, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return nil, errors.New(
-			"Config.PrivateKey is not PEM encoded",
-		)
-	}
-
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	signer, err := sign.Decode(pemBytes)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"failed to parse Config.PrivateKey: %w",
@@ -197,14 +187,7 @@ func parseKey(pemBytes []byte, kid string) (jwk.KeyPair, error) {
 		)
 	}
 
-	ec, ok := parsed.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, errors.New(
-			"Config.PrivateKey is not an ECDSA key",
-		)
-	}
-
-	key := jwk.NewKeyPair(jwa.ES256, kid, sign.From(ec))
+	key := jwk.NewKeyPair(jwa.ES256, kid, signer)
 	if key == nil {
 		return nil, errors.New(
 			"Config.PrivateKey is not usable for ES256 signing",
@@ -277,7 +260,6 @@ type user struct {
 		FirstName string `json:"firstName"`
 		LastName  string `json:"lastName"`
 	} `json:"name"`
-	Email string `json:"email"`
 }
 
 // Exchange implements [oauth.IdentityProvider].
@@ -290,66 +272,32 @@ func (p *Provider) Exchange(
 	ctx context.Context,
 	req *http.Request,
 ) (oauth.Claimant, error) {
-	if e := req.FormValue("error"); e != "" {
-		return oauth.Claimant{}, fmt.Errorf(
-			"authorization failed: %s",
-			e,
-		)
-	}
-
-	code := req.FormValue("code")
-	if code == "" {
-		return oauth.Claimant{}, errors.New(
-			"missing authorization code",
-		)
-	}
-
 	secret, err := p.clientSecret(ctx)
 	if err != nil {
 		return oauth.Claimant{}, err
 	}
 
-	tok, err := oidc.Exchange(ctx, p.client, p.token, url.Values{
-		"grant_type":    {"authorization_code"},
-		"code":          {code},
+	claims, err := oidc.Callback(ctx, p.client, p.token, req, url.Values{
 		"client_id":     {p.clientID},
 		"client_secret": {secret},
-		"redirect_uri":  {p.redirectURI},
-	})
+	}, p.redirectURI, p.verifier)
 	if err != nil {
 		return oauth.Claimant{}, err
-	}
-
-	if tok.IDToken == "" {
-		return oauth.Claimant{}, errors.New(
-			"token response is missing the id_token",
-		)
-	}
-
-	claims, err := p.verifier.Verify([]byte(tok.IDToken))
-	if err != nil {
-		return oauth.Claimant{}, fmt.Errorf(
-			"id token verification failed: %w",
-			err,
-		)
 	}
 
 	claimant := claims.Claimant()
 
 	// Apple shares the user's name only once, in the "user" form field of
-	// the very first callback; it never appears in the ID token.
-	if raw := req.FormValue("user"); raw != "" {
+	// the very first callback; it never appears in the ID token. The payload
+	// is unauthenticated form data from the user-agent, so only display
+	// metadata is merged — identity claims such as the email must come from
+	// the verified ID token.
+	if raw := req.FormValue("user"); raw != "" && claimant.Name == "" {
 		var u user
 		if err := json.Unmarshal([]byte(raw), &u); err == nil {
-			name := strings.TrimSpace(
+			claimant.Name = strings.TrimSpace(
 				u.Name.FirstName + " " + u.Name.LastName,
 			)
-			if claimant.Name == "" {
-				claimant.Name = name
-			}
-			if claimant.Email == "" {
-				claimant.Email = u.Email
-			}
 		}
 	}
 

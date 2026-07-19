@@ -87,13 +87,23 @@ func (g authCodeGrant) Authorize(
 	}
 
 	// Delete the code immediately to prevent replay attacks. Any failure
-	// past this point intentionally burns the code.
-	if err := pro.Sessions.DeleteAuthCode(ctx, digest); err != nil {
+	// past this point intentionally burns the code. If the code was already
+	// gone, a concurrent request won the race and this one must not issue
+	// tokens.
+	deleted, err := pro.Sessions.DeleteAuthCode(ctx, digest)
+	if err != nil {
 		return nil, pro.ServerError(
 			ctx,
 			"failed to delete authorization code",
 			err,
 		)
+	}
+	if !deleted {
+		return nil, &Error{
+			Status:      http.StatusBadRequest,
+			Code:        ErrorCodeInvalidGrant,
+			Description: "invalid or expired authorization code",
+		}
 	}
 
 	// Enforce expiry locally in addition to the store's TTL contract.
