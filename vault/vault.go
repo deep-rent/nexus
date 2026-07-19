@@ -97,8 +97,8 @@ var _ Vault = (*vault)(nil)
 // and algorithm identifiers, and PEM-encoded private key material.
 type Item struct {
 	Kid string `json:"kid"`
-	Pem string `json:"pem"`
 	Alg string `json:"alg"`
+	Pem string `json:"pem"`
 }
 
 // Items represents a collection of key configurations.
