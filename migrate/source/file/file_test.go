@@ -184,6 +184,33 @@ func TestSource_Parse(t *testing.T) {
 			false,
 			file.ErrInvalidVersion,
 		},
+		{
+			"uppercase direction",
+			"01_init.UP.sql",
+			0,
+			"",
+			0,
+			false,
+			file.ErrIllegalDirection,
+		},
+		{
+			"version max int64",
+			"9223372036854775807_init.up.sql",
+			9223372036854775807,
+			"init",
+			migrate.Up,
+			true,
+			nil,
+		},
+		{
+			"version overflow",
+			"9223372036854775808_init.up.sql",
+			0,
+			"",
+			0,
+			false,
+			file.ErrInvalidVersion,
+		},
 	}
 
 	for _, tt := range tests {

@@ -458,11 +458,13 @@ func TestDriver_Force(t *testing.T) {
 	}
 
 	// Manually inject a dirty state at version 1 and a clean state at version 2
+	sum1 := sha256.Sum256([]byte("1"))
+	sum2 := sha256.Sum256([]byte("2"))
 	query := `
     INSERT INTO migrations (version, checksum, dirty)
-    VALUES (1, '\x01', true), (2, '\x02', false)
+    VALUES (1, $1, true), (2, $2, false)
   `
-	if _, err := db.ExecContext(ctx, query); err != nil {
+	if _, err := db.ExecContext(ctx, query, sum1[:], sum2[:]); err != nil {
 		t.Fatalf("manual insert: should not have returned an error: %v", err)
 	}
 

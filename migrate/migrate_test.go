@@ -84,6 +84,46 @@ func setupDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestDirection_String(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		give migrate.Direction
+		want string
+	}{
+		{migrate.Up, "up"},
+		{migrate.Down, "down"},
+		{migrate.Direction(99), "unknown"},
+	}
+	for _, tt := range tests {
+		if got := tt.give.String(); got != tt.want {
+			t.Errorf("for %d: got %q; want %q", int(tt.give), got, tt.want)
+		}
+	}
+}
+
+func TestMigration_Compare(t *testing.T) {
+	t.Parallel()
+
+	up1 := migrate.Migration{Version: 1, Direction: migrate.Up}
+	down1 := migrate.Migration{Version: 1, Direction: migrate.Down}
+	up2 := migrate.Migration{Version: 2, Direction: migrate.Up}
+
+	if got := up1.Compare(up2); got >= 0 {
+		t.Errorf("lower version: got %d; want negative", got)
+	}
+	if got := up2.Compare(up1); got <= 0 {
+		t.Errorf("higher version: got %d; want positive", got)
+	}
+	if got := up1.Compare(up1); got != 0 {
+		t.Errorf("equal migrations: got %d; want 0", got)
+	}
+	// Up sorts before down at the same version.
+	if got := up1.Compare(down1); got >= 0 {
+		t.Errorf("up vs down: got %d; want negative", got)
+	}
+}
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -286,6 +326,45 @@ func TestMigrator_Up(t *testing.T) {
 		}
 		if drv.IsLocked {
 			t.Error("lock was not released")
+		}
+	})
+
+	t.Run("error source list fails", func(t *testing.T) {
+		t.Parallel()
+		src := srcmock.New()
+		src.ListErr = errors.New("storage unreachable")
+		drv := drvmock.New()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(t.Context())
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+		if drv.IsLocked {
+			t.Error("lock was not released")
+		}
+	})
+
+	t.Run("unlock error is not returned", func(t *testing.T) {
+		t.Parallel()
+		src := srcmock.New(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   []byte("CREATE TABLE users;"),
+			},
+		)
+		drv := drvmock.New()
+		drv.UnlockErr = errors.New("connection lost")
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		// A failed unlock is logged but must not fail an otherwise
+		// successful migration run.
+		if err := m.Up(t.Context()); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 1 {
+			t.Errorf("state size: got %d; want 1", len(drv.State()))
 		}
 	})
 
@@ -635,6 +714,59 @@ func TestMigrator_MigrateTo(t *testing.T) {
 		}
 	})
 
+	t.Run("revert all to zero", func(t *testing.T) {
+		t.Parallel()
+		content5 := []byte("DROP t1")
+		full := srcmock.New(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   content1,
+			},
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Down,
+				Content:   content5,
+			},
+			migrate.SourceScript{
+				Version:   2,
+				Direction: migrate.Up,
+				Content:   content2,
+			},
+			migrate.SourceScript{
+				Version:   2,
+				Direction: migrate.Down,
+				Content:   content3,
+			},
+		)
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(content2)})
+		m := migrate.New(migrate.WithSource(full), migrate.WithDriver(drv))
+
+		if err := m.MigrateTo(t.Context(), 0); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 0 {
+			t.Errorf("state size: got %d; want 0", len(drv.State()))
+		}
+	})
+
+	t.Run("no-op at target", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(content2)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.MigrateTo(t.Context(), 2); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 2 {
+			t.Errorf("state size: got %d; want 2", len(drv.State()))
+		}
+	})
+
 	t.Run("error missing down script during revert", func(t *testing.T) {
 		t.Parallel()
 		drv := drvmock.New()
@@ -947,31 +1079,78 @@ func TestMigrator_Version(t *testing.T) {
 func TestMigrator_DryRun(t *testing.T) {
 	t.Parallel()
 
-	content := []byte("CREATE TABLE dummy;")
+	up := []byte("CREATE TABLE dummy;")
+	down := []byte("DROP TABLE dummy;")
 	src := srcmock.New(
 		migrate.SourceScript{
 			Version:   1,
 			Direction: migrate.Up,
-			Content:   content,
+			Content:   up,
+		},
+		migrate.SourceScript{
+			Version:   1,
+			Direction: migrate.Down,
+			Content:   down,
 		},
 	)
-	drv := drvmock.New()
-	m := migrate.New(
-		migrate.WithSource(src),
-		migrate.WithDriver(drv),
-		migrate.WithDryRun(true),
-	)
 
-	if err := m.Up(t.Context()); err != nil {
-		t.Errorf("should not have returned an error: %v", err)
-	}
+	t.Run("up", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		m := migrate.New(
+			migrate.WithSource(src),
+			migrate.WithDriver(drv),
+			migrate.WithDryRun(true),
+		)
 
-	if len(drv.State()) != 0 {
-		t.Errorf("state size: got %d; want 0", len(drv.State()))
-	}
-	if drv.IsLocked {
-		t.Error("lock was not released")
-	}
+		if err := m.Up(t.Context()); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+
+		if len(drv.State()) != 0 {
+			t.Errorf("state size: got %d; want 0", len(drv.State()))
+		}
+		if drv.IsLocked {
+			t.Error("lock was not released")
+		}
+	})
+
+	t.Run("down", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(up)})
+		m := migrate.New(
+			migrate.WithSource(src),
+			migrate.WithDriver(drv),
+			migrate.WithDryRun(true),
+		)
+
+		if err := m.Down(t.Context()); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+
+		if len(drv.State()) != 1 {
+			t.Errorf("state size: got %d; want 1", len(drv.State()))
+		}
+	})
+
+	t.Run("migrate to", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		m := migrate.New(
+			migrate.WithSource(src),
+			migrate.WithDriver(drv),
+			migrate.WithDryRun(true),
+		)
+
+		if err := m.MigrateTo(t.Context(), 1); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+
+		if len(drv.State()) != 0 {
+			t.Errorf("state size: got %d; want 0", len(drv.State()))
+		}
+	})
 }
 
 func TestMigrator_Integration(t *testing.T) {
