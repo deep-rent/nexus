@@ -121,7 +121,13 @@ type Scheduler interface {
 	// until the scheduler is shut down. Multiple ticks can be dispatched
 	// concurrently without blocking each other. Dispatching after Shutdown
 	// has been called does nothing.
-	Dispatch(tick Tick)
+	//
+	// It returns a function that stops this tick alone, leaving the rest of
+	// the scheduler running. The function may be called more than once, and
+	// unlike Shutdown it does not wait for a run already in progress to
+	// finish. Callers that only stop ticks by shutting the whole scheduler
+	// down may discard it.
+	Dispatch(tick Tick) context.CancelFunc
 	// Shutdown gracefully stops the scheduler. It cancels the scheduler's
 	// context and waits for all its pending tasks to complete. Shutdown blocks
 	// until all dispatched goroutines have finished. Once it has been called,
@@ -169,42 +175,55 @@ func (s *scheduler) Context() context.Context {
 }
 
 // Dispatch implements [Scheduler].
-func (s *scheduler) Dispatch(tick Tick) {
+func (s *scheduler) Dispatch(tick Tick) context.CancelFunc {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Starting new work once Shutdown has begun would both outlive the
 	// scheduler and add to a WaitGroup that is already being waited on.
 	if s.closed {
-		return
+		return func() {}
 	}
 
+	// Each tick gets its own context, so that it can be stopped on its own
+	// while the scheduler keeps running.
+	ctx, cancel := context.WithCancel(s.ctx)
+
 	s.wg.Go(func() {
+		// Releases the context from its parent once the loop is done, so that
+		// short-lived ticks do not pile up on a long-lived scheduler.
+		defer cancel()
+
 		timer := time.NewTimer(0)
 		defer timer.Stop()
 
 		for {
 			select {
-			case <-s.ctx.Done():
+			case <-ctx.Done():
 				return
 			case <-timer.C:
 				// A ready timer and a canceled context are chosen between at
 				// random, so the context is checked explicitly before
 				// committing to another run.
-				if s.ctx.Err() != nil {
+				if ctx.Err() != nil {
 					return
 				}
-				timer.Reset(s.run(tick))
+				timer.Reset(s.run(ctx, tick))
 			}
 		}
 	})
+
+	return cancel
 }
 
 // run executes a single iteration of tick, converting a panic into a log
 // record. A scheduler shared by unrelated jobs must not let one of them take
 // down the process, so a panicking tick is reported and rescheduled after the
 // recovery delay rather than being propagated.
-func (s *scheduler) run(tick Tick) (d time.Duration) {
+func (s *scheduler) run(
+	ctx context.Context,
+	tick Tick,
+) (d time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.logger.Error(
@@ -216,7 +235,7 @@ func (s *scheduler) run(tick Tick) (d time.Duration) {
 		}
 	}()
 
-	return tick.Run(s.ctx)
+	return tick.Run(ctx)
 }
 
 // Shutdown implements [Scheduler].
@@ -255,8 +274,12 @@ type once struct {
 // Context implements [Scheduler].
 func (o *once) Context() context.Context { return o.ctx }
 
-// Dispatch implements [Scheduler].
-func (o *once) Dispatch(tick Tick) { tick.Run(o.ctx) }
+// Dispatch implements [Scheduler]. The returned function does nothing, since
+// the tick has already run by the time Dispatch returns.
+func (o *once) Dispatch(tick Tick) context.CancelFunc {
+	tick.Run(o.ctx)
+	return func() {}
+}
 
 // Shutdown implements [Scheduler].
 func (o *once) Shutdown() {}
