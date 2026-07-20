@@ -347,6 +347,14 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 		if err := rows.Scan(&rec.Version, &checksum, &rec.Dirty); err != nil {
 			return nil, err
 		}
+		// Reject corrupt rows instead of silently zero-padding, which would
+		// surface much later as a confusing checksum mismatch.
+		if len(checksum) != len(rec.Checksum) {
+			return nil, fmt.Errorf(
+				"corrupt checksum for version %d: got %d bytes, want %d",
+				rec.Version, len(checksum), len(rec.Checksum),
+			)
+		}
 		copy(rec.Checksum[:], checksum)
 		records = append(records, rec)
 	}

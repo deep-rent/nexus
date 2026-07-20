@@ -378,6 +378,30 @@ func TestDriver_Execute_FailureNonTransactional(t *testing.T) {
 	}
 }
 
+func TestDriver_Applied_CorruptChecksum(t *testing.T) {
+	db := setupDB(t)
+
+	drv := postgres.New(db)
+	ctx := context.Background()
+
+	if err := drv.Init(ctx); err != nil {
+		t.Fatalf("init: should not have returned an error: %v", err)
+	}
+
+	// Insert a row with a truncated checksum, bypassing the driver.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO "public"."migrations" (version, checksum, dirty)
+     VALUES (1, '\xdeadbeef', false)`,
+	)
+	if err != nil {
+		t.Fatalf("insert: should not have returned an error: %v", err)
+	}
+
+	if _, err := drv.Applied(ctx); err == nil {
+		t.Error("should have returned an error for a corrupt checksum")
+	}
+}
+
 func TestDriver_Force(t *testing.T) {
 	db := setupDB(t)
 
