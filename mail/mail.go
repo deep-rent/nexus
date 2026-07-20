@@ -411,8 +411,13 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	delta := time.Since(start)
 
 	defer func() {
-		// Drain body to ensure connection reuse:
-		_, _ = io.Copy(io.Discard, res.Body)
+		if _, err := io.Copy(io.Discard, res.Body); err != nil {
+			s.logger.WarnContext(
+				ctx,
+				"Failed to drain response body",
+				log.Err(err),
+			)
+		}
 		err := res.Body.Close()
 		if err != nil {
 			s.logger.WarnContext(
