@@ -158,9 +158,9 @@ func New(cfg Config) *Throttle {
 
 	switch {
 	case limit <= 0:
-		panic("throttle: rate must be positive")
+		panic("rate must be positive")
 	case burst <= 0:
-		panic("throttle: burst must be positive")
+		panic("burst must be positive")
 	}
 
 	key := cfg.Key

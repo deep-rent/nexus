@@ -34,7 +34,7 @@ type Attempts struct {
 // if s is nil.
 func Count(s Strategy) *Attempts {
 	if s == nil {
-		panic("backoff: Count requires a non-nil strategy")
+		panic("count requires a non-nil strategy")
 	}
 	return &Attempts{s: s}
 }

@@ -89,7 +89,7 @@ func Ready(ctx context.Context) {
 // application carries no indication of its origin.
 func Named(name string, c Component) Component {
 	if c == nil {
-		panic("app: Named requires a non-nil component")
+		panic("Named requires a non-nil component")
 	}
 	return func(ctx context.Context) error {
 		log := Logger(ctx).With(slog.String("component", name))
@@ -128,7 +128,7 @@ func Named(name string, c Component) Component {
 // Graceful panics if start or stop is nil.
 func Graceful(start Component, stop func(ctx context.Context) error) Component {
 	if start == nil || stop == nil {
-		panic("requires non-nil start and stop functions")
+		panic("start and stop functions must be provided")
 	}
 	return func(ctx context.Context) error {
 		errCh := make(chan error, 1)

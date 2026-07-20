@@ -130,20 +130,20 @@ type Provider struct {
 func New(cfg Config) *Provider {
 	switch {
 	case cfg.ClientID == "":
-		panic("apple: Config.ClientID is required")
+		panic("client ID is required")
 	case cfg.TeamID == "":
-		panic("apple: Config.TeamID is required")
+		panic("team ID is required")
 	case cfg.KeyID == "":
-		panic("apple: Config.KeyID is required")
+		panic("key ID is required")
 	case len(cfg.PrivateKey) == 0:
-		panic("apple: Config.PrivateKey is required")
+		panic("private key is required")
 	case cfg.RedirectURI == "":
-		panic("apple: Config.RedirectURI is required")
+		panic("redirect URI is required")
 	}
 
 	key, err := parseKey(cfg.PrivateKey, cfg.KeyID)
 	if err != nil {
-		panic("apple: " + err.Error())
+		panic(err.Error())
 	}
 
 	client := cfg.Client

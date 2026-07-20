@@ -103,11 +103,11 @@ type Provider struct {
 func New(cfg Config) *Provider {
 	switch {
 	case cfg.ClientID == "":
-		panic("google: Config.ClientID is required")
+		panic("client ID is required")
 	case cfg.ClientSecret == "":
-		panic("google: Config.ClientSecret is required")
+		panic("client secret is required")
 	case cfg.RedirectURI == "":
-		panic("google: Config.RedirectURI is required")
+		panic("redirect URI is required")
 	}
 
 	client := cfg.Client

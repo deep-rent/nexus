@@ -143,10 +143,10 @@ func NewController[T any](
 	opts ...Option,
 ) Controller[T] {
 	if url == "" {
-		panic("cache: NewController requires a non-empty URL")
+		panic("URL must not be empty")
 	}
 	if mapper == nil {
-		panic("cache: NewController requires a non-nil mapper")
+		panic("mapper is required")
 	}
 
 	cfg := config{
