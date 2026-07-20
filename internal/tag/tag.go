@@ -109,10 +109,14 @@ func (t *Tag) Opts() iter.Seq2[string, string] {
 
 			// Now, parse the individual part (e.g., "default:'foo,bar'").
 			k, v, found := strings.Cut(part, ":")
+			k = strings.TrimRightFunc(k, unicode.IsSpace)
 			if found {
-				v = quote.Remove(v)
+				// Trim the surrounding whitespace before removing the quotes,
+				// so that " 'a b' " loses only the outer padding and keeps the
+				// spaces the quotes were placed around.
+				v = quote.Remove(strings.TrimFunc(v, unicode.IsSpace))
 			}
-			if !yield(strings.TrimRightFunc(k, unicode.IsSpace), v) {
+			if !yield(k, v) {
 				return
 			}
 		}

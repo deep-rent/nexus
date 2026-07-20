@@ -115,7 +115,7 @@ func TestTag_Opts(t *testing.T) {
 			"  flag_a ,  key_b : value_c , flag_d  ",
 			map[string]string{
 				"flag_a": "",
-				"key_b":  " value_c ",
+				"key_b":  "value_c",
 				"flag_d": "",
 			},
 		},
@@ -147,6 +147,50 @@ func TestTag_Opts(t *testing.T) {
 			p := tag.Parse(s)
 			got := maps.Collect(p.Opts())
 			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// The documentation promises values are trimmed of surrounding whitespace,
+// while whitespace the quotes were placed around is preserved.
+func TestOpts_ValueTrimming(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts string
+		want map[string]string
+	}{
+		{
+			"padded value",
+			"unit: s ",
+			map[string]string{"unit": "s"},
+		},
+		{
+			"padded quoted value",
+			"default: ' a b ' ",
+			map[string]string{"default": " a b "},
+		},
+		{
+			"padded key",
+			" key : value",
+			map[string]string{"key": "value"},
+		},
+		{
+			"empty value after colon",
+			"key: ",
+			map[string]string{"key": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := tag.Parse("dummy," + tt.opts)
+			if got := maps.Collect(p.Opts()); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
