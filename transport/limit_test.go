@@ -69,9 +69,9 @@ func roundTrip(t *testing.T, rt http.RoundTripper) *http.Response {
 	return res
 }
 
-func TestNewLimitTransport_UnderLimit(t *testing.T) {
+func TestLimit_UnderLimit(t *testing.T) {
 	const body = "hello"
-	rt := transport.NewLimitTransport(&stubTripper{body: body}, 1024)
+	rt := transport.Limit(&stubTripper{body: body}, 1024)
 
 	res := roundTrip(t, rt)
 	got, err := io.ReadAll(res.Body)
@@ -83,9 +83,9 @@ func TestNewLimitTransport_UnderLimit(t *testing.T) {
 	}
 }
 
-func TestNewLimitTransport_AtLimit(t *testing.T) {
+func TestLimit_AtLimit(t *testing.T) {
 	const body = "hello"
-	rt := transport.NewLimitTransport(
+	rt := transport.Limit(
 		&stubTripper{body: body},
 		int64(len(body)),
 	)
@@ -100,9 +100,9 @@ func TestNewLimitTransport_AtLimit(t *testing.T) {
 	}
 }
 
-func TestNewLimitTransport_OverLimit(t *testing.T) {
+func TestLimit_OverLimit(t *testing.T) {
 	const body = "hello world"
-	rt := transport.NewLimitTransport(&stubTripper{body: body}, 5)
+	rt := transport.Limit(&stubTripper{body: body}, 5)
 
 	res := roundTrip(t, rt)
 	got, err := io.ReadAll(res.Body)
@@ -120,8 +120,8 @@ func TestNewLimitTransport_OverLimit(t *testing.T) {
 	}
 }
 
-func TestNewLimitTransport_OverLimitIsSticky(t *testing.T) {
-	rt := transport.NewLimitTransport(&stubTripper{body: "hello world"}, 5)
+func TestLimit_OverLimitIsSticky(t *testing.T) {
+	rt := transport.Limit(&stubTripper{body: "hello world"}, 5)
 
 	res := roundTrip(t, rt)
 	if _, err := io.ReadAll(res.Body); !errors.Is(
@@ -146,10 +146,10 @@ func TestNewLimitTransport_OverLimitIsSticky(t *testing.T) {
 	}
 }
 
-func TestNewLimitTransport_SmallReads(t *testing.T) {
+func TestLimit_SmallReads(t *testing.T) {
 	// Reading through a buffer smaller than the limit must accumulate the
 	// bytes consumed rather than resetting the allowance per call.
-	rt := transport.NewLimitTransport(&stubTripper{body: "abcdefghij"}, 4)
+	rt := transport.Limit(&stubTripper{body: "abcdefghij"}, 4)
 
 	res := roundTrip(t, rt)
 
@@ -170,17 +170,17 @@ func TestNewLimitTransport_SmallReads(t *testing.T) {
 	}
 }
 
-func TestNewLimitTransport_Disabled(t *testing.T) {
+func TestLimit_Disabled(t *testing.T) {
 	next := &stubTripper{body: "hello"}
 	for _, max := range []int64{0, -1} {
-		if rt := transport.NewLimitTransport(next, max); rt != next {
+		if rt := transport.Limit(next, max); rt != next {
 			t.Errorf("max %d: expected next to be returned unwrapped", max)
 		}
 	}
 }
 
-func TestNewLimitTransport_NilBody(t *testing.T) {
-	rt := transport.NewLimitTransport(&stubTripper{bodyless: true}, 8)
+func TestLimit_NilBody(t *testing.T) {
+	rt := transport.Limit(&stubTripper{bodyless: true}, 8)
 
 	res := roundTrip(t, rt)
 	if res.Body != nil {
@@ -188,9 +188,9 @@ func TestNewLimitTransport_NilBody(t *testing.T) {
 	}
 }
 
-func TestNewLimitTransport_Close(t *testing.T) {
+func TestLimit_Close(t *testing.T) {
 	next := &stubTripper{body: "hello"}
-	rt := transport.NewLimitTransport(next, 8)
+	rt := transport.Limit(next, 8)
 
 	res := roundTrip(t, rt)
 	if err := res.Body.Close(); err != nil {

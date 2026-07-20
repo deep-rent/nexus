@@ -388,7 +388,7 @@ func New(opts ...Option) http.RoundTripper {
 
 	// Cap response bodies first so that the limit also applies to the
 	// intermediate responses observed by the retry transport.
-	t = NewLimitTransport(t, cfg.maxResponseBytes)
+	t = Limit(t, cfg.maxResponseBytes)
 
 	// Add headers if any.
 	if len(cfg.headers) > 0 {

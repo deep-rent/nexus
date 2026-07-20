@@ -33,7 +33,7 @@ const DefaultMaxResponseBytes = 1 << 20 // 1 MB
 // clean end of input surface this error instead.
 var ErrBodyTooLarge = errors.New("response body too large")
 
-// NewLimitTransport returns an [http.RoundTripper] that caps the size of every
+// Limit returns an [http.RoundTripper] that caps the size of every
 // response body produced by next at max bytes.
 //
 // Reads up to and including the limit behave normally. A body that carries
@@ -43,7 +43,7 @@ var ErrBodyTooLarge = errors.New("response body too large")
 //
 // A nonpositive max disables the limit, in which case next is returned
 // unchanged.
-func NewLimitTransport(next http.RoundTripper, max int64) http.RoundTripper {
+func Limit(next http.RoundTripper, max int64) http.RoundTripper {
 	if max <= 0 {
 		return next
 	}
