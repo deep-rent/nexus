@@ -29,7 +29,6 @@ package header
 
 import (
 	"iter"
-	"mime"
 	"net/http"
 	"slices"
 	"strconv"
@@ -88,78 +87,6 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 		}
 	}
 	return 0
-}
-
-// Lifetime determines the cache lifetime of a response based on caching
-// headers. It accepts a clock function to calculate relative times. It returns
-// a duration of 0 if the response is not cacheable or does not carry any
-// caching information.
-//
-// Directives are evaluated as a set rather than in the order they appear, so
-// a no-store or no-cache anywhere in Cache-Control suppresses the lifetime
-// even when a max-age precedes it. A no-cache that names specific fields
-// (no-cache="Set-Cookie") only marks those fields for revalidation and leaves
-// the lifetime intact.
-//
-// The time a response has already spent in upstream caches, as reported by
-// the Age header, is subtracted from a max-age. No such correction applies to
-// Expires, which names an absolute instant and is therefore measured against
-// the clock directly.
-func Lifetime(h http.Header, now func() time.Time) time.Duration {
-	// Cache-Control takes precedence over Expires
-	if v := h.Get("Cache-Control"); v != "" {
-		var (
-			maxAge time.Duration
-			found  bool
-		)
-
-		for k, v := range Directives(v) {
-			switch k {
-			case "no-store":
-				return 0
-			case "no-cache":
-				// Only the unqualified form forbids reuse outright.
-				if v == "" {
-					return 0
-				}
-			case "max-age":
-				if d, err := strconv.ParseInt(v, 10, 64); err == nil {
-					// A negative age denotes a response that is already
-					// stale, not one that expired in the past.
-					maxAge, found = max(0, time.Duration(d)*time.Second), true
-				}
-			}
-		}
-
-		if found {
-			// What remains of the age budget after the time the response
-			// already spent being relayed.
-			return max(0, maxAge-Age(h))
-		}
-	}
-	if v := h.Get("Expires"); v != "" {
-		if t, err := http.ParseTime(v); err == nil {
-			if d := t.Sub(now()); d > 0 {
-				return d
-			}
-		}
-	}
-	return 0
-}
-
-// Age reports how long a response has been held in caches on its way to the
-// client, as stated by the Age header. It returns 0 if the header is absent,
-// malformed, or negative.
-func Age(h http.Header) time.Duration {
-	v := h.Get("Age")
-	if v == "" {
-		return 0
-	}
-	d, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || d < 0 {
-		return 0
-	}
-	return time.Duration(d) * time.Second
 }
 
 // Credentials extracts the credentials from the Authorization header of an
@@ -322,48 +249,6 @@ func Link(s, rel string) string {
 	return ""
 }
 
-// Filename extracts the intended filename from a Content-Disposition header.
-//
-// It automatically handles both the standard "filename" parameter and the
-// RFC 6266 "filename*" parameter, which is used for non-ASCII (UTF-8) names.
-// It returns an empty string if the header is missing, malformed, or does
-// not contain a filename.
-//
-// The value is chosen by whoever sent the response, so it is reduced to a bare
-// base name: directory components are stripped, and names that would resolve
-// to a directory or carry a null byte are rejected. Without this, a header
-// such as `attachment; filename="../../etc/passwd"` would hand the caller a
-// path that escapes the directory it is joined to. The result is still
-// untrusted input and should not be used as a path without further checks.
-func Filename(h http.Header) string {
-	v := h.Get("Content-Disposition")
-	if v == "" {
-		return ""
-	}
-	_, params, err := mime.ParseMediaType(v)
-	if err != nil {
-		return ""
-	}
-	// The filename* parameter is decoded automatically.
-	return basename(params["filename"])
-}
-
-// basename reduces a filename supplied by a remote party to its last path
-// element, rejecting values that cannot name a file.
-func basename(name string) string {
-	// Both separators are stripped regardless of the host platform, since the
-	// sender may report a Windows path to a server running elsewhere.
-	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
-		name = name[i+1:]
-	}
-
-	name = strings.TrimSpace(name)
-	if name == "." || name == ".." || strings.ContainsRune(name, 0) {
-		return ""
-	}
-	return name
-}
-
 // Header represents a single HTTP header key-value pair.
 type Header struct {
 	// Key is the canonicalized header name.
@@ -400,45 +285,5 @@ func UserAgent(name, version, comment string) Header {
 	return Header{
 		Key:   "User-Agent",
 		Value: value,
-	}
-}
-
-// transport is an internal [http.RoundTripper] that injects static headers.
-type transport struct {
-	// wrapped is the underlying RoundTripper.
-	wrapped http.RoundTripper
-	// headers are the static headers to be injected into each request.
-	headers []Header
-}
-
-// RoundTrip clones the request and adds static headers before delegating.
-func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	clone := req.Clone(req.Context())
-	for _, h := range t.headers {
-		clone.Header.Set(h.Key, h.Value)
-	}
-	return t.wrapped.RoundTrip(clone)
-}
-
-var _ http.RoundTripper = (*transport)(nil)
-
-// NewTransport wraps a base transport and sets a static set of headers on
-// each outgoing request. If no headers are provided, the base transport is
-// returned unmodified.
-//
-// The headers are copied, so later changes to the caller's slice do not affect
-// the transport. The resulting transport also clones each request before
-// delegating, so the original request is not changed either.
-func NewTransport(
-	t http.RoundTripper,
-	headers ...Header,
-) http.RoundTripper {
-	if len(headers) == 0 {
-		return t
-	}
-	return &transport{
-		wrapped: t,
-		// A variadic call site may pass a slice the caller keeps hold of.
-		headers: slices.Clone(headers),
 	}
 }
