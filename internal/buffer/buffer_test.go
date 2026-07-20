@@ -15,6 +15,7 @@
 package buffer_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/deep-rent/nexus/internal/buffer"
@@ -71,58 +72,114 @@ func TestNewPool_SizeClamping(t *testing.T) {
 	}
 }
 
-func TestPool_GetPut(t *testing.T) {
+func TestPool_GetReturnsUsableBuffer(t *testing.T) {
 	t.Parallel()
 
-	min, max := 64, 1024
-	p := buffer.NewPool(min, max)
+	minSize, maxSize := 64, 1024
+	p := buffer.NewPool(minSize, maxSize)
 
-	b1 := p.Get()
-	if got, want := cap(b1), min; got != want {
-		t.Fatalf("got capacity %d; want %d", got, want)
-	}
+	for range 10 {
+		buf := p.Get()
 
-	p.Put(b1)
+		if got := cap(buf); got < minSize {
+			t.Errorf("capacity: got %d; want at least %d", got, minSize)
+		}
 
-	b2 := p.Get()
-	if &b1[0] != &b2[0] {
-		t.Error("should have returned the recycled buffer")
+		// io.CopyBuffer, which is how httputil.ReverseProxy consumes this
+		// pool, panics on a zero-length buffer.
+		if len(buf) == 0 {
+			t.Error("length: got 0; want a writable buffer")
+		}
+
+		p.Put(buf)
 	}
 }
 
-func TestPool_Put_DiscardOversized(t *testing.T) {
+// A caller that re-slices a buffer while using it must not poison the pool
+// for whoever gets it next.
+func TestPool_PutRestoresLength(t *testing.T) {
 	t.Parallel()
 
-	min, max := 64, 128
-	p := buffer.NewPool(min, max)
+	minSize, maxSize := 64, 1024
+	p := buffer.NewPool(minSize, maxSize)
 
-	b1 := p.Get()
-	b1[0] = 10
-	p.Put(b1)
-
-	// Buffer exceeds max capacity
-	bO := make([]byte, min, max+1)
-	bO[0] = 42
-	p.Put(bO)
-
-	bR := p.Get()
-	if &b1[0] != &bR[0] {
-		t.Error("should have returned the recycled buffer b1")
-	}
-	if got, want := int(bR[0]), 10; got != want {
-		t.Errorf("recycled b1: got %d; want %d", got, want)
+	tests := []struct {
+		name string
+		cut  func([]byte) []byte
+	}{
+		{"emptied", func(b []byte) []byte { return b[:0] }},
+		{"halved", func(b []byte) []byte { return b[:len(b)/2] }},
+		{"whole", func(b []byte) []byte { return b }},
 	}
 
-	// Buffer at max capacity
-	bM := make([]byte, min, max)
-	bM[0] = 99
-	p.Put(bM)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p.Put(tt.cut(p.Get()))
 
-	bK := p.Get()
-	if &bM[0] != &bK[0] {
-		t.Error("should have returned the recycled buffer bM")
+			// The pool may hand back a fresh buffer instead of the recycled
+			// one, so this asserts the invariant, not the identity.
+			if got := p.Get(); len(got) == 0 {
+				t.Error("length: got 0; want a writable buffer")
+			}
+		})
 	}
-	if got, want := int(bK[0]), 99; got != want {
-		t.Errorf("recycled bM: got %d; want %d", got, want)
+}
+
+// A buffer larger than the limit must never come back out of the pool.
+func TestPool_PutDiscardsOversized(t *testing.T) {
+	t.Parallel()
+
+	minSize, maxSize := 64, 128
+	p := buffer.NewPool(minSize, maxSize)
+
+	// Offer far more oversized buffers than the pool could plausibly hold, so
+	// that a leaked one would almost certainly resurface below.
+	for range 100 {
+		p.Put(make([]byte, maxSize+1))
 	}
+
+	for range 100 {
+		if got := cap(p.Get()); got > maxSize {
+			t.Fatalf("capacity: got %d; want at most %d", got, maxSize)
+		}
+	}
+}
+
+// A buffer sitting exactly on the limit is still worth recycling.
+func TestPool_PutAcceptsMaxSized(t *testing.T) {
+	t.Parallel()
+
+	minSize, maxSize := 64, 128
+	p := buffer.NewPool(minSize, maxSize)
+
+	buf := make([]byte, maxSize)
+	p.Put(buf)
+
+	if got := p.Get(); len(got) == 0 {
+		t.Error("length: got 0; want a writable buffer")
+	}
+}
+
+func TestPool_Concurrent(t *testing.T) {
+	t.Parallel()
+
+	p := buffer.NewPool(64, 1024)
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200 {
+				buf := p.Get()
+				if len(buf) == 0 {
+					t.Error("length: got 0; want a writable buffer")
+					return
+				}
+				buf[0] = 1
+				p.Put(buf[:len(buf)/2])
+			}
+		}()
+	}
+	wg.Wait()
 }

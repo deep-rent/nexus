@@ -45,11 +45,16 @@ import (
 //
 // It reduces allocations for large response bodies by reusing byte slices,
 // thus lowering GC pressure.
+//
+// Buffers handed out by [Pool.Get] always have a non-zero length, which is
+// what consumers such as [io.CopyBuffer] require. A [sync.Pool] may drop
+// pooled items at any time, so a buffer put back is not guaranteed to be the
+// one handed out next.
 type Pool struct {
 	// pool is the underlying [sync.Pool] storing buffer pointers.
 	pool sync.Pool
-	// size is the maximum capacity of a buffer allowed back into the pool.
-	size int
+	// max is the largest capacity allowed back into the pool.
+	max int
 }
 
 // NewPool creates a new [Pool] that returns buffers of at least minSize bytes.
@@ -73,11 +78,12 @@ func NewPool(minSize, maxSize int) *Pool {
 	}
 	return &Pool{
 		pool: sync.Pool{New: alloc},
-		size: maxSize,
+		max:  maxSize,
 	}
 }
 
-// Get returns a reusable byte slice from the [Pool].
+// Get returns a reusable byte slice from the [Pool]. Its length is always
+// greater than zero.
 func (b *Pool) Get() []byte {
 	return *b.pool.Get().(*[]byte)
 }
@@ -87,11 +93,24 @@ func (b *Pool) Get() []byte {
 // If the capacity of the provided slice exceeds the maxSize defined during
 // initialization, the buffer is dropped to allow the GC to reclaim memory and
 // prevent the pool from holding onto excessively large slices.
+//
+// The slice is restored to its full capacity before being stored. Callers
+// commonly re-slice a buffer while using it, and a buffer put back as buf[:0]
+// would otherwise be handed to the next caller with no room to write into.
 func (b *Pool) Put(buf []byte) {
 	// Avoid holding on to overly large buffers.
-	if cap(buf) <= b.size {
-		b.pool.Put(&buf)
+	if cap(buf) > b.max {
+		return
 	}
+
+	// Nothing can be read into a zero-length slice; io.CopyBuffer panics on
+	// one, and that is precisely how httputil.ReverseProxy consumes this pool.
+	buf = buf[:cap(buf)]
+	if len(buf) == 0 {
+		return
+	}
+
+	b.pool.Put(&buf)
 }
 
 var _ httputil.BufferPool = (*Pool)(nil)
