@@ -31,6 +31,7 @@ import (
 	"iter"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,13 +44,17 @@ import (
 //
 // For example, parsing "no-cache, max-age=3600" would yield twice: first
 // "no-cache", "" and then "max-age", "3600".
+//
+// Keys are lowercased. Values are unquoted, and commas inside a quoted value
+// do not split the header, so `no-cache="Set-Cookie", max-age=60` yields
+// "no-cache", "Set-Cookie" followed by "max-age", "60".
 func Directives(s string) iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
-		for kv := range strings.SplitSeq(s, ",") {
+		for kv := range fields(s, ',') {
 			k, v, ok := strings.Cut(strings.TrimSpace(kv), "=")
 			k = ascii.ToLower(strings.TrimSpace(k))
 			if ok {
-				v = strings.TrimSpace(v)
+				v = unquote(strings.TrimSpace(v))
 			}
 			if !yield(k, v) {
 				return
@@ -139,18 +144,18 @@ func Credentials(h http.Header, scheme string) string {
 // 1.0, while out-of-range values are clamped into the [0.0, 1.0] interval.
 func Preferences(s string) iter.Seq2[string, float64] {
 	return func(yield func(string, float64) bool) {
-		for part := range strings.SplitSeq(s, ",") {
+		for part := range fields(s, ',') {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
 			}
-			params := strings.Split(part, ";")
+			params := slices.Collect(fields(part, ';'))
 			q := 1.0
 			for i := 1; i < len(params); i++ {
 				p := strings.TrimSpace(params[i])
 				k, v, found := strings.Cut(p, "=")
 				if found && strings.TrimSpace(k) == "q" {
-					v = strings.TrimSpace(v)
+					v = unquote(strings.TrimSpace(v))
 					if f, err := strconv.ParseFloat(v, 64); err == nil {
 						q = min(1.0, max(0.0, f))
 					}
@@ -224,10 +229,12 @@ func MediaType(h http.Header) string {
 // and their corresponding URLs.
 //
 // If a link has multiple space-separated relations (e.g., rel="next archive"),
-// it yields the URL for each relation separately.
+// it yields the URL for each relation separately. Commas inside the angle
+// brackets belong to the link target and do not separate links, which matters
+// for URLs whose query string enumerates several values.
 func Links(s string) iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
-		for part := range strings.SplitSeq(s, ",") {
+		for part := range fields(s, ',') {
 			sidx := strings.IndexByte(part, '<')
 			eidx := strings.IndexByte(part, '>')
 
@@ -238,14 +245,14 @@ func Links(s string) iter.Seq2[string, string] {
 			url := part[sidx+1 : eidx]
 
 			// Parse the parameters following the URL.
-			params := strings.SplitSeq(part[eidx+1:], ";")
+			params := fields(part[eidx+1:], ';')
 			for p := range params {
 				p = strings.TrimSpace(p)
 				k, v, found := strings.Cut(p, "=")
 
 				if found && ascii.ToLower(strings.TrimSpace(k)) == "rel" {
 					// Remove optional quotes around the relation value.
-					v = strings.Trim(strings.TrimSpace(v), `"`)
+					v = unquote(strings.TrimSpace(v))
 
 					// A single link can have multiple relation types.
 					for rel := range strings.FieldsSeq(v) {
