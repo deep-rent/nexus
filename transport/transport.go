@@ -117,6 +117,7 @@ type config struct {
 	maxConnsPerHost        int
 	responseHeaderTimeout  time.Duration
 	maxResponseHeaderBytes int64
+	maxResponseBytes       int64
 	writeBufferSize        int
 	readBufferSize         int
 	http2Config            *http.HTTP2Config
@@ -229,6 +230,13 @@ func WithMaxResponseHeaderBytes(max int64) Option {
 	}
 }
 
+// WithMaxResponseBytes caps the size of response bodies. Reading a body beyond
+// the limit fails with [ErrBodyTooLarge]. Defaults to
+// [DefaultMaxResponseBytes]. Nonpositive values disable the limit.
+func WithMaxResponseBytes(max int64) Option {
+	return func(c *config) { c.maxResponseBytes = max }
+}
+
 // WithWriteBufferSize specifies the size of the write buffer used.
 func WithWriteBufferSize(size int) Option {
 	return func(c *config) {
@@ -330,6 +338,7 @@ func New(opts ...Option) http.RoundTripper {
 		maxConnsPerHost:        DefaultMaxConnsPerHost,
 		responseHeaderTimeout:  DefaultResponseHeaderTimeout,
 		maxResponseHeaderBytes: DefaultMaxResponseHeaderBytes,
+		maxResponseBytes:       DefaultMaxResponseBytes,
 		writeBufferSize:        DefaultWriteBufferSize,
 		readBufferSize:         DefaultReadBufferSize,
 	}
@@ -377,6 +386,10 @@ func New(opts ...Option) http.RoundTripper {
 		Protocols:              cfg.protocols,
 	}
 
+	// Cap response bodies first so that the limit also applies to the
+	// intermediate responses observed by the retry transport.
+	t = NewLimitTransport(t, cfg.maxResponseBytes)
+
 	// Add headers if any.
 	if len(cfg.headers) > 0 {
 		t = header.NewTransport(t, cfg.headers...)
@@ -403,3 +416,17 @@ func NewClient(timeout time.Duration, opts ...Option) *http.Client {
 		Transport: New(opts...),
 	}
 }
+
+// DefaultClient is the client used by packages in this module when the caller
+// does not supply one of their own. Unlike [http.DefaultClient] it carries the
+// connection hygiene established by [NewClient], most importantly an overall
+// [DefaultTimeout] and a [DefaultMaxResponseBytes] cap on response bodies.
+//
+// Consumers that read response bodies may therefore rely on those bodies being
+// bounded without applying their own [io.LimitReader]. Callers who pass a
+// custom client are responsible for that guarantee themselves; building it
+// with [NewClient] preserves it.
+//
+// It is shared, so its connection pool is shared too. Do not mutate it; pass a
+// client built by [NewClient] instead.
+var DefaultClient = NewClient(0)

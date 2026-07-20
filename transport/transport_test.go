@@ -13,13 +13,25 @@ import (
 	"github.com/deep-rent/nexus/retry"
 )
 
+// base unwraps the response body limiter applied by [New] and returns the
+// underlying [http.Transport].
+func base(t *testing.T, rt http.RoundTripper) *http.Transport {
+	t.Helper()
+	lt, ok := rt.(*limitTransport)
+	if !ok {
+		t.Fatalf("expected transport to be *limitTransport, got %T", rt)
+	}
+	tr, ok := lt.next.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected transport to be *http.Transport, got %T", lt.next)
+	}
+	return tr
+}
+
 func TestNew_Defaults(t *testing.T) {
 	rt := New()
 
-	tr, ok := rt.(*http.Transport)
-	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
-	}
+	tr := base(t, rt)
 
 	if exp, act := false, tr.DisableKeepAlives; exp != act {
 		t.Errorf("expected DisableKeepAlives to be %v, got %v", exp, act)
@@ -116,10 +128,7 @@ func TestNew_WithOptions(t *testing.T) {
 		WithDialContext(dialer),
 	)
 
-	tr, ok := rt.(*http.Transport)
-	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
-	}
+	tr := base(t, rt)
 
 	if !tr.DisableKeepAlives {
 		t.Error("expected DisableKeepAlives to be true")
@@ -213,10 +222,7 @@ func TestNew_WithNegativeOptions(t *testing.T) {
 		WithReadBufferSize(-4096),
 	)
 
-	tr, ok := rt.(*http.Transport)
-	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", rt)
-	}
+	tr := base(t, rt)
 
 	if exp, act := 2*time.Second, tr.TLSHandshakeTimeout; exp != act {
 		t.Errorf("expected TLSHandshakeTimeout to be %v, got %v", exp, act)
