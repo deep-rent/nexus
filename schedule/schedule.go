@@ -51,6 +51,8 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/deep-rent/nexus/internal/jitter"
 )
 
 // Tick represents a unit of work that can be scheduled to run repeatedly.
@@ -154,6 +156,8 @@ func New(ctx context.Context, opts ...Option) Scheduler {
 		cancel:   cancel,
 		logger:   cfg.logger,
 		recovery: cfg.recovery,
+		start:    cfg.start,
+		jitter:   jitter.New(cfg.jitter, nil),
 	}
 }
 
@@ -163,6 +167,8 @@ type scheduler struct {
 	cancel   context.CancelFunc // stops all dispatched goroutines
 	logger   *slog.Logger       // destination for internal logs
 	recovery time.Duration      // delay applied after a tick panicked
+	start    time.Duration      // delay before the first run of a tick
+	jitter   *jitter.Jitter     // scatters the start delay
 	wg       sync.WaitGroup     // tracks active task goroutines
 
 	mu     sync.Mutex // guards closed against a concurrent Dispatch
@@ -194,7 +200,7 @@ func (s *scheduler) Dispatch(tick Tick) context.CancelFunc {
 		// short-lived ticks do not pile up on a long-lived scheduler.
 		defer cancel()
 
-		timer := time.NewTimer(0)
+		timer := time.NewTimer(s.delay())
 		defer timer.Stop()
 
 		for {
@@ -214,6 +220,12 @@ func (s *scheduler) Dispatch(tick Tick) context.CancelFunc {
 	})
 
 	return cancel
+}
+
+// delay returns how long to wait before the first run of a tick, scattered by
+// the configured jitter so that instances starting together do not align.
+func (s *scheduler) delay() time.Duration {
+	return max(0, s.jitter.Apply(s.start))
 }
 
 // run executes a single iteration of tick, converting a panic into a log

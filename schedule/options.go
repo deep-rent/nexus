@@ -28,6 +28,8 @@ const DefaultRecoveryDelay = 1 * time.Minute
 type config struct {
 	logger   *slog.Logger  // destination for internal logs
 	recovery time.Duration // delay applied after a tick panicked
+	start    time.Duration // delay before the first run of a tick
+	jitter   float64       // fraction of the start delay subject to jitter
 }
 
 // Option is a function that configures the [Scheduler].
@@ -55,5 +57,33 @@ func WithRecoveryDelay(d time.Duration) Option {
 		if d > 0 {
 			c.recovery = d
 		}
+	}
+}
+
+// WithStartDelay postpones the first run of every dispatched [Tick] by d.
+// Without it, a tick runs as soon as it is dispatched. Subsequent runs are
+// unaffected, since a tick sets its own cadence.
+//
+// Values of zero or less are ignored, and ticks start immediately.
+func WithStartDelay(d time.Duration) Option {
+	return func(c *config) {
+		if d > 0 {
+			c.start = d
+		}
+	}
+}
+
+// WithStartJitter scatters the start delay by a random fraction between 0 and
+// 1, where 0 means no jitter and 1 means the first run may land anywhere
+// between dispatch and the full delay. The given number is capped to that
+// range. If not customized, no jitter is applied.
+//
+// This matters for a fleet of instances that restart together: without a
+// stagger they align on the same schedule and hit their dependencies in
+// lockstep. Since jitter only ever shortens a delay, it has no effect unless
+// [WithStartDelay] is set.
+func WithStartJitter(p float64) Option {
+	return func(c *config) {
+		c.jitter = min(1, max(0, p))
 	}
 }
