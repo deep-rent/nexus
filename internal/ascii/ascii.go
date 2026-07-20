@@ -92,8 +92,8 @@ func IsASCII(c rune) bool { return c <= 0x7F }
 //
 // If the rune is not an uppercase letter, it is returned unchanged.
 func Lower(c rune) rune {
-	if IsUpper(c) {
-		return c + ('a' - 'A')
+	if c >= 'A' && c <= 'Z' {
+		return c | 0x20
 	}
 	return c
 }
@@ -102,8 +102,8 @@ func Lower(c rune) rune {
 //
 // If the rune is not a lowercase letter, it is returned unchanged.
 func Upper(c rune) rune {
-	if IsLower(c) {
-		return c - ('a' - 'A')
+	if c >= 'a' && c <= 'z' {
+		return c &^ 0x20
 	}
 	return c
 }
@@ -126,16 +126,16 @@ func EqualFold(s, t string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		a, b := rune(s[i]), rune(t[i])
+		a, b := s[i], t[i]
 		if a == b {
 			continue
 		}
-		// Convert both to lowercase and compare.
-		if IsUpper(a) {
-			a += 'a' - 'A'
+		// Convert both to lowercase using bitwise OR and compare.
+		if a >= 'A' && a <= 'Z' {
+			a |= 0x20
 		}
-		if IsUpper(b) {
-			b += 'a' - 'A'
+		if b >= 'A' && b <= 'Z' {
+			b |= 0x20
 		}
 		if a != b {
 			return false
@@ -147,7 +147,7 @@ func EqualFold(s, t string) bool {
 // HasUpper reports whether the string contains any uppercase ASCII letters.
 func HasUpper(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if IsUpper(rune(s[i])) {
+		if s[i] >= 'A' && s[i] <= 'Z' {
 			return true
 		}
 	}
@@ -157,7 +157,7 @@ func HasUpper(s string) bool {
 // HasLower reports whether the string contains any lowercase ASCII letters.
 func HasLower(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if IsLower(rune(s[i])) {
+		if s[i] >= 'a' && s[i] <= 'z' {
 			return true
 		}
 	}
@@ -173,8 +173,8 @@ func ToLower(s string) string {
 	b := make([]byte, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if IsUpper(rune(c)) {
-			c += 'a' - 'A'
+		if c >= 'A' && c <= 'Z' {
+			c |= 0x20
 		}
 		b[i] = c
 	}
@@ -190,8 +190,8 @@ func ToUpper(s string) string {
 	b := make([]byte, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if IsLower(rune(c)) {
-			c -= 'a' - 'A'
+		if c >= 'a' && c <= 'z' {
+			c &^= 0x20
 		}
 		b[i] = c
 	}
