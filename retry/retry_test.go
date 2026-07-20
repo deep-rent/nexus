@@ -177,7 +177,7 @@ func TestAttempt_Transient(t *testing.T) {
 		{"no error", nil, false},
 		{"canceled", context.Canceled, false},
 		{"deadline exceeded", context.DeadlineExceeded, false},
-		{"wrapped cancellation", fmtErr(context.Canceled), false},
+		{"wrapped cancellation", wrap(context.Canceled), false},
 		{"unexpected EOF", io.ErrUnexpectedEOF, true},
 		{"EOF", io.EOF, true},
 		{"network timeout", &netError{timeout: true}, true},
@@ -197,8 +197,8 @@ func TestAttempt_Transient(t *testing.T) {
 	}
 }
 
-// fmtErr wraps err so that only errors.Is can unwrap it.
-func fmtErr(err error) error {
+// wrap wraps the given error so that only [errors.Is] can unwrap it.
+func wrap(err error) error {
 	return errors.Join(errors.New("context"), err)
 }
 
