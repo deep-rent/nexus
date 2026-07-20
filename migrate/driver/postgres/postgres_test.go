@@ -543,19 +543,3 @@ func TestDriver_Execute_StatementTimeout(t *testing.T) {
 		t.Error("execute: should have returned a statement timeout error")
 	}
 }
-
-func TestDriver_Close(t *testing.T) {
-	db := setupDB(t)
-
-	drv := postgres.New(db)
-	ctx := context.Background()
-
-	if err := drv.Close(); err != nil {
-		t.Errorf("close: should not have returned an error: %v", err)
-	}
-
-	// Verify the underlying pool is closed
-	if err := db.PingContext(ctx); err == nil {
-		t.Error("ping: should have returned a database closed error")
-	}
-}

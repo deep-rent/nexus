@@ -617,9 +617,3 @@ func (d *Driver) setClean(
 	}
 	return nil
 }
-
-// Close gracefully closes the underlying database connection.
-func (d *Driver) Close() error {
-	d.logger.Debug("Closing database driver")
-	return d.db.Close()
-}

@@ -117,8 +117,6 @@ type Driver interface {
 	// Execute runs the parsed migration statements and records the state update
 	// within the tracking table.
 	Execute(ctx context.Context, script ParsedScript) error
-	// Close cleans up driver resources and closes database connections.
-	Close() error
 }
 
 // Source provides migrations from an external system (e.g., filesystem).

@@ -397,31 +397,3 @@ func TestDriver_Execute(t *testing.T) {
 		})
 	}
 }
-
-func TestDriver_Close(t *testing.T) {
-	t.Parallel()
-
-	t.Run("success", func(t *testing.T) {
-		t.Parallel()
-		d := mock.New()
-		if err := d.Close(); err != nil {
-			t.Errorf("should not have returned an error: %v", err)
-		}
-		if !d.IsClosed {
-			t.Error("closed flag: got false; want true")
-		}
-	})
-
-	t.Run("error", func(t *testing.T) {
-		t.Parallel()
-		d := mock.New()
-		want := errors.New("close failed")
-		d.CloseErr = want
-		if err := d.Close(); !errors.Is(err, want) {
-			t.Errorf("error: got %v; want %v", err, want)
-		}
-		if d.IsClosed {
-			t.Error("closed flag: got true; want false")
-		}
-	})
-}

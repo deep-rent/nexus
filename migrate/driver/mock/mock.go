@@ -60,8 +60,6 @@ type Driver struct {
 
 	// IsLocked indicates if the mock advisory lock is currently held.
 	IsLocked bool
-	// IsClosed indicates if the driver has been closed.
-	IsClosed bool
 	// IsInit indicates if the tracking table initialization was called.
 	IsInit bool
 
@@ -80,8 +78,6 @@ type Driver struct {
 	ForceErr error
 	// ExecuteErr is returned by the Execute method if non-nil.
 	ExecuteErr error
-	// CloseErr is returned by the Close method if non-nil.
-	CloseErr error
 }
 
 // New creates a new in-memory [Driver] with an empty state.
@@ -269,18 +265,6 @@ func (d *Driver) Execute(
 		delete(d.records, script.Version)
 	}
 
-	return nil
-}
-
-// Close simulates cleaning up driver resources.
-func (d *Driver) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.CloseErr != nil {
-		return d.CloseErr
-	}
-	d.IsClosed = true
 	return nil
 }
 
