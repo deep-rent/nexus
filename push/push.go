@@ -36,9 +36,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 var (
@@ -72,11 +77,22 @@ func (e *APIError) Unwrap() error {
 var _ error = (*APIError)(nil)
 
 // Target identifies the destination of the push notification.
-// Exactly one field should be populated.
+//
+// The two providers interpret it differently, since their delivery models
+// differ:
+//
+//   - FCM delivers either to a device Token or to a publish-subscribe Topic,
+//     so exactly one of the two should be set.
+//   - APNs delivers only to a device Token; it has no publish-subscribe
+//     topics. There, Topic instead overrides the "apns-topic" header (the
+//     app's bundle identifier, possibly with a type suffix) for that one
+//     message, and is normally left empty in favor of the sender's configured
+//     topic.
 type Target struct {
 	// Token is a specific device identifier.
 	Token string
-	// Topic is a publish-subscribe channel identifier.
+	// Topic is a publish-subscribe channel (FCM) or an apns-topic override
+	// (APNs); see the type documentation.
 	Topic string
 }
 
@@ -173,10 +189,19 @@ type Sender interface {
 }
 
 // BatchSend concurrently dispatches multiple messages using the provided
-// [Sender]. It limits concurrency to the given workers limit to prevent
-// exhausting system resources. It uses an error group with context cancellation
-// to abort early if a dispatch fails, and returns a joined error of all
-// failures.
+// [Sender], with at most workers sends in flight at once.
+//
+// It is best-effort: a failure delivering one message does not abort the
+// others, since a single dead token should not hold back an entire broadcast.
+// Every message is attempted (unless the context is already cancelled by the
+// time its turn comes), and the individual errors are collected and returned
+// as a single joined error, nil if every send succeeded. Use [errors.Is] to
+// probe it. To learn which specific messages failed, dispatch them
+// individually or wrap [Sender.Send].
+//
+// Cancelling ctx stops further sends from starting and is observed by those
+// already in flight, but does not itself count as a batch failure beyond the
+// context errors recorded for the messages it prevented.
 func BatchSend(
 	ctx context.Context,
 	sender Sender,
@@ -190,21 +215,68 @@ func BatchSend(
 	workers = max(1, min(workers, n))
 
 	errs := make([]error, n)
-	eg, egCtx := errgroup.WithContext(ctx)
+	var eg errgroup.Group
 	eg.SetLimit(workers)
 
 	for i, msg := range msgs {
 		eg.Go(func() error {
-			if err := egCtx.Err(); err != nil {
+			// A cancelled context skips the remaining sends without
+			// attempting them, rather than aborting the batch outright.
+			if err := ctx.Err(); err != nil {
 				errs[i] = err
-				return err
+				return nil
 			}
-			err := sender.Send(egCtx, msg)
-			errs[i] = err
-			return err
+			errs[i] = sender.Send(ctx, msg)
+			return nil
 		})
 	}
 
 	_ = eg.Wait()
 	return errors.Join(errs...)
+}
+
+// Deliver executes req against client and interprets the response for a
+// [Sender], returning nil on a success status or an [*APIError] carrying the
+// status and body on a failure status (400 or above).
+//
+// It is the shared response-handling path for the built-in providers, exported
+// so that a custom [Sender] can report failures with the same error shape. The
+// response body is always drained and closed so the underlying connection can
+// be reused.
+func Deliver(
+	ctx context.Context,
+	client *http.Client,
+	req *http.Request,
+	logger *slog.Logger,
+) error {
+	start := time.Now()
+	res, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+
+	defer func() {
+		if _, err := io.Copy(io.Discard, res.Body); err != nil {
+			logger.WarnContext(ctx, "Failed to drain response body", log.Err(err))
+		}
+		if err := res.Body.Close(); err != nil {
+			logger.WarnContext(ctx, "Failed to close response body", log.Err(err))
+		}
+	}()
+
+	logger.DebugContext(ctx, "Provider responded",
+		slog.Int("status", res.StatusCode),
+		slog.Duration("duration", time.Since(start)),
+	)
+
+	if res.StatusCode >= http.StatusBadRequest {
+		// The client caps response body size, so this read is bounded.
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			logger.WarnContext(ctx, "Failed to read response body", log.Err(err))
+		}
+		return &APIError{Status: res.StatusCode, Body: string(body)}
+	}
+
+	return nil
 }
