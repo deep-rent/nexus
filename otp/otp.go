@@ -19,14 +19,14 @@
 // The package deliberately covers only the two concerns that are independent
 // of any particular authentication protocol: drawing a uniformly random
 // numeric code ([Generate]) and delivering it to the user over a side
-// channel ([Sender]). Storage, expiry, attempt counting, and rate limiting
+// channel ([Channel]). Storage, expiry, attempt counting, and rate limiting
 // are policy decisions that belong to the consumer; the oauth package wires
 // them into its login flow.
 //
 // # Delivery channels
 //
-// Two [Sender] adapters are provided out of the box: [NewSMSSender] delivers
-// codes as text messages through an [sms.Sender], and [NewMailSender]
+// Two [Channel] adapters are provided out of the box: [NewSMSChannel] delivers
+// codes as text messages through an [sms.Sender], and [NewMailChannel]
 // delivers them as transactional emails through a [mail.Sender]. Both
 // adapters are thin: they format the code into the channel's payload shape
 // and delegate dispatching entirely to the wrapped sender.
@@ -36,12 +36,12 @@
 //	code, err := otp.Generate(6) // e.g., "042917"
 //	if err != nil { ... }
 //
-//	sender := otp.NewSMSSender(
+//	channel := otp.NewSMSChannel(
 //	  sms.NewSender("twilio_sid", "twilio_auth_token"),
 //	  "+15551234567", // from
 //	  "",             // use DefaultSMSFormat
 //	)
-//	err = sender.Send(ctx, "+15558675309", code)
+//	err = channel.Send(ctx, "+15558675309", code)
 //
 // # Security
 //
@@ -69,12 +69,12 @@ const (
 	// not specify their own. Six digits match the format users know from
 	// TOTP authenticator apps and carrier-grade verification flows.
 	DefaultLength = 6
-	// DefaultSMSFormat is the message body used by [NewSMSSender] when no
+	// DefaultSMSFormat is the message body used by [NewSMSChannel] when no
 	// custom format is given. It contains a single %s verb that receives
 	// the code.
 	DefaultSMSFormat = "Your verification code is %s."
 	// DefaultTemplateDataKey is the template variable name under which
-	// [NewMailSender] exposes the code when no custom key is given.
+	// [NewMailChannel] exposes the code when no custom key is given.
 	DefaultTemplateDataKey = "code"
 )
 
@@ -117,38 +117,41 @@ func Generate(length int) (string, error) {
 	return string(digits), nil
 }
 
-// Sender delivers a one-time password to a recipient over a side channel.
+// Channel delivers one-time passwords to recipients over a side channel.
+// The name deliberately differs from the Sender interfaces of the sms and
+// mail packages: a Channel wraps such a sender and speaks in codes rather
+// than messages.
 //
 // Implementations are expected to be safe for concurrent use by multiple
 // goroutines and to respect the provided context for timeouts and
 // cancellation. The meaning of the destination string depends on the
 // channel: a phone number in E.164 format for SMS, an email address for
 // mail.
-type Sender interface {
+type Channel interface {
 	// Send delivers the code to the given destination. It returns an error
 	// if the input is invalid, if the network request fails, or if the
 	// underlying provider rejects the payload.
 	Send(ctx context.Context, to, code string) error
 }
 
-// smsSender adapts an [sms.Sender] to the [Sender] interface.
-type smsSender struct {
+// smsChannel adapts an [sms.Sender] to the [Channel] interface.
+type smsChannel struct {
 	sender sms.Sender
 	from   string
 	format string
 }
 
-var _ Sender = (*smsSender)(nil)
+var _ Channel = (*smsChannel)(nil)
 
-// NewSMSSender returns a [Sender] that delivers codes as text messages
+// NewSMSChannel returns a [Channel] that delivers codes as text messages
 // through the given [sms.Sender].
 //
 // The from number is used as the sender of every message. The format string
 // must contain exactly one %s verb, which receives the code; an empty format
-// falls back to [DefaultSMSFormat]. NewSMSSender panics if the sender is
+// falls back to [DefaultSMSFormat]. NewSMSChannel panics if the sender is
 // nil, the from number is empty, or the format lacks a %s verb, since all
 // three are startup configuration errors.
-func NewSMSSender(sender sms.Sender, from, format string) Sender {
+func NewSMSChannel(sender sms.Sender, from, format string) Channel {
 	if sender == nil {
 		panic("sms sender is required")
 	}
@@ -161,15 +164,15 @@ func NewSMSSender(sender sms.Sender, from, format string) Sender {
 	if !strings.Contains(format, "%s") {
 		panic("format must contain a %s verb for the code")
 	}
-	return &smsSender{
+	return &smsChannel{
 		sender: sender,
 		from:   from,
 		format: format,
 	}
 }
 
-// Send implements the [Sender] interface.
-func (s *smsSender) Send(ctx context.Context, to, code string) error {
+// Send implements the [Channel] interface.
+func (s *smsChannel) Send(ctx context.Context, to, code string) error {
 	if to == "" {
 		return ErrMissingTo
 	}
@@ -183,29 +186,29 @@ func (s *smsSender) Send(ctx context.Context, to, code string) error {
 	))
 }
 
-// mailSender adapts a [mail.Sender] to the [Sender] interface.
-type mailSender struct {
+// mailChannel adapts a [mail.Sender] to the [Channel] interface.
+type mailChannel struct {
 	sender     mail.Sender
 	from       mail.Mail
 	templateID string
 	dataKey    string
 }
 
-var _ Sender = (*mailSender)(nil)
+var _ Channel = (*mailChannel)(nil)
 
-// NewMailSender returns a [Sender] that delivers codes as transactional
+// NewMailChannel returns a [Channel] that delivers codes as transactional
 // emails through the given [mail.Sender].
 //
 // Every email is rendered from the dynamic template identified by
 // templateID, with the code exposed to the template under dataKey. An empty
-// dataKey falls back to [DefaultTemplateDataKey]. NewMailSender panics if
+// dataKey falls back to [DefaultTemplateDataKey]. NewMailChannel panics if
 // the sender is nil, the from address is empty, or the template ID is
 // empty, since all three are startup configuration errors.
-func NewMailSender(
+func NewMailChannel(
 	sender mail.Sender,
 	from mail.Mail,
 	templateID, dataKey string,
-) Sender {
+) Channel {
 	if sender == nil {
 		panic("mail sender is required")
 	}
@@ -218,7 +221,7 @@ func NewMailSender(
 	if dataKey == "" {
 		dataKey = DefaultTemplateDataKey
 	}
-	return &mailSender{
+	return &mailChannel{
 		sender:     sender,
 		from:       from,
 		templateID: templateID,
@@ -226,8 +229,8 @@ func NewMailSender(
 	}
 }
 
-// Send implements the [Sender] interface.
-func (s *mailSender) Send(ctx context.Context, to, code string) error {
+// Send implements the [Channel] interface.
+func (s *mailChannel) Send(ctx context.Context, to, code string) error {
 	if to == "" {
 		return ErrMissingTo
 	}

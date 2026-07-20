@@ -74,8 +74,8 @@
 //	s := oauth.New(cfg,
 //	  oauth.WithGrant(oauth.AuthCodeGrant()),
 //	  oauth.WithSecondFactor(oauth.SecondFactorConfig{
-//	    SMS:  otp.NewSMSSender(smsSender, "+15551234567", ""),
-//	    Mail: otp.NewMailSender(mailSender, from, "template-id", ""),
+//	    SMS:  otp.NewSMSChannel(smsSender, "+15551234567", ""),
+//	    Mail: otp.NewMailChannel(mailSender, from, "template-id", ""),
 //	  }),
 //	)
 //
@@ -106,12 +106,11 @@
 //
 // Set [Config.Throttle] to rate limit the credential-verifying endpoints
 // and slow down brute-force attempts; see [throttle.Throttle] for the
-// trade-offs.
-// Because its buckets live in memory, it complements rather than replaces
-// volumetric rate limiting at the load balancer or reverse proxy.
+// trade-offs. Because its buckets live in memory, it complements rather than
+// replaces volumetric rate limiting at the load balancer or reverse proxy.
 //
 // Deployments must provide the remaining protections that fall outside this
-// package: serve all endpoints over TLS (cookies are marked Secure), and
+// package: serve all endpoints over TLS (cookies are marked secure), and
 // back the store interfaces with implementations that honor the atomicity
 // and TTL contracts documented on [SessionStore].
 package oauth
@@ -126,7 +125,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"

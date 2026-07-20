@@ -34,14 +34,14 @@ const (
 	testEmail = "alice@example.com"
 )
 
-// fakeOTPSender is an in-memory [otp.Sender] that records deliveries.
-type fakeOTPSender struct {
+// fakeOTPChannel is an in-memory [otp.Channel] that records deliveries.
+type fakeOTPChannel struct {
 	to    []string
 	codes []string
 	err   error
 }
 
-func (s *fakeOTPSender) Send(_ context.Context, to, code string) error {
+func (s *fakeOTPChannel) Send(_ context.Context, to, code string) error {
 	if s.err != nil {
 		return s.err
 	}
@@ -50,14 +50,14 @@ func (s *fakeOTPSender) Send(_ context.Context, to, code string) error {
 	return nil
 }
 
-var _ otp.Sender = (*fakeOTPSender)(nil)
+var _ otp.Channel = (*fakeOTPChannel)(nil)
 
 // otpEnv bundles a [testEnv] with the fakes backing its two-factor setup.
 // The default subject is enrolled with the SMS channel.
 type otpEnv struct {
 	*testEnv
-	sms  *fakeOTPSender
-	mail *fakeOTPSender
+	sms  *fakeOTPChannel
+	mail *fakeOTPChannel
 }
 
 // newOTPEnv builds a two-factor enabled environment. The given config is
@@ -71,8 +71,8 @@ func newOTPEnv(
 ) *otpEnv {
 	t.Helper()
 
-	sms := &fakeOTPSender{}
-	mail := &fakeOTPSender{}
+	sms := &fakeOTPChannel{}
+	mail := &fakeOTPChannel{}
 	cfg.SMS = sms
 	cfg.Mail = mail
 
@@ -116,7 +116,7 @@ func (env *otpEnv) beginLogin(t *testing.T) OTPChallengeResponse {
 }
 
 // lastCode returns the most recently delivered code on the given sender.
-func lastCode(t *testing.T, sender *fakeOTPSender) string {
+func lastCode(t *testing.T, sender *fakeOTPChannel) string {
 	t.Helper()
 	if len(sender.codes) == 0 {
 		t.Fatal("no code was delivered")
@@ -213,7 +213,7 @@ func TestLoginSecondFactor(t *testing.T) {
 		t.Parallel()
 		// Only SMS is configured, but the subject enrolled email.
 		env := newTestEnv(t, WithSecondFactor(SecondFactorConfig{
-			SMS: &fakeOTPSender{},
+			SMS: &fakeOTPChannel{},
 		}))
 		env.subjects.factors[env.subject.id] = &SecondFactor{
 			Channel:     SecondFactorChannelEmail,
@@ -261,7 +261,7 @@ func TestLoginSecondFactor(t *testing.T) {
 
 	t.Run("default generator honors code length", func(t *testing.T) {
 		t.Parallel()
-		sender := &fakeOTPSender{}
+		sender := &fakeOTPChannel{}
 		env := newTestEnv(t, WithSecondFactor(SecondFactorConfig{
 			SMS:        sender,
 			CodeLength: 8,

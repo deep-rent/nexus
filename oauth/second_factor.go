@@ -49,10 +49,10 @@ const (
 type SecondFactorConfig struct {
 	// SMS delivers one-time passwords as text messages. A nil value
 	// disables the [SecondFactorChannelSMS] channel.
-	SMS otp.Sender
+	SMS otp.Channel
 	// Mail delivers one-time passwords via email. A nil value disables the
 	// [SecondFactorChannelEmail] channel.
-	Mail otp.Sender
+	Mail otp.Channel
 	// CodeLength is the number of digits in a generated one-time password.
 	// Defaults to [DefaultOTPCodeLength]. It is ignored when a custom
 	// generator is installed via [WithOTPCodeGenerator].
@@ -69,17 +69,17 @@ type SecondFactorConfig struct {
 
 // secondFactor holds the resolved two-factor login settings of a [Server].
 type secondFactor struct {
-	sms         otp.Sender
-	mail        otp.Sender
+	sms         otp.Channel
+	mail        otp.Channel
 	codeLength  int
 	lifetime    time.Duration
 	maxAttempts int
 	maxResends  int
 }
 
-// sender returns the delivery adapter for the given channel, or nil if the
-// channel is unknown or not configured.
-func (f *secondFactor) sender(ch SecondFactorChannel) otp.Sender {
+// channel returns the delivery channel for the given enrollment, or nil if
+// the channel is unknown or not configured.
+func (f *secondFactor) channel(ch SecondFactorChannel) otp.Channel {
 	switch ch {
 	case SecondFactorChannelSMS:
 		return f.sms
@@ -126,10 +126,10 @@ func (s *Server) beginOTPChallenge(
 	sub Subject,
 	sf *SecondFactor,
 ) error {
-	sender := s.otp.sender(sf.Channel)
-	if sender == nil {
+	channel := s.otp.channel(sf.Channel)
+	if channel == nil {
 		return router.ServerError("second factor channel is not available",
-			fmt.Errorf("no sender configured for channel %q", sf.Channel),
+			fmt.Errorf("no delivery channel configured for %q", sf.Channel),
 		)
 	}
 
@@ -156,7 +156,7 @@ func (s *Server) beginOTPChallenge(
 		return router.ServerError("failed to store challenge", err)
 	}
 
-	if err := sender.Send(e.Context(), sf.Destination, code); err != nil {
+	if err := channel.Send(e.Context(), sf.Destination, code); err != nil {
 		// The challenge is unusable without its code; remove it so that the
 		// subject's next login attempt starts from a clean slate.
 		if _, derr := s.sessions.DeleteOTPChallenge(
@@ -385,10 +385,10 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		return invalid
 	}
 
-	sender := s.otp.sender(sf.Channel)
-	if sender == nil {
+	channel := s.otp.channel(sf.Channel)
+	if channel == nil {
 		return router.ServerError("second factor channel is not available",
-			fmt.Errorf("no sender configured for channel %q", sf.Channel),
+			fmt.Errorf("no delivery channel configured for %q", sf.Channel),
 		)
 	}
 
@@ -408,7 +408,7 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		return router.ServerError("failed to update challenge", err)
 	}
 
-	if err := sender.Send(e.Context(), sf.Destination, code); err != nil {
+	if err := channel.Send(e.Context(), sf.Destination, code); err != nil {
 		return router.ServerError("failed to deliver one-time password",
 			err,
 		)
