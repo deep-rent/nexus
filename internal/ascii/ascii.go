@@ -144,3 +144,49 @@ func EqualFold(s, t string) bool {
 	}
 	return true
 }
+
+// ToLowerString returns a copy of the string s with all ASCII letters mapped to their lower case.
+func ToLowerString(s string) string {
+	hasUpper := false
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	if !hasUpper {
+		return s
+	}
+	b := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
+}
+
+// ToUpperString returns a copy of the string s with all ASCII letters mapped to their upper case.
+func ToUpperString(s string) string {
+	hasLower := false
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'a' && s[i] <= 'z' {
+			hasLower = true
+			break
+		}
+	}
+	if !hasLower {
+		return s
+	}
+	b := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'a' && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
+}
