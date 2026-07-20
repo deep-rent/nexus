@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -49,9 +48,6 @@ const (
 	// ReasonUnknownModel indicates that the requested document type is not
 	// served by this endpoint.
 	ReasonUnknownModel = "unknown_model"
-	// ReasonNotFound indicates that the requested document does not exist
-	// or is not visible to the caller (indistinguishable by design).
-	ReasonNotFound = "not_found"
 )
 
 // Syncer is the engine capability the HTTP layer builds on. It is
@@ -299,7 +295,7 @@ func translate(err error) error {
 	if errors.Is(err, ErrNotFound) {
 		return &router.Error{
 			Status:      http.StatusNotFound,
-			Reason:      ReasonNotFound,
+			Reason:      router.ReasonNotFound,
 			Description: "The requested document does not exist.",
 			Cause:       err,
 		}

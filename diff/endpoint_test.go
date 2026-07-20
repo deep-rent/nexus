@@ -408,14 +408,14 @@ func TestEndpoint_Document_Errors(t *testing.T) {
 			claims:     claimsFor(owner),
 			path:       "/asset/" + uuid.NewV7().String(),
 			wantStatus: http.StatusNotFound,
-			wantReason: diff.ReasonNotFound,
+			wantReason: router.ReasonNotFound,
 		},
 		{
 			name:       "foreign document",
 			claims:     claimsFor(uuid.NewV7()), // not the owner
 			path:       "/asset/" + foreign.String(),
 			wantStatus: http.StatusNotFound,
-			wantReason: diff.ReasonNotFound,
+			wantReason: router.ReasonNotFound,
 		},
 	}
 
