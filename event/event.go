@@ -156,6 +156,26 @@ type handler[T any] struct {
 type dispatcher[T any] interface {
 	// dispatch delivers the event to the provided list of handlers.
 	dispatch(event T, handlers []handler[T])
+	// wait blocks until every delivery this dispatcher started has finished.
+	// It is called once the processor has stopped, so no further dispatch can
+	// race with it.
+	wait()
+}
+
+// deliver invokes a single subscriber, isolating the call so that a panic in
+// one subscriber neither reaches the background processor nor keeps the
+// remaining subscribers from being notified.
+func deliver[T any](logger *slog.Logger, fn Subscriber[T], event T) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error(
+				"Subscriber panicked",
+				slog.Any("panic", r),
+				slog.String("stack", string(debug.Stack())),
+			)
+		}
+	}()
+	fn(event)
 }
 
 // basicDispatcher delivers events sequentially on the background worker's
@@ -168,47 +188,36 @@ type basicDispatcher[T any] struct {
 // dispatch iterates through all handlers and executes them sequentially.
 func (d basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		// Isolate each handler call to prevent a panic in one subscriber from
-		// crashing the entire background processor.
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					d.logger.Error(
-						"Subscriber panicked",
-						slog.Any("panic", r),
-						slog.String("stack", string(debug.Stack())),
-					)
-				}
-			}()
-			h.fn(event)
-		}()
+		deliver(d.logger, h.fn, event)
 	}
 }
+
+// wait returns immediately: delivery already finished on the caller's
+// goroutine.
+func (d basicDispatcher[T]) wait() {}
 
 // asyncDispatcher delivers events concurrently by spawning a goroutine per
 // subscriber.
 type asyncDispatcher[T any] struct {
 	// logger records any panics triggered by a subscriber function.
 	logger *slog.Logger
+	// wg tracks deliveries that have been started but not yet completed.
+	wg sync.WaitGroup
 }
 
 // dispatch executes all handlers in parallel.
-func (d asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
+func (d *asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
+		d.wg.Add(1)
 		go func(f Subscriber[T]) {
-			defer func() {
-				if r := recover(); r != nil {
-					d.logger.Error(
-						"Subscriber panicked",
-						slog.Any("panic", r),
-						slog.String("stack", string(debug.Stack())),
-					)
-				}
-			}()
-			f(event)
+			defer d.wg.Done()
+			deliver(d.logger, f, event)
 		}(h.fn)
 	}
 }
+
+// wait blocks until every spawned delivery has returned.
+func (d *asyncDispatcher[T]) wait() { d.wg.Wait() }
 
 // Option configures the [Bus] during initialization.
 type Option func(*config)
@@ -301,6 +310,9 @@ type Bus[T any] struct {
 	subs atomic.Pointer[[]handler[T]]
 	// closed indicates whether the bus has been shut down.
 	closed atomic.Bool
+	// pubs counts publishers that passed the closed check but have not yet
+	// finished pushing.
+	pubs atomic.Int64
 	// mu protects write operations to the active subscriber list.
 	mu sync.Mutex
 	// id is an incrementing counter providing unique keys for new subscribers.
@@ -332,7 +344,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 			logger: cfg.logger,
 		}
 	} else {
-		disp = asyncDispatcher[T]{
+		disp = &asyncDispatcher[T]{
 			logger: cfg.logger,
 		}
 	}
@@ -403,7 +415,16 @@ func (b *Bus[T]) detach(id uint64) {
 
 // Publish pushes an event to the bus. It returns false if the buffer is full
 // (and [DropNewest] policy is active) or if the bus is already closed.
+//
+// An event for which Publish reports true is guaranteed to reach the
+// subscribers, even if [Bus.Close] is called concurrently.
 func (b *Bus[T]) Publish(event T) bool {
+	// Register as an in-flight publisher before consulting the flag, so that
+	// Close cannot conclude the buffer is quiescent while this push is still
+	// on its way in.
+	b.pubs.Add(1)
+	defer b.pubs.Add(-1)
+
 	// Guard against publishing to a stopped bus.
 	if b.closed.Load() {
 		return false
@@ -421,22 +442,33 @@ func (b *Bus[T]) Publish(event T) bool {
 // Close signals the background processor to drain remaining events and stop.
 // Further calls to [Bus.Publish] will immediately return false.
 //
-// Note: Producers must be externally synchronized to stop calling Publish
-// before Close is invoked to prevent stranded events.
+// Close blocks until every buffered event has been handed to the subscribers
+// and, under the default asynchronous dispatch, until those deliveries have
+// returned. It is safe to call more than once and safe to call concurrently
+// with [Bus.Publish]: a publisher that has already been admitted completes
+// before the drain begins.
 func (b *Bus[T]) Close() {
-	// Give straggling producers a few microseconds to finish their push before
-	// we officially close the gates.
-	time.Sleep(time.Microsecond * 50)
-
 	// Atomically swap to closed. If it was already closed, do nothing.
-	if !b.closed.Swap(true) {
-		// Wake up the processor if it is blocking on a semaphore so it can
-		// perform its final drain and exit.
-		b.wait.Signal()
-
-		// Wait for the processor goroutine to finish.
-		b.wg.Wait()
+	if b.closed.Swap(true) {
+		return
 	}
+
+	// Publishers admitted before the flag was set may still be on their way
+	// into the ring buffer. Waiting for them here is what keeps the final
+	// drain below from missing an event.
+	for b.pubs.Load() > 0 {
+		runtime.Gosched()
+	}
+
+	// Wake up the processor if it is blocking on a semaphore so it can
+	// perform its final drain and exit.
+	b.wait.Signal()
+
+	// Wait for the processor goroutine to finish...
+	b.wg.Wait()
+
+	// ...and then for the deliveries it started.
+	b.disp.wait()
 }
 
 // process continuously polls the ring buffer for new events.
