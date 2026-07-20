@@ -1,4 +1,4 @@
-package transport
+package transport_test
 
 import (
 	"context"
@@ -11,16 +11,13 @@ import (
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/retry"
+	"github.com/deep-rent/nexus/transport"
 )
 
 // base unwraps the response body limiter applied by [New] and returns the
 // underlying [http.Transport].
 func base(t *testing.T, rt http.RoundTripper) *http.Transport {
 	t.Helper()
-	lt, ok := rt.(*limitTransport)
-	if !ok {
-		t.Fatalf("expected transport to be *limitTransport, got %T", rt)
-	}
 	tr, ok := lt.next.(*http.Transport)
 	if !ok {
 		t.Fatalf("expected transport to be *http.Transport, got %T", lt.next)
@@ -29,7 +26,7 @@ func base(t *testing.T, rt http.RoundTripper) *http.Transport {
 }
 
 func TestNew_Defaults(t *testing.T) {
-	rt := New()
+	rt := transport.New()
 
 	tr := base(t, rt)
 

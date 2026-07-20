@@ -153,7 +153,7 @@ func TestNewLimitTransport_Close(t *testing.T) {
 		Reader: strings.NewReader("hello"),
 		closed: &closed,
 	}
-	lb := &limitBody{body: body, left: 8}
+	lb := &limitedReader{body: body, left: 8}
 
 	if err := lb.Close(); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
