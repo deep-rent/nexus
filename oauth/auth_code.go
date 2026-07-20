@@ -18,7 +18,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/deep-rent/nexus/pkce"
+	"github.com/deep-rent/nexus/oauth/pkce"
 )
 
 // authCodeGrant implements the [Grant] interface for the Authorization Code

@@ -27,14 +27,15 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/time/rate"
 	"uuid"
+
+	"golang.org/x/time/rate"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
-	"github.com/deep-rent/nexus/pkce"
+	"github.com/deep-rent/nexus/oauth/pkce"
 	"github.com/deep-rent/nexus/rotor"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/throttle"

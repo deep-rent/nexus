@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/pkce"
+	"github.com/deep-rent/nexus/oauth/pkce"
 )
 
 func TestVerifier(t *testing.T) {

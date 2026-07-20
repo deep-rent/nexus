@@ -18,10 +18,9 @@ import (
 	"net/url"
 	"testing"
 	"time"
-
 	"uuid"
 
-	"github.com/deep-rent/nexus/pkce"
+	"github.com/deep-rent/nexus/oauth/pkce"
 )
 
 func TestAuthCodeGrant(t *testing.T) {
