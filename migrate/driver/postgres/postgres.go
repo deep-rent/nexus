@@ -530,7 +530,8 @@ func (d *Driver) setDirty(
 	case migrate.Up:
 		query := "INSERT INTO " + d.ident +
 			" (version, checksum, dirty) VALUES ($1, $2, true) " +
-			"ON CONFLICT (version) DO UPDATE SET dirty = true"
+			"ON CONFLICT (version) DO UPDATE " +
+			"SET dirty = true, checksum = EXCLUDED.checksum"
 		if _, err := d.db.ExecContext(
 			ctx,
 			query,

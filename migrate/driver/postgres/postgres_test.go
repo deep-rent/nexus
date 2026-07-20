@@ -291,6 +291,51 @@ func TestDriver_ExecuteAndApplied(t *testing.T) {
 	}
 }
 
+func TestDriver_Execute_RefreshesChecksum(t *testing.T) {
+	db := setupDB(t)
+
+	drv := postgres.New(db)
+	ctx := context.Background()
+
+	if err := drv.Init(ctx); err != nil {
+		t.Fatalf("init: should not have returned an error: %v", err)
+	}
+
+	oldSum := sha256.Sum256([]byte("old"))
+	newSum := sha256.Sum256([]byte("new"))
+
+	// Simulate a pre-existing record for the same version.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO "public"."migrations" (version, checksum, dirty)
+     VALUES (7, $1, false)`, oldSum[:],
+	)
+	if err != nil {
+		t.Fatalf("insert: should not have returned an error: %v", err)
+	}
+
+	err = drv.Execute(ctx, migrate.ParsedScript{
+		Version:    7,
+		Direction:  migrate.Up,
+		Checksum:   newSum,
+		Statements: []string{"SELECT 1;"},
+		Tx:         true,
+	})
+	if err != nil {
+		t.Fatalf("execute: should not have returned an error: %v", err)
+	}
+
+	applied, err := drv.Applied(ctx)
+	if err != nil {
+		t.Fatalf("applied: should not have returned an error: %v", err)
+	}
+	if got, want := len(applied), 1; got != want {
+		t.Fatalf("got applied size %d; want %d", got, want)
+	}
+	if applied[0].Checksum != newSum {
+		t.Error("checksum was not refreshed on re-execution")
+	}
+}
+
 func TestDriver_Execute_FailureRollback(t *testing.T) {
 	db := setupDB(t)
 
