@@ -462,16 +462,20 @@ func TestBroker_ConcurrentTopicCreation(t *testing.T) {
 	}
 }
 
+// Subscribing and unsubscribing while events are flowing must be safe, and a
+// subscriber that is attached long enough must actually receive something.
 func TestBus_ConcurrentSubUnsub(t *testing.T) {
 	t.Parallel()
+
 	bus := event.NewBus[int]()
 	defer bus.Close()
 
-	var pub sync.WaitGroup
+	var (
+		pub  sync.WaitGroup
+		stop atomic.Bool
+	)
+
 	pub.Add(1)
-
-	var stop atomic.Bool
-
 	go func() {
 		defer pub.Done()
 		for !stop.Load() {
@@ -481,23 +485,28 @@ func TestBus_ConcurrentSubUnsub(t *testing.T) {
 	}()
 
 	var sub sync.WaitGroup
-	const mc = 50
-	sub.Add(mc)
+	const subscribers = 50
 
-	for range mc {
+	for range subscribers {
+		sub.Add(1)
 		go func() {
 			defer sub.Done()
-			var c atomic.Int32
 
-			unsub := bus.Subscribe(func(_ int) {
-				c.Add(1)
+			// Waiting for a delivery beats sleeping for a fixed window: under
+			// load a subscriber can legitimately see nothing for a few
+			// milliseconds, which used to fail this test spuriously.
+			got := make(chan struct{})
+			var once sync.Once
+
+			unsub := bus.Subscribe(func(int) {
+				once.Do(func() { close(got) })
 			})
+			defer unsub()
 
-			time.Sleep(2 * time.Millisecond)
-			unsub()
-
-			if got := c.Load(); got <= 0 {
-				t.Errorf("got count %d; want > 0", got)
+			select {
+			case <-got:
+			case <-time.After(10 * time.Second):
+				t.Error("subscriber received no event")
 			}
 		}()
 	}
