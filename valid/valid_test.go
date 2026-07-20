@@ -249,6 +249,7 @@ func TestBase64(t *testing.T) {
 		{"valid padding", "YWI=", true},
 		{"invalid no padding", "YWI", false},
 		{"invalid chars", "YWI!", false},
+		{"empty", "", false},
 	}
 	run(t, valid.Base64, tests)
 }
@@ -260,6 +261,7 @@ func TestBase64URL(t *testing.T) {
 		{"valid no padding", "YWI", true},
 		{"valid padding", "YWI=", true},
 		{"invalid base64 chars", "YWI+", false},
+		{"empty", "", false},
 	}
 	run(t, valid.Base64URL, tests)
 }
@@ -596,4 +598,36 @@ func TestIBAN(t *testing.T) {
 		{"invalid chars", "DE8937040044053201300!", false},
 	}
 	run(t, valid.IBAN, tests)
+}
+
+// Every character-class predicate rejects the empty string. This is the
+// package convention, and the shared basis makes it uniform.
+func TestCharacterClasses_RejectEmpty(t *testing.T) {
+	t.Parallel()
+
+	fns := map[string]func(string) bool{
+		"Alpha":     valid.Alpha,
+		"AlphaNum":  valid.AlphaNum,
+		"ASCII":     valid.ASCII,
+		"Upper":     valid.Upper,
+		"Lower":     valid.Lower,
+		"Hex":       valid.Hex,
+		"HexColor":  valid.HexColor,
+		"Base64":    valid.Base64,
+		"Base64URL": valid.Base64URL,
+		"Slug":      valid.Slug,
+		"Country2":  valid.Country2,
+		"Country3":  valid.Country3,
+		"CountryN":  valid.CountryN,
+		"Currency":  valid.Currency,
+	}
+
+	for name, fn := range fns {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if fn("") {
+				t.Errorf("%s(%q) = true; want false", name, "")
+			}
+		})
+	}
 }
