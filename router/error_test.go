@@ -351,3 +351,68 @@ func TestErrorHandler_WithConstructedLogger(t *testing.T) {
 		t.Errorf("want match for %q; got %q", want, buf.String())
 	}
 }
+
+// A handler that panics must yield a clean, logged 500 rather than an aborted
+// connection.
+func TestErrorHandler_RecoversPanic(t *testing.T) {
+	t.Parallel()
+
+	rec, logs := exercise(t, func(*router.Exchange) error {
+		panic("handler exploded")
+	}, slog.LevelError)
+
+	if got := rec.Code; got != http.StatusInternalServerError {
+		t.Errorf("status: got %d; want 500", got)
+	}
+
+	// The panic detail belongs in the logs, not the response.
+	if body := rec.Body.String(); strings.Contains(body, "handler exploded") {
+		t.Errorf("panic value leaked to the client: %q", body)
+	}
+
+	for _, want := range []string{
+		"handler exploded",
+		"stack",
+		"error_id=",
+		"level=ERROR",
+	} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("want match for %q in logs; got %q", want, logs)
+		}
+	}
+
+	// The response is a well-formed error carrying a trace ID.
+	if got := decode(t, rec); got.ID == "" {
+		t.Error("recovered panic response carries no error ID")
+	}
+}
+
+// A panic whose value is an error must remain inspectable through the chain.
+func TestErrorHandler_PanicWithError(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("the underlying cause")
+
+	rec, _ := exercise(t, func(*router.Exchange) error {
+		panic(sentinel)
+	}, slog.LevelError)
+
+	if got := rec.Code; got != http.StatusInternalServerError {
+		t.Errorf("status: got %d; want 500", got)
+	}
+}
+
+// A panic after the response has started cannot be rewritten, but it must
+// still be recorded.
+func TestErrorHandler_PanicAfterWrite(t *testing.T) {
+	t.Parallel()
+
+	_, logs := exercise(t, func(e *router.Exchange) error {
+		e.Status(http.StatusOK)
+		panic("too late")
+	}, slog.LevelError)
+
+	if !strings.Contains(logs, "too late") {
+		t.Errorf("panic after write was not logged: %q", logs)
+	}
+}

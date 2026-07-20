@@ -90,6 +90,12 @@ func Adapt(pipe middleware.Pipe) Middleware {
 }
 
 // Recover mirrors [middleware.Recover] for use in the router.
+//
+// A [Router] already recovers panics from the whole handler chain and turns
+// them into a logged JSON 500, so this is rarely needed. It remains for
+// parity with the [middleware] package and for the occasional case of
+// wanting recovery at a specific point in the chain, so that middleware
+// outside it still runs after a panic within.
 func Recover(logger *slog.Logger) Middleware {
 	return Adapt(middleware.Recover(logger))
 }

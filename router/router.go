@@ -57,6 +57,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/internal/bind"
@@ -486,12 +487,8 @@ func New(opts ...Option) *Router {
 		opt(r)
 	}
 
-	r.Handle("/", HandlerFunc(func(e *Exchange) error {
-		return &Error{
-			Status:      http.StatusNotFound,
-			Reason:      ReasonNotFound,
-			Description: "The requested route does not exist.",
-		}
+	r.Handle("/", HandlerFunc(func(*Exchange) error {
+		return NotFound("The requested route does not exist.")
 	}))
 
 	return r
@@ -529,7 +526,7 @@ func (r *Router) Handle(
 			errorHandler: r.errorHandler,
 		}
 
-		if err := chained.ServeHTTP(e); err != nil {
+		if err := r.serve(chained, e); err != nil {
 			r.errorHandler(e, err)
 		}
 	})
@@ -537,7 +534,19 @@ func (r *Router) Handle(
 	r.Mux.Handle(pattern, h)
 }
 
-// HandleFunc is a convenience wrapper for [Router.Handle].
+// serve runs the handler chain, converting a panic into an error so that it
+// travels the same path as any other failure: a handler that panics yields a
+// clean, logged 500 rather than an aborted connection. The recovered value is
+// wrapped so the central handler can attach a trace ID and keep the detail
+// out of the response.
+func (r *Router) serve(h Handler, e *Exchange) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = &panicError{value: rec, stack: debug.Stack()}
+		}
+	}()
+	return h.ServeHTTP(e)
+}
 func (r *Router) HandleFunc(
 	pattern string,
 	fn func(*Exchange) error,

@@ -17,6 +17,7 @@ package router
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"uuid"
@@ -127,6 +128,27 @@ func ErrorID() string {
 	return uuid.NewV7().String()
 }
 
+// panicError carries a value recovered from a panicking handler through to
+// the error handler, so that it is reported as an opaque internal failure
+// rather than crashing the connection. It is unexported: callers observe only
+// the resulting 500.
+type panicError struct {
+	value any
+	stack []byte
+}
+
+// Error implements the error interface.
+func (e *panicError) Error() string {
+	return fmt.Sprintf("panic: %v", e.value)
+}
+
+// Unwrap exposes the recovered value if it was itself an error, so that a
+// handler-level [errors.As] can still inspect the original cause.
+func (e *panicError) Unwrap() error {
+	err, _ := e.value.(error)
+	return err
+}
+
 // defaultErrorHandler centralizes error processing: it normalizes whatever a
 // handler returned into an [Error], logs it once with the request attributes
 // attached, and writes the JSON response.
@@ -208,6 +230,12 @@ func record(
 	// from the client.
 	if res.Cause != nil {
 		attrs = append(attrs, slog.Any("error", res.Cause))
+	}
+
+	// A recovered panic is only useful with the stack that produced it.
+	var pe *panicError
+	if errors.As(res.Cause, &pe) {
+		attrs = append(attrs, slog.String("stack", string(pe.stack)))
 	}
 
 	logger.Log(ctx, level, res.Description, attrs...)
