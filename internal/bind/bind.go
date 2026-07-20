@@ -209,23 +209,36 @@ func (b *Binder) Bind[T any](v *T, prefix string, source Source) error {
 			"expected a pointer to a struct, but got pointer to %v", kind,
 		)
 	}
-	return b.process(val, prefix, source)
+	_, err := b.process(val, prefix, source)
+	return err
 }
 
-func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
+// process populates rv from source, reporting whether any field of rv, or of
+// a struct nested within it, received a value.
+//
+// The caller needs that answer to decide whether an absent optional section
+// should be materialized; see the nested pointer handling below.
+func (b *Binder) process(
+	rv reflect.Value,
+	prefix string,
+	source Source,
+) (bool, error) {
 	fields, err := b.resolver.Resolve(rv.Type())
 	if err != nil {
-		return err
+		return false, err
 	}
+
+	var bound bool
 	for _, f := range fields {
 		fv := rv.Field(f.Index)
 
 		// Inline struct
 		if f.Inline {
-			embedded := pointer.Deref(fv)
-			if err := b.process(embedded, prefix, source); err != nil {
-				return err
+			ok, err := b.nested(fv, prefix, source)
+			if err != nil {
+				return bound, err
 			}
+			bound = bound || ok
 			continue
 		}
 
@@ -239,10 +252,11 @@ func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
 			} else {
 				nested += key + "_"
 			}
-			embedded := pointer.Deref(fv)
-			if err := b.process(embedded, nested, source); err != nil {
-				return err
+			ok, err := b.nested(fv, nested, source)
+			if err != nil {
+				return bound, err
 			}
+			bound = bound || ok
 			continue
 		}
 
@@ -261,20 +275,67 @@ func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
 			case f.Flags.Default != "":
 				vals = []string{f.Flags.Default}
 			case f.Flags.Required:
-				return fmt.Errorf("required key %q is missing", key)
+				return bound, fmt.Errorf("required key %q is missing", key)
 			default:
 				continue
 			}
 		}
 
 		if err := setValues(fv, vals, f.Flags); err != nil {
-			return fmt.Errorf(
+			return bound, fmt.Errorf(
 				"could not set field %q from key %q: %w",
 				f.Name, key, err,
 			)
 		}
+		bound = true
 	}
-	return nil
+	return bound, nil
+}
+
+// nested processes a struct field, which may be reached through one or more
+// pointers.
+//
+// A nil pointer is populated in place only if the source actually supplies
+// something for it. Allocating unconditionally would make an optional section
+// indistinguishable from a present but empty one, so that a caller testing
+// `cfg.TLS != nil` to decide whether TLS was configured always saw it set.
+func (b *Binder) nested(
+	fv reflect.Value,
+	prefix string,
+	source Source,
+) (bool, error) {
+	if fv.Kind() != reflect.Pointer || !fv.IsNil() {
+		return b.process(pointer.Deref(fv), prefix, source)
+	}
+
+	// Bind into a throwaway of the pointed-to type, so that nothing is
+	// attached to the target unless it was filled in.
+	rt := fv.Type()
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+
+	tmp := reflect.New(rt)
+	bound, err := b.process(tmp.Elem(), prefix, source)
+	if err != nil || !bound {
+		return bound, err
+	}
+
+	if !fv.CanSet() {
+		return bound, nil
+	}
+
+	// Rebuild the pointer chain the field's type calls for.
+	val := tmp
+	for depth := fv.Type(); depth.Elem().Kind() == reflect.Pointer; {
+		depth = depth.Elem()
+		p := reflect.New(val.Type())
+		p.Elem().Set(val)
+		val = p
+	}
+	fv.Set(val)
+
+	return bound, nil
 }
 
 type field struct {

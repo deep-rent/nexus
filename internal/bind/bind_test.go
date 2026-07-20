@@ -1205,3 +1205,142 @@ func TestBinder_TypeTests(t *testing.T) {
 		})
 	}
 }
+
+// An optional section reached through a pointer must stay nil unless the
+// source actually supplies something for it. Materializing it regardless
+// would make `cfg.Section != nil` a useless test.
+func TestBinder_OptionalNestedPointer(t *testing.T) {
+	t.Parallel()
+
+	type TLS struct {
+		Cert string `bind:"cert"`
+	}
+	type Config struct {
+		TLS  *TLS `bind:"tls"`
+		Host string
+	}
+
+	tests := []struct {
+		name string
+		src  mockSource
+		want bool
+	}{
+		{"nothing", mockSource{}, false},
+		{"unrelated key", mockSource{"Host": {"example.com"}}, false},
+		{"section supplied", mockSource{"tls_cert": {"/etc/cert.pem"}}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var cfg Config
+			if err := bind.New("bind").Bind(&cfg, "", tt.src); err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+
+			if got := cfg.TLS != nil; got != tt.want {
+				t.Fatalf("allocated: got %t; want %t", got, tt.want)
+			}
+
+			if tt.want && cfg.TLS.Cert != "/etc/cert.pem" {
+				t.Errorf("cert: got %q; want %q", cfg.TLS.Cert, "/etc/cert.pem")
+			}
+		})
+	}
+}
+
+// A default inside the section counts as content: the author asked for that
+// value to exist whenever the section does.
+func TestBinder_NestedPointerWithDefault(t *testing.T) {
+	t.Parallel()
+
+	type TLS struct {
+		Port int `bind:"port,default:443"`
+	}
+	var cfg struct {
+		TLS *TLS `bind:"tls"`
+	}
+
+	if err := bind.New("bind").Bind(&cfg, "", mockSource{}); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if cfg.TLS == nil {
+		t.Fatal("got nil; want the section its default implies")
+	}
+
+	if cfg.TLS.Port != 443 {
+		t.Errorf("port: got %d; want 443", cfg.TLS.Port)
+	}
+}
+
+// A pointer that the caller already set is filled in place, not replaced.
+func TestBinder_PresetNestedPointer(t *testing.T) {
+	t.Parallel()
+
+	type TLS struct {
+		Cert string `bind:"cert"`
+		Key  string `bind:"key"`
+	}
+	preset := &TLS{Key: "/etc/key.pem"}
+	cfg := struct {
+		TLS *TLS `bind:"tls"`
+	}{TLS: preset}
+
+	src := mockSource{"tls_cert": {"/etc/cert.pem"}}
+	if err := bind.New("bind").Bind(&cfg, "", src); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if cfg.TLS != preset {
+		t.Error("the preset pointer was replaced")
+	}
+
+	if cfg.TLS.Key != "/etc/key.pem" {
+		t.Errorf("key: got %q; want it preserved", cfg.TLS.Key)
+	}
+
+	if cfg.TLS.Cert != "/etc/cert.pem" {
+		t.Errorf("cert: got %q; want it bound", cfg.TLS.Cert)
+	}
+}
+
+// An embedded pointer that inlines its keys follows the same rule.
+func TestBinder_InlineNestedPointer(t *testing.T) {
+	t.Parallel()
+
+	type Common struct {
+		Region string `bind:"region"`
+	}
+	type Config struct {
+		*Common `bind:",inline"`
+		Name    string `bind:"name"`
+	}
+
+	t.Run("absent", func(t *testing.T) {
+		var cfg Config
+		src := mockSource{"name": {"svc"}}
+		if err := bind.New("bind").Bind(&cfg, "", src); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if cfg.Common != nil {
+			t.Error("allocated an inline section with nothing to bind")
+		}
+	})
+
+	t.Run("supplied", func(t *testing.T) {
+		var cfg Config
+		src := mockSource{"region": {"eu-central-1"}}
+		if err := bind.New("bind").Bind(&cfg, "", src); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if cfg.Common == nil {
+			t.Fatal("got nil; want the inlined section")
+		}
+		if cfg.Common.Region != "eu-central-1" {
+			t.Errorf("region: got %q; want %q",
+				cfg.Common.Region, "eu-central-1")
+		}
+	})
+}
