@@ -63,9 +63,9 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"uuid"
 
 	"golang.org/x/mod/semver"
-	"uuid"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )
@@ -566,7 +566,7 @@ func mod97(rem int, c byte) int {
 		k = int(c - '0')
 	} else {
 		n = rem * 100
-		k = int(ascii.ToUpper(rune(c)) - 'A' + 10)
+		k = int(ascii.ToUpperRune(rune(c)) - 'A' + 10)
 	}
 	return (n + k) % 97
 }
