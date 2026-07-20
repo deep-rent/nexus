@@ -57,17 +57,32 @@ import (
 	"github.com/deep-rent/nexus/internal/ring"
 )
 
-// OverflowMode determines how the bus behaves when the internal buffer is full.
-type OverflowMode = ring.Policy
+// OverflowMode determines how the bus behaves when the internal buffer is
+// full. An unrecognized value is treated as [Block].
+type OverflowMode int
 
 const (
 	// Block waits until space is available in the buffer.
-	Block = ring.Block
+	Block OverflowMode = iota
 	// DropOldest removes the oldest unread event to make room for the new one.
-	DropOldest = ring.DropOldest
+	DropOldest
 	// DropNewest discards the incoming event if the buffer is full.
-	DropNewest = ring.DropNewest
+	DropNewest
 )
+
+// policy maps the mode onto the overflow policy of the underlying ring
+// buffer. The two are declared separately so that the public API does not
+// depend on an internal package.
+func (m OverflowMode) policy() ring.Policy {
+	switch m {
+	case DropOldest:
+		return ring.DropOldest
+	case DropNewest:
+		return ring.DropNewest
+	default:
+		return ring.Block
+	}
+}
 
 const (
 	// DefaultSize is the default capacity of the internal ring buffer.
@@ -131,7 +146,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	}
 
 	bus := &Bus[T]{
-		evts: ring.New[T](cfg.size, cfg.mode),
+		evts: ring.New[T](cfg.size, cfg.mode.policy()),
 		disp: disp,
 		wait: cfg.wait,
 	}

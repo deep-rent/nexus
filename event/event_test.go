@@ -515,3 +515,64 @@ func TestBus_ConcurrentSubUnsub(t *testing.T) {
 	stop.Store(true)
 	pub.Wait()
 }
+
+func TestOverflowMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		mode event.OverflowMode
+		// full reports how many of the surplus publishes are accepted once
+		// the buffer is saturated.
+		accepts bool
+	}{
+		{"drop newest", event.DropNewest, false},
+		{"drop oldest", event.DropOldest, true},
+		{"unrecognized", event.OverflowMode(42), true}, // Falls back to Block.
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tt.mode == event.OverflowMode(42) {
+				// Block would wait for a consumer that never arrives, so only
+				// the mapping is exercised here.
+				bus := event.NewBus[int](
+					event.WithOverflowMode(tt.mode),
+					event.WithSyncDispatch(),
+				)
+				defer bus.Close()
+
+				if !bus.Publish(1) {
+					t.Error("publish: got false; want true")
+				}
+				return
+			}
+
+			// No subscriber and a tiny buffer, so the queue saturates.
+			bus := event.NewBus[int](
+				event.WithSize(2),
+				event.WithOverflowMode(tt.mode),
+				event.WithSyncDispatch(),
+				event.WithBlockingWait(),
+			)
+			defer bus.Close()
+
+			var accepted int
+			for range 64 {
+				if bus.Publish(1) {
+					accepted++
+				}
+			}
+
+			if tt.accepts && accepted == 0 {
+				t.Error("accepted no events; want the oldest to be evicted")
+			}
+
+			if !tt.accepts && accepted == 64 {
+				t.Error("accepted every event; want the newest to be dropped")
+			}
+		})
+	}
+}
