@@ -103,6 +103,22 @@ type Item struct {
 // Items represents a collection of key configurations.
 type Items []Item
 
+// Save serializes a collection of key configurations into a JSON array,
+// which can later be parsed by [Load].
+func Save(items Items) ([]byte, error) {
+	return json.Marshal(items)
+}
+
+// SaveFile is a convenience wrapper around [Save] that writes the configuration
+// to the specified file path.
+func SaveFile(path string, items Items) error {
+	data, err := Save(items)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600) //nolint:gosec
+}
+
 // Load parses a JSON array of key configurations, where each item contains
 // the key identifier, algorithm, and PEM-encoded private key material. It then
 // uses these to construct a [Vault] instance with the specified rotation

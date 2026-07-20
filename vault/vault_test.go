@@ -209,6 +209,68 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
+func TestSave(t *testing.T) {
+	t.Parallel()
+
+	items := vault.Items{
+		{
+			Kid: "key-1",
+			Alg: "ES256",
+			Pem: "pem-data",
+		},
+	}
+
+	data, err := vault.Save(items)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	var parsed vault.Items
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+
+	if exp, act := 1, len(parsed); exp != act {
+		t.Fatalf("got %d items; want %d", act, exp)
+	}
+	if exp, act := "key-1", parsed[0].Kid; exp != act {
+		t.Errorf("got kid %q; want %q", act, exp)
+	}
+}
+
+func TestSaveFile(t *testing.T) {
+	t.Parallel()
+
+	items := vault.Items{
+		{
+			Kid: "key-1",
+			Alg: "ES256",
+			Pem: "pem-data",
+		},
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "keys.json")
+
+	if err := vault.SaveFile(path, items); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("should have written file: %v", err)
+	}
+
+	var parsed vault.Items
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+
+	if exp, act := 1, len(parsed); exp != act {
+		t.Fatalf("got %d items; want %d", act, exp)
+	}
+}
+
 func TestHandler(t *testing.T) {
 	t.Parallel()
 
