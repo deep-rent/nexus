@@ -15,7 +15,6 @@
 package oauth
 
 import (
-	"cmp"
 	"crypto/subtle"
 	"fmt"
 	"net/http"
@@ -27,8 +26,8 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
-// Default values applied by [WithSecondFactor] for optional
-// [SecondFactorConfig] fields.
+// Default values applied by [New] for the optional OTP-related [Config]
+// fields.
 const (
 	// DefaultOTPCodeLength is the number of digits in a one-time password.
 	DefaultOTPCodeLength = otp.DefaultLength
@@ -43,76 +42,41 @@ const (
 	DefaultOTPMaxResends = 3
 )
 
-// SecondFactorConfig carries the dependencies and tunable settings for
-// two-factor logins, activated via [WithSecondFactor]. Zero values for
-// optional fields are replaced with the package defaults.
-type SecondFactorConfig struct {
-	// SMS delivers one-time passwords as text messages. A nil value
-	// disables the [SecondFactorChannelSMS] channel.
-	SMS otp.Channel
-	// Mail delivers one-time passwords via email. A nil value disables the
-	// [SecondFactorChannelEmail] channel.
-	Mail otp.Channel
-	// CodeLength is the number of digits in a generated one-time password.
-	// Defaults to [DefaultOTPCodeLength]. It is ignored when a custom
-	// generator is installed via [WithOTPCodeGenerator].
-	CodeLength int
-	// Lifetime overrides [DefaultOTPLifetime]. Resending a code does not
-	// extend a challenge's lifetime.
-	Lifetime time.Duration
-	// MaxAttempts overrides [DefaultOTPMaxAttempts].
-	MaxAttempts int
-	// MaxResends overrides [DefaultOTPMaxResends]. A negative value
-	// disables resends entirely.
-	MaxResends int
-}
-
-// secondFactor holds the resolved two-factor login settings of a [Server].
-type secondFactor struct {
-	sms         otp.Channel
-	mail        otp.Channel
-	codeLength  int
-	lifetime    time.Duration
-	maxAttempts int
-	maxResends  int
-}
-
-// channel returns the delivery channel for the given enrollment, or nil if
-// the channel is unknown or not configured.
-func (f *secondFactor) channel(ch SecondFactorChannel) otp.Channel {
-	switch ch {
-	case SecondFactorChannelSMS:
-		return f.sms
-	case SecondFactorChannelEmail:
-		return f.mail
-	}
-	return nil
-}
-
-// WithSecondFactor enables two-factor logins.
+// WithOTPChannel registers an [otp.Channel] for delivering one-time
+// passwords under the given name, and thereby enables two-factor logins.
 //
-// Once enabled, a successful password login of a subject with an enrolled
-// [SecondFactor] (see [SubjectStore.GetSecondFactor]) no longer establishes
-// a session directly. Instead, the server delivers a one-time password over
-// the enrolled channel and returns an [OTPChallengeResponse]; the client
-// completes the login via [Server.VerifyOTP]. [Server.Mount] registers the
-// verification and resend endpoints only when this option is present.
+// The name connects enrollments to channels: a subject whose
+// [SecondFactor.Channel] equals the name receives their codes through the
+// registered channel. [SecondFactorChannelSMS] and
+// [SecondFactorChannelEmail] are the conventional names for the adapters
+// provided by the otp package, but any name may be used to plug in custom
+// delivery mechanisms (e.g., push notifications or messenger bots):
 //
-// It panics if no delivery channel is configured, since a server that can
-// never deliver a code would lock out every enrolled subject.
-func WithSecondFactor(cfg SecondFactorConfig) Option {
+//	s := oauth.New(cfg,
+//	  oauth.WithOTPChannel(oauth.SecondFactorChannelSMS, otp.SMS(...)),
+//	  oauth.WithOTPChannel("push", myPushChannel),
+//	)
+//
+// Once at least one channel is registered, a successful password login of
+// a subject with an enrolled [SecondFactor] (see
+// [SubjectStore.GetSecondFactor]) no longer establishes a session directly.
+// Instead, the server delivers a one-time password over the enrolled
+// channel and returns an [OTPChallengeResponse]; the client completes the
+// login via [Server.VerifyOTP]. [Server.Mount] registers the verification
+// and resend endpoints only when a channel is present. The flow is tuned
+// via the OTP-prefixed fields of [Config].
+//
+// It panics if the name is empty or the channel is nil, since both are
+// startup configuration errors.
+func WithOTPChannel(name SecondFactorChannel, ch otp.Channel) Option {
 	return func(s *Server) {
-		if cfg.SMS == nil && cfg.Mail == nil {
-			panic("at least one OTP delivery channel is required")
+		if name == "" {
+			panic("OTP channel name is required")
 		}
-		s.otp = &secondFactor{
-			sms:         cfg.SMS,
-			mail:        cfg.Mail,
-			codeLength:  cmp.Or(cfg.CodeLength, DefaultOTPCodeLength),
-			lifetime:    cmp.Or(cfg.Lifetime, DefaultOTPLifetime),
-			maxAttempts: cmp.Or(cfg.MaxAttempts, DefaultOTPMaxAttempts),
-			maxResends:  cmp.Or(cfg.MaxResends, DefaultOTPMaxResends),
+		if ch == nil {
+			panic("OTP channel is required")
 		}
+		s.otpChannels[name] = ch
 	}
 }
 
@@ -126,7 +90,7 @@ func (s *Server) beginOTPChallenge(
 	sub Subject,
 	sf *SecondFactor,
 ) error {
-	channel := s.otp.channel(sf.Channel)
+	channel := s.otpChannels[sf.Channel]
 	if channel == nil {
 		return router.ServerError("second factor channel is not available",
 			fmt.Errorf("no delivery channel configured for %q", sf.Channel),
@@ -151,7 +115,7 @@ func (s *Server) beginOTPChallenge(
 		Challenge: digest,
 		SubjectID: sub.ID(),
 		Code:      NewDigest(code),
-		ExpiresAt: s.clock().Add(s.otp.lifetime).Unix(),
+		ExpiresAt: s.clock().Add(s.otpLifetime).Unix(),
 	}); err != nil {
 		return router.ServerError("failed to store challenge", err)
 	}
@@ -177,7 +141,7 @@ func (s *Server) beginOTPChallenge(
 	return e.JSON(http.StatusOK, OTPChallengeResponse{
 		Challenge: challenge,
 		Channel:   sf.Channel,
-		ExpiresIn: int64(s.otp.lifetime.Seconds()),
+		ExpiresIn: int64(s.otpLifetime.Seconds()),
 	})
 }
 
@@ -195,7 +159,7 @@ func (s *Server) beginOTPChallenge(
 // both the challenge and the throttle, and the code comparison runs in
 // constant time.
 func (s *Server) VerifyOTP(e *router.Exchange) error {
-	if s.otp == nil {
+	if len(s.otpChannels) == 0 {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -238,7 +202,7 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 		return invalid
 	}
 
-	if ch.Attempts >= s.otp.maxAttempts {
+	if ch.Attempts >= s.otpMaxAttempts {
 		// The challenge is burned. Delete it best-effort; expiry cleans up
 		// after a failed deletion.
 		if _, err := s.sessions.DeleteOTPChallenge(
@@ -315,10 +279,10 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 // challenge itself — its handle, expiry, and attempt count — remains
 // unchanged, so resending cannot be used to keep a login pending forever or
 // to reset the guess budget. The number of resends per challenge is capped
-// by [SecondFactorConfig.MaxResends], because every delivery costs money
+// by [Config.OTPMaxResends], because every delivery costs money
 // and unsolicited deliveries spam the subject.
 func (s *Server) ResendOTP(e *router.Exchange) error {
-	if s.otp == nil {
+	if len(s.otpChannels) == 0 {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -355,7 +319,7 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		return invalid
 	}
 
-	if s.otp.maxResends < 0 || ch.Resends >= s.otp.maxResends {
+	if s.otpMaxResends < 0 || ch.Resends >= s.otpMaxResends {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
 			Reason:      router.ReasonRateLimit,
@@ -385,7 +349,7 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		return invalid
 	}
 
-	channel := s.otp.channel(sf.Channel)
+	channel := s.otpChannels[sf.Channel]
 	if channel == nil {
 		return router.ServerError("second factor channel is not available",
 			fmt.Errorf("no delivery channel configured for %q", sf.Channel),

@@ -65,18 +65,23 @@
 // # Two-factor logins
 //
 // Password logins can be stepped up with a one-time password delivered over
-// SMS or email; see [WithSecondFactor]. When enabled, subjects that have
-// enrolled a [SecondFactor] receive an [OTPChallengeResponse] instead of a
-// session from the login endpoint and confirm the code via
-// [Server.VerifyOTP] (or request redelivery via [Server.ResendOTP]).
-// Delivery is abstracted by the otp package:
+// a side channel; see [WithOTPChannel]. When at least one channel is
+// registered, subjects that have enrolled a [SecondFactor] receive an
+// [OTPChallengeResponse] instead of a session from the login endpoint and
+// confirm the code via [Server.VerifyOTP] (or request redelivery via
+// [Server.ResendOTP]). Channels are registered under free-form names that
+// enrollments refer to; delivery is abstracted by the otp package:
 //
 //	s := oauth.New(cfg,
 //	  oauth.WithGrant(oauth.AuthCodeGrant()),
-//	  oauth.WithSecondFactor(oauth.SecondFactorConfig{
-//	    SMS:  otp.NewSMSChannel(smsSender, "+15551234567", ""),
-//	    Mail: otp.NewMailChannel(mailSender, from, "template-id", ""),
-//	  }),
+//	  oauth.WithOTPChannel(
+//	    oauth.SecondFactorChannelSMS,
+//	    otp.SMS(smsSender, "+15551234567", ""),
+//	  ),
+//	  oauth.WithOTPChannel(
+//	    oauth.SecondFactorChannelEmail,
+//	    otp.Mail(mailSender, from, "template-id", ""),
+//	  ),
 //	)
 //
 // # Passkeys
@@ -224,14 +229,18 @@ type Subject interface {
 	Roles() []string
 }
 
-// SecondFactorChannel identifies the side channel over which a one-time
-// password is delivered during a two-factor login.
+// SecondFactorChannel names the side channel over which a one-time
+// password is delivered during a two-factor login. Channels are registered
+// under such names via [WithOTPChannel]; any name is valid as long as
+// enrollments and registrations agree on it.
 type SecondFactorChannel string
 
 const (
-	// SecondFactorChannelSMS delivers one-time passwords as text messages.
+	// SecondFactorChannelSMS is the conventional name for a channel that
+	// delivers one-time passwords as text messages.
 	SecondFactorChannelSMS SecondFactorChannel = "sms"
-	// SecondFactorChannelEmail delivers one-time passwords via email.
+	// SecondFactorChannelEmail is the conventional name for a channel that
+	// delivers one-time passwords via email.
 	SecondFactorChannelEmail SecondFactorChannel = "email"
 )
 
@@ -243,11 +252,13 @@ const (
 // and verifying the destination) is application concern and happens outside
 // this package.
 type SecondFactor struct {
-	// Channel selects the delivery mechanism for one-time passwords.
+	// Channel selects the delivery mechanism for one-time passwords. It
+	// must match the name of a channel registered via [WithOTPChannel].
 	Channel SecondFactorChannel
 	// Destination is the channel-specific address of the subject: a phone
-	// number in E.164 format for [SecondFactorChannelSMS], or an email
-	// address for [SecondFactorChannelEmail].
+	// number in E.164 format for [SecondFactorChannelSMS], an email
+	// address for [SecondFactorChannelEmail], or whatever a custom channel
+	// expects.
 	Destination string
 }
 
@@ -275,7 +286,7 @@ type SubjectStore interface {
 	// error only if the storage lookup fails.
 	//
 	// The method is only consulted when the server was constructed with
-	// [WithSecondFactor]; implementations backing servers without two-factor
+	// [WithOTPChannel]; implementations backing servers without two-factor
 	// support may simply return nil, nil.
 	GetSecondFactor(
 		ctx context.Context,

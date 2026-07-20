@@ -80,7 +80,7 @@ type webAuthnSupport struct {
 //
 // Registered credentials are required to be discoverable (resident keys)
 // with user verification, so a passkey login is inherently multi-factor and
-// does not go through the [WithSecondFactor] OTP flow.
+// does not go through the [WithOTPChannel] OTP flow.
 //
 // It panics if the configuration is rejected by the underlying WebAuthn
 // implementation, since relying party settings are startup configuration.

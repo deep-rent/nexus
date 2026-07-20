@@ -25,8 +25,8 @@
 //
 // # Delivery channels
 //
-// Two [Channel] adapters are provided out of the box: [NewSMSChannel] delivers
-// codes as text messages through an [sms.Sender], and [NewMailChannel]
+// Two [Channel] adapters are provided out of the box: [SMS] delivers
+// codes as text messages through an [sms.Sender], and [Mail]
 // delivers them as transactional emails through a [mail.Sender]. Both
 // adapters are thin: they format the code into the channel's payload shape
 // and delegate dispatching entirely to the wrapped sender.
@@ -36,7 +36,7 @@
 //	code, err := otp.Generate(6) // e.g., "042917"
 //	if err != nil { ... }
 //
-//	channel := otp.NewSMSChannel(
+//	channel := otp.SMS(
 //	  sms.NewSender("twilio_sid", "twilio_auth_token"),
 //	  "+15551234567", // from
 //	  "",             // use DefaultSMSFormat
@@ -69,12 +69,12 @@ const (
 	// not specify their own. Six digits match the format users know from
 	// TOTP authenticator apps and carrier-grade verification flows.
 	DefaultLength = 6
-	// DefaultSMSFormat is the message body used by [NewSMSChannel] when no
+	// DefaultSMSFormat is the message body used by [SMS] when no
 	// custom format is given. It contains a single %s verb that receives
 	// the code.
 	DefaultSMSFormat = "Your verification code is %s."
 	// DefaultTemplateDataKey is the template variable name under which
-	// [NewMailChannel] exposes the code when no custom key is given.
+	// [Mail] exposes the code when no custom key is given.
 	DefaultTemplateDataKey = "code"
 )
 
@@ -143,15 +143,15 @@ type smsChannel struct {
 
 var _ Channel = (*smsChannel)(nil)
 
-// NewSMSChannel returns a [Channel] that delivers codes as text messages
+// SMS returns a [Channel] that delivers codes as text messages
 // through the given [sms.Sender].
 //
 // The from number is used as the sender of every message. The format string
 // must contain exactly one %s verb, which receives the code; an empty format
-// falls back to [DefaultSMSFormat]. NewSMSChannel panics if the sender is
+// falls back to [DefaultSMSFormat]. SMS panics if the sender is
 // nil, the from number is empty, or the format lacks a %s verb, since all
 // three are startup configuration errors.
-func NewSMSChannel(sender sms.Sender, from, format string) Channel {
+func SMS(sender sms.Sender, from, format string) Channel {
 	if sender == nil {
 		panic("sms sender is required")
 	}
@@ -196,15 +196,15 @@ type mailChannel struct {
 
 var _ Channel = (*mailChannel)(nil)
 
-// NewMailChannel returns a [Channel] that delivers codes as transactional
+// Mail returns a [Channel] that delivers codes as transactional
 // emails through the given [mail.Sender].
 //
 // Every email is rendered from the dynamic template identified by
 // templateID, with the code exposed to the template under dataKey. An empty
-// dataKey falls back to [DefaultTemplateDataKey]. NewMailChannel panics if
+// dataKey falls back to [DefaultTemplateDataKey]. Mail panics if
 // the sender is nil, the from address is empty, or the template ID is
 // empty, since all three are startup configuration errors.
-func NewMailChannel(
+func Mail(
 	sender mail.Sender,
 	from mail.Mail,
 	templateID, dataKey string,

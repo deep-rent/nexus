@@ -111,6 +111,19 @@ type Config struct {
 	DeviceCodeLifetime time.Duration
 	// DevicePollInterval overrides [DefaultDevicePollInterval].
 	DevicePollInterval time.Duration
+	// OTPCodeLength is the number of digits in a generated one-time
+	// password. Defaults to [DefaultOTPCodeLength]. It is ignored when a
+	// custom generator is installed via [WithOTPCodeGenerator]. Only
+	// relevant when two-factor logins are enabled via [WithOTPChannel].
+	OTPCodeLength int
+	// OTPLifetime overrides [DefaultOTPLifetime]. Resending a one-time
+	// password does not extend a challenge's lifetime.
+	OTPLifetime time.Duration
+	// OTPMaxAttempts overrides [DefaultOTPMaxAttempts].
+	OTPMaxAttempts int
+	// OTPMaxResends overrides [DefaultOTPMaxResends]. A negative value
+	// disables resends entirely.
+	OTPMaxResends int
 	// Throttle rate limits the credential-verifying endpoints and applies
 	// escalating penalties to failed authentication attempts. When set,
 	// [Server.Mount] guards those routes with per-address limiting
@@ -164,7 +177,11 @@ type Server struct {
 	generateOTPCode        TokenGeneratorFn
 	generateWebAuthnHandle TokenGeneratorFn
 	verificationURI        string
-	otp                    *secondFactor
+	otpChannels            map[SecondFactorChannel]otp.Channel
+	otpCodeLength          int
+	otpLifetime            time.Duration
+	otpMaxAttempts         int
+	otpMaxResends          int
 	webauthn               *webAuthnSupport
 	throttle               *throttle.Throttle
 	throttlePenalty        int
@@ -235,7 +252,7 @@ func WithOTPChallengeGenerator(fn TokenGeneratorFn) Option {
 
 // WithOTPCodeGenerator overrides the one-time password generator. The
 // default draws a uniformly random numeric code of the length configured
-// via [SecondFactorConfig.CodeLength]; see [otp.Generate].
+// via [Config.OTPCodeLength]; see [otp.Generate].
 func WithOTPCodeGenerator(fn TokenGeneratorFn) Option {
 	return func(s *Server) { s.generateOTPCode = fn }
 }
@@ -315,6 +332,23 @@ func New(cfg Config, opts ...Option) *Server {
 			cfg.DevicePollInterval,
 			DefaultDevicePollInterval,
 		),
+		otpChannels: make(map[SecondFactorChannel]otp.Channel),
+		otpCodeLength: cmp.Or(
+			cfg.OTPCodeLength,
+			DefaultOTPCodeLength,
+		),
+		otpLifetime: cmp.Or(
+			cfg.OTPLifetime,
+			DefaultOTPLifetime,
+		),
+		otpMaxAttempts: cmp.Or(
+			cfg.OTPMaxAttempts,
+			DefaultOTPMaxAttempts,
+		),
+		otpMaxResends: cmp.Or(
+			cfg.OTPMaxResends,
+			DefaultOTPMaxResends,
+		),
 		realm:                  cmp.Or(cfg.Realm, DefaultRealm),
 		loginTerminalURI:       cfg.LoginTerminalURI,
 		loginRedirectURI:       cfg.LoginRedirectURI,
@@ -352,8 +386,8 @@ func New(cfg Config, opts ...Option) *Server {
 	// code length, so it is resolved only after all options have been
 	// applied. An explicit [WithOTPCodeGenerator] always wins, regardless
 	// of option order.
-	if s.otp != nil && s.generateOTPCode == nil {
-		length := s.otp.codeLength
+	if s.generateOTPCode == nil {
+		length := s.otpCodeLength
 		s.generateOTPCode = func(context.Context) (string, error) {
 			return otp.Generate(length)
 		}
@@ -379,7 +413,7 @@ func (s *Server) Supports(grant GrantType) bool {
 // The device authorization endpoints are only registered when a verification
 // URI has been configured, the external login endpoints only when at least
 // one identity provider is registered, the OTP verification and resend
-// endpoints only when two-factor logins are enabled via [WithSecondFactor],
+// endpoints only when two-factor logins are enabled via [WithOTPChannel],
 // and the WebAuthn endpoints only when passkey support is enabled via
 // [WithWebAuthn].
 //
@@ -420,7 +454,7 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogin, s.Login, guarded...)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogout, s.Logout)
 
-	if s.otp != nil {
+	if len(s.otpChannels) > 0 {
 		r.HandleFunc(
 			http.MethodPost+" "+prefix+PathLoginOTP,
 			s.VerifyOTP,

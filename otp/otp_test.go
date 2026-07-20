@@ -116,7 +116,7 @@ func TestGenerate_PanicsOnInvalidLength(t *testing.T) {
 	}
 }
 
-func TestNewSMSChannel_Panics(t *testing.T) {
+func TestSMS_Panics(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -148,19 +148,19 @@ func TestNewSMSChannel_Panics(t *testing.T) {
 			t.Parallel()
 			defer func() {
 				if recover() == nil {
-					t.Error("NewSMSChannel did not panic")
+					t.Error("SMS did not panic")
 				}
 			}()
-			otp.NewSMSChannel(tt.sender, tt.from, tt.format)
+			otp.SMS(tt.sender, tt.from, tt.format)
 		})
 	}
 }
 
-func TestSMSSender_Send(t *testing.T) {
+func TestSMSChannel_Send(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeSMSSender{}
-	sender := otp.NewSMSChannel(fake, "+15551234567", "")
+	sender := otp.SMS(fake, "+15551234567", "")
 
 	if err := sender.Send(
 		t.Context(),
@@ -187,11 +187,11 @@ func TestSMSSender_Send(t *testing.T) {
 	}
 }
 
-func TestSMSSender_Send_CustomFormat(t *testing.T) {
+func TestSMSChannel_Send_CustomFormat(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeSMSSender{}
-	sender := otp.NewSMSChannel(fake, "+15551234567", "%s is your login code")
+	sender := otp.SMS(fake, "+15551234567", "%s is your login code")
 
 	if err := sender.Send(t.Context(), "+15558675309", "123456"); err != nil {
 		t.Fatalf("Send returned error: %v", err)
@@ -203,7 +203,7 @@ func TestSMSSender_Send_CustomFormat(t *testing.T) {
 	}
 }
 
-func TestSMSSender_Send_Validation(t *testing.T) {
+func TestSMSChannel_Send_Validation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -229,7 +229,7 @@ func TestSMSSender_Send_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sender := otp.NewSMSChannel(&fakeSMSSender{}, "+15551234567", "")
+			sender := otp.SMS(&fakeSMSSender{}, "+15551234567", "")
 			err := sender.Send(t.Context(), tt.to, tt.code)
 			if !errors.Is(err, tt.err) {
 				t.Errorf("got %v; want %v", err, tt.err)
@@ -238,11 +238,11 @@ func TestSMSSender_Send_Validation(t *testing.T) {
 	}
 }
 
-func TestSMSSender_Send_PropagatesError(t *testing.T) {
+func TestSMSChannel_Send_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
-	sender := otp.NewSMSChannel(&fakeSMSSender{err: boom}, "+15551234567", "")
+	sender := otp.SMS(&fakeSMSSender{err: boom}, "+15551234567", "")
 
 	if err := sender.Send(
 		t.Context(),
@@ -253,7 +253,7 @@ func TestSMSSender_Send_PropagatesError(t *testing.T) {
 	}
 }
 
-func TestNewMailChannel_Panics(t *testing.T) {
+func TestMail_Panics(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -287,20 +287,20 @@ func TestNewMailChannel_Panics(t *testing.T) {
 			t.Parallel()
 			defer func() {
 				if recover() == nil {
-					t.Error("NewMailChannel did not panic")
+					t.Error("Mail did not panic")
 				}
 			}()
-			otp.NewMailChannel(tt.sender, tt.from, tt.templateID, "")
+			otp.Mail(tt.sender, tt.from, tt.templateID, "")
 		})
 	}
 }
 
-func TestMailSender_Send(t *testing.T) {
+func TestMailChannel_Send(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeMailSender{}
 	from := mail.New("no-reply@example.com", "Example")
-	sender := otp.NewMailChannel(fake, from, "tpl-1", "")
+	sender := otp.Mail(fake, from, "tpl-1", "")
 
 	if err := sender.Send(
 		t.Context(),
@@ -332,11 +332,11 @@ func TestMailSender_Send(t *testing.T) {
 	}
 }
 
-func TestMailSender_Send_CustomDataKey(t *testing.T) {
+func TestMailChannel_Send_CustomDataKey(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeMailSender{}
-	sender := otp.NewMailChannel(
+	sender := otp.Mail(
 		fake,
 		mail.New("no-reply@example.com", ""),
 		"tpl-1",
@@ -356,7 +356,7 @@ func TestMailSender_Send_CustomDataKey(t *testing.T) {
 	}
 }
 
-func TestMailSender_Send_Validation(t *testing.T) {
+func TestMailChannel_Send_Validation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -382,7 +382,7 @@ func TestMailSender_Send_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sender := otp.NewMailChannel(
+			sender := otp.Mail(
 				&fakeMailSender{},
 				mail.New("no-reply@example.com", ""),
 				"tpl-1",
@@ -396,11 +396,11 @@ func TestMailSender_Send_Validation(t *testing.T) {
 	}
 }
 
-func TestMailSender_Send_PropagatesError(t *testing.T) {
+func TestMailChannel_Send_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
-	sender := otp.NewMailChannel(
+	sender := otp.Mail(
 		&fakeMailSender{err: boom},
 		mail.New("no-reply@example.com", ""),
 		"tpl-1",
