@@ -177,11 +177,11 @@ func New(cfg Config) *Throttle {
 
 	switch {
 	case limit <= 0:
-		panic("oauth: Config.Rate must be positive")
+		panic("rate must be positive")
 	case burst <= 0:
-		panic("oauth: Config.Burst must be positive")
+		panic("burst must be positive")
 	case penalty > burst:
-		panic("oauth: Config.Penalty must not exceed Burst")
+		panic("penalty must not exceed burst")
 	}
 
 	key := cfg.Key
