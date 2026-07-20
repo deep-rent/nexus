@@ -27,9 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"uuid"
-
 	"golang.org/x/time/rate"
+	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwa"
