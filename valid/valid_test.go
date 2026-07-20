@@ -350,10 +350,12 @@ func TestHex(t *testing.T) {
 func TestHexColor(t *testing.T) {
 	t.Parallel()
 	tests := []test{
+		{"valid 8 char", "#ffffffff", true},
 		{"valid 6 char", "#ffffff", true},
+		{"valid 4 char", "#ffff", true},
 		{"valid 3 char", "#fff", true},
 		{"valid no prefix", "ffffff", true},
-		{"invalid length", "#ffff", false},
+		{"invalid length", "#fffff", false},
 		{"invalid chars", "#gggggg", false},
 	}
 	run(t, valid.HexColor, tests)

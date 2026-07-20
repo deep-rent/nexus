@@ -339,7 +339,7 @@ func HexColor(s string) bool {
 	if s[0] == '#' {
 		s = s[1:]
 	}
-	if len(s) != 3 && len(s) != 6 {
+	if len(s) != 3 && len(s) != 4 && len(s) != 6 && len(s) != 8 {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
