@@ -94,18 +94,38 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 // headers. It accepts a clock function to calculate relative times. It returns
 // a duration of 0 if the response is not cacheable or does not carry any
 // caching information.
+//
+// Directives are evaluated as a set rather than in the order they appear, so
+// a no-store or no-cache anywhere in Cache-Control suppresses the lifetime
+// even when a max-age precedes it. A no-cache that names specific fields
+// (no-cache="Set-Cookie") only marks those fields for revalidation and leaves
+// the lifetime intact.
 func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	// Cache-Control takes precedence over Expires
 	if v := h.Get("Cache-Control"); v != "" {
+		var (
+			maxAge time.Duration
+			found  bool
+		)
+
 		for k, v := range Directives(v) {
 			switch k {
-			case "no-cache", "no-store":
+			case "no-store":
 				return 0
+			case "no-cache":
+				// Only the unqualified form forbids reuse outright.
+				if v == "" {
+					return 0
+				}
 			case "max-age":
 				if d, err := strconv.ParseInt(v, 10, 64); err == nil {
-					return time.Duration(d) * time.Second
+					maxAge, found = time.Duration(d)*time.Second, true
 				}
 			}
+		}
+
+		if found {
+			return maxAge
 		}
 	}
 	if v := h.Get("Expires"); v != "" {
