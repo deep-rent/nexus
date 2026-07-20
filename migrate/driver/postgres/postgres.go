@@ -39,11 +39,11 @@ package postgres
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"io"
 	"log/slog"
 	"time"
 
@@ -104,8 +104,10 @@ func WithSchema(name string) Option {
 
 // WithLockID sets a static identifier for the PostgreSQL advisory lock.
 //
-// If not provided, a random 64-bit identifier is securely generated. This is
-// primarily intended for testing lock contention.
+// If not provided, the identifier is derived from the schema and table name,
+// so all migrator instances targeting the same tracking table contend for the
+// same lock. Provide an explicit identifier to coordinate with external
+// tooling or to avoid collisions with other advisory lock users.
 func WithLockID(id int64) Option {
 	return func(c *config) {
 		c.lockID = &id
@@ -168,9 +170,10 @@ type Driver struct {
 
 // New creates a new PostgreSQL migration driver.
 //
-// It uses the provided database connection and options. It generates a unique
-// cryptographic identifier for advisory locks to prevent concurrent migration
-// conflicts. It panics if the lock identifier generation fails.
+// It uses the provided database connection and options. Unless overridden via
+// [WithLockID], the advisory lock identifier is derived deterministically from
+// the schema and table name, so that concurrent migrator instances targeting
+// the same tracking table mutually exclude each other.
 func New(db *sql.DB, opts ...Option) *Driver {
 	cfg := &config{
 		table:  DefaultTable,
@@ -195,16 +198,29 @@ func New(db *sql.DB, opts ...Option) *Driver {
 	if cfg.lockID != nil {
 		d.lockID = *cfg.lockID
 	} else {
-		// Generate a random identifier for the table lock.
-		var b [8]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			panic(fmt.Sprintf("failed to generate random lock ID: %v", err))
-		}
-		raw := binary.BigEndian.Uint64(b[:])
-		d.lockID = int64(raw & 0x7FFFFFFFFFFFFFFF)
+		d.lockID = deriveLockID(cfg.schema, cfg.table)
 	}
 
 	return d
+}
+
+// deriveLockID hashes the schema and table name into a stable, non-negative
+// advisory lock identifier.
+//
+// Deriving the identifier from the tracking table location guarantees that
+// every migrator instance pointed at the same table competes for the same
+// lock, while migrators using different tables remain independent.
+func deriveLockID(schema, table string) int64 {
+	h := fnv.New64a()
+	_, _ = io.WriteString(h, schema)
+	_, _ = io.WriteString(h, ".")
+	_, _ = io.WriteString(h, table)
+	return int64(h.Sum64() & 0x7FFFFFFFFFFFFFFF)
+}
+
+// LockID returns the advisory lock identifier used by this driver.
+func (d *Driver) LockID() int64 {
+	return d.lockID
 }
 
 // Parser returns the PostgreSQL-specific statement parser.

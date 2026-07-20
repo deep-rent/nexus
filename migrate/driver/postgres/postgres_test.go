@@ -94,6 +94,78 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestDriver_LockID(t *testing.T) {
+	t.Parallel()
+
+	// Instances sharing a tracking table must derive the same default lock
+	// ID, or concurrent migrators would not mutually exclude each other.
+	d1 := postgres.New(nil)
+	d2 := postgres.New(nil)
+	if d1.LockID() != d2.LockID() {
+		t.Errorf(
+			"default lock IDs differ: got %d and %d; want equal",
+			d1.LockID(), d2.LockID(),
+		)
+	}
+	if d1.LockID() < 0 {
+		t.Errorf("lock ID: got %d; want non-negative", d1.LockID())
+	}
+
+	// Different tracking tables must not contend for the same lock.
+	d3 := postgres.New(nil, postgres.WithTable("other"))
+	if d1.LockID() == d3.LockID() {
+		t.Errorf(
+			"lock IDs for distinct tables collide: got %d for both",
+			d1.LockID(),
+		)
+	}
+	d4 := postgres.New(nil, postgres.WithSchema("other"))
+	if d1.LockID() == d4.LockID() {
+		t.Errorf(
+			"lock IDs for distinct schemas collide: got %d for both",
+			d1.LockID(),
+		)
+	}
+
+	// An explicit ID overrides the derived one.
+	d5 := postgres.New(nil, postgres.WithLockID(42))
+	if got, want := d5.LockID(), int64(42); got != want {
+		t.Errorf("explicit lock ID: got %d; want %d", got, want)
+	}
+}
+
+func TestDriver_Locking_DefaultID(t *testing.T) {
+	db := setupDB(t)
+
+	// Two drivers with default lock IDs must contend for the same lock.
+	d1 := postgres.New(db)
+	d2 := postgres.New(db, postgres.WithLockTimeout(100*time.Millisecond))
+
+	ctx := context.Background()
+
+	if err := d1.Lock(ctx); err != nil {
+		t.Fatalf("locking d1: should not have returned an error: %v", err)
+	}
+
+	if err := d2.Lock(ctx); err == nil {
+		t.Error("locking d2 while held: should have returned a timeout error")
+	}
+
+	if err := d1.Unlock(ctx); err != nil {
+		t.Errorf("unlocking d1: should not have returned an error: %v", err)
+	}
+
+	if err := d2.Lock(ctx); err != nil {
+		t.Errorf(
+			"locking d2 after release: should not have returned an error: %v",
+			err,
+		)
+	}
+	if err := d2.Unlock(ctx); err != nil {
+		t.Errorf("unlocking d2: should not have returned an error: %v", err)
+	}
+}
+
 func TestDriver_Init(t *testing.T) {
 	db := setupDB(t)
 
