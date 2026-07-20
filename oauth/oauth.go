@@ -69,11 +69,15 @@
 // owner with an active session is treated as having approved the requested
 // scopes, which is appropriate for first-party clients only.
 //
-// Deployments must provide the protections that fall outside this package:
-// serve all endpoints over TLS (cookies are marked Secure), rate limit the
-// login and token endpoints (e.g., via middleware), and back the store
-// interfaces with implementations that honor the atomicity and TTL
-// contracts documented on [SessionStore].
+// Set [Config.Throttle] to rate limit the credential-verifying endpoints
+// and slow down brute-force attempts; see [Throttle] for the trade-offs.
+// Because its buckets live in memory, it complements rather than replaces
+// volumetric rate limiting at the load balancer or reverse proxy.
+//
+// Deployments must provide the remaining protections that fall outside this
+// package: serve all endpoints over TLS (cookies are marked Secure), and
+// back the store interfaces with implementations that honor the atomicity
+// and TTL contracts documented on [SessionStore].
 package oauth
 
 import (

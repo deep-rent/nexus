@@ -53,12 +53,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/oauth"
 	"github.com/deep-rent/nexus/oauth/oidc"
 	"github.com/deep-rent/nexus/sign"
+	"github.com/deep-rent/nexus/transport"
 )
 
 // Apple endpoints and token Issuer, as documented at
@@ -99,7 +101,7 @@ type Config struct {
 	// response mode.
 	Scopes []string
 	// Client overrides the HTTP client used for outbound requests to
-	// Apple. Defaults to a client bounded by [oidc.DefaultTimeout].
+	// Apple. Defaults to [transport.DefaultClient].
 	Client *http.Client
 }
 
@@ -146,7 +148,7 @@ func New(cfg Config) *Provider {
 
 	client := cfg.Client
 	if client == nil {
-		client = &http.Client{Timeout: oidc.DefaultTimeout}
+		client = transport.DefaultClient
 	}
 
 	scopes := cfg.Scopes
@@ -154,7 +156,7 @@ func New(cfg Config) *Provider {
 		scopes = DefaultScopes
 	}
 
-	keys := jwk.NewCacheSet(client, KeySetURL)
+	keys := jwk.NewCacheSet(KeySetURL, cache.WithClient(client))
 
 	return &Provider{
 		clientID:    cfg.ClientID,

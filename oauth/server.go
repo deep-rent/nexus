@@ -103,6 +103,11 @@ type Config struct {
 	DeviceCodeLifetime time.Duration
 	// DevicePollInterval overrides [DefaultDevicePollInterval].
 	DevicePollInterval time.Duration
+	// Throttle rate limits the credential-verifying endpoints and applies
+	// escalating penalties to failed authentication attempts. When set,
+	// [Server.Mount] installs [Throttle.Middleware] on those routes
+	// automatically. A nil value disables throttling.
+	Throttle *Throttle
 	// Logger receives structured diagnostics. Defaults to [slog.Default].
 	Logger *slog.Logger
 }
@@ -137,6 +142,7 @@ type Server struct {
 	generateUserCode     TokenGeneratorFn
 	generateState        TokenGeneratorFn
 	verificationURI      string
+	throttle             *Throttle
 	logger               *slog.Logger
 	clock                func() time.Time
 }
@@ -277,6 +283,7 @@ func New(cfg Config, opts ...Option) *Server {
 		generateDeviceCode:   GenerateDeviceCode,
 		generateUserCode:     GenerateUserCode,
 		generateState:        GenerateState,
+		throttle:             cfg.Throttle,
 		logger:               logger,
 		clock:                time.Now,
 	}
@@ -313,7 +320,17 @@ func (s *Server) Supports(grant GrantType) bool {
 // The device authorization endpoints are only registered when a verification
 // URI has been configured, and the external login endpoints only when at
 // least one identity provider is registered.
+//
+// When [Config.Throttle] is set, every endpoint that verifies a credential
+// — the token, revocation, introspection, login, device authorization, and
+// device verification endpoints — is wrapped in [Throttle.Middleware].
 func (s *Server) Mount(r *router.Router, prefix string) {
+	// guarded protects endpoints that accept credential guesses.
+	var guarded []router.Middleware
+	if s.throttle != nil {
+		guarded = append(guarded, s.throttle.Middleware())
+	}
+
 	wellKnown := s.WellKnown(prefix)
 	r.Handle(http.MethodGet+" "+prefix+PathWellKnown, wellKnown)
 
@@ -331,20 +348,26 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 
 	r.HandleFunc(http.MethodGet+" "+prefix+PathAuthorize, s.Authorize)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathAuthorize, s.Authorize)
-	r.HandleFunc(http.MethodPost+" "+prefix+PathToken, s.Token)
-	r.HandleFunc(http.MethodPost+" "+prefix+PathRevoke, s.Revoke)
-	r.HandleFunc(http.MethodPost+" "+prefix+PathIntrospect, s.Introspect)
-	r.HandleFunc(http.MethodPost+" "+prefix+PathLogin, s.Login)
+	r.HandleFunc(http.MethodPost+" "+prefix+PathToken, s.Token, guarded...)
+	r.HandleFunc(http.MethodPost+" "+prefix+PathRevoke, s.Revoke, guarded...)
+	r.HandleFunc(
+		http.MethodPost+" "+prefix+PathIntrospect,
+		s.Introspect,
+		guarded...,
+	)
+	r.HandleFunc(http.MethodPost+" "+prefix+PathLogin, s.Login, guarded...)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogout, s.Logout)
 
 	if s.verificationURI != "" {
 		r.HandleFunc(
 			http.MethodPost+" "+prefix+PathDeviceAuthorization,
 			s.DeviceAuthorization,
+			guarded...,
 		)
 		r.HandleFunc(
 			http.MethodPost+" "+prefix+PathDeviceVerify,
 			s.DeviceVerify,
+			guarded...,
 		)
 	}
 
@@ -438,6 +461,49 @@ func (s *Server) internalError(
 		Description: desc,
 		ID:          logError(ctx, s.logger, desc, err),
 	}
+}
+
+// throttled reports whether the given key has exhausted its throttle
+// allowance, setting the Retry-After header when it has. It always reports
+// false when throttling is disabled.
+func (s *Server) throttled(e *router.Exchange, key string) bool {
+	if s.throttle == nil {
+		return false
+	}
+	blocked, wait := s.throttle.Blocked(key)
+	if blocked {
+		retryAfter(e, wait)
+	}
+	return blocked
+}
+
+// penalize charges a failed authentication attempt against the given keys.
+func (s *Server) penalize(keys ...string) {
+	if s.throttle == nil {
+		return
+	}
+	for _, key := range keys {
+		s.throttle.Penalize(key)
+	}
+}
+
+// clear restores the throttle allowance of a credential that has just been
+// proven. Address-scoped keys are deliberately never cleared, so that
+// holding one valid credential cannot wipe the penalty accrued while
+// guessing others.
+func (s *Server) clear(key string) {
+	if s.throttle != nil {
+		s.throttle.Reset(key)
+	}
+}
+
+// addr returns the address-scoped throttle key for the request, or an empty
+// string when throttling is disabled.
+func (s *Server) addr(e *router.Exchange) string {
+	if s.throttle == nil {
+		return ""
+	}
+	return s.throttle.addrKey(e.R)
 }
 
 // newCookie builds a hardened cookie. A maxAge of zero yields a
@@ -549,16 +615,30 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 		}
 	}
 
-	// Client identifiers are UUIDs; a malformed value is indistinguishable
-	// from an unknown client.
-	id, err := uuid.Parse(clientID)
-	if err != nil {
+	// Repeated guesses against one client identity are locked out before
+	// the store is consulted, regardless of the address they arrive from.
+	clientKey := scopeClient + clientID
+	if s.throttled(e, clientKey) {
+		return nil, tooManyAttempts()
+	}
+
+	// deny records a failed credential attempt before returning the
+	// (deliberately uniform) rejection.
+	deny := func(desc string) (*Proposal, error) {
+		s.penalize(clientKey, s.addr(e))
 		s.challenge(e)
 		return nil, &Error{
 			Status:      http.StatusUnauthorized,
 			Code:        ErrorCodeInvalidClient,
-			Description: "unknown client",
+			Description: desc,
 		}
+	}
+
+	// Client identifiers are UUIDs; a malformed value is indistinguishable
+	// from an unknown client.
+	id, err := uuid.Parse(clientID)
+	if err != nil {
+		return deny("unknown client")
 	}
 
 	client, err := s.clients.GetClient(e.Context(), id)
@@ -567,31 +647,19 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 	}
 
 	if client == nil {
-		s.challenge(e)
-		return nil, &Error{
-			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeInvalidClient,
-			Description: "unknown client",
-		}
+		return deny("unknown client")
 	}
 
 	if clientSecret == "" && !client.Public() {
-		s.challenge(e)
-		return nil, &Error{
-			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeInvalidClient,
-			Description: "client requires a secret",
-		}
+		return deny("client requires a secret")
 	}
 
 	if clientSecret != "" && !client.VerifySecret(clientSecret) {
-		s.challenge(e)
-		return nil, &Error{
-			Status:      http.StatusUnauthorized,
-			Code:        ErrorCodeInvalidClient,
-			Description: "invalid client secret",
-		}
+		return deny("invalid client secret")
 	}
+
+	// The credential is proven; drop any penalty from earlier attempts.
+	s.clear(clientKey)
 
 	return &Proposal{
 		Client:   client,
@@ -1193,6 +1261,15 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 		return err
 	}
 
+	// RFC 8628 Section 5.1: user codes are short enough to be guessed, so
+	// the verification endpoint must be rate limited. The session holder is
+	// throttled rather than the code, since an attacker guessing codes
+	// controls their own session but not the codes they hit.
+	subjectKey := scopeCode + sub.ID().String()
+	if s.throttled(e, subjectKey) {
+		return tooManyRequests()
+	}
+
 	code, err := s.sessions.GetDeviceCodeByUserCode(
 		e.Context(),
 		NewDigest(normalizeUserCode(req.UserCode)),
@@ -1207,6 +1284,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 
 	if code.DeviceCode == "" ||
 		(code.ExpiresAt != 0 && s.clock().Unix() > code.ExpiresAt) {
+		s.penalize(subjectKey, s.addr(e))
 		return &router.Error{
 			Status:      http.StatusNotFound,
 			Reason:      router.ReasonNotFound,

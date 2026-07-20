@@ -40,10 +40,6 @@ import (
 	"github.com/deep-rent/nexus/oauth"
 )
 
-// DefaultTimeout bounds outbound requests to external providers when no
-// custom HTTP client is configured.
-const DefaultTimeout = 10 * time.Second
-
 // Boolish is a bool that additionally accepts the JSON string forms "true"
 // and "false". Some providers (notably Apple) encode boolean claims such as
 // email_verified as strings.
@@ -122,10 +118,6 @@ func (t *IDToken) Claimant() oauth.Claimant {
 	}
 }
 
-// maxResponseSize caps token endpoint response bodies to guard against
-// misbehaving servers.
-const maxResponseSize = 1 << 20
-
 // Exchange posts the given form to a provider's token endpoint and decodes
 // the JSON response into an [oauth.TokenResponse].
 //
@@ -163,7 +155,8 @@ func Exchange(
 		_ = res.Body.Close()
 	}()
 
-	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseSize))
+	// The client caps response body size, so this read is bounded.
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return oauth.TokenResponse{}, fmt.Errorf(
 			"failed to read token response: %w",

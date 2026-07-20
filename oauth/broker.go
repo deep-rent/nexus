@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/router"
@@ -40,6 +41,13 @@ func (s *Server) Login(e *router.Exchange) error {
 		return err
 	}
 
+	// Guesses are counted per account, folded to lower case so that varying
+	// the capitalization cannot buy a fresh allowance.
+	userKey := scopeUser + strings.ToLower(cred.Username)
+	if s.throttled(e, userKey) {
+		return tooManyRequests()
+	}
+
 	sub, err := s.subjects.Authenticate(
 		e.Context(),
 		cred.Username,
@@ -49,12 +57,16 @@ func (s *Server) Login(e *router.Exchange) error {
 		return s.internalError(e.Context(), "failed to lookup subject", err)
 	}
 	if sub == nil {
+		s.penalize(userKey, s.addr(e))
 		return &router.Error{
 			Status:      http.StatusUnauthorized,
 			Reason:      router.ReasonValidationFailed,
 			Description: "invalid credentials",
 		}
 	}
+
+	// The password is proven; drop any penalty from earlier attempts.
+	s.clear(userKey)
 
 	if err := s.establishSession(e, sub); err != nil {
 		return err

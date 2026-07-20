@@ -41,10 +41,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/oauth"
 	"github.com/deep-rent/nexus/oauth/oidc"
+	"github.com/deep-rent/nexus/transport"
 )
 
 // Google OIDC endpoints, as published at
@@ -75,7 +77,7 @@ type Config struct {
 	// "openid email profile".
 	Scopes []string
 	// Client overrides the HTTP client used for outbound requests to
-	// Google. Defaults to a client bounded by [oidc.DefaultTimeout].
+	// Google. Defaults to [transport.DefaultClient].
 	Client *http.Client
 }
 
@@ -110,7 +112,7 @@ func New(cfg Config) *Provider {
 
 	client := cfg.Client
 	if client == nil {
-		client = &http.Client{Timeout: oidc.DefaultTimeout}
+		client = transport.DefaultClient
 	}
 
 	scopes := cfg.Scopes
@@ -118,7 +120,7 @@ func New(cfg Config) *Provider {
 		scopes = DefaultScopes
 	}
 
-	keys := jwk.NewCacheSet(client, KeySetURL)
+	keys := jwk.NewCacheSet(KeySetURL, cache.WithClient(client))
 
 	return &Provider{
 		clientID:     cfg.ClientID,

@@ -28,6 +28,8 @@ import (
 	"time"
 	"uuid"
 
+	"golang.org/x/time/rate"
+
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
@@ -137,6 +139,14 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 	s.Mount(env.router, testPrefix)
 
 	return env
+}
+
+// withThrottle installs a throttle on the server under test. Production
+// code sets [Config.Throttle]; this mirrors it without threading a config
+// mutator through every call site. Options run before Mount, so the
+// middleware is installed as usual.
+func withThrottle(th *Throttle) Option {
+	return func(s *Server) { s.throttle = th }
 }
 
 func (env *testEnv) do(req *http.Request) *httptest.ResponseRecorder {
@@ -1325,6 +1335,226 @@ func TestInternalFailures(t *testing.T) {
 				w.Code,
 				http.StatusInternalServerError,
 			)
+		}
+	})
+}
+
+func TestThrottleIntegration(t *testing.T) {
+	t.Parallel()
+
+	// newThrottled builds an environment whose allowance tolerates exactly
+	// two failed attempts before locking out.
+	newThrottled := func(t *testing.T, now *time.Time) *testEnv {
+		t.Helper()
+		return newTestEnv(t, withThrottle(NewThrottle(ThrottleConfig{
+			Rate:    rate.Limit(1),
+			Burst:   10,
+			Penalty: 5,
+			Clock:   func() time.Time { return *now },
+		})))
+	}
+
+	t.Run("client secret guessing locks out", func(t *testing.T) {
+		t.Parallel()
+		now := time.Unix(1_752_000_000, 0)
+		env := newThrottled(t, &now)
+
+		form := func() url.Values {
+			return url.Values{
+				"grant_type": {string(GrantTypeClientCredentials)},
+			}
+		}
+
+		// Two wrong secrets are answered with the usual rejection.
+		for i := range 2 {
+			w := env.postForm(PathToken, form(), env.client, "wrong")
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf(
+					"attempt %d: got status %d; want %d",
+					i,
+					w.Code,
+					http.StatusUnauthorized,
+				)
+			}
+		}
+
+		// The third is locked out before the secret is even considered.
+		w := env.postForm(PathToken, form(), env.client, "wrong")
+		if w.Code != http.StatusTooManyRequests {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusTooManyRequests,
+			)
+		}
+		if got := w.Header().Get("Retry-After"); got == "" {
+			t.Error("missing Retry-After header")
+		}
+		if res := decodeJSON[Error](t, w); res.Code != ErrorCodeSlowDown {
+			t.Errorf("got error %q; want %q", res.Code, ErrorCodeSlowDown)
+		}
+
+		// Even the correct secret is refused while the lockout stands.
+		w = env.postForm(PathToken, form(), env.client, "s3cret")
+		if w.Code != http.StatusTooManyRequests {
+			t.Fatalf(
+				"got status %d; want %d during lockout",
+				w.Code,
+				http.StatusTooManyRequests,
+			)
+		}
+
+		// Once the allowance recovers, the correct secret works again.
+		now = now.Add(time.Minute)
+		w = env.postForm(PathToken, form(), env.client, "s3cret")
+		if w.Code != http.StatusOK {
+			t.Fatalf(
+				"got status %d; want %d after recovery: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
+		}
+	})
+
+	t.Run("successful auth clears the penalty", func(t *testing.T) {
+		t.Parallel()
+		now := time.Unix(1_752_000_000, 0)
+		env := newThrottled(t, &now)
+
+		form := url.Values{
+			"grant_type": {string(GrantTypeClientCredentials)},
+		}
+
+		// One failure, then a success, then two more failures: the success
+		// must have reset the count, so the third failure is still answered
+		// normally rather than locked out.
+		env.postForm(PathToken, form, env.client, "wrong")
+		if w := env.postForm(
+			PathToken,
+			form,
+			env.client,
+			"s3cret",
+		); w.Code != http.StatusOK {
+			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
+		}
+
+		for i := range 2 {
+			w := env.postForm(PathToken, form, env.client, "wrong")
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf(
+					"attempt %d: got status %d; want %d",
+					i,
+					w.Code,
+					http.StatusUnauthorized,
+				)
+			}
+		}
+	})
+
+	t.Run("password guessing locks out per account", func(t *testing.T) {
+		t.Parallel()
+		now := time.Unix(1_752_000_000, 0)
+		env := newThrottled(t, &now)
+
+		wrong := `{"username":"alice","password":"nope"}`
+
+		for i := range 2 {
+			if w := postJSON(env, PathLogin, wrong); w.Code != http.StatusUnauthorized {
+				t.Fatalf(
+					"attempt %d: got status %d; want %d",
+					i,
+					w.Code,
+					http.StatusUnauthorized,
+				)
+			}
+		}
+
+		w := postJSON(env, PathLogin, wrong)
+		if w.Code != http.StatusTooManyRequests {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusTooManyRequests,
+			)
+		}
+
+		// Case variations must not buy a fresh allowance.
+		w = postJSON(env, PathLogin, `{"username":"ALICE","password":"nope"}`)
+		if w.Code != http.StatusTooManyRequests {
+			t.Errorf(
+				"got status %d; want %d for a case variation",
+				w.Code,
+				http.StatusTooManyRequests,
+			)
+		}
+
+		// A different account is unaffected.
+		w = postJSON(env, PathLogin, `{"username":"bob","password":"nope"}`)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf(
+				"got status %d; want %d for a different account",
+				w.Code,
+				http.StatusUnauthorized,
+			)
+		}
+	})
+
+	t.Run("user code guessing locks out", func(t *testing.T) {
+		t.Parallel()
+		now := time.Unix(1_752_000_000, 0)
+		env := newThrottled(t, &now)
+		cookie := env.login()
+
+		guess := func() *httptest.ResponseRecorder {
+			req := httptest.NewRequest(
+				http.MethodPost,
+				testPrefix+PathDeviceVerify,
+				strings.NewReader(
+					`{"user_code":"BCDF-GHJK","action":"approve"}`,
+				),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(cookie)
+			return env.do(req)
+		}
+
+		for i := range 2 {
+			if w := guess(); w.Code != http.StatusNotFound {
+				t.Fatalf(
+					"attempt %d: got status %d; want %d",
+					i,
+					w.Code,
+					http.StatusNotFound,
+				)
+			}
+		}
+
+		if w := guess(); w.Code != http.StatusTooManyRequests {
+			t.Fatalf(
+				"got status %d; want %d",
+				w.Code,
+				http.StatusTooManyRequests,
+			)
+		}
+	})
+
+	t.Run("disabled by default", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+
+		form := url.Values{
+			"grant_type": {string(GrantTypeClientCredentials)},
+		}
+		for range 5 {
+			w := env.postForm(PathToken, form, env.client, "wrong")
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf(
+					"got status %d; want %d without a throttle",
+					w.Code,
+					http.StatusUnauthorized,
+				)
+			}
 		}
 	})
 }
