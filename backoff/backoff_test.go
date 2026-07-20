@@ -392,6 +392,29 @@ func TestStrategy_ConcurrentUse(t *testing.T) {
 	}
 }
 
+// The default jitter source is shared by every strategy, so it must tolerate
+// concurrent use just as the strategies themselves do.
+func TestJitter_ConcurrentUse(t *testing.T) {
+	t.Parallel()
+
+	s := backoff.New(backoff.WithJitterAmount(0.5))
+
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := range 100 {
+				if d := s.Delay(n + 1); d < 0 {
+					t.Errorf("delay: got %v; want a non-negative duration", d)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestCount(t *testing.T) {
 	t.Parallel()
 

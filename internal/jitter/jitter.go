@@ -50,13 +50,19 @@ type Rand interface {
 // Ensure compliance with parent interface.
 var _ Rand = (*rand.Rand)(nil)
 
-// seeded is a pre-seeded [Rand] instance for default use.
+// global is a [Rand] backed by the top-level functions of [math/rand/v2].
 //
-// Note: Go 1.20+ auto-seeds the global RNG, which spares us from time-based
-// seeding.
-var seeded Rand = rand.New(
-	rand.NewPCG(rand.Uint64(), rand.Uint64()),
-) //nolint:gosec
+// Unlike a [rand.Rand] value, which carries mutable state that a caller would
+// have to guard, these are safe for concurrent use and auto-seeded by the
+// runtime. That matters because a single [Jitter] is typically shared by every
+// goroutine backing off against the same resource.
+type global struct{}
+
+// Float64 generates a pseudo-random number in [0.0, 1.0).
+func (global) Float64() float64 { return rand.Float64() }
+
+// seeded is the [Rand] used when no source is supplied.
+var seeded Rand = global{}
 
 // Jitter applies subtractive random jitter to a duration.
 type Jitter struct {
@@ -69,7 +75,7 @@ type Jitter struct {
 // New creates a new [Jitter] instance with the given percentage p (0.0 to 1.0)
 // and source of randomness r.
 //
-// If r is nil, a default thread-safe, seeded generator is used.
+// If r is nil, a shared generator that is safe for concurrent use is applied.
 func New(p float64, r Rand) *Jitter {
 	if r == nil {
 		r = seeded // Fallback

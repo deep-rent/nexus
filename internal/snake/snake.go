@@ -43,16 +43,16 @@ import (
 // For example, "fooBar" is converted to "FOO_BAR", and so is "FOOBar". Note
 // that digits do not induce transitions, so "foo1" becomes "FOO1". Only ASCII
 // characters are supported. This function internally uses [transform] with
-// [ascii.ToUpper].
-func ToUpper(s string) string { return transform(s, ascii.ToUpper) }
+// [ascii.ToUpperRune].
+func ToUpper(s string) string { return transform(s, ascii.ToUpperRune) }
 
 // ToLower converts a camelCase string to a lowercase snake_case string.
 //
 // For example, "fooBar" is converted to "foo_bar", and so is "FOOBar". Note
 // that digits do not induce transitions, so "foo1" becomes "foo1". Only ASCII
 // characters are supported. This function internally uses [transform] with
-// [ascii.ToLower].
-func ToLower(s string) string { return transform(s, ascii.ToLower) }
+// [ascii.ToLowerRune].
+func ToLower(s string) string { return transform(s, ascii.ToLowerRune) }
 
 // transform is a helper function that performs the actual text conversion.
 //

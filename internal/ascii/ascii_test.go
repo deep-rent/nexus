@@ -309,7 +309,7 @@ func TestIsASCII(t *testing.T) {
 	}
 }
 
-func TestToLower(t *testing.T) {
+func TestToLowerRune(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -327,14 +327,14 @@ func TestToLower(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, want := ascii.ToLower(tt.give), tt.want; got != want {
+			if got, want := ascii.ToLowerRune(tt.give), tt.want; got != want {
 				t.Errorf("got %q; want %q", got, want)
 			}
 		})
 	}
 }
 
-func TestToUpper(t *testing.T) {
+func TestToUpperRune(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -352,7 +352,7 @@ func TestToUpper(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, want := ascii.ToUpper(tt.give), tt.want; got != want {
+			if got, want := ascii.ToUpperRune(tt.give), tt.want; got != want {
 				t.Errorf("got %q; want %q", got, want)
 			}
 		})
@@ -433,7 +433,7 @@ func TestEqualFold(t *testing.T) {
 	}
 }
 
-func TestToLowerString(t *testing.T) {
+func TestToLower(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -452,14 +452,14 @@ func TestToLowerString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ascii.ToLowerString(tt.give); got != tt.want {
+			if got := ascii.ToLower(tt.give); got != tt.want {
 				t.Errorf("got %q; want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestToUpperString(t *testing.T) {
+func TestToUpper(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -478,8 +478,58 @@ func TestToUpperString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ascii.ToUpperString(tt.give); got != tt.want {
+			if got := ascii.ToUpper(tt.give); got != tt.want {
 				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasLower(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give string
+		want bool
+	}{
+		{"all upper", "HELLO", false},
+		{"all lower", "hello", true},
+		{"mixed case", "HeLlO", true},
+		{"with numbers", "123", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ascii.HasLower(tt.give); got != tt.want {
+				t.Errorf("got %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasUpper(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give string
+		want bool
+	}{
+		{"all upper", "HELLO", true},
+		{"all lower", "hello", false},
+		{"mixed case", "HeLlO", true},
+		{"with numbers", "123", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ascii.HasUpper(tt.give); got != tt.want {
+				t.Errorf("got %v; want %v", got, tt.want)
 			}
 		})
 	}

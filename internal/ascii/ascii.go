@@ -88,20 +88,20 @@ func IsControl(c rune) bool { return c < 0x20 || c == 0x7F }
 // IsASCII reports whether the rune is a valid ASCII character.
 func IsASCII(c rune) bool { return c <= 0x7F }
 
-// ToLower converts an uppercase ASCII rune to lowercase.
+// ToLowerRune converts an uppercase ASCII rune to lowercase.
 //
 // If the rune is not an uppercase letter, it is returned unchanged.
-func ToLower(c rune) rune {
+func ToLowerRune(c rune) rune {
 	if IsUpper(c) {
 		return c + ('a' - 'A')
 	}
 	return c
 }
 
-// ToUpper converts a lowercase ASCII rune to uppercase.
+// ToUpperRune converts a lowercase ASCII rune to uppercase.
 //
 // If the rune is not a lowercase letter, it is returned unchanged.
-func ToUpper(c rune) rune {
+func ToUpperRune(c rune) rune {
 	if IsLower(c) {
 		return c - ('a' - 'A')
 	}
@@ -145,16 +145,29 @@ func EqualFold(s, t string) bool {
 	return true
 }
 
-// ToLowerString returns a copy of the string s with all ASCII letters mapped to their lower case.
-func ToLowerString(s string) string {
-	hasUpper := false
+// HasUpper reports whether the string s contains any uppercase ASCII letters.
+func HasUpper(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 'A' && s[i] <= 'Z' {
-			hasUpper = true
-			break
+			return true
 		}
 	}
-	if !hasUpper {
+	return false
+}
+
+// HasLower reports whether the string s contains any lowercase ASCII letters.
+func HasLower(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'a' && s[i] <= 'z' {
+			return true
+		}
+	}
+	return false
+}
+
+// ToLower returns a copy of the string s with all ASCII letters mapped to their lower case.
+func ToLower(s string) string {
+	if !HasUpper(s) {
 		return s
 	}
 	b := make([]byte, len(s))
@@ -168,16 +181,9 @@ func ToLowerString(s string) string {
 	return string(b)
 }
 
-// ToUpperString returns a copy of the string s with all ASCII letters mapped to their upper case.
-func ToUpperString(s string) string {
-	hasLower := false
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 'a' && s[i] <= 'z' {
-			hasLower = true
-			break
-		}
-	}
-	if !hasLower {
+// ToUpper returns a copy of the string s with all ASCII letters mapped to their upper case.
+func ToUpper(s string) string {
+	if !HasLower(s) {
 		return s
 	}
 	b := make([]byte, len(s))
