@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/middleware/cors"
 )
 
@@ -185,7 +186,7 @@ func TestMiddleware(t *testing.T) {
 
 			if tt.wantResHeaders == nil {
 				for h := range w.Header() {
-					if strings.Contains(strings.ToLower(h), "access-control-") {
+					if strings.Contains(ascii.ToLower(h), "access-control-") {
 						t.Errorf("unexpected cors header: %s", h)
 					}
 				}

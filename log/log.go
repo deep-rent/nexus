@@ -61,7 +61,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 // Default configuration values for a new logger.
@@ -108,7 +109,7 @@ func (f Format) MarshalText() ([]byte, error) {
 
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (f *Format) UnmarshalText(text []byte) error {
-	switch strings.ToLower(string(text)) {
+	switch ascii.ToLower(string(text)) {
 	case "json":
 		*f = FormatJSON
 		return nil

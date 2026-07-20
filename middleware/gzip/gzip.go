@@ -56,6 +56,7 @@ import (
 	"sync"
 
 	"github.com/deep-rent/nexus/header"
+	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/middleware"
 )
 
@@ -299,7 +300,7 @@ func WithCompressionLevel(level int) Option {
 func WithExcludeMimeTypes(types ...string) Option {
 	return func(c *config) {
 		for _, t := range types {
-			c.exclude = append(c.exclude, strings.ToLower(t))
+			c.exclude = append(c.exclude, ascii.ToLower(t))
 		}
 	}
 }

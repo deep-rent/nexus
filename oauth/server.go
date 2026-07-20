@@ -28,6 +28,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
+	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/pkce"
 	"github.com/deep-rent/nexus/router"
@@ -1327,7 +1328,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 // custom generators work as long as their output is stable under this
 // canonicalization.
 func normalizeUserCode(code string) string {
-	code = strings.ToUpper(strings.Join(strings.Fields(code), ""))
+	code = ascii.ToUpper(strings.Join(strings.Fields(code), ""))
 	if !strings.Contains(code, "-") && len(code) == 8 {
 		code = code[:4] + "-" + code[4:]
 	}

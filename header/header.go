@@ -34,6 +34,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/deep-rent/nexus/internal/ascii"
 )
 
 // Directives parses a comma-separated header value into an iterator of
@@ -45,7 +47,7 @@ func Directives(s string) iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		for kv := range strings.SplitSeq(s, ",") {
 			k, v, ok := strings.Cut(strings.TrimSpace(kv), "=")
-			k = strings.ToLower(strings.TrimSpace(k))
+			k = ascii.ToLower(strings.TrimSpace(k))
 			if ok {
 				v = strings.TrimSpace(v)
 			}
@@ -215,7 +217,7 @@ func MediaType(h http.Header) string {
 	if i != -1 {
 		v = v[:i]
 	}
-	return strings.ToLower(strings.TrimSpace(v))
+	return ascii.ToLower(strings.TrimSpace(v))
 }
 
 // Links parses an RFC 5988 Link header into an iterator of relation types (rel)
@@ -241,13 +243,13 @@ func Links(s string) iter.Seq2[string, string] {
 				p = strings.TrimSpace(p)
 				k, v, found := strings.Cut(p, "=")
 
-				if found && strings.ToLower(strings.TrimSpace(k)) == "rel" {
+				if found && ascii.ToLower(strings.TrimSpace(k)) == "rel" {
 					// Remove optional quotes around the relation value.
 					v = strings.Trim(strings.TrimSpace(v), `"`)
 
 					// A single link can have multiple relation types.
 					for rel := range strings.FieldsSeq(v) {
-						if !yield(strings.ToLower(rel), url) {
+						if !yield(ascii.ToLower(rel), url) {
 							return
 						}
 					}
@@ -260,7 +262,7 @@ func Links(s string) iter.Seq2[string, string] {
 // Link extracts the URL for a specific relation (e.g., "next" or "last") from
 // a Link header. It returns an empty string if the relation is not found.
 func Link(s, rel string) string {
-	rel = strings.ToLower(rel)
+	rel = ascii.ToLower(rel)
 	for k, v := range Links(s) {
 		if k == rel {
 			return v

@@ -83,6 +83,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/jose/jwk"
 )
 
@@ -410,7 +411,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 // isJWT checks if the token type is a JWT.
 // It handles special case such as "application/jwt" and "at+jwt".
 func isJWT(typ string) bool {
-	typ = strings.TrimPrefix(strings.ToLower(typ), "application/")
+	typ = strings.TrimPrefix(ascii.ToLower(typ), "application/")
 	return typ == "jwt" || strings.HasSuffix(typ, "+jwt")
 }
 
