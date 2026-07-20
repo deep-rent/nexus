@@ -591,6 +591,82 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 	return m.filter(ctx, true)
 }
 
+// Steps applies or reverts up to n migrations.
+//
+// A positive n applies at most n pending migrations in ascending version
+// order; a negative n reverts at most -n applied migrations in descending
+// order. If fewer migrations are available than requested, all of them are
+// processed without error. A zero n is a no-op.
+//
+// It acquires an exclusive database lock for the duration of the operation.
+func (m *Migrator) Steps(ctx context.Context, n int) error {
+	if n == 0 {
+		return nil
+	}
+	return m.lock(ctx, func(c context.Context) error {
+		return m.steps(c, n)
+	})
+}
+
+// steps is the internal implementation of [Migrator.Steps].
+//
+// It assumes the caller has already acquired the database lock.
+func (m *Migrator) steps(ctx context.Context, n int) error {
+	records, files, err := m.load(ctx)
+	if err != nil {
+		return err
+	}
+	applied := toLookup(records)
+
+	if n > 0 {
+		pending := make([]Migration, 0, len(files))
+		for _, f := range files {
+			if f.Direction == Up && !applied[f.Version] {
+				pending = append(pending, f)
+			}
+		}
+		if m.strict {
+			if err := checkOrder(records, pending); err != nil {
+				return err
+			}
+		}
+		if len(pending) > n {
+			pending = pending[:n]
+		}
+		for _, p := range pending {
+			if err := m.run(ctx, p); err != nil {
+				return err
+			}
+		}
+		m.logger.Info(
+			"Applied migration steps",
+			slog.Int("count", len(pending)),
+		)
+		return nil
+	}
+
+	downs := toDowns(files)
+	count := 0
+	for i := len(records) - 1; i >= 0 && count < -n; i-- {
+		v := records[i].Version
+		f, ok := downs[v]
+		if !ok {
+			return fmt.Errorf(
+				"down migration file not found for version %d", v,
+			)
+		}
+		if err := m.run(ctx, f); err != nil {
+			return err
+		}
+		count++
+	}
+	m.logger.Info(
+		"Reverted migration steps",
+		slog.Int("count", count),
+	)
+	return nil
+}
+
 // Version reports the newest applied migration record.
 //
 // It initializes the tracking table if necessary, so it can be called against

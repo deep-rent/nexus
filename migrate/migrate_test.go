@@ -714,6 +714,140 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 	}
 }
 
+func TestMigrator_Steps(t *testing.T) {
+	t.Parallel()
+
+	content1 := []byte("CREATE t1")
+	content2 := []byte("CREATE t2")
+	content3 := []byte("DROP t1")
+	content4 := []byte("DROP t2")
+
+	src := srcmock.New(
+		migrate.SourceScript{
+			Version:   1,
+			Direction: migrate.Up,
+			Content:   content1,
+		},
+		migrate.SourceScript{
+			Version:   2,
+			Direction: migrate.Up,
+			Content:   content2,
+		},
+		migrate.SourceScript{
+			Version:   1,
+			Direction: migrate.Down,
+			Content:   content3,
+		},
+		migrate.SourceScript{
+			Version:   2,
+			Direction: migrate.Down,
+			Content:   content4,
+		},
+	)
+
+	t.Run("apply limited", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.Steps(t.Context(), 1); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+
+		state := drv.State()
+		if len(state) != 1 {
+			t.Fatalf("state size: got %d; want 1", len(state))
+		}
+		if _, ok := state[1]; !ok {
+			t.Error("version 1 missing from the state")
+		}
+		if drv.IsLocked {
+			t.Error("lock was not released")
+		}
+	})
+
+	t.Run("apply more than available", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.Steps(t.Context(), 10); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 2 {
+			t.Errorf("state size: got %d; want 2", len(drv.State()))
+		}
+	})
+
+	t.Run("revert limited", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+		drv.Set(migrate.Record{Version: 2, Checksum: sha256.Sum256(content2)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.Steps(t.Context(), -1); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+
+		state := drv.State()
+		if len(state) != 1 {
+			t.Fatalf("state size: got %d; want 1", len(state))
+		}
+		if _, ok := state[1]; !ok {
+			t.Error("version 1 missing from the state")
+		}
+		if drv.IsLocked {
+			t.Error("lock was not released")
+		}
+	})
+
+	t.Run("revert more than available", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.Steps(t.Context(), -5); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 0 {
+			t.Errorf("state size: got %d; want 0", len(drv.State()))
+		}
+	})
+
+	t.Run("zero is a no-op", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.Steps(t.Context(), 0); err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if drv.IsInit {
+			t.Error("zero steps should not have touched the driver")
+		}
+	})
+
+	t.Run("error missing down script", func(t *testing.T) {
+		t.Parallel()
+		noDowns := srcmock.New(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Content:   content1,
+			},
+		)
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+		m := migrate.New(migrate.WithSource(noDowns), migrate.WithDriver(drv))
+
+		if err := m.Steps(t.Context(), -1); err == nil {
+			t.Error("should have returned an error")
+		}
+	})
+}
+
 func TestMigrator_Version(t *testing.T) {
 	t.Parallel()
 
