@@ -117,3 +117,30 @@ func All(s string, fn func(c rune) bool) bool {
 	}
 	return true
 }
+
+// EqualFold is a fast, ASCII-only case-insensitive string comparison.
+// It avoids the overhead of unicode-aware casing rules found in
+// [strings.EqualFold].
+func EqualFold(s, t string) bool {
+	if len(s) != len(t) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		a, b := s[i], t[i]
+		if a == b {
+			continue
+		}
+		// Convert both to lowercase and compare.
+		// A byte is uppercase if it's in 'A'-'Z'.
+		if a >= 'A' && a <= 'Z' {
+			a += 'a' - 'A'
+		}
+		if b >= 'A' && b <= 'Z' {
+			b += 'a' - 'A'
+		}
+		if a != b {
+			return false
+		}
+	}
+	return true
+}

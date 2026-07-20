@@ -403,3 +403,32 @@ func TestAll(t *testing.T) {
 		})
 	}
 }
+
+func TestEqualFold(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		s    string
+		t    string
+		want bool
+	}{
+		{"exact match", "hello", "hello", true},
+		{"different case", "Hello", "hElLo", true},
+		{"all upper vs all lower", "WORLD", "world", true},
+		{"different length", "hi", "hii", false},
+		{"different content", "hello", "world", false},
+		{"numbers match", "123", "123", true},
+		{"symbols match", "!@#", "!@#", true},
+		{"symbols mismatch", "!@#", "!@$", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.EqualFold(tt.s, tt.t), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
