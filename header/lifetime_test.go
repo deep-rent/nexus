@@ -136,3 +136,85 @@ func TestLifetime_NeverNegative(t *testing.T) {
 		})
 	}
 }
+
+// A response relayed by an upstream cache has only its remaining age budget.
+func TestLifetime_SubtractsAge(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		age  string
+		want time.Duration
+	}{
+		{"no age header", "", time.Hour},
+		{"partially aged", "3540", time.Minute},
+		{"fully aged", "3600", 0},
+		{"aged beyond max-age", "7200", 0},
+		{"malformed age", "soon", time.Hour},
+		{"negative age", "-60", time.Hour},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := http.Header{"Cache-Control": []string{"max-age=3600"}}
+			if tt.age != "" {
+				h.Set("Age", tt.age)
+			}
+
+			if got := header.Lifetime(h, time.Now); got != tt.want {
+				t.Errorf("got %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Expires names an absolute instant, so it is measured against the clock and
+// must not be reduced by Age a second time.
+func TestLifetime_IgnoresAgeForExpires(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+
+	h := http.Header{
+		"Expires": []string{now.Add(time.Hour).Format(http.TimeFormat)},
+		"Age":     []string{"1800"},
+	}
+
+	if got, want := header.Lifetime(h, clock), time.Hour; got != want {
+		t.Errorf("got %v; want %v", got, want)
+	}
+}
+
+func TestAge(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give string
+		want time.Duration
+	}{
+		{"absent", "", 0},
+		{"zero", "0", 0},
+		{"positive", "120", 2 * time.Minute},
+		{"negative", "-120", 0},
+		{"malformed", "two minutes", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := http.Header{}
+			if tt.give != "" {
+				h.Set("Age", tt.give)
+			}
+
+			if got := header.Age(h); got != tt.want {
+				t.Errorf("got %v; want %v", got, tt.want)
+			}
+		})
+	}
+}

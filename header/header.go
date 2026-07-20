@@ -100,6 +100,11 @@ func Throttle(h http.Header, now func() time.Time) time.Duration {
 // even when a max-age precedes it. A no-cache that names specific fields
 // (no-cache="Set-Cookie") only marks those fields for revalidation and leaves
 // the lifetime intact.
+//
+// The time a response has already spent in upstream caches, as reported by
+// the Age header, is subtracted from a max-age. No such correction applies to
+// Expires, which names an absolute instant and is therefore measured against
+// the clock directly.
 func Lifetime(h http.Header, now func() time.Time) time.Duration {
 	// Cache-Control takes precedence over Expires
 	if v := h.Get("Cache-Control"); v != "" {
@@ -127,7 +132,9 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 		}
 
 		if found {
-			return maxAge
+			// What remains of the age budget after the time the response
+			// already spent being relayed.
+			return max(0, maxAge-Age(h))
 		}
 	}
 	if v := h.Get("Expires"); v != "" {
@@ -138,6 +145,21 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 		}
 	}
 	return 0
+}
+
+// Age reports how long a response has been held in caches on its way to the
+// client, as stated by the Age header. It returns 0 if the header is absent,
+// malformed, or negative.
+func Age(h http.Header) time.Duration {
+	v := h.Get("Age")
+	if v == "" {
+		return 0
+	}
+	d, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return time.Duration(d) * time.Second
 }
 
 // Credentials extracts the credentials from the Authorization header of an
