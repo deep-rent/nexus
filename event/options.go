@@ -28,8 +28,9 @@ type config struct {
 	mode OverflowMode
 	// sync determines if dispatching is sequential.
 	sync bool
-	// wait is the idling strategy for the background worker.
-	wait WaitStrategy
+	// wait constructs the idling strategy for a bus's background worker. It is
+	// a constructor rather than an instance so that every bus gets its own.
+	wait func() WaitStrategy
 	// logger is used for reporting errors and panics.
 	logger *slog.Logger
 }
@@ -64,7 +65,7 @@ func WithSyncDispatch() Option {
 // default.
 func WithAdaptiveWait() Option {
 	return func(o *config) {
-		o.wait = adaptiveWait{}
+		o.wait = func() WaitStrategy { return adaptiveWait{} }
 	}
 }
 
@@ -72,13 +73,23 @@ func WithAdaptiveWait() Option {
 // multi-tenant setups.
 func WithBlockingWait() Option {
 	return func(o *config) {
-		o.wait = &blockingWait{sem: make(chan struct{}, 1)}
+		o.wait = func() WaitStrategy {
+			return &blockingWait{sem: make(chan struct{}, 1)}
+		}
 	}
 }
 
-// WithCustomWaitStrategy injects a user-defined idling strategy. Nil values are
-// ignored. If passed to a [Broker], the instance is shared across all buses.
-func WithCustomWaitStrategy(strategy WaitStrategy) Option {
+// WithWaitStrategy injects a user-defined idling strategy.
+//
+// It takes a constructor rather than a strategy, because a [Broker] applies
+// its options to every bus it creates and a strategy that carries state must
+// not be shared between them. A single semaphore backing several buses, for
+// instance, lets one bus consume the wakeup meant for another, leaving the
+// other parked with an event already in its buffer.
+//
+// The constructor is invoked once per [Bus]. A nil constructor, or one that
+// returns nil, is ignored.
+func WithWaitStrategy(strategy func() WaitStrategy) Option {
 	return func(o *config) {
 		if strategy != nil {
 			o.wait = strategy

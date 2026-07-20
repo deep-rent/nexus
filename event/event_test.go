@@ -245,7 +245,7 @@ func TestBroker_Options(t *testing.T) {
 	t.Parallel()
 	w := &mockWait{}
 	broker := event.NewBroker(
-		event.WithCustomWaitStrategy(w),
+		event.WithWaitStrategy(func() event.WaitStrategy { return w }),
 		event.WithSyncDispatch(),
 	)
 	defer broker.Close()
@@ -298,7 +298,7 @@ var _ event.WaitStrategy = (*mockWait)(nil)
 func TestBus_CustomWaitStrategy(t *testing.T) {
 	t.Parallel()
 	w := &mockWait{}
-	bus := event.NewBus[int](event.WithCustomWaitStrategy(w))
+	bus := event.NewBus[int](event.WithWaitStrategy(func() event.WaitStrategy { return w }))
 
 	if ok := bus.Publish(1); !ok {
 		t.Errorf("publishing 1: got %t; want %t", ok, true)
@@ -325,7 +325,7 @@ func TestBus_DropNewestMode(t *testing.T) {
 	bus := event.NewBus[int](
 		event.WithSize(2),
 		event.WithOverflowMode(event.DropNewest),
-		event.WithCustomWaitStrategy(w),
+		event.WithWaitStrategy(func() event.WaitStrategy { return w }),
 	)
 
 	if ok := bus.Publish(1); !ok {
@@ -348,7 +348,7 @@ func TestBus_DropOldestMode(t *testing.T) {
 	bus := event.NewBus[int](
 		event.WithSize(2),
 		event.WithOverflowMode(event.DropOldest),
-		event.WithCustomWaitStrategy(w),
+		event.WithWaitStrategy(func() event.WaitStrategy { return w }),
 	)
 
 	if ok := bus.Publish(1); !ok {

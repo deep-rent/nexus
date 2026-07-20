@@ -123,7 +123,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 		size: DefaultSize,
 		mode: DefaultOverflowMode,
 		sync: false,
-		wait: adaptiveWait{},
+		wait: func() WaitStrategy { return adaptiveWait{} },
 	}
 
 	for _, opt := range opts {
@@ -132,6 +132,13 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 
 	if cfg.logger == nil {
 		cfg.logger = slog.Default()
+	}
+
+	// Every bus idles on its own strategy, so that a stateful one cannot be
+	// shared by the buses a broker creates.
+	wait := cfg.wait()
+	if wait == nil {
+		wait = adaptiveWait{}
 	}
 
 	var disp dispatcher[T]
@@ -148,7 +155,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	bus := &Bus[T]{
 		evts: ring.New[T](cfg.size, cfg.mode.policy()),
 		disp: disp,
-		wait: cfg.wait,
+		wait: wait,
 	}
 
 	// Seed the atomic pointer with an empty slice to avoid nil pointer panics
