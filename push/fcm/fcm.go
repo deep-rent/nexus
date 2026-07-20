@@ -43,6 +43,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,14 +142,20 @@ func WithClock(now func() time.Time) Option {
 }
 
 // Credentials holds the necessary credentials for authenticating with FCM.
-// It mirrors the JSON-structure of a Google Service Account file.
+// It mirrors the JSON structure of a Google service account file, so the file
+// can be unmarshaled into it directly:
+//
+//	var cred fcm.Credentials
+//	if err := json.Unmarshal(serviceAccount, &cred); err != nil { ... }
 type Credentials struct {
 	// ProjectID specifies your Google Cloud project ID.
 	ProjectID string `json:"project_id"`
 	// ClientEmail is the email address of the service account.
 	ClientEmail string `json:"client_email"`
-	// PrivateKey stores the PEM-encoded PKCS#8 private key contents.
-	PrivateKey []byte `json:"private_key"`
+	// PrivateKey is the PEM-encoded PKCS#8 private key. It is a string rather
+	// than a byte slice because a service account file stores it as a JSON
+	// string; a byte slice would be decoded as base64 and fail.
+	PrivateKey string `json:"private_key"`
 }
 
 // New creates a configured Firebase Cloud Messaging client implementing the
@@ -329,9 +336,9 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	}
 
 	if msg.TTL > 0 {
-		android["ttl"] = fmt.Sprintf("%ds", int(msg.TTL.Seconds()))
+		android["ttl"] = strconv.Itoa(int(msg.TTL.Seconds())) + "s"
 		exp := s.now().Add(msg.TTL).Unix()
-		headers["apns-expiration"] = fmt.Sprintf("%d", exp)
+		headers["apns-expiration"] = strconv.FormatInt(exp, 10)
 	}
 
 	if len(android) > 0 {
@@ -375,54 +382,5 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		slog.Any("target", msg.Target),
 	)
 
-	start := s.now()
-	res, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	delta := s.now().Sub(start)
-
-	defer func() {
-		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to drain response body",
-				log.Err(err),
-			)
-		}
-		if err := res.Body.Close(); err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to close response body",
-				log.Err(err),
-			)
-		}
-	}()
-
-	if res.StatusCode >= http.StatusBadRequest {
-		// The client caps response body size, so this read is bounded.
-		buf, err := io.ReadAll(res.Body)
-		var body string
-		if err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to read response body",
-				log.Err(err),
-			)
-		} else {
-			body = string(buf)
-		}
-
-		return &push.APIError{
-			Status: res.StatusCode,
-			Body:   body,
-		}
-	}
-
-	s.logger.DebugContext(
-		ctx,
-		"FCM message dispatched",
-		slog.Duration("duration", delta),
-	)
-	return nil
+	return push.Deliver(ctx, s.client, req, s.logger)
 }

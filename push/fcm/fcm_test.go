@@ -102,7 +102,7 @@ func TestFCM_Send(t *testing.T) {
 		fcm.Credentials{
 			ProjectID:   "my-project",
 			ClientEmail: "test@my-project.iam.gserviceaccount.com",
-			PrivateKey:  key,
+			PrivateKey:  string(key),
 		},
 		fcm.WithClient(&http.Client{Timeout: 1 * time.Second, Transport: tr}),
 		fcm.WithBaseURL("https://fcm.googleapis.com/v1"),
@@ -114,5 +114,43 @@ func TestFCM_Send(t *testing.T) {
 	err := sender.Send(t.Context(), msg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// A Google service account file must unmarshal directly into Credentials,
+// which requires PrivateKey to be a string: a byte slice would be decoded as
+// base64 and fail on the PEM contents.
+func TestCredentials_UnmarshalServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	pem := generate(t)
+
+	// A service account file stores the key as a JSON string. Build one and
+	// round-trip it, so the escaped newlines match the real format.
+	sa := map[string]any{
+		"project_id":   "my-project",
+		"client_email": "svc@my-project.iam.gserviceaccount.com",
+		"private_key":  string(pem),
+	}
+	raw, err := json.Marshal(sa)
+	if err != nil {
+		t.Fatalf("marshaling fixture: %v", err)
+	}
+
+	var cred fcm.Credentials
+	if err := json.Unmarshal(raw, &cred); err != nil {
+		t.Fatalf("a service account file must unmarshal: %v", err)
+	}
+
+	if cred.ProjectID != "my-project" {
+		t.Errorf("project: got %q; want %q", cred.ProjectID, "my-project")
+	}
+	if cred.PrivateKey != string(pem) {
+		t.Error("private key did not survive unmarshaling")
+	}
+
+	// The unmarshaled credentials must be usable, i.e. the key parses.
+	if sender := fcm.New(cred); sender == nil {
+		t.Error("New returned nil for unmarshaled credentials")
 	}
 }
