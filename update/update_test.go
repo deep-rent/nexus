@@ -63,9 +63,7 @@ func TestNew(t *testing.T) {
 						t.Errorf("panic value: got %v; want %q", r, tt.want)
 					}
 				}()
-				update.New(&http.Client{
-					Timeout: 1 * time.Second,
-				}, tt.give)
+				update.New(tt.give)
 			})
 		}
 
@@ -75,9 +73,7 @@ func TestNew(t *testing.T) {
 					t.Error("should have panicked")
 				}
 			}()
-			update.New(&http.Client{
-				Timeout: 1 * time.Second,
-			}, &update.Config{
+			update.New(&update.Config{
 				Owner:   "o",
 				Repo:    "r",
 				Current: "invalid",
@@ -88,9 +84,7 @@ func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 
-		u := update.New(&http.Client{
-			Timeout: 1 * time.Second,
-		}, &update.Config{
+		u := update.New(&update.Config{
 			Owner:   "o",
 			Repo:    "r",
 			Current: "1.0.0",
@@ -189,9 +183,7 @@ func TestCheck(t *testing.T) {
 				Current: tt.current,
 			}
 
-			got, err := update.Check(t.Context(), &http.Client{
-				Timeout: 1 * time.Second,
-			}, cfg)
+			got, err := update.Check(t.Context(), cfg)
 
 			if tt.wantErr != "" {
 				if err == nil {
@@ -238,11 +230,9 @@ func TestCheck_NetworkError(t *testing.T) {
 		Current: "v1.0.0",
 	}
 
-	_, err := update.Check(
-		t.Context(),
-		&http.Client{Timeout: 100 * time.Millisecond},
-		cfg,
-	)
+	cfg.Client = &http.Client{Timeout: 100 * time.Millisecond}
+
+	_, err := update.Check(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("should have returned a network error")
 	}
@@ -276,9 +266,7 @@ func TestCheck_UserAgent(t *testing.T) {
 		UserAgent: want,
 	}
 
-	if _, err := update.Check(t.Context(), &http.Client{
-		Timeout: 1 * time.Second,
-	}, cfg); err != nil {
+	if _, err := update.Check(t.Context(), cfg); err != nil {
 		t.Errorf("should not have returned an error: %v", err)
 	}
 }
@@ -305,9 +293,7 @@ func TestCheck_Token(t *testing.T) {
 		Token:   "my-secret-token",
 	}
 
-	if _, err := update.Check(t.Context(), &http.Client{
-		Timeout: 1 * time.Second,
-	}, cfg); err != nil {
+	if _, err := update.Check(t.Context(), cfg); err != nil {
 		t.Errorf("should not have returned an error: %v", err)
 	}
 }

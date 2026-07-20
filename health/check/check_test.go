@@ -153,7 +153,7 @@ func TestHTTP(t *testing.T) {
 					Timeout: 1 * time.Second,
 				}
 			}
-			chk := check.HTTP(client, server.URL)
+			chk := check.HTTP(server.URL, check.WithClient(client))
 			status, err := chk(t.Context())
 
 			if status != tt.wantStatus {
@@ -175,9 +175,9 @@ func TestHTTP_Unreachable(t *testing.T) {
 	t.Parallel()
 
 	const url = "http://127.0.0.1:0/invalid"
-	chk := check.HTTP(&http.Client{
+	chk := check.HTTP(url, check.WithClient(&http.Client{
 		Timeout: 1 * time.Second,
-	}, url)
+	}))
 	status, err := chk(t.Context())
 
 	if got, want := status, health.StatusSick; got != want {
@@ -200,7 +200,7 @@ func TestHTTP_Timeout(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{Timeout: 10 * time.Millisecond}
-	chk := check.HTTP(client, server.URL)
+	chk := check.HTTP(server.URL, check.WithClient(client))
 
 	status, err := chk(t.Context())
 

@@ -32,7 +32,7 @@
 //	}
 //
 //	// Check for updates.
-//	rel, err := update.Check(context.Background(), http.DefaultClient, cfg)
+//	rel, err := update.Check(context.Background(), cfg)
 //	if err != nil {
 //	  log.Printf("Failed to check for updates: %v", err)
 //	} else if rel != nil {
@@ -49,6 +49,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/transport"
 	"golang.org/x/mod/semver"
 )
 
@@ -87,6 +88,9 @@ type Config struct {
 	// requests,
 	// allowing access to private repositories.
 	Token string
+	// Client overrides the HTTP client used for API requests. It defaults to
+	// [transport.DefaultClient] if not set.
+	Client *http.Client
 }
 
 // Updater checks for updates on GitHub for a specific repository.
@@ -109,10 +113,10 @@ type Updater struct {
 
 // New creates a new [Updater] with the given configuration.
 //
-// It initializes the HTTP client with the specified timeout. It panics if the
-// configuration is missing required fields or if the current version string is
+// Requests use [transport.DefaultClient] unless [Config.Client] overrides it.
+// It panics if the configuration is missing required fields or if the current version string is
 // not a valid semantic version.
-func New(client *http.Client, cfg *Config) *Updater {
+func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {
 		panic("owner is required")
 	}
@@ -134,6 +138,12 @@ func New(client *http.Client, cfg *Config) *Updater {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+
+	client := cfg.Client
+	if client == nil {
+		client = transport.DefaultClient
+	}
+
 	return &Updater{
 		baseURL:   baseURL,
 		owner:     cfg.Owner,
@@ -211,12 +221,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 //
 // It creates a temporary [update] with the provided config and calls its
 // [update.Check] method.
-func Check(
-	ctx context.Context,
-	client *http.Client,
-	cfg *Config,
-) (*Release, error) {
-	return New(client, cfg).Check(ctx)
+func Check(ctx context.Context, cfg *Config) (*Release, error) {
+	return New(cfg).Check(ctx)
 }
 
 // normalize ensures the version string has a "v" prefix for the semver package.

@@ -99,12 +99,12 @@ func TestFCM_Send(t *testing.T) {
 	}
 
 	sender := fcm.New(
-		&http.Client{Timeout: 1 * time.Second, Transport: tr},
 		fcm.Credentials{
 			ProjectID:   "my-project",
 			ClientEmail: "test@my-project.iam.gserviceaccount.com",
 			PrivateKey:  key,
 		},
+		fcm.WithClient(&http.Client{Timeout: 1 * time.Second, Transport: tr}),
 		fcm.WithBaseURL("https://fcm.googleapis.com/v1"),
 		fcm.WithAuthURL("https://oauth2.googleapis.com/token"),
 		fcm.WithLogger(log.Silent()),

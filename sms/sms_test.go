@@ -111,9 +111,7 @@ func TestNewSender_Panics(t *testing.T) {
 					t.Error("expected a panic")
 				}
 			}()
-			sms.NewSender(&http.Client{
-				Timeout: 1 * time.Second,
-			}, tt.accountSID, tt.authToken)
+			sms.NewSender(tt.accountSID, tt.authToken)
 		})
 	}
 }
@@ -196,10 +194,11 @@ func TestSender_Send(t *testing.T) {
 				},
 			}
 
-			sender := sms.NewSender(&http.Client{
-				Timeout:   1 * time.Second,
-				Transport: tr,
-			}, "sid", "token",
+			sender := sms.NewSender("sid", "token",
+				sms.WithClient(&http.Client{
+					Timeout:   1 * time.Second,
+					Transport: tr,
+				}),
 				sms.WithBaseURL("http://example.com"),
 				sms.WithLogger(log.Silent()),
 			)
@@ -228,7 +227,7 @@ func TestSender_WithClientAndOptions(t *testing.T) {
 	t.Parallel()
 
 	client := &http.Client{Timeout: 1 * time.Second}
-	sender := sms.NewSender(client, "sid", "token")
+	sender := sms.NewSender("sid", "token", sms.WithClient(client))
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")

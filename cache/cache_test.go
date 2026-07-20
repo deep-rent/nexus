@@ -120,9 +120,9 @@ func TestController_GetAndReady(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	c := cache.NewController(&http.Client{
+	c := cache.NewController(s.URL, mockMapper, cache.WithClient(&http.Client{
 		Timeout: 1 * time.Second,
-	}, s.URL, mockMapper)
+	}))
 
 	_, ok := c.Get()
 	if ok {
@@ -281,9 +281,8 @@ func TestController_Run(t *testing.T) {
 			var buf bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-			c := cache.NewController(&http.Client{
-				Timeout: 1 * time.Second,
-			}, s.URL, tt.mapper,
+			c := cache.NewController(s.URL, tt.mapper,
+				cache.WithClient(&http.Client{Timeout: 1 * time.Second}),
 				cache.WithMinInterval(minInt),
 				cache.WithMaxInterval(maxInt),
 				cache.WithLogger(logger),
@@ -331,9 +330,9 @@ func TestController_Run_ConditionalHeaders(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	c := cache.NewController(&http.Client{
+	c := cache.NewController(s.URL, mockMapper, cache.WithClient(&http.Client{
 		Timeout: 1 * time.Second,
-	}, s.URL, mockMapper)
+	}))
 
 	h.mu.Lock()
 	h.status = http.StatusOK
@@ -399,9 +398,9 @@ func TestController_Get_WithScheduler(t *testing.T) {
 	sched := schedule.New(t.Context())
 	defer sched.Shutdown()
 
-	c := cache.NewController(&http.Client{
+	c := cache.NewController(s.URL, mockMapper, cache.WithClient(&http.Client{
 		Timeout: 1 * time.Second,
-	}, s.URL, mockMapper)
+	}))
 	sched.Dispatch(c)
 
 	select {
@@ -431,9 +430,9 @@ func TestController_Run_ContextCancellation(t *testing.T) {
 
 	s := httptest.NewServer(h)
 	defer s.Close()
-	c := cache.NewController(&http.Client{
+	c := cache.NewController(s.URL, mockMapper, cache.WithClient(&http.Client{
 		Timeout: 1 * time.Second,
-	}, s.URL, mockMapper)
+	}))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
@@ -461,7 +460,7 @@ func TestNewController_Options(t *testing.T) {
 			Timeout:   1 * time.Second,
 			Transport: transport,
 		}
-		c := cache.NewController(cli, "http://a.b", mockMapper)
+		c := cache.NewController("http://a.b", mockMapper, cache.WithClient(cli))
 		c.Run(t.Context())
 		if !used.Load() {
 			t.Error("custom client's transport was not used")

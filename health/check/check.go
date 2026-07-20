@@ -40,7 +40,7 @@
 //	monitor.Attach(
 //		"stripe",
 //		10*time.Second,
-//		check.HTTP(client, "https://api.stripe.com/health"),
+//		check.HTTP("https://api.stripe.com/health", check.WithClient(client)),
 //	)
 package check
 
@@ -53,7 +53,28 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/health"
+	"github.com/deep-rent/nexus/transport"
 )
+
+// config holds the optional configuration for the [HTTP] check.
+type config struct {
+	// client is the HTTP client used to perform the check request.
+	client *http.Client
+}
+
+// Option defines the functional option pattern for configuring the [HTTP]
+// check.
+type Option func(*config)
+
+// WithClient sets the [http.Client] used to perform the check request.
+// Defaults to [transport.DefaultClient]. Nil values are ignored.
+func WithClient(client *http.Client) Option {
+	return func(c *config) {
+		if client != nil {
+			c.client = client
+		}
+	}
+}
 
 // TCP returns a health check that attempts to establish a TCP connection
 // to the specified address.
@@ -82,8 +103,17 @@ func TCP(addr string, timeout time.Duration) health.CheckFunc {
 //     to ensure the underlying TCP connection can be reused.
 //  3. Status Codes: Any status code in the 2xx or 3xx range is considered
 //     healthy.
-func HTTP(client *http.Client, url string) health.CheckFunc {
+//
+// Requests are dispatched through [transport.DefaultClient] unless
+// [WithClient] provides another one.
+func HTTP(url string, opts ...Option) health.CheckFunc {
 	const defaultTimeout = 10 * time.Second
+
+	cfg := config{client: transport.DefaultClient}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	client := cfg.client
 
 	return func(ctx context.Context) (health.Status, error) {
 		child := ctx

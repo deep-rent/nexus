@@ -23,7 +23,6 @@
 // PEM-encoded PKCS#8 private key contents.
 //
 //	sender := apns.New(
-//		http.DefaultClient,
 //		apns.Credentials{
 //			KeyID:      "4F92S8D7W1",
 //			TeamID:     "8M349Z7F2A",
@@ -53,6 +52,7 @@ import (
 	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
+	"github.com/deep-rent/nexus/transport"
 )
 
 const (
@@ -61,9 +61,6 @@ const (
 	// SandboxBaseURL is the sandbox endpoint for APNs.
 	SandboxBaseURL = "https://api.sandbox.push.apple.com"
 )
-
-// maxResponseSize limits the API response body size.
-const maxResponseSize = 1 << 16
 
 // Sender implements the [push.Sender] interface for the Apple Push Notification
 // service (APNs). It handles authentication, payload construction, and
@@ -82,10 +79,21 @@ type config struct {
 	baseURL string
 	logger  *slog.Logger
 	now     func() time.Time
+	client  *http.Client
 }
 
 // Option defines the functional option pattern for configuring the APNs sender.
 type Option func(*config)
+
+// WithClient sets the [http.Client] used for outbound API requests. Defaults
+// to [transport.DefaultClient]. Nil values are ignored.
+func WithClient(client *http.Client) Option {
+	return func(cfg *config) {
+		if client != nil {
+			cfg.client = client
+		}
+	}
+}
 
 // WithBaseURL allows overriding the APNs API base URL.
 // Useful for switching to [SandboxBaseURL] or mocking.
@@ -130,10 +138,10 @@ type Credentials struct {
 
 // New creates a configured Apple Push Notification Service client implementing
 // the [push.Sender] interface. It requires the ES256 keyID, your Apple teamID,
-// and the PEM-encoded PKCS#8 private key contents. Note that the HTTP client
-// must support HTTP/2.
+// and the PEM-encoded PKCS#8 private key contents. Requests are dispatched
+// through [transport.DefaultClient] unless [WithClient] provides another one;
+// note that any such client must support HTTP/2.
 func New(
-	client *http.Client,
 	cred Credentials,
 	opts ...Option,
 ) push.Sender {
@@ -148,6 +156,7 @@ func New(
 		baseURL: DefaultBaseURL,
 		logger:  slog.Default(),
 		now:     time.Now,
+		client:  transport.DefaultClient,
 	}
 
 	for _, opt := range opts {
@@ -180,7 +189,7 @@ func New(
 		source: source,
 		url:    cfg.baseURL,
 		logger: cfg.logger,
-		client: client,
+		client: cfg.client,
 		clock:  cfg.now,
 	}
 
@@ -289,7 +298,8 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	}()
 
 	if res.StatusCode >= http.StatusBadRequest {
-		buf, err := io.ReadAll(io.LimitReader(res.Body, maxResponseSize))
+		// The client caps response body size, so this read is bounded.
+		buf, err := io.ReadAll(res.Body)
 		var body string
 		if err != nil {
 			s.logger.WarnContext(

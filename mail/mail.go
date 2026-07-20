@@ -28,7 +28,7 @@
 // Example:
 //
 //	// 1. Initialize the default SendGrid sender with a custom User-Agent.
-//	sender := mail.NewSender(http.DefaultClient, "your-api-key",
+//	sender := mail.NewSender("your-api-key",
 //	  mail.WithUserAgent("MyApp/1.0"))
 //
 //	// 2. Construct the email message.
@@ -54,6 +54,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/deep-rent/nexus/transport"
 )
 
 const (
@@ -277,10 +279,22 @@ type config struct {
 	userAgent string
 	// logger specifies the custom structured [slog.Logger].
 	logger *slog.Logger
+	// client is the HTTP client used for outbound API requests.
+	client *http.Client
 }
 
 // Option defines the functional option pattern for configuring the [sender].
 type Option func(*config)
+
+// WithClient sets the [http.Client] used for outbound API requests. Defaults
+// to [transport.DefaultClient]. Nil values are ignored.
+func WithClient(client *http.Client) Option {
+	return func(c *config) {
+		if client != nil {
+			c.client = client
+		}
+	}
+}
 
 // WithBaseURL allows overriding the SendGrid API base URL for testing or
 // mocking.
@@ -313,11 +327,10 @@ func WithLogger(logger *slog.Logger) Option {
 //
 // It initializes the client with a default base URL, a sensible timeout,
 // and a standard logger. These defaults can be overridden by passing one or
-// more [Option] functions. If no custom [http.Client] is provided, it builds
-// an internal client optimized for API calls with connection pooling and
-// automatic retry capabilities. It panics if the API key is empty or the base
-// URL is invalid.
-func NewSender(client *http.Client, apiKey string, opts ...Option) Sender {
+// more [Option] functions. Requests are dispatched through
+// [transport.DefaultClient] unless [WithClient] provides another one. It
+// panics if the API key is empty or the base URL is invalid.
+func NewSender(apiKey string, opts ...Option) Sender {
 	if apiKey == "" {
 		panic("API key is required")
 	}
@@ -325,6 +338,7 @@ func NewSender(client *http.Client, apiKey string, opts ...Option) Sender {
 	cfg := config{
 		baseURL: DefaultBaseURL,
 		logger:  slog.Default(),
+		client:  transport.DefaultClient,
 	}
 
 	for _, opt := range opts {
@@ -341,7 +355,7 @@ func NewSender(client *http.Client, apiKey string, opts ...Option) Sender {
 		url:       endpoint,
 		userAgent: cfg.userAgent,
 		logger:    cfg.logger,
-		client:    client,
+		client:    cfg.client,
 	}
 
 	return s
@@ -406,7 +420,8 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	}()
 
 	if code := res.StatusCode; code >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		// The client caps response body size, so this read is bounded.
+		body, _ := io.ReadAll(res.Body)
 		return &APIError{
 			Status: code,
 			Body:   string(body),

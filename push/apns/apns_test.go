@@ -76,12 +76,12 @@ func TestAPNS_Send(t *testing.T) {
 	}
 
 	sender := apns.New(
-		&http.Client{Timeout: 1 * time.Second, Transport: tr},
 		apns.Credentials{
 			KeyID:      "keyID",
 			TeamID:     "teamID",
 			PrivateKey: key,
 		},
+		apns.WithClient(&http.Client{Timeout: 1 * time.Second, Transport: tr}),
 		apns.WithBaseURL("https://api.sandbox.push.apple.com"),
 		apns.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)

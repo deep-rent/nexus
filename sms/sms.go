@@ -30,7 +30,6 @@
 //	)
 //
 //	sender := sms.NewSender(
-//	  http.DefaultClient,
 //	  "twilio_sid",
 //	  "twilio_auth_token",
 //	)
@@ -48,15 +47,14 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/deep-rent/nexus/transport"
 )
 
 const (
 	// DefaultBaseURL is the standard API endpoint for Twilio Messaging.
 	DefaultBaseURL = "https://api.twilio.com/2010-04-01"
 )
-
-// maxResponseSize limits the API response body size.
-const maxResponseSize = 1 << 16
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
@@ -174,10 +172,22 @@ type config struct {
 	baseURL string
 	// logger specifies the custom structured [slog.Logger].
 	logger *slog.Logger
+	// client is the HTTP client used for outbound API requests.
+	client *http.Client
 }
 
 // Option defines the functional option pattern for configuring the [sender].
 type Option func(*config)
+
+// WithClient sets the [http.Client] used for outbound API requests. Defaults
+// to [transport.DefaultClient]. Nil values are ignored.
+func WithClient(client *http.Client) Option {
+	return func(c *config) {
+		if client != nil {
+			c.client = client
+		}
+	}
+}
 
 // WithBaseURL allows overriding the Twilio API base URL for testing or mocking.
 // Empty string values are ignored.
@@ -200,8 +210,9 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // NewSender creates a configured Twilio client with the given account SID and
-// authentication token.
-func NewSender(client *http.Client, sid, token string, opts ...Option) Sender {
+// authentication token. Requests are dispatched through
+// [transport.DefaultClient] unless [WithClient] provides another one.
+func NewSender(sid, token string, opts ...Option) Sender {
 	if sid == "" {
 		panic("account SID is required")
 	}
@@ -212,6 +223,7 @@ func NewSender(client *http.Client, sid, token string, opts ...Option) Sender {
 	cfg := config{
 		baseURL: DefaultBaseURL,
 		logger:  slog.Default(),
+		client:  transport.DefaultClient,
 	}
 
 	for _, opt := range opts {
@@ -230,7 +242,7 @@ func NewSender(client *http.Client, sid, token string, opts ...Option) Sender {
 		token:  token,
 		url:    endpoint,
 		logger: cfg.logger,
-		client: client,
+		client: cfg.client,
 	}
 
 	return s
@@ -295,9 +307,8 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		var apiErr APIError
 		apiErr.Status = code
 		// Attempt to parse the JSON error body. If it fails, we just return the
-		// status.
-		r := io.LimitReader(res.Body, maxResponseSize)
-		if err := json.UnmarshalRead(r, &apiErr); err != nil {
+		// status. The client caps response body size, so this read is bounded.
+		if err := json.UnmarshalRead(res.Body, &apiErr); err != nil {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to parse API error response",

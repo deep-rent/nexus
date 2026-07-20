@@ -51,7 +51,6 @@
 //
 //		// 3. Create and configure the cache controller.
 //		ctrl := cache.NewController(
-//			http.DefaultClient,
 //			"https://api.example.com/resource",
 //			mapper,
 //			cache.WithMinInterval(5*time.Minute),
@@ -80,6 +79,7 @@ import (
 
 	"github.com/deep-rent/nexus/header"
 	schedule "github.com/deep-rent/nexus/schedule"
+	"github.com/deep-rent/nexus/transport"
 )
 
 const (
@@ -125,9 +125,9 @@ type Controller[T any] interface {
 // NewController creates and configures a new cache [Controller].
 //
 // It requires a URL for the resource to fetch and a [Mapper] function to parse
-// the response.
+// the response. Fetching uses [transport.DefaultClient] unless [WithClient]
+// overrides it.
 func NewController[T any](
-	client *http.Client,
 	url string,
 	mapper Mapper[T],
 	opts ...Option,
@@ -136,6 +136,7 @@ func NewController[T any](
 		minInterval: DefaultMinInterval,
 		maxInterval: DefaultMaxInterval,
 		logger:      slog.Default(),
+		client:      transport.DefaultClient,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -144,7 +145,7 @@ func NewController[T any](
 	return &controller[T]{
 		url:         url,
 		mapper:      mapper,
-		client:      client,
+		client:      cfg.client,
 		minInterval: cfg.minInterval,
 		maxInterval: cfg.maxInterval,
 		logger:      cfg.logger,
@@ -313,10 +314,22 @@ type config struct {
 	maxInterval time.Duration
 	// logger is the destination for internal logs.
 	logger *slog.Logger
+	// client is the HTTP client used for fetching.
+	client *http.Client
 }
 
 // Option is a function that configures the cache [Controller].
 type Option func(*config)
+
+// WithClient sets the [http.Client] used to fetch the resource. Defaults to
+// [transport.DefaultClient]. Nil values are ignored.
+func WithClient(client *http.Client) Option {
+	return func(c *config) {
+		if client != nil {
+			c.client = client
+		}
+	}
+}
 
 // WithMinInterval sets the minimum duration between refresh attempts. The
 // refresh delay, typically determined by caching headers, will not be shorter
