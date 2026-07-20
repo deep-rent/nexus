@@ -204,6 +204,111 @@ func TestIsSlug(t *testing.T) {
 	}
 }
 
+func TestIsSpace(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"space", ' ', true},
+		{"tab", '\t', true},
+		{"newline", '\n', true},
+		{"vertical tab", '\v', true},
+		{"form feed", '\f', true},
+		{"carriage return", '\r', true},
+		{"uppercase a", 'A', false},
+		{"digit", '5', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsSpace(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIsPrint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"space", ' ', true},
+		{"tilde", '~', true},
+		{"letter", 'A', true},
+		{"digit", '5', true},
+		{"newline", '\n', false},
+		{"delete", 0x7F, false},
+		{"above ascii", 0x80, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsPrint(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIsControl(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"null", 0x00, true},
+		{"newline", '\n', true},
+		{"delete", 0x7F, true},
+		{"space", ' ', false},
+		{"letter", 'A', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsControl(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIsASCII(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"null", 0x00, true},
+		{"letter", 'A', true},
+		{"delete", 0x7F, true},
+		{"above ascii", 0x80, false},
+		{"smiley", '😀', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsASCII(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestToLower(t *testing.T) {
 	t.Parallel()
 

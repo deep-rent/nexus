@@ -67,6 +67,27 @@ func IsWord(c rune) bool { return IsAlphaNum(c) || c == '_' }
 // This is commonly used for validating URL path components.
 func IsSlug(c rune) bool { return IsAlphaNum(c) || c == '-' }
 
+// IsSpace reports whether the rune is a space character as defined
+// by ASCII's property: ' ', '\t', '\n', '\v', '\f', '\r'.
+func IsSpace(c rune) bool {
+	switch c {
+	case ' ', '\t', '\n', '\v', '\f', '\r':
+		return true
+	}
+	return false
+}
+
+// IsPrint reports whether the rune is a printable ASCII character,
+// defined as any character from space (0x20) to tilde (0x7E).
+func IsPrint(c rune) bool { return c >= 0x20 && c <= 0x7E }
+
+// IsControl reports whether the rune is an ASCII control character,
+// defined as any character less than space (0x20) or the delete character (0x7F).
+func IsControl(c rune) bool { return c < 0x20 || c == 0x7F }
+
+// IsASCII reports whether the rune is a valid ASCII character.
+func IsASCII(c rune) bool { return c <= 0x7F }
+
 // ToLower converts an uppercase ASCII rune to lowercase.
 //
 // If the rune is not an uppercase letter, it is returned unchanged.

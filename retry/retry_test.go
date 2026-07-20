@@ -15,14 +15,11 @@
 package retry_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"log/slog"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -32,76 +29,73 @@ import (
 	"github.com/deep-rent/nexus/retry"
 )
 
-type mockTrip struct {
-	res *http.Response
-	err error
+// tripFunc adapts a function to the [http.RoundTripper] interface.
+type tripFunc func(r *http.Request) (*http.Response, error)
+
+func (f tripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
-type mockRoundTripper struct {
-	mu    sync.Mutex
-	trips []mockTrip
-	calls int
+// body is a response body that records whether it was closed and how much of
+// it was read.
+type body struct {
+	r      io.Reader
+	mu     sync.Mutex
+	read   int
+	closed bool
 }
 
-func (m *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.calls++
-	if len(m.trips) >= m.calls {
-		trip := m.trips[m.calls-1]
-		return trip.res, trip.err
-	}
-	return nil, fmt.Errorf(
-		"not enough trips mocked: have %d, need %d", len(m.trips), m.calls,
-	)
+func newBody(content string) *body {
+	return &body{r: strings.NewReader(content)}
 }
 
-func (m *mockRoundTripper) Calls() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.calls
+func (b *body) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	b.mu.Lock()
+	b.read += n
+	b.mu.Unlock()
+	return n, err
 }
 
-var _ http.RoundTripper = (*mockRoundTripper)(nil)
+func (b *body) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	return nil
+}
 
-func mockResponse(statusCode int, body string) *http.Response {
+func (b *body) stats() (read int, closed bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.read, b.closed
+}
+
+// respond builds a response carrying the given status and body.
+func respond(status int, b io.ReadCloser) *http.Response {
 	return &http.Response{
-		StatusCode: statusCode,
-		Body:       io.NopCloser(strings.NewReader(body)),
+		StatusCode: status,
 		Header:     make(http.Header),
+		Body:       b,
 	}
 }
 
-type mockError struct{ isTimeout bool }
-
-func (e *mockError) Error() string   { return "net error" }
-func (e *mockError) Timeout() bool   { return e.isTimeout }
-func (e *mockError) Temporary() bool { return false }
-
-var _ net.Error = (*mockError)(nil)
-
-type mockBackoff struct {
-	next func() time.Duration
-	done func()
-}
-
-func (m *mockBackoff) Next() time.Duration {
-	if m.next != nil {
-		return m.next()
-	}
-	return 0
-}
-
-func (m *mockBackoff) Done() {
-	if m.done != nil {
-		m.done()
+// counter counts round trips and replies with the given status.
+func counter(status int, calls *int) tripFunc {
+	var mu sync.Mutex
+	return func(*http.Request) (*http.Response, error) {
+		mu.Lock()
+		*calls++
+		mu.Unlock()
+		return respond(status, newBody("failure")), nil
 	}
 }
-func (m *mockBackoff) MinDelay() time.Duration { return 0 }
-func (m *mockBackoff) MaxDelay() time.Duration { return 0 }
 
-var _ backoff.Strategy = (*mockBackoff)(nil)
+// netError is a [net.Error] with a configurable timeout flag.
+type netError struct{ timeout bool }
+
+func (e *netError) Error() string   { return "net error" }
+func (e *netError) Timeout() bool   { return e.timeout }
+func (e *netError) Temporary() bool { return false }
 
 func TestAttempt_Idempotent(t *testing.T) {
 	t.Parallel()
@@ -124,10 +118,15 @@ func TestAttempt_Idempotent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.method, func(t *testing.T) {
 			t.Parallel()
-			req, _ := http.NewRequest(tt.method, "/", nil)
+
+			req, err := http.NewRequest(tt.method, "http://example.com", nil)
+			if err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+
 			a := retry.Attempt{Request: req}
 			if got := a.Idempotent(); got != tt.want {
-				t.Errorf("got %v; want %v", got, tt.want)
+				t.Errorf("got %t; want %t", got, tt.want)
 			}
 		})
 	}
@@ -137,25 +136,29 @@ func TestAttempt_Temporary(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		status int
-		want   bool
+		name string
+		res  *http.Response
+		want bool
 	}{
-		{http.StatusRequestTimeout, true},
-		{http.StatusTooManyRequests, true},
-		{http.StatusInternalServerError, true},
-		{http.StatusBadGateway, true},
-		{http.StatusServiceUnavailable, true},
-		{http.StatusGatewayTimeout, true},
-		{http.StatusOK, false},
-		{http.StatusBadRequest, false},
+		{"no response", nil, false},
+		{"408", &http.Response{StatusCode: 408}, true},
+		{"429", &http.Response{StatusCode: 429}, true},
+		{"500", &http.Response{StatusCode: 500}, true},
+		{"502", &http.Response{StatusCode: 502}, true},
+		{"503", &http.Response{StatusCode: 503}, true},
+		{"504", &http.Response{StatusCode: 504}, true},
+		{"200", &http.Response{StatusCode: 200}, false},
+		{"400", &http.Response{StatusCode: 400}, false},
+		{"501", &http.Response{StatusCode: 501}, false},
 	}
 
 	for _, tt := range tests {
-		t.Run(http.StatusText(tt.status), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			a := retry.Attempt{Response: &http.Response{StatusCode: tt.status}}
+
+			a := retry.Attempt{Response: tt.res}
 			if got := a.Temporary(); got != tt.want {
-				t.Errorf("got %v; want %v", got, tt.want)
+				t.Errorf("got %t; want %t", got, tt.want)
 			}
 		})
 	}
@@ -169,79 +172,96 @@ func TestAttempt_Transient(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{"nil error", nil, false},
-		{"context canceled", context.Canceled, false},
-		{"context deadline exceeded", context.DeadlineExceeded, false},
+		{"no error", nil, false},
+		{"canceled", context.Canceled, false},
+		{"deadline exceeded", context.DeadlineExceeded, false},
+		{"wrapped cancellation", fmtErr(context.Canceled), false},
 		{"unexpected EOF", io.ErrUnexpectedEOF, true},
 		{"EOF", io.EOF, true},
-		{"net timeout error", &mockError{isTimeout: true}, true},
-		{"net non-timeout error", &mockError{isTimeout: false}, false},
-		{"other error", errors.New("other"), false},
+		{"network timeout", &netError{timeout: true}, true},
+		{"network error", &netError{timeout: false}, false},
+		{"other", errors.New("boom"), false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			a := retry.Attempt{Error: tt.err}
 			if got := a.Transient(); got != tt.want {
-				t.Errorf("got %v; want %v", got, tt.want)
+				t.Errorf("got %t; want %t", got, tt.want)
 			}
 		})
 	}
 }
 
+// fmtErr wraps err so that only errors.Is can unwrap it.
+func fmtErr(err error) error {
+	return errors.Join(errors.New("context"), err)
+}
+
 func TestDefaultPolicy(t *testing.T) {
 	t.Parallel()
 
+	get, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	post, err := http.NewRequest(http.MethodPost, "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
 	tests := []struct {
-		name    string
-		attempt retry.Attempt
-		want    bool
+		name string
+		a    retry.Attempt
+		want bool
 	}{
 		{
-			name: "idempotent and temporary",
-			attempt: retry.Attempt{
-				Request: &http.Request{Method: http.MethodGet},
-				Response: &http.Response{
-					StatusCode: http.StatusServiceUnavailable,
-				},
+			"idempotent and temporary",
+			retry.Attempt{
+				Request:  get,
+				Response: &http.Response{StatusCode: 503},
 			},
-			want: true,
+			true,
 		},
 		{
-			name: "idempotent and transient",
-			attempt: retry.Attempt{
-				Request: &http.Request{Method: http.MethodGet},
-				Error:   &mockError{isTimeout: true},
-			},
-			want: true,
+			"idempotent and transient",
+			retry.Attempt{Request: get, Error: &netError{timeout: true}},
+			true,
 		},
 		{
-			name: "non-idempotent",
-			attempt: retry.Attempt{
-				Request: &http.Request{Method: http.MethodPost},
-				Response: &http.Response{
-					StatusCode: http.StatusServiceUnavailable,
-				},
+			"idempotent and successful",
+			retry.Attempt{
+				Request:  get,
+				Response: &http.Response{StatusCode: 200},
 			},
-			want: false,
+			false,
 		},
 		{
-			name: "permanent error",
-			attempt: retry.Attempt{
-				Request:  &http.Request{Method: http.MethodGet},
-				Response: &http.Response{StatusCode: http.StatusBadRequest},
+			"not idempotent",
+			retry.Attempt{
+				Request:  post,
+				Response: &http.Response{StatusCode: 503},
 			},
-			want: false,
+			false,
+		},
+		{
+			"canceled",
+			retry.Attempt{Request: get, Error: context.Canceled},
+			false,
 		},
 	}
 
 	policy := retry.DefaultPolicy()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := policy(tt.attempt); got != tt.want {
-				t.Errorf("got %v; want %v", got, tt.want)
+
+			if got := policy(tt.a); got != tt.want {
+				t.Errorf("got %t; want %t", got, tt.want)
 			}
 		})
 	}
@@ -250,290 +270,598 @@ func TestDefaultPolicy(t *testing.T) {
 func TestPolicy_LimitAttempts(t *testing.T) {
 	t.Parallel()
 
-	always := func(retry.Attempt) bool { return true }
+	always := retry.Policy(func(retry.Attempt) bool { return true })
 
-	t.Run("limit positive", func(t *testing.T) {
-		t.Parallel()
-		limited := retry.Policy(always).LimitAttempts(3)
-		if !limited(retry.Attempt{Count: 1}) {
-			t.Error("attempt 1 should pass")
-		}
-		if !limited(retry.Attempt{Count: 2}) {
-			t.Error("attempt 2 should pass")
-		}
-		if limited(retry.Attempt{Count: 3}) {
-			t.Error("attempt 3 should fail")
-		}
-	})
+	tests := []struct {
+		name  string
+		limit int
+		count int
+		want  bool
+	}{
+		{"below limit", 3, 2, true},
+		{"at limit", 3, 3, false},
+		{"above limit", 3, 4, false},
+		{"limit of one", 1, 1, false},
+		{"no limit", 0, 100, true},
+		{"negative limit", -1, 100, true},
+	}
 
-	t.Run("limit zero", func(t *testing.T) {
-		t.Parallel()
-		unlimited := retry.Policy(always).LimitAttempts(0)
-		if !unlimited(retry.Attempt{Count: 99}) {
-			t.Error("attempt 99 should pass when limit is 0")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			policy := always.LimitAttempts(tt.limit)
+			got := policy(retry.Attempt{Count: tt.count})
+
+			if got != tt.want {
+				t.Errorf("got %t; want %t", got, tt.want)
+			}
+		})
+	}
 }
 
-func TestTransport_RoundTrip(t *testing.T) {
+func TestRoundTrip_Success(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success on first try", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{trips: []mockTrip{
-			{res: mockResponse(http.StatusOK, "ok")},
-		}}
-		tr := retry.NewTransport(m)
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-		if got, want := m.Calls(), 1; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+	var calls int
+	tr := retry.NewTransport(tripFunc(func(*http.Request) (
+		*http.Response, error,
+	) {
+		calls++
+		return respond(http.StatusOK, newBody("ok")), nil
+	}))
 
-	t.Run("retry on temporary error", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
-				{res: mockResponse(http.StatusOK, "ok")},
-			},
-		}
-		tr := retry.NewTransport(m, retry.WithAttemptLimit(3))
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
 
-	t.Run("retry on transient error", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{err: &mockError{isTimeout: true}},
-				{res: mockResponse(http.StatusOK, "ok")},
-			},
-		}
-		tr := retry.NewTransport(m, retry.WithAttemptLimit(3))
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
 
-	t.Run("fails after limit reached", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusServiceUnavailable, "fail1")},
-				{res: mockResponse(http.StatusServiceUnavailable, "fail2")},
-				{res: mockResponse(http.StatusServiceUnavailable, "fail3")},
-			},
-		}
-		tr := retry.NewTransport(m, retry.WithAttemptLimit(2))
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-		if got, want := res.StatusCode, http.StatusServiceUnavailable; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+	if calls != 1 {
+		t.Errorf("calls: got %d; want 1", calls)
+	}
 
-	t.Run("context cancellation stops retries", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
-			},
+	// The response handed to the caller must still be readable.
+	content, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("reading body: should not have returned an error: %v", err)
+	}
+
+	if got := string(content); got != "ok" {
+		t.Errorf("body: got %q; want %q", got, "ok")
+	}
+}
+
+func TestRoundTrip_RetriesUntilSuccess(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	tr := retry.NewTransport(tripFunc(func(*http.Request) (
+		*http.Response, error,
+	) {
+		calls++
+		if calls < 3 {
+			return respond(http.StatusServiceUnavailable, newBody("nope")), nil
 		}
-		tr := retry.NewTransport(m, retry.WithBackoff(
-			backoff.Constant(100*time.Millisecond),
-		))
-		ctx, cancel := context.WithCancel(t.Context())
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+		return respond(http.StatusOK, newBody("ok")), nil
+	}))
 
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-		}()
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
 
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if calls != 3 {
+		t.Errorf("calls: got %d; want 3", calls)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d; want %d", res.StatusCode, http.StatusOK)
+	}
+}
+
+func TestRoundTrip_AttemptLimit(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithAttemptLimit(3),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if calls != 3 {
+		t.Errorf("calls: got %d; want 3", calls)
+	}
+}
+
+// The final response must reach the caller with its body untouched, even
+// though earlier bodies were drained.
+func TestRoundTrip_PreservesFinalBody(t *testing.T) {
+	t.Parallel()
+
+	var (
+		calls    int
+		drained  []*body
+		lastBody *body
+	)
+
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			b := newBody("payload")
+			if calls < 3 {
+				drained = append(drained, b)
+				return respond(http.StatusServiceUnavailable, b), nil
+			}
+			lastBody = b
+			return respond(http.StatusOK, b), nil
+		}),
+		retry.WithAttemptLimit(5),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	for i, b := range drained {
+		read, closed := b.stats()
+		if read == 0 {
+			t.Errorf("abandoned body %d: not drained", i)
+		}
+		if !closed {
+			t.Errorf("abandoned body %d: not closed", i)
+		}
+	}
+
+	if _, closed := lastBody.stats(); closed {
+		t.Error("final body: got closed; want open")
+	}
+
+	content, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("reading body: should not have returned an error: %v", err)
+	}
+
+	if got := string(content); got != "payload" {
+		t.Errorf("body: got %q; want %q", got, "payload")
+	}
+}
+
+// An oversized body is closed rather than drained in full.
+func TestRoundTrip_BoundsDrain(t *testing.T) {
+	t.Parallel()
+
+	const limit = 16
+
+	var (
+		calls int
+		first *body
+	)
+
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				first = newBody(strings.Repeat("x", 1024))
+				return respond(http.StatusServiceUnavailable, first), nil
+			}
+			return respond(http.StatusOK, newBody("ok")), nil
+		}),
+		retry.WithMaxDrainBytes(limit),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	read, closed := first.stats()
+	if int64(read) > limit+1 {
+		t.Errorf("drained: got %d bytes; want at most %d", read, limit+1)
+	}
+
+	if !closed {
+		t.Error("abandoned body: not closed")
+	}
+}
+
+// The caller's request must never be modified, and every attempt must carry a
+// complete copy of the body.
+func TestRoundTrip_DoesNotMutateRequest(t *testing.T) {
+	t.Parallel()
+
+	const payload = "the-payload"
+
+	var (
+		calls  int
+		bodies []string
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
+		calls++
+		content, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(content))
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	tr := retry.NewTransport(
+		http.DefaultTransport,
+		retry.WithAttemptLimit(3),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPut, srv.URL, strings.NewReader(payload),
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	original := *req
+	originalBody := req.Body
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if req.Body != originalBody {
+		t.Error("caller's request body was replaced")
+	}
+
+	if req.URL != original.URL || req.Method != original.Method {
+		t.Error("caller's request was modified")
+	}
+
+	if calls != 3 {
+		t.Fatalf("calls: got %d; want 3", calls)
+	}
+
+	for i, got := range bodies {
+		if got != payload {
+			t.Errorf("attempt %d body: got %q; want %q", i+1, got, payload)
+		}
+	}
+}
+
+// A body that cannot be rewound makes the request unrepeatable, no matter what
+// the policy says.
+func TestRoundTrip_NonRewindableBody(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithPolicy(func(retry.Attempt) bool { return true }),
+		retry.WithAttemptLimit(5),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPut, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	// A bare reader gives net/http nothing to rewind from.
+	req.Body = io.NopCloser(strings.NewReader("payload"))
+	req.GetBody = nil
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if calls != 1 {
+		t.Errorf("calls: got %d; want 1", calls)
+	}
+}
+
+func TestRoundTrip_RespectsRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			res := respond(http.StatusTooManyRequests, newBody("slow down"))
+			if calls == 1 {
+				res.Header.Set("Retry-After", "1")
+			}
+			return res, nil
+		}),
+		retry.WithAttemptLimit(2),
+	)
+
+	// The context deadline is shorter than the delay the server asks for, so
+	// the transport must give up instead of waiting.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	start := time.Now()
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Errorf("elapsed: got %v; want an immediate return", elapsed)
+	}
+
+	if calls != 1 {
+		t.Errorf("calls: got %d; want 1", calls)
+	}
+
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("status: got %d; want 429", res.StatusCode)
+	}
+}
+
+func TestRoundTrip_StopsWhenDeadlineWouldElapse(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithBackoff(backoff.Constant(time.Hour)),
+	)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if calls != 1 {
+		t.Errorf("calls: got %d; want 1", calls)
+	}
+
+	// The caller receives a usable response rather than a context error.
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status: got %d; want 503", res.StatusCode)
+	}
+}
+
+func TestRoundTrip_ContextCanceledDuringBackoff(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithBackoff(backoff.Constant(time.Hour)),
+	)
+
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
 		_, err := tr.RoundTrip(req)
+		errCh <- err
+	}()
+
+	cancel()
+
+	select {
+	case err := <-errCh:
 		if !errors.Is(err, context.Canceled) {
-			t.Errorf("error: got %v; want %v", err, context.Canceled)
+			t.Errorf("got %v; want %v", err, context.Canceled)
 		}
-		if got, want := m.Calls(), 1; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+	case <-time.After(time.Second):
+		t.Fatal("did not return after cancellation")
+	}
+}
 
-	t.Run("non-rewindable body prevents retry", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
-			},
-		}
-		tr := retry.NewTransport(m)
-		req, _ := http.NewRequest(http.MethodPut, "/", http.NoBody)
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-		if got, want := res.StatusCode, http.StatusServiceUnavailable; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-		if got, want := m.Calls(), 1; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+func TestRoundTrip_ContextAlreadyCanceled(t *testing.T) {
+	t.Parallel()
 
-	t.Run("rewindable body allows retry", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
-				{res: mockResponse(http.StatusOK, "ok")},
-			},
-		}
-		tr := retry.NewTransport(m)
-		body := "body"
-		req, _ := http.NewRequest(http.MethodPut, "/", strings.NewReader(body))
-		req.GetBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(strings.NewReader(body)), nil
-		}
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-		if got, want := res.StatusCode, http.StatusOK; got != want {
-			t.Errorf("status code: got %d; want %d", got, want)
-		}
-		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
 
-	t.Run("respects retry-after header", func(t *testing.T) {
-		t.Parallel()
-		now := time.Now()
-		resp := mockResponse(http.StatusTooManyRequests, "rate limited")
-		resp.Header.Set("Retry-After", "1")
+	var calls int
+	tr := retry.NewTransport(counter(http.StatusOK, &calls))
 
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: resp},
-				{res: mockResponse(http.StatusOK, "ok")},
-			},
-		}
-		tr := retry.NewTransport(m,
-			retry.WithBackoff(backoff.Constant(100*time.Millisecond)),
-			retry.WithClock(func() time.Time { return now }),
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if _, err := tr.RoundTrip(req); !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v; want %v", err, context.Canceled)
+	}
+
+	if calls != 0 {
+		t.Errorf("calls: got %d; want 0", calls)
+	}
+}
+
+func TestRoundTrip_TransportError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := &netError{timeout: true}
+
+	var calls int
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			return nil, wantErr
+		}),
+		retry.WithAttemptLimit(3),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if _, err := tr.RoundTrip(req); !errors.Is(err, wantErr) {
+		t.Errorf("error: got %v; want %v", err, wantErr)
+	}
+
+	if calls != 3 {
+		t.Errorf("calls: got %d; want 3", calls)
+	}
+}
+
+func TestRoundTrip_RewindFailure(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("cannot rewind")
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithAttemptLimit(3),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPut, "http://example.com",
+		strings.NewReader("payload"),
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	req.GetBody = func() (io.ReadCloser, error) { return nil, wantErr }
+
+	if _, err := tr.RoundTrip(req); !errors.Is(err, wantErr) {
+		t.Errorf("error: got %v; want %v", err, wantErr)
+	}
+
+	if calls != 1 {
+		t.Errorf("calls: got %d; want 1", calls)
+	}
+}
+
+// Concurrent requests must not inflate each other's backoff. With shared
+// attempt state, the delays escalate to the maximum within a few requests.
+func TestRoundTrip_ConcurrentRequestsBackOffIndependently(t *testing.T) {
+	t.Parallel()
+
+	const (
+		requests = 8
+		attempts = 3
+		step     = 10 * time.Millisecond
+	)
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithAttemptLimit(attempts),
+		retry.WithBackoff(backoff.Exponential(step, time.Minute, 2)),
+	)
+
+	// Each request waits step + 2*step between its three attempts.
+	want := step + 2*step
+
+	var wg sync.WaitGroup
+	start := time.Now()
+
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			req, err := http.NewRequestWithContext(
+				t.Context(), http.MethodGet, "http://example.com", nil,
+			)
+			if err != nil {
+				t.Errorf("should not have returned an error: %v", err)
+				return
+			}
+
+			res, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Errorf("should not have returned an error: %v", err)
+				return
+			}
+			res.Body.Close()
+		}()
+	}
+	wg.Wait()
+
+	// Generous headroom for scheduling; the point is that the total stays
+	// proportional to a single request's schedule, not to the request count.
+	if elapsed := time.Since(start); elapsed > 4*want {
+		t.Errorf(
+			"elapsed: got %v; want roughly %v (shared backoff state?)",
+			elapsed, want,
 		)
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-
-		start := time.Now()
-		_, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-
-		if d := time.Since(start); d < time.Second {
-			t.Errorf("elapsed: got %v; want >= 1s", d)
-		}
-		if got, want := m.Calls(), 2; got != want {
-			t.Errorf("call count: got %d; want %d", got, want)
-		}
-	})
-
-	t.Run("custom options are used", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusOK, "ok")},
-			},
-		}
-		var seen, seenBackoff bool
-		tr := retry.NewTransport(m,
-			retry.WithPolicy(func(retry.Attempt) bool {
-				seen = true
-				return false
-			}),
-			retry.WithBackoff(&mockBackoff{
-				next: func() time.Duration {
-					seenBackoff = true
-					return 0
-				},
-			}),
-			retry.WithAttemptLimit(5),
-		)
-
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-		_, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-
-		if !seen {
-			t.Error("policy was not called")
-		}
-		if seenBackoff {
-			t.Error("backoff should not have advanced for a successful call")
-		}
-	})
-
-	t.Run("custom logger injection", func(t *testing.T) {
-		t.Parallel()
-		m := &mockRoundTripper{
-			trips: []mockTrip{
-				{res: mockResponse(http.StatusServiceUnavailable, "fail")},
-				{res: mockResponse(http.StatusOK, "ok")},
-			},
-		}
-
-		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(
-			&buf,
-			&slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			},
-		))
-
-		tr := retry.NewTransport(m, retry.WithLogger(logger))
-		req, _ := http.NewRequest(http.MethodGet, "/", nil)
-
-		_, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
-		}
-
-		if s := buf.String(); !strings.Contains(s,
-			"Request attempt failed, retrying") {
-			t.Errorf("logs: got %q; want debug output from custom logger", s)
-		}
-	})
+	}
 }

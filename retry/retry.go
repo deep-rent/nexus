@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package retry is an http.RoundTripper middleware for automatic retries.
+// Package retry provides an [http.RoundTripper] middleware for automatic,
+// policy-driven retries of HTTP requests.
 //
-// Package retry provides an [http.RoundTripper] middleware that provides
-// automatic, policy-driven retries for HTTP requests. It wraps an existing
-// [http.RoundTripper] (such as [http.DefaultTransport]) and intercepts requests
-// to apply retry logic. The decision to retry is controlled by a [Policy], and
-// the delay between attempts is determined by a [backoff.Strategy].
+// It wraps an existing [http.RoundTripper] (such as [http.DefaultTransport])
+// and intercepts requests to apply retry logic. The decision to retry is
+// controlled by a [Policy], and the delay between attempts is determined by a
+// [backoff.Strategy], which the transport also reconciles with any Retry-After
+// or rate-limit headers sent by the server.
+//
+// Attempts are counted per request, so one transport, policy and backoff
+// strategy can serve any number of concurrent requests without their retry
+// schedules interfering.
 //
 // # Usage
 //
@@ -36,7 +41,7 @@
 //	  )),
 //	)
 //
-//	client := &http.Client{Timeout: 1 * time.Second, Transport: transport}
+//	client := &http.Client{Timeout: 10 * time.Second, Transport: transport}
 //
 //	// This request will be retried automatically on temporary failures.
 //	res, err := client.Get("http://example.com/flaky")
@@ -45,14 +50,16 @@
 //	  return
 //	}
 //	defer res.Body.Close()
+//
+// Note that the timeout of an [http.Client] covers the entire exchange,
+// including every retry and the waiting in between. A timeout shorter than the
+// configured backoff leaves no room for retries.
 package retry
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
@@ -60,239 +67,27 @@ import (
 	"github.com/deep-rent/nexus/header"
 )
 
-// Attempt encapsulates the state of a single HTTP request attempt.
-//
-// It is passed to a [Policy] to determine if a retry is warranted.
-type Attempt struct {
-	// Request is the original HTTP request being attempted.
-	Request *http.Request
-	// Response is the result of the attempt, if one was received.
-	Response *http.Response
-	// Error is the error returned by the transport, if any.
-	Error error
-	// Count is the number of the current attempt (starting at 1).
-	Count int
-}
-
-// Idempotent reports whether the request can be safely retried.
-//
-// It considers standard HTTP methods that are idempotent according to RFC 7231,
-// such as GET, HEAD, OPTIONS, TRACE, PUT, and DELETE.
-func (a Attempt) Idempotent() bool {
-	switch a.Request.Method {
-	case
-		http.MethodGet,
-		http.MethodHead,
-		http.MethodOptions,
-		http.MethodTrace,
-		http.MethodPut,
-		http.MethodDelete:
-		return true
-	default:
-		return false
-	}
-}
-
-// Temporary reports whether the response indicates a server-side temporary
-// failure.
-//
-// This is determined by specific HTTP status codes that suggest the request
-// might succeed if retried, such as 408, 429, 500, 502, 503, and 504.
-func (a Attempt) Temporary() bool {
-	if a.Response != nil {
-		switch a.Response.StatusCode {
-		case
-			http.StatusRequestTimeout,      // 408
-			http.StatusTooManyRequests,     // 429
-			http.StatusInternalServerError, // 500
-			http.StatusBadGateway,          // 502
-			http.StatusServiceUnavailable,  // 503
-			http.StatusGatewayTimeout:      // 504
-			return true
-		}
-	}
-	return false
-}
-
-// Transient reports whether the error suggests a temporary network-level issue.
-//
-// It returns true for network timeouts and unexpected EOF errors. It returns
-// false for context cancellations ([context.Canceled],
-// [context.DeadlineExceeded]), as these should not be retried.
-func (a Attempt) Transient() bool {
-	if a.Error == nil ||
-		errors.Is(a.Error, context.Canceled) ||
-		errors.Is(a.Error, context.DeadlineExceeded) {
-		return false
-	}
-	if errors.Is(a.Error, io.ErrUnexpectedEOF) || errors.Is(a.Error, io.EOF) {
-		return true
-	}
-	var err net.Error
-	return errors.As(a.Error, &err) && err.Timeout()
-}
-
-// Policy is the decision-making function that determines whether to retry.
-//
-// It is invoked after each attempt with the corresponding [Attempt] details. It
-// returns true to schedule a retry or false to stop and return the last result.
-type Policy func(a Attempt) bool
-
-// LimitAttempts decorates a [Policy] to enforce a maximum attempt limit.
-//
-// It short-circuits the decision, returning false if the attempt count has
-// reached the limit n. Otherwise, it delegates the decision to the wrapped
-// policy. A limit of 1 disables retries.
-func (p Policy) LimitAttempts(n int) Policy {
-	if n <= 0 {
-		return p
-	}
-	return func(a Attempt) bool {
-		return a.Count < n && p(a)
-	}
-}
-
-// DefaultPolicy provides a safe and sensible default retry strategy.
-//
-// It enters the retry loop only for idempotent requests that have resulted in a
-// temporary server error or a transient network error such as a timeout.
-func DefaultPolicy() Policy {
-	return func(a Attempt) bool {
-		return a.Idempotent() && (a.Temporary() || a.Transient())
-	}
-}
-
 // transport wraps an underlying [http.RoundTripper] to provide automatic
 // retries.
 type transport struct {
-	// next is the underlying transport used to send requests.
-	next http.RoundTripper
-	// policy determines if a retry is allowed.
-	policy Policy
-	// backoff calculates the delay between retry attempts.
-	backoff backoff.Strategy
-	// logger handles debug and warning log messages.
-	logger *slog.Logger
-	// now is the time source for calculating delays.
-	now func() time.Time
+	next    http.RoundTripper // underlying transport used to send requests
+	policy  Policy            // decides whether another attempt is made
+	backoff backoff.Strategy  // supplies the delay between attempts
+	logger  *slog.Logger      // destination for debug output
+	now     func() time.Time  // clock used to interpret date headers
+	drain   int64             // bytes read from an abandoned response body
 }
-
-// RoundTrip executes an HTTP transaction with retry logic.
-//
-// For a request to be retryable, its body must be rewindable via
-// [http.Request.GetBody]. On intermediary failed attempts, the response body is
-// fully read and closed to allow connection reuse. The loop respects context
-// cancellation.
-func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	var (
-		res   *http.Response
-		err   error
-		count int
-	)
-
-	defer t.backoff.Done()
-	rewindable := req.GetBody != nil
-	for {
-		count++
-
-		// If this is a retry and the body is rewindable, obtain a new reader.
-		if count > 1 && rewindable {
-			var e error
-			req.Body, e = req.GetBody()
-			if e != nil {
-				// Cannot rewind the body, so we must stop here.
-				return nil, e
-			}
-		}
-
-		res, err = t.next.RoundTrip(req)
-
-		// Ask the policy if we should retry.
-		if !t.policy(Attempt{
-			Request:  req,
-			Response: res,
-			Error:    err,
-			Count:    count,
-		}) {
-			break // Success or policy decided to exit
-		}
-
-		// Check if the request body is rewindable. If not, we must stop here.
-		// This is checked after the policy to ensure the policy still gets
-		// notified
-		// of the attempt.
-		if req.Body != nil && !rewindable {
-			break
-		}
-
-		// If retrying, drain and close the previous response body.
-		if res != nil && res.Body != nil {
-			if _, err := io.Copy(io.Discard, res.Body); err != nil {
-				t.logger.Warn(
-					"Failed to drain response body",
-					slog.Any("error", err),
-				)
-			}
-			if err := res.Body.Close(); err != nil {
-				t.logger.Warn(
-					"Failed to close response body",
-					slog.Any("error", err),
-				)
-			}
-		}
-
-		delay := t.backoff.Next()
-		if res != nil {
-			if d := header.Throttle(res.Header, t.now); d != 0 {
-				// Use the longer of the two delays to respect both the server
-				// and our own backoff policy.
-				delay = max(delay, d)
-			}
-		}
-
-		if ctx := req.Context(); t.logger.Enabled(ctx, slog.LevelDebug) {
-			attrs := []any{
-				slog.Int("attempt", count),
-				slog.Duration("delay", delay),
-				slog.String("method", req.Method),
-				slog.String("url", req.URL.String()),
-			}
-			if err != nil {
-				attrs = append(attrs, slog.Any("error", err))
-			}
-			if res != nil {
-				attrs = append(attrs, slog.Int("status", res.StatusCode))
-			}
-
-			t.logger.DebugContext(
-				ctx,
-				"Request attempt failed, retrying",
-				attrs...,
-			)
-		}
-
-		if delay <= 0 {
-			continue // Retry without delay
-		}
-
-		// Wait for the delay, respecting context cancellation.
-		select {
-		case <-time.After(delay):
-			continue // Proceed to next attempt
-		case <-req.Context().Done():
-			return nil, req.Context().Err()
-		}
-	}
-
-	return res, err
-}
-
-var _ http.RoundTripper = (*transport)(nil)
 
 // NewTransport creates and returns a new retrying [http.RoundTripper].
 //
 // It wraps an existing transport and retries requests based on the configured
-// policy and backoff strategy.
+// policy and backoff strategy. Requests that carry a body are only retried if
+// that body can be rewound, which is the case when [http.Request.GetBody] is
+// set. The helpers in [net/http] set it for the common in-memory body types,
+// but not for an arbitrary [io.Reader].
+//
+// The returned transport is safe for concurrent use if the wrapped transport
+// is.
 func NewTransport(
 	next http.RoundTripper,
 	opts ...Option,
@@ -303,6 +98,7 @@ func NewTransport(
 		backoff: backoff.Constant(0),
 		logger:  slog.Default(),
 		now:     time.Now,
+		drain:   DefaultMaxDrainBytes,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -313,76 +109,178 @@ func NewTransport(
 		backoff: cfg.backoff,
 		logger:  cfg.logger,
 		now:     cfg.now,
+		drain:   cfg.drain,
 	}
 }
 
-// config holds the configuration parameters supplied via functional options.
-type config struct {
-	// policy is the base retry logic.
-	policy Policy
-	// limit is the maximum number of attempts.
-	limit int
-	// backoff is the strategy for inter-attempt delays.
-	backoff backoff.Strategy
-	// logger is the structured logger.
-	logger *slog.Logger
-	// now is the clock used for timing calculations.
-	now func() time.Time
-}
-
-// Option is a function that configures the retry transport.
-type Option func(*config)
-
-// WithPolicy sets the retry policy used by the transport.
+// RoundTrip executes an HTTP transaction, retrying it as directed by the
+// configured [Policy].
 //
-// If not provided, [DefaultPolicy] is used. A nil value is ignored.
-func WithPolicy(policy Policy) Option {
-	return func(c *config) {
-		if policy != nil {
-			c.policy = policy
+// The caller's request is never modified: retries are sent as clones carrying
+// a freshly rewound body. Between attempts, the abandoned response body is
+// drained and closed so that the underlying connection can be reused. The
+// response handed back to the caller always has its body intact.
+//
+// The loop honors the request context throughout. If the context carries a
+// deadline that would elapse during the next backoff delay, the transport
+// stops early and returns the result of the last attempt rather than waiting
+// for a cancellation that is certain to happen.
+func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// A body that cannot be rewound can only be sent once.
+	rewindable := req.Body == nil || req.GetBody != nil
+
+	for count := 1; ; count++ {
+		attempt := req
+		if count > 1 {
+			var err error
+			if attempt, err = rewind(req); err != nil {
+				return nil, err
+			}
+		}
+
+		res, err := t.next.RoundTrip(attempt)
+
+		retry := t.policy(Attempt{
+			Request:  attempt,
+			Response: res,
+			Error:    err,
+			Count:    count,
+		})
+
+		// The policy is consulted first, so that it observes every attempt
+		// even when the request turns out not to be repeatable.
+		if !retry || !rewindable {
+			if retry {
+				t.logger.DebugContext(ctx,
+					"Not retrying a request with a non-rewindable body",
+					slog.String("method", req.Method),
+					slog.String("url", req.URL.String()),
+				)
+			}
+			return res, err
+		}
+
+		delay := t.delay(count, res)
+
+		// Waiting past the deadline would turn a usable response into a
+		// context error, so the last result is returned while its body is
+		// still intact.
+		if deadline, ok := ctx.Deadline(); ok &&
+			time.Until(deadline) <= delay {
+			t.logger.DebugContext(ctx,
+				"Not retrying, deadline would elapse during backoff",
+				slog.Duration("delay", delay),
+				slog.String("method", req.Method),
+				slog.String("url", req.URL.String()),
+			)
+			return res, err
+		}
+
+		t.discard(res)
+		t.log(ctx, count, delay, req, res, err)
+
+		if err := backoff.Wait(ctx, delay); err != nil {
+			return nil, err
 		}
 	}
 }
 
-// WithAttemptLimit sets the maximum number of attempts for a request.
-//
-// This includes the initial attempt. A value of 3 means one initial attempt and
-// up to two retries. If the value is 0 or less, no limit is enforced.
-func WithAttemptLimit(n int) Option {
-	return func(c *config) {
-		c.limit = n
+// rewind clones req for another attempt, obtaining a fresh reader for its
+// body. The original request is left untouched, as required by the
+// [http.RoundTripper] contract.
+func rewind(req *http.Request) (*http.Request, error) {
+	clone := req.Clone(req.Context())
+	if req.GetBody == nil {
+		return clone, nil
+	}
+
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, err
+	}
+	clone.Body = body
+	return clone, nil
+}
+
+// delay determines how long to wait before the next attempt, reconciling the
+// backoff strategy with any throttling hints sent by the server.
+func (t *transport) delay(count int, res *http.Response) time.Duration {
+	delay := t.backoff.Delay(count)
+	if res == nil {
+		return delay
+	}
+	// Use the longer of the two delays to respect both the server's
+	// instruction and our own backoff policy.
+	return max(delay, header.Throttle(res.Header, t.now))
+}
+
+// discard drains and closes the body of an abandoned response, allowing the
+// underlying connection to be reused. Reading is bounded: a body that exceeds
+// the limit is closed without being consumed, which costs a connection but
+// keeps a large error page from stalling the retry loop.
+func (t *transport) discard(res *http.Response) {
+	if res == nil || res.Body == nil {
+		return
+	}
+
+	if t.drain > 0 {
+		// One byte beyond the limit distinguishes a fully drained body from a
+		// truncated one, which must not be reused.
+		n, err := io.Copy(io.Discard, io.LimitReader(res.Body, t.drain+1))
+		switch {
+		case err != nil:
+			t.logger.Warn(
+				"Failed to drain response body",
+				slog.Any("error", err),
+			)
+		case n > t.drain:
+			t.logger.Debug(
+				"Abandoned response body exceeds the drain limit",
+				slog.Int64("limit", t.drain),
+			)
+		}
+	}
+
+	if err := res.Body.Close(); err != nil {
+		t.logger.Warn(
+			"Failed to close response body",
+			slog.Any("error", err),
+		)
 	}
 }
 
-// WithBackoff sets the strategy for calculating the delay between retries.
-//
-// If not provided, there is no delay between attempts. A nil value is ignored.
-func WithBackoff(strategy backoff.Strategy) Option {
-	return func(c *config) {
-		if strategy != nil {
-			c.backoff = strategy
-		}
+// log records a failed attempt and the delay preceding the next one.
+func (t *transport) log(
+	ctx context.Context,
+	count int,
+	delay time.Duration,
+	req *http.Request,
+	res *http.Response,
+	err error,
+) {
+	if !t.logger.Enabled(ctx, slog.LevelDebug) {
+		return
 	}
+
+	attrs := []any{
+		slog.Int("attempt", count),
+		slog.Duration("delay", delay),
+		slog.String("method", req.Method),
+		slog.String("url", req.URL.String()),
+	}
+	if err != nil {
+		attrs = append(attrs, slog.Any("error", err))
+	}
+	if res != nil {
+		attrs = append(attrs, slog.Int("status", res.StatusCode))
+	}
+
+	t.logger.DebugContext(ctx, "Request attempt failed, retrying", attrs...)
 }
 
-// WithLogger sets the logger for debug messages.
-//
-// If not provided, [slog.Default] is used. A nil value is ignored.
-func WithLogger(logger *slog.Logger) Option {
-	return func(c *config) {
-		if logger != nil {
-			c.logger = logger
-		}
-	}
-}
-
-// WithClock provides a custom time source, primarily for testing.
-//
-// If not provided, [time.Now] is used. A nil value is ignored.
-func WithClock(now func() time.Time) Option {
-	return func(c *config) {
-		if now != nil {
-			c.now = now
-		}
-	}
-}
+var _ http.RoundTripper = (*transport)(nil)
