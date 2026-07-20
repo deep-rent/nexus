@@ -179,13 +179,13 @@ func (s *Source) Parse(name string) (
 	// Strip the configured file extension (e.g., ".sql").
 	base, found := strings.CutSuffix(name, s.ext)
 	if !found {
-		return 0, "", -1, false, ErrExtension
+		return 0, "", 0, false, ErrExtension
 	}
 
 	// Locate the dot that separates the version/description from the direction.
 	dot := strings.LastIndexByte(base, '.')
 	if dot <= 0 {
-		return 0, "", -1, false, ErrMissingDirection
+		return 0, "", 0, false, ErrMissingDirection
 	}
 
 	// Extract the direction segment (e.g., "up", "down", or "up_notx").
