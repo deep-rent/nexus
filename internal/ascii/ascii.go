@@ -81,8 +81,8 @@ func IsSpace(c rune) bool {
 // defined as any character from space (0x20) to tilde (0x7E).
 func IsPrint(c rune) bool { return c >= 0x20 && c <= 0x7E }
 
-// IsControl reports whether the rune is an ASCII control character,
-// defined as any character less than space (0x20) or the delete character (0x7F).
+// IsControl reports whether the rune is an ASCII control character, defined as
+// any character less than space (0x20) or the delete character (0x7F).
 func IsControl(c rune) bool { return c < 0x20 || c == 0x7F }
 
 // IsASCII reports whether the rune is a valid ASCII character.
@@ -131,7 +131,6 @@ func EqualFold(s, t string) bool {
 			continue
 		}
 		// Convert both to lowercase and compare.
-		// A byte is uppercase if it's in 'A'-'Z'.
 		if a >= 'A' && a <= 'Z' {
 			a += 'a' - 'A'
 		}
@@ -145,7 +144,7 @@ func EqualFold(s, t string) bool {
 	return true
 }
 
-// HasUpper reports whether the string s contains any uppercase ASCII letters.
+// HasUpper reports whether the string contains any uppercase ASCII letters.
 func HasUpper(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 'A' && s[i] <= 'Z' {
@@ -155,7 +154,7 @@ func HasUpper(s string) bool {
 	return false
 }
 
-// HasLower reports whether the string s contains any lowercase ASCII letters.
+// HasLower reports whether the string contains any lowercase ASCII letters.
 func HasLower(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 'a' && s[i] <= 'z' {
@@ -165,7 +164,8 @@ func HasLower(s string) bool {
 	return false
 }
 
-// ToLower returns a copy of the string s with all ASCII letters mapped to their lower case.
+// ToLower returns a copy of the string with all ASCII letters mapped to their
+// lower case.
 func ToLower(s string) string {
 	if !HasUpper(s) {
 		return s
@@ -181,7 +181,8 @@ func ToLower(s string) string {
 	return string(b)
 }
 
-// ToUpper returns a copy of the string s with all ASCII letters mapped to their upper case.
+// ToUpper returns a copy of the string with all ASCII letters mapped to their
+// upper case.
 func ToUpper(s string) string {
 	if !HasLower(s) {
 		return s
