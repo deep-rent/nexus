@@ -15,9 +15,11 @@
 package retry_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -863,5 +865,216 @@ func TestRoundTrip_ConcurrentRequestsBackOffIndependently(t *testing.T) {
 			"elapsed: got %v; want roughly %v (shared backoff state?)",
 			elapsed, want,
 		)
+	}
+}
+
+func TestRoundTrip_LogsAttempts(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	var calls int
+	tr := retry.NewTransport(
+		counter(http.StatusServiceUnavailable, &calls),
+		retry.WithAttemptLimit(2),
+		retry.WithLogger(logger),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	logs := buf.String()
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"message", "Request attempt failed, retrying"},
+		{"attempt", "attempt=1"},
+		{"status", "status=503"},
+		{"method", "method=GET"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !strings.Contains(logs, tt.want) {
+				t.Errorf("want match for %q; got %q", tt.want, logs)
+			}
+		})
+	}
+}
+
+func TestRoundTrip_LogsTransportError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, &netError{timeout: true}
+		}),
+		retry.WithAttemptLimit(2),
+		retry.WithLogger(logger),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	if _, err := tr.RoundTrip(req); err == nil {
+		t.Fatal("should have returned an error")
+	}
+
+	if want := "error="; !strings.Contains(buf.String(), want) {
+		t.Errorf("want match for %q; got %q", want, buf.String())
+	}
+}
+
+// Draining can be turned off entirely, in which case the body is closed
+// without being read.
+func TestRoundTrip_DrainDisabled(t *testing.T) {
+	t.Parallel()
+
+	var (
+		calls int
+		first *body
+	)
+
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				first = newBody("failure")
+				return respond(http.StatusServiceUnavailable, first), nil
+			}
+			return respond(http.StatusOK, newBody("ok")), nil
+		}),
+		retry.WithMaxDrainBytes(0),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	read, closed := first.stats()
+	if read != 0 {
+		t.Errorf("drained: got %d bytes; want 0", read)
+	}
+
+	if !closed {
+		t.Error("abandoned body: not closed")
+	}
+}
+
+// A body that fails to drain or close must not derail the retry loop.
+func TestRoundTrip_ToleratesBrokenBody(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				return respond(http.StatusServiceUnavailable, brokenBody{}), nil
+			}
+			return respond(http.StatusOK, newBody("ok")), nil
+		}),
+		retry.WithAttemptLimit(3),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d; want 200", res.StatusCode)
+	}
+}
+
+// brokenBody fails on every operation.
+type brokenBody struct{}
+
+func (brokenBody) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (brokenBody) Close() error { return errors.New("close failed") }
+
+func TestWithClock(t *testing.T) {
+	t.Parallel()
+
+	// A Retry-After date is interpreted against the injected clock, which
+	// places it one hour in the future.
+	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+
+	var calls int
+	tr := retry.NewTransport(
+		tripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			res := respond(http.StatusTooManyRequests, newBody("slow down"))
+			res.Header.Set(
+				"Retry-After",
+				now.Add(time.Hour).Format(http.TimeFormat),
+			)
+			return res, nil
+		}),
+		retry.WithClock(func() time.Time { return now }),
+	)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	// The hour-long delay exceeds the deadline, so no retry is attempted.
+	if calls != 1 {
+		t.Errorf("calls: got %d; want 1", calls)
 	}
 }
