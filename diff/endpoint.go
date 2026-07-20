@@ -19,7 +19,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -133,7 +132,7 @@ func DocumentEndpoint[C auth.AccessClaims](g Getter) router.HandlerFunc {
 			return &router.Error{
 				Status:      http.StatusBadRequest,
 				Reason:      router.ReasonValidationFailed,
-				Description: "The document ID is not a valid UUID.",
+				Description: "document ID is not a valid UUID",
 				Context: valid.Error{
 					"id": {"must be a valid UUID"},
 				},
@@ -173,15 +172,15 @@ func scopeFrom[C auth.AccessClaims](e *router.Exchange) (Scope, *router.Error) {
 		return Scope{}, &router.Error{
 			Status:      http.StatusUnauthorized,
 			Reason:      auth.ReasonMissingToken,
-			Description: "This endpoint requires authentication.",
+			Description: "this endpoint requires authentication",
 		}
 	}
 	if !claims.Delegated() {
 		return Scope{}, &router.Error{
 			Status: http.StatusForbidden,
 			Reason: auth.ReasonDelegationRequired,
-			Description: "This endpoint serves end users; " +
-				"machine tokens cannot access documents.",
+			Description: "this endpoint serves end users; " +
+				"machine tokens cannot access documents",
 		}
 	}
 	// The raw sub claim is an opaque string; UserID performs the UUID
@@ -192,7 +191,7 @@ func scopeFrom[C auth.AccessClaims](e *router.Exchange) (Scope, *router.Error) {
 		return Scope{}, &router.Error{
 			Status:      http.StatusUnauthorized,
 			Reason:      auth.ReasonInvalidToken,
-			Description: "The token subject is not a user identifier.",
+			Description: "token subject is not a user identifier",
 		}
 	}
 	return Scope{UserID: sub, Teams: claims.Memberships()}, nil
@@ -234,8 +233,8 @@ func translate(err error) error {
 		return &router.Error{
 			Status: status,
 			Reason: ReasonChangesRejected,
-			Description: "Some changes were rejected; " +
-				"no change from this request was applied.",
+			Description: "some changes were rejected; " +
+				"no change from this request was applied",
 			Context: rejected.Causes,
 			Cause:   err,
 		}
@@ -244,7 +243,7 @@ func translate(err error) error {
 		return &router.Error{
 			Status:      http.StatusGone,
 			Reason:      ReasonResyncRequired,
-			Description: "The cursor is too old; restart from cursor zero.",
+			Description: "cursor is too old; restart from cursor zero",
 			Context:     map[string]any{"floor": rerr.Floor},
 			Cause:       err,
 		}
@@ -253,7 +252,7 @@ func translate(err error) error {
 		return &router.Error{
 			Status:      http.StatusConflict,
 			Reason:      ReasonConflict,
-			Description: "A concurrent change interfered; retry the sync.",
+			Description: "a concurrent change interfered; retry the sync",
 			Cause:       err,
 		}
 	}
@@ -261,7 +260,7 @@ func translate(err error) error {
 		return &router.Error{
 			Status:      http.StatusRequestEntityTooLarge,
 			Reason:      ReasonTooManyChanges,
-			Description: "The change set exceeds the maximum size.",
+			Description: "change set exceeds the maximum size",
 			Cause:       err,
 		}
 	}
@@ -272,7 +271,7 @@ func translate(err error) error {
 		return &router.Error{
 			Status:      http.StatusNotFound,
 			Reason:      ReasonUnknownModel,
-			Description: "The requested document type has not been recognized.",
+			Description: "the requested document type has not been recognized",
 			Cause:       err,
 		}
 	}
@@ -280,7 +279,7 @@ func translate(err error) error {
 		return &router.Error{
 			Status:      http.StatusNotFound,
 			Reason:      router.ReasonNotFound,
-			Description: "The requested document does not exist.",
+			Description: "the requested document does not exist",
 			Cause:       err,
 		}
 	}

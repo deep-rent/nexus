@@ -49,7 +49,7 @@ func (s *Server) Login(e *router.Exchange) error {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
 			Reason:      router.ReasonRateLimit,
-			Description: "Too many failed attempts. Try again later.",
+			Description: "too many failed attempts; try again later",
 		}
 	}
 

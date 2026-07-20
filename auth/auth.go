@@ -59,7 +59,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/header"
@@ -368,7 +367,7 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 				return &router.Error{
 					Status:      http.StatusUnauthorized,
 					Reason:      ReasonMissingToken,
-					Description: "The bearer token is missing or malformed.",
+					Description: "bearer token is missing or malformed",
 				}
 			}
 
@@ -377,7 +376,7 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 				return &router.Error{
 					Status:      http.StatusUnauthorized,
 					Reason:      ReasonInvalidToken,
-					Description: "The provided token is invalid or expired.",
+					Description: "provided token is invalid or expired",
 					Cause:       err,
 				}
 			}
@@ -394,7 +393,7 @@ func (g *Guard[T]) Secure(rules ...Rule[T]) router.Middleware {
 					return &router.Error{
 						Status:      http.StatusForbidden,
 						Reason:      ReasonInsufficientPrivileges,
-						Description: "Access denied by security policy.",
+						Description: "access denied by security policy",
 						Cause:       err,
 					}
 				}
