@@ -99,3 +99,80 @@ func TestAPNS_Send(t *testing.T) {
 		t.Fatal("expected error for missing APNs token")
 	}
 }
+
+// The apns-topic header comes from WithTopic by default and can be overridden
+// per message via Target.Topic.
+func TestAPNS_Topic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		configure string // WithTopic value ("" = not configured)
+		override  string // Target.Topic ("" = none)
+		want      string // expected apns-topic header ("" = header absent)
+	}{
+		{"configured default", "com.example.app", "", "com.example.app"},
+		{
+			name:      "per-message override",
+			configure: "com.example.app",
+			override:  "com.example.app.voip",
+			want:      "com.example.app.voip",
+		},
+		{"override without default", "", "com.example.app", "com.example.app"},
+		{"neither", "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			key := generate(t)
+			var got string
+			var seen bool
+			tr := &mockTransport{
+				fn: func(r *http.Request) (*http.Response, error) {
+					got = r.Header.Get("apns-topic")
+					_, seen = r.Header["Apns-Topic"]
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader("{}")),
+						Header:     make(http.Header),
+					}, nil
+				},
+			}
+
+			opts := []apns.Option{
+				apns.WithClient(&http.Client{Transport: tr}),
+				apns.WithBaseURL(apns.SandboxBaseURL),
+				apns.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			}
+			if tt.configure != "" {
+				opts = append(opts, apns.WithTopic(tt.configure))
+			}
+
+			sender := apns.New(apns.Credentials{
+				KeyID:      "keyID",
+				TeamID:     "teamID",
+				PrivateKey: key,
+			}, opts...)
+
+			msg := push.NewMessage("Hi", "There", push.Target{
+				Token: "device123",
+				Topic: tt.override,
+			})
+			if err := sender.Send(t.Context(), msg); err != nil {
+				t.Fatalf("send: %v", err)
+			}
+
+			if tt.want == "" {
+				if seen {
+					t.Errorf("apns-topic header set to %q; want absent", got)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Errorf("apns-topic: got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}

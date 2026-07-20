@@ -39,17 +39,16 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
-	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
@@ -69,6 +68,7 @@ const (
 type Sender struct {
 	source *token.Source
 	url    string
+	topic  string
 	client *http.Client
 	logger *slog.Logger
 	clock  func() time.Time
@@ -78,6 +78,7 @@ var _ push.Sender = (*Sender)(nil)
 
 type config struct {
 	baseURL string
+	topic   string
 	logger  *slog.Logger
 	now     func() time.Time
 	client  *http.Client
@@ -103,6 +104,19 @@ func WithBaseURL(url string) Option {
 	return func(cfg *config) {
 		if url != "" {
 			cfg.baseURL = url
+		}
+	}
+}
+
+// WithTopic sets the default apns-topic header, which is the app's bundle
+// identifier (optionally with a type suffix such as ".voip"). APNs requires it
+// for most push types, so it is normally configured once here rather than per
+// message. A message may still override it via [push.Target.Topic]. Empty
+// string values are ignored.
+func WithTopic(topic string) Option {
+	return func(cfg *config) {
+		if topic != "" {
+			cfg.topic = topic
 		}
 	}
 }
@@ -189,6 +203,7 @@ func New(
 	s := &Sender{
 		source: source,
 		url:    cfg.baseURL,
+		topic:  cfg.topic,
 		logger: cfg.logger,
 		client: cfg.client,
 		clock:  cfg.now,
@@ -241,8 +256,14 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 
 	req.Header.Set("Authorization", "bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
+
+	// A per-message topic overrides the sender's configured default.
+	topic := s.topic
 	if msg.Target.Topic != "" {
-		req.Header.Set("apns-topic", msg.Target.Topic)
+		topic = msg.Target.Topic
+	}
+	if topic != "" {
+		req.Header.Set("apns-topic", topic)
 	}
 
 	if msg.Silent {
@@ -263,7 +284,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 
 	if msg.TTL > 0 {
 		exp := s.clock().Add(msg.TTL).Unix()
-		req.Header.Set("apns-expiration", fmt.Sprintf("%d", exp))
+		req.Header.Set("apns-expiration", strconv.FormatInt(exp, 10))
 	} else {
 		req.Header.Set("apns-expiration", "0")
 	}
@@ -274,53 +295,5 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		slog.String("token", msg.Target.Token),
 	)
 
-	start := s.clock()
-	res, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	delta := s.clock().Sub(start)
-
-	defer func() {
-		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to drain response body",
-				log.Err(err),
-			)
-		}
-		if err := res.Body.Close(); err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to close response body",
-				log.Err(err),
-			)
-		}
-	}()
-
-	if res.StatusCode >= http.StatusBadRequest {
-		// The client caps response body size, so this read is bounded.
-		buf, err := io.ReadAll(res.Body)
-		var body string
-		if err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to read response body",
-				log.Err(err),
-			)
-		} else {
-			body = string(buf)
-		}
-		return &push.APIError{
-			Status: res.StatusCode,
-			Body:   body,
-		}
-	}
-
-	s.logger.DebugContext(
-		ctx,
-		"APNs message dispatched",
-		slog.Duration("duration", delta),
-	)
-	return nil
+	return push.Deliver(ctx, s.client, req, s.logger)
 }
