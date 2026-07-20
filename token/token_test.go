@@ -159,3 +159,80 @@ func TestSource_WithScheduler(t *testing.T) {
 		t.Errorf("got %q, want foobar", tok)
 	}
 }
+
+// One caller cancelling must not fail the fetch for others sharing it. The
+// fetch is detached from any single caller's context.
+func TestSource_Get_CancellationNotShared(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var fetches atomic.Int32
+
+	fetch := func(ctx context.Context) (string, time.Time, error) {
+		fetches.Add(1)
+		close(started)
+		select {
+		case <-release:
+			return "tok", time.Now().Add(time.Hour), nil
+		case <-ctx.Done():
+			return "", time.Time{}, ctx.Err()
+		}
+	}
+
+	src := token.NewSource(fetch)
+
+	// Caller A owns the in-flight fetch and then gives up.
+	ctxA, cancelA := context.WithCancel(t.Context())
+	doneA := make(chan error, 1)
+	go func() {
+		_, err := src.Get(ctxA)
+		doneA <- err
+	}()
+
+	<-started // A is now inside the shared fetch.
+
+	// Caller B joins the same fetch with a healthy context.
+	doneB := make(chan result, 1)
+	go func() {
+		tok, err := src.Get(t.Context())
+		doneB <- result{tok, err}
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let B attach to the shared call
+	cancelA()
+
+	// A observes its own cancellation.
+	select {
+	case err := <-doneA:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("caller A: got %v; want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("caller A did not return")
+	}
+
+	// The fetch keeps running; let it finish.
+	close(release)
+
+	select {
+	case res := <-doneB:
+		if res.err != nil {
+			t.Errorf("caller B was poisoned by A's cancellation: %v", res.err)
+		}
+		if res.tok != "tok" {
+			t.Errorf("caller B: got token %q; want %q", res.tok, "tok")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("caller B did not return")
+	}
+
+	if got := fetches.Load(); got != 1 {
+		t.Errorf("fetches: got %d; want 1 (calls must be collapsed)", got)
+	}
+}
+
+type result struct {
+	tok string
+	err error
+}
