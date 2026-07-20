@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,23 +104,146 @@ func TestBinder_Bind(t *testing.T) {
 	})
 }
 
-func TestBinder_PanicOnInvalidTag(t *testing.T) {
+// A malformed tag is a configuration mistake in the caller's own source, but
+// it is reported rather than raised: Bind returns an error, so a program that
+// parses configuration can say what is wrong instead of dying.
+func TestBinder_InvalidTag(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("should have panicked")
-		}
-	}()
-
-	type InvalidConfig struct {
-		Host string `bind:"host,unknownOption:true"`
+	tests := []struct {
+		name string
+		bind func() error
+		want string
+	}{
+		{
+			name: "unknown option",
+			bind: func() error {
+				var cfg struct {
+					Host string `bind:"host,unknownOption:true"`
+				}
+				return bind.New("bind").Bind(&cfg, "", mockSource{})
+			},
+			want: `unknown option: "unknownOption"`,
+		},
+		{
+			name: "duplicate option",
+			bind: func() error {
+				var cfg struct {
+					Host string `bind:"host,required,required"`
+				}
+				return bind.New("bind").Bind(&cfg, "", mockSource{})
+			},
+			want: `duplicate option: "required"`,
+		},
+		{
+			name: "inline on a named field",
+			bind: func() error {
+				type Inner struct {
+					Name string `bind:"name"`
+				}
+				var cfg struct {
+					Inner Inner `bind:",inline"`
+				}
+				return bind.New("bind").Bind(&cfg, "", mockSource{})
+			},
+			want: `requires an embedded field`,
+		},
+		{
+			name: "inline on a scalar",
+			bind: func() error {
+				var cfg struct {
+					string `bind:",inline"`
+				}
+				return bind.New("bind").Bind(&cfg, "", mockSource{})
+			},
+			want: "",
+		},
 	}
 
-	b := bind.New("bind")
-	var cfg InvalidConfig
-	_ = b.Bind(&cfg, "", mockSource{})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("should not have panicked: %v", r)
+				}
+			}()
+
+			err := tt.bind()
+			if tt.want == "" {
+				return
+			}
+
+			if err == nil {
+				t.Fatal("should have returned an error")
+			}
+
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("want match for %q; got %q", tt.want, err)
+			}
+		})
+	}
+}
+
+// A source may report a key as present while carrying no values. There is
+// nothing to assign, so the field is left to its default rather than causing
+// an out-of-range panic.
+func TestBinder_EmptyValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  mockSource
+		want string
+	}{
+		{"no values", mockSource{"host": {}}, "fallback"},
+		{"absent", mockSource{}, "fallback"},
+		{"present", mockSource{"host": {"example.com"}}, "example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("should not have panicked: %v", r)
+				}
+			}()
+
+			var cfg struct {
+				Host string `bind:"host,default:fallback"`
+			}
+
+			if err := bind.New("bind").Bind(&cfg, "", tt.src); err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+
+			if cfg.Host != tt.want {
+				t.Errorf("got %q; want %q", cfg.Host, tt.want)
+			}
+		})
+	}
+}
+
+// A key present with no values must still satisfy nothing: a required field
+// is reported as missing rather than bound to an empty string.
+func TestBinder_EmptyValuesAreMissing(t *testing.T) {
+	t.Parallel()
+
+	var cfg struct {
+		Host string `bind:"host,required"`
+	}
+
+	err := bind.New("bind").Bind(&cfg, "", mockSource{"host": {}})
+	if err == nil {
+		t.Fatal("should have returned an error")
+	}
+
+	if want := "required"; !strings.Contains(err.Error(), want) {
+		t.Errorf("want match for %q; got %q", want, err)
+	}
 }
 
 func TestBinder_Caching(t *testing.T) {

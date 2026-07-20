@@ -56,7 +56,7 @@ type Transformer func(string) string
 
 // resolver resolves reflection metadata for a given type.
 type resolver interface {
-	Resolve(rt reflect.Type) []field
+	Resolve(rt reflect.Type) ([]field, error)
 }
 
 type defaultResolver struct {
@@ -64,9 +64,9 @@ type defaultResolver struct {
 	transform Transformer
 }
 
-func (r *defaultResolver) Resolve(rt reflect.Type) []field {
-	var fields []field
-	for i := 0; i < rt.NumField(); i++ {
+func (r *defaultResolver) Resolve(rt reflect.Type) ([]field, error) {
+	fields := make([]field, 0, rt.NumField())
+	for i := range rt.NumField() {
 		ft := rt.Field(i)
 
 		if !ft.IsExported() {
@@ -80,9 +80,7 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []field {
 
 		flags, err := parse(val)
 		if err != nil {
-			panic(fmt.Errorf(
-				"failed to parse tag for field %q: %w", ft.Name, err,
-			))
+			return nil, fmt.Errorf("field %q: %w", ft.Name, err)
 		}
 
 		f := field{
@@ -90,7 +88,18 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []field {
 			Name:   ft.Name,
 			Key:    flags.Key,
 			Flags:  flags,
-			Inline: ft.Anonymous && flags.Inline,
+			Inline: flags.Inline,
+		}
+
+		// Inlining merges a field's own keys into the enclosing namespace,
+		// which only has meaning for an embedded struct. Silently treating
+		// the option as a prefixed nested struct would bind the values under
+		// keys the author did not ask for.
+		if f.Inline && !ft.Anonymous {
+			return nil, fmt.Errorf(
+				"field %q: option %q requires an embedded field",
+				ft.Name, "inline",
+			)
 		}
 
 		if f.Key == "" {
@@ -99,10 +108,17 @@ func (r *defaultResolver) Resolve(rt reflect.Type) []field {
 
 		f.Embedded = isEmbedded(ft)
 
+		if f.Inline && !f.Embedded {
+			return nil, fmt.Errorf(
+				"field %q: option %q requires a struct field",
+				ft.Name, "inline",
+			)
+		}
+
 		fields = append(fields, f)
 	}
 
-	return fields
+	return fields, nil
 }
 
 type cachingResolver struct {
@@ -110,13 +126,19 @@ type cachingResolver struct {
 	resolver resolver
 }
 
-func (r *cachingResolver) Resolve(rt reflect.Type) []field {
+func (r *cachingResolver) Resolve(rt reflect.Type) ([]field, error) {
 	if cached, ok := r.cache.Load(rt); ok {
-		return cached.([]field)
+		return cached.([]field), nil
 	}
-	fields := r.resolver.Resolve(rt)
+	fields, err := r.resolver.Resolve(rt)
+	if err != nil {
+		// A rejected type is not cached: the tags cannot change, so the same
+		// error is produced again, and caching it would only keep the failure
+		// alive in memory.
+		return nil, err
+	}
 	r.cache.Store(rt, fields)
-	return fields
+	return fields, nil
 }
 
 type config struct {
@@ -191,7 +213,10 @@ func (b *Binder) Bind[T any](v *T, prefix string, source Source) error {
 }
 
 func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
-	fields := b.resolver.Resolve(rv.Type())
+	fields, err := b.resolver.Resolve(rv.Type())
+	if err != nil {
+		return err
+	}
 	for _, f := range fields {
 		fv := rv.Field(f.Index)
 
@@ -224,6 +249,13 @@ func (b *Binder) process(rv reflect.Value, prefix string, source Source) error {
 		// Regular field
 		key = prefix + key
 		vals, ok := source.Lookup(key)
+
+		// A key reported as present but carrying no values holds nothing to
+		// assign, so it is treated as absent rather than indexed into.
+		if len(vals) == 0 {
+			ok = false
+		}
+
 		if !ok {
 			switch {
 			case f.Flags.Default != "":
