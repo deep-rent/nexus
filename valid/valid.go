@@ -353,18 +353,32 @@ func HexColor(s string) bool {
 // ISSN checks if the string is a valid International Standard Serial Number
 // (ISSN).
 func ISSN(s string) bool {
-	if len(s) != 9 {
+	if len(s) != 9 || s[4] != '-' {
 		return false
 	}
-	return ascii.IsDigit(rune(s[0])) &&
-		ascii.IsDigit(rune(s[1])) &&
-		ascii.IsDigit(rune(s[2])) &&
-		ascii.IsDigit(rune(s[3])) &&
-		s[4] == '-' &&
-		ascii.IsDigit(rune(s[5])) &&
-		ascii.IsDigit(rune(s[6])) &&
-		ascii.IsDigit(rune(s[7])) &&
-		(ascii.IsDigit(rune(s[8])) || s[8] == 'X')
+	var sum int
+	var weight = 8
+	for i := 0; i < 8; i++ {
+		if i == 4 {
+			continue
+		}
+		c := s[i]
+		if !ascii.IsDigit(rune(c)) {
+			return false
+		}
+		sum += int(c-'0') * weight
+		weight--
+	}
+
+	c := s[8]
+	if c == 'X' {
+		sum += 10
+	} else if ascii.IsDigit(rune(c)) {
+		sum += int(c - '0')
+	} else {
+		return false
+	}
+	return sum%11 == 0
 }
 
 // ISBN10 checks if the string is a valid ISBN-10.

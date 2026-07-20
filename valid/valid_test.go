@@ -368,6 +368,7 @@ func TestISSN(t *testing.T) {
 		{"valid X checksum", "2434-561X", true},
 		{"invalid missing hyphen", "03785955", false},
 		{"invalid length", "0378-595", false},
+		{"invalid checksum", "0378-5954", false},
 	}
 	run(t, valid.ISSN, tests)
 }
