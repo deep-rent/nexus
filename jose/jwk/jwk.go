@@ -600,14 +600,11 @@ var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 // background fetching and refreshing process.
 //
 // The provided [cache.Option] can configure behaviors like refresh interval,
-// request timeouts, and error handling. Parsing of retrieved key sets is
+// request timeouts, and error handling; pass [cache.WithClient] to fetch with
+// a custom [net/http.Client]. Parsing of retrieved key sets is
 // extremely lenient: it will only fail if no valid keys are found at all.
-func NewCacheSet(
-	client *http.Client,
-	url string,
-	opts ...cache.Option,
-) CacheSet {
-	ctrl := cache.NewController(client, url, mapper, opts...)
+func NewCacheSet(url string, opts ...cache.Option) CacheSet {
+	ctrl := cache.NewController(url, mapper, opts...)
 	return &cacheSet{ctrl}
 }
 
