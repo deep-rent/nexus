@@ -108,7 +108,8 @@ func Upper(c rune) rune {
 	return c
 }
 
-// All reports whether all runes in the string satisfy the given predicate.
+// All reports whether every byte in the string, interpreted as a rune,
+// satisfies the given predicate. If the string is empty, it returns true.
 func All(s string, fn func(c rune) bool) bool {
 	for i := 0; i < len(s); i++ {
 		if !fn(rune(s[i])) {
