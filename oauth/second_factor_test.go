@@ -198,7 +198,11 @@ func TestLoginSecondFactor(t *testing.T) {
 			t.Errorf("got channel %q; want %q", res.Channel, "email")
 		}
 		if len(env.mail.to) != 1 || env.mail.to[0] != testEmail {
-			t.Errorf("got deliveries %v; want one to %q", env.mail.to, testEmail)
+			t.Errorf(
+				"got deliveries %v; want one to %q",
+				env.mail.to,
+				testEmail,
+			)
 		}
 		if len(env.sms.to) != 0 {
 			t.Error("no SMS should have been sent")
@@ -273,7 +277,12 @@ func TestLoginSecondFactor(t *testing.T) {
 			`{"username":"alice","password":"wonderland"}`,
 		)
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 
 		code := lastCode(t, sender)
@@ -495,7 +504,12 @@ func TestResendOTP(t *testing.T) {
 
 		w := resend(env, res.Challenge)
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 
 		re := decodeJSON[OTPChallengeResponse](t, w)

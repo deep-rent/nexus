@@ -25,9 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"uuid"
-
 	"github.com/descope/virtualwebauthn"
+	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwt"
@@ -280,7 +279,12 @@ func TestWebAuthnRegistration(t *testing.T) {
 
 		w := env.do(req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 
 		res := decodeJSON[optionsEnvelope](t, w)
@@ -584,7 +588,12 @@ func TestWebAuthnGrant(t *testing.T) {
 			"scope":      {"read"},
 		}, env.client, "s3cret")
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 
 		res := decodeJSON[TokenResponse](t, w)
@@ -660,7 +669,12 @@ func TestWebAuthnGrant(t *testing.T) {
 				w := env.postForm(PathToken, tt.form, env.client, "s3cret")
 				res := decodeJSON[Error](t, w)
 				if res.Code != tt.code {
-					t.Errorf("got code %q; want %q: %s", res.Code, tt.code, w.Body)
+					t.Errorf(
+						"got code %q; want %q: %s",
+						res.Code,
+						tt.code,
+						w.Body,
+					)
 				}
 			})
 		}

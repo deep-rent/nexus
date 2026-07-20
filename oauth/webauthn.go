@@ -24,10 +24,9 @@ import (
 	"net/http"
 	"time"
 
-	"uuid"
-
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/log"
