@@ -79,7 +79,7 @@ func TestSource_Parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		give        string
-		wantVersion uint64
+		wantVersion int64
 		wantDesc    string
 		wantDir     migrate.Direction
 		wantTx      bool
@@ -258,7 +258,7 @@ func TestSource_List(t *testing.T) {
 		}
 
 		// Verify first script
-		if got, want := scripts[0].Version, uint64(1); got != want {
+		if got, want := scripts[0].Version, int64(1); got != want {
 			t.Errorf("at index 0: got version %d; want %d", got, want)
 		}
 		if got, want := scripts[0].Description, "init"; got != want {

@@ -56,7 +56,7 @@ type Driver struct {
 	// mu protects the internal state of the mock driver.
 	mu sync.Mutex
 	// records stores the simulated migration state.
-	records map[uint64]migrate.Record
+	records map[int64]migrate.Record
 
 	// IsLocked indicates if the mock advisory lock is currently held.
 	IsLocked bool
@@ -87,7 +87,7 @@ type Driver struct {
 // New creates a new in-memory [Driver] with an empty state.
 func New() *Driver {
 	return &Driver{
-		records: make(map[uint64]migrate.Record),
+		records: make(map[int64]migrate.Record),
 		// Provide a dummy parser that just returns the raw script as a single
 		// statement.
 		ParserFunc: func(script []byte) []string {
@@ -107,7 +107,7 @@ func (d *Driver) Set(rec migrate.Record) {
 }
 
 // Get reads a [migrate.Record] from the in-memory table.
-func (d *Driver) Get(version uint64) (migrate.Record, bool) {
+func (d *Driver) Get(version int64) (migrate.Record, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rec, ok := d.records[version]
@@ -115,10 +115,10 @@ func (d *Driver) Get(version uint64) (migrate.Record, bool) {
 }
 
 // State returns a copy of the in-memory table.
-func (d *Driver) State() map[uint64]migrate.Record {
+func (d *Driver) State() map[int64]migrate.Record {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	out := make(map[uint64]migrate.Record, len(d.records))
+	out := make(map[int64]migrate.Record, len(d.records))
 	maps.Copy(out, d.records)
 	return out
 }
@@ -198,7 +198,7 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 //
 // It clears the dirty flag for that version and removes any records greater
 // than it.
-func (d *Driver) Force(ctx context.Context, version uint64) error {
+func (d *Driver) Force(ctx context.Context, version int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

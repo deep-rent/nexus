@@ -78,7 +78,7 @@ func (d Direction) String() string {
 // Record represents a successfully applied migration stored in the database.
 type Record struct {
 	// Version is the unique sequence number of the applied migration.
-	Version uint64
+	Version int64
 	// Checksum is the SHA-256 hash of the migration's content, used to detect
 	// tampering or accidental modification of historical migration files.
 	Checksum [32]byte
@@ -108,7 +108,7 @@ type Driver interface {
 	Applied(ctx context.Context) ([]Record, error)
 	// Force sets the database to the specified version and clears the dirty
 	// state, effectively ignoring any migrations past that point.
-	Force(ctx context.Context, version uint64) error
+	Force(ctx context.Context, version int64) error
 	// Execute runs the parsed migration statements and records the state update
 	// within the tracking table.
 	Execute(ctx context.Context, script ParsedScript) error
@@ -127,7 +127,7 @@ type Source interface {
 // [Source].
 type SourceScript struct {
 	// Version is the unique sequence number of the migration.
-	Version uint64
+	Version int64
 	// Description is a human-readable summary of the migration's intent.
 	Description string
 	// Direction indicates whether this script applies (Up) or reverts (Down)
@@ -144,7 +144,7 @@ type SourceScript struct {
 // ParsedScript holds the parameters required to execute a migration.
 type ParsedScript struct {
 	// Version is the unique sequence number of the migration.
-	Version uint64
+	Version int64
 	// Direction indicates whether this script applies (Up) or reverts (Down)
 	// changes.
 	Direction Direction
@@ -161,7 +161,7 @@ type ParsedScript struct {
 // Migration represents a fully parsed and hashed migration file.
 type Migration struct {
 	// Version is the unique sequence number of the migration.
-	Version uint64
+	Version int64
 	// Description is a human-readable description of the migration.
 	Description string
 	// Direction indicates whether this script applies (Up) or reverts (Down)
@@ -422,7 +422,7 @@ func (m *Migrator) down(ctx context.Context) error {
 			if err == nil {
 				m.logger.Info(
 					"Migration reverted successfully",
-					slog.Uint64("version", f.Version),
+					slog.Int64("version", f.Version),
 				)
 			}
 			return err
@@ -440,14 +440,14 @@ func (m *Migrator) down(ctx context.Context) error {
 // Force manually sets the database version and clears the dirty flag.
 //
 // It should be used to resolve a dirty state after human intervention.
-func (m *Migrator) Force(ctx context.Context, version uint64) error {
+func (m *Migrator) Force(ctx context.Context, version int64) error {
 	fn := func(c context.Context) error {
 		if err := m.driver.Force(c, version); err != nil {
 			return fmt.Errorf("failed to force version: %w", err)
 		}
 		m.logger.Info(
 			"Successfully forced migration version",
-			slog.Uint64("version", version),
+			slog.Int64("version", version),
 		)
 		return nil
 	}
@@ -456,7 +456,7 @@ func (m *Migrator) Force(ctx context.Context, version uint64) error {
 }
 
 // MigrateTo applies or reverts migrations to reach the target version.
-func (m *Migrator) MigrateTo(ctx context.Context, target uint64) error {
+func (m *Migrator) MigrateTo(ctx context.Context, target int64) error {
 	fn := func(c context.Context) error {
 		records, files, err := m.load(c)
 		if err != nil {
@@ -521,7 +521,7 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	m.logger.Info(
 		"Running migration",
-		slog.Uint64("version", migration.Version),
+		slog.Int64("version", migration.Version),
 		slog.String("description", migration.Description),
 		slog.String("direction", migration.Direction.String()),
 	)
@@ -559,7 +559,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 
 	m.logger.Info(
 		"Migration completed",
-		slog.Uint64("version", migration.Version),
+		slog.Int64("version", migration.Version),
 	)
 	return nil
 }
@@ -579,7 +579,7 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
 	}
 
-	ups := make(map[uint64]Migration, len(files))
+	ups := make(map[int64]Migration, len(files))
 	for _, f := range files {
 		if f.Direction == Up {
 			ups[f.Version] = f
@@ -615,8 +615,8 @@ func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
 }
 
 // toLookup converts a slice of migration records to a map for quick lookups.
-func toLookup(records []Record) map[uint64]bool {
-	applied := make(map[uint64]bool, len(records))
+func toLookup(records []Record) map[int64]bool {
+	applied := make(map[int64]bool, len(records))
 	for _, r := range records {
 		applied[r.Version] = true
 	}

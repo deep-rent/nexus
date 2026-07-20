@@ -375,8 +375,8 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // It clears the dirty flag for the target version and deletes any migration
 // records with a version strictly greater than the target. This is typically
 // used to recover from a dirty database state after human intervention.
-func (d *Driver) Force(ctx context.Context, version uint64) error {
-	d.logger.Info("Forcing database version", slog.Uint64("version", version))
+func (d *Driver) Force(ctx context.Context, version int64) error {
+	d.logger.Info("Forcing database version", slog.Int64("version", version))
 
 	return d.withTx(ctx, func(tx *sql.Tx) error {
 		queryUpdate := "UPDATE " + d.ident + " SET dirty = false WHERE version = $1"
@@ -404,7 +404,7 @@ func (d *Driver) Execute(
 ) error {
 	d.logger.Info(
 		"Executing migration",
-		slog.Uint64("version", script.Version),
+		slog.Int64("version", script.Version),
 		slog.String("direction", script.Direction.String()),
 	)
 
@@ -480,13 +480,13 @@ func (d *Driver) execOne(ctx context.Context, run runner, stmt string) error {
 // it updates the existing row.
 func (d *Driver) setDirty(
 	ctx context.Context,
-	version uint64,
+	version int64,
 	direction migrate.Direction,
 	checksum [32]byte,
 ) error {
 	d.logger.Debug(
 		"Marking migration as dirty",
-		slog.Uint64("version", version),
+		slog.Int64("version", version),
 	)
 
 	switch direction {
@@ -521,10 +521,10 @@ func (d *Driver) setDirty(
 // removes the version record entirely.
 func (d *Driver) setClean(
 	ctx context.Context,
-	version uint64,
+	version int64,
 	direction migrate.Direction,
 ) error {
-	d.logger.Debug("Clearing dirty state", slog.Uint64("version", version))
+	d.logger.Debug("Clearing dirty state", slog.Int64("version", version))
 
 	switch direction {
 	case migrate.Up:

@@ -167,7 +167,7 @@ func (s *Source) Extension() string {
 // flag. It returns an error if the filename does not match the strict
 // <version>_<description>.<direction>[_notx]<extension> format.
 func (s *Source) Parse(name string) (
-	version uint64,
+	version int64,
 	desc string,
 	direction migrate.Direction,
 	tx bool,
@@ -227,14 +227,16 @@ func (s *Source) Parse(name string) (
 		return 0, "", 0, false, ErrInvalidDescription
 	}
 
-	// Parse the version segment into an unsigned long.
-	v, e := strconv.ParseUint(s0, 10, 64)
+	// Parse the version segment into a non-negative integer. The bit size of
+	// 63 rejects values that would overflow the signed BIGINT column used by
+	// database drivers to track applied versions.
+	v, e := strconv.ParseUint(s0, 10, 63)
 	if e != nil {
 		return 0, "", 0, false, ErrInvalidVersion
 	}
 
 	// Finalize the version and sanitize the description by restoring spaces.
-	version = v
+	version = int64(v)
 	desc = strings.ReplaceAll(s1, "_", " ")
 
 	return version, desc, direction, tx, nil
