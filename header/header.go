@@ -400,10 +400,12 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 var _ http.RoundTripper = (*transport)(nil)
 
 // NewTransport wraps a base transport and sets a static set of headers on
-// each outgoing request. If the provided headers map is empty, the base
-// transport is returned unmodified. The function creates a defensive copy of
-// the provided map. The resulting transport clones the request before
-// delegating to the base transport, so the original request is not changed.
+// each outgoing request. If no headers are provided, the base transport is
+// returned unmodified.
+//
+// The headers are copied, so later changes to the caller's slice do not affect
+// the transport. The resulting transport also clones each request before
+// delegating, so the original request is not changed either.
 func NewTransport(
 	t http.RoundTripper,
 	headers ...Header,
@@ -413,6 +415,7 @@ func NewTransport(
 	}
 	return &transport{
 		wrapped: t,
-		headers: headers,
+		// A variadic call site may pass a slice the caller keeps hold of.
+		headers: slices.Clone(headers),
 	}
 }

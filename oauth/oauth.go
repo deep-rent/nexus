@@ -90,7 +90,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/router"
@@ -741,17 +740,17 @@ var _ valid.Validatable = (*DeviceVerificationRequest)(nil)
 // Path constants define the specific endpoints managed by the [Server].
 const (
 	PathAuthorize           = "/authorize"
-	PathToken               = "/token"
-	PathRevoke              = "/revoke"
 	PathDeviceAuthorization = "/device_authorization"
 	PathDeviceVerify        = "/device"
+	PathExternalCallback    = "/callback/{provider}"
+	PathExternalLogin       = "/login/{provider}"
+	PathIntrospect          = "/introspect"
+	PathKeySet              = "/jwks.json"
 	PathLogin               = "/login"
 	PathLogout              = "/logout"
-	PathIntrospect          = "/introspect"
+	PathRevoke              = "/revoke"
+	PathToken               = "/token"
 	PathWellKnown           = "/.well-known/oauth-authorization-server"
-	PathKeySet              = "/jwks.json"
-	PathExternalLogin       = "/login/{provider}"
-	PathExternalCallback    = "/callback/{provider}"
 )
 
 // AuthorizationServerMetadata represents the OAuth 2.0 Authorization Server
