@@ -233,3 +233,43 @@ func TestSender_WithClientAndOptions(t *testing.T) {
 		t.Fatal("sender should not be nil")
 	}
 }
+
+// The APIError.Status reflects the HTTP status line, even when the provider's
+// error body carries a different "status" field. It must not be overwritten by
+// unmarshaling.
+func TestSender_Send_StatusFromStatusLine(t *testing.T) {
+	t.Parallel()
+
+	tr := &mockTransport{
+		fn: func(*http.Request) (*http.Response, error) {
+			// Twilio echoes a "status" in the error body; here it disagrees
+			// with the status line on purpose.
+			body := `{"code":21211,"message":"Invalid To","status":400}`
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	sender := sms.NewSender("sid", "token",
+		sms.WithClient(&http.Client{Transport: tr}),
+		sms.WithLogger(log.Silent()),
+	)
+
+	err := sender.Send(t.Context(), sms.NewMessage("+123", "+456", "Hi"))
+
+	var apiErr *sms.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("got %T; want *sms.APIError", err)
+	}
+
+	if apiErr.Status != http.StatusTooManyRequests {
+		t.Errorf("status: got %d; want %d (from the status line)",
+			apiErr.Status, http.StatusTooManyRequests)
+	}
+	if apiErr.Code != 21211 {
+		t.Errorf("code: got %d; want 21211 (from the body)", apiErr.Code)
+	}
+}

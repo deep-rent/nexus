@@ -73,8 +73,10 @@ var (
 
 // APIError represents an error returned by the underlying SMS provider.
 type APIError struct {
-	// Status is the HTTP status code returned by the provider.
-	Status int
+	// Status is the HTTP status code returned by the provider. It is taken
+	// from the response status line, not the body, so it is never populated
+	// by unmarshaling.
+	Status int `json:"-"`
 	// Code is the Twilio-specific error code.
 	Code int `json:"code"`
 	// Message is the description of the error.
@@ -327,5 +329,3 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	return nil
 }
-
-var _ Sender = (*sender)(nil)
