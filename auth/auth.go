@@ -59,7 +59,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/header"
@@ -141,19 +140,19 @@ type AccessClaims interface {
 	HasRole(name string) bool
 	// HasScope checks if the provided scope exists within the claims.
 	HasScope(name string) bool
-	// Memberships returns the identifiers of all teams the subject belongs
-	// to, taken from the "teams" claim.
-	Memberships() []uuid.UUID
 	// Delegated reports whether the token was issued to a client acting on
 	// behalf of an end user rather than to the client itself.
 	Delegated() bool
-	// UserID returns the "sub" claim parsed into the user's UUID.
+	// UserID returns the subject claim parsed into the user's UUID.
 	//
 	// First-party tokens identify end users by UUID, but the raw subject
 	// claim is an opaque string; this accessor performs the parse. It
 	// returns the zero UUID when the token is not delegated (the subject is
 	// the client itself) or when the subject is not a valid UUID.
 	UserID() uuid.UUID
+	// Memberships returns the identifiers of all teams the subject belongs
+	// to, taken from the "teams" claim.
+	Memberships() []uuid.UUID
 }
 
 // Scope represents the "scope" claim of a JWT as defined in RFC 6749.
@@ -187,7 +186,7 @@ type Claims struct {
 	jwt.Reserved
 	// Azp represents the authorized party to which the token was issued.
 	// It typically identifies the client application.
-	Azp uuid.UUID `json:"azp,omitzero"`
+	Azp string `json:"azp,omitzero"`
 	// Roles represents the application-specific roles assigned to the subject,
 	// used for Role-Based Access Control (RBAC).
 	Roles []string `json:"roles,omitempty"`
@@ -208,18 +207,13 @@ func (c *Claims) HasScope(name string) bool {
 	return slices.Contains(c.Scope, name)
 }
 
-// Memberships implements the [AccessClaims] interface.
-func (c *Claims) Memberships() []uuid.UUID {
-	return c.Teams
-}
-
 // Delegated returns true if the token was issued to an authorized party (azp)
 // that is different from the subject (sub).
 //
 // This is useful for distinguishing between a client acting on its own behalf
 // (machine-to-machine) and a client acting on behalf of a user (delegation).
 func (c *Claims) Delegated() bool {
-	return c.Azp != uuid.Nil() && c.Azp.String() != c.Sub
+	return c.Azp != "" && c.Azp != c.Sub
 }
 
 // UserID implements the [AccessClaims] interface.
@@ -232,6 +226,11 @@ func (c *Claims) UserID() uuid.UUID {
 		return uuid.Nil()
 	}
 	return id
+}
+
+// Memberships implements the [AccessClaims] interface.
+func (c *Claims) Memberships() []uuid.UUID {
+	return c.Teams
 }
 
 var _ AccessClaims = (*Claims)(nil)

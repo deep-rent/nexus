@@ -22,7 +22,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -61,7 +60,7 @@ func serve(
 func claimsFor(userID uuid.UUID, teams ...uuid.UUID) *auth.Claims {
 	c := &auth.Claims{Teams: teams}
 	c.Sub = userID.String()
-	c.Azp = uuid.NewV7() // azp != sub: acting on behalf of the user
+	c.Azp = uuid.NewV7().String() // acting on behalf of the user
 	return c
 }
 
@@ -172,7 +171,7 @@ func TestEndpoint_Errors(t *testing.T) {
 				svc := uuid.NewV7()
 				c := &auth.Claims{}
 				c.Sub = svc.String()
-				c.Azp = svc // azp == sub: not delegated
+				c.Azp = svc.String() // azp == sub: not delegated
 				return c
 			}(),
 			body:       valid(),
@@ -183,7 +182,7 @@ func TestEndpoint_Errors(t *testing.T) {
 			name: "zero subject",
 			claims: func() *auth.Claims {
 				c := &auth.Claims{}
-				c.Azp = uuid.NewV7() // delegated, but no usable subject
+				c.Azp = uuid.NewV7().String() // delegated, but no usable subject
 				return c
 			}(),
 			body:       valid(),
@@ -383,7 +382,7 @@ func TestEndpoint_Document_Errors(t *testing.T) {
 				svc := uuid.NewV7()
 				c := &auth.Claims{}
 				c.Sub = svc.String()
-				c.Azp = svc // azp == sub: not delegated
+				c.Azp = svc.String() // azp == sub: not delegated
 				return c
 			}(),
 			path:       "/asset/" + uuid.NewV7().String(),

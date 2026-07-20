@@ -22,7 +22,6 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -128,15 +127,17 @@ func TestClaims_Delegated(t *testing.T) {
 		t.Error("for empty claims: got true; want false")
 	}
 
-	client := uuid.NewV7()
-	c2 := &auth.Claims{Azp: client}
-	c2.Sub = client.String()
+	client, user := uuid.NewV7(), uuid.NewV7()
+	azp := client.String()
+
+	c2 := &auth.Claims{Azp: azp}
+	c2.Sub = azp
 	if c2.Delegated() {
 		t.Error("when azp equals sub: got true; want false")
 	}
 
-	c3 := &auth.Claims{Azp: client}
-	c3.Sub = uuid.NewV7().String()
+	c3 := &auth.Claims{Azp: azp}
+	c3.Sub = user.String()
 	if !c3.Delegated() {
 		t.Error("when azp differs from sub: got false; want true")
 	}
@@ -145,22 +146,23 @@ func TestClaims_Delegated(t *testing.T) {
 func TestClaims_UserID(t *testing.T) {
 	t.Parallel()
 
-	client := uuid.NewV7()
-	user := uuid.NewV7()
+	client, user := uuid.NewV7(), uuid.NewV7()
 
-	delegated := &auth.Claims{Azp: client}
+	azp := client.String()
+
+	delegated := &auth.Claims{Azp: azp}
 	delegated.Sub = user.String()
 	if got := delegated.UserID(); got != user {
 		t.Errorf("for delegated claims: got %v; want %v", got, user)
 	}
 
-	machine := &auth.Claims{Azp: client}
+	machine := &auth.Claims{Azp: azp}
 	machine.Sub = client.String()
 	if got := machine.UserID(); got != uuid.Nil() {
 		t.Errorf("for machine claims: got %v; want the zero UUID", got)
 	}
 
-	external := &auth.Claims{Azp: client}
+	external := &auth.Claims{Azp: azp}
 	external.Sub = "not-a-uuid"
 	if got := external.UserID(); got != uuid.Nil() {
 		t.Errorf("for non-UUID subject: got %v; want the zero UUID", got)
