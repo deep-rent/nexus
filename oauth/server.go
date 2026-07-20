@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -301,9 +302,12 @@ func New(cfg Config, opts ...Option) *Server {
 		generateUserCode:     GenerateUserCode,
 		generateState:        GenerateState,
 		throttle:             cfg.Throttle,
-		throttlePenalty:      cmp.Or(cfg.ThrottlePenalty, DefaultThrottlePenalty),
-		logger:               logger,
-		clock:                time.Now,
+		throttlePenalty: cmp.Or(
+			cfg.ThrottlePenalty,
+			DefaultThrottlePenalty,
+		),
+		logger: logger,
+		clock:  time.Now,
 	}
 
 	for _, opt := range opts {
@@ -463,13 +467,6 @@ func (s *Server) serverError(desc string, cause error) *Error {
 	}
 }
 
-// internalError is the [router.Error] counterpart of serverError, used by
-// the first-party endpoints (login, logout, device verification). The router
-// logs it centrally, so no logging happens here either.
-func (s *Server) internalError(desc string, cause error) *router.Error {
-	return router.ServerError(desc, cause)
-}
-
 // throttled reports whether the given key has exhausted its throttle
 // allowance, setting the Retry-After header when it has. It always reports
 // false when throttling is disabled.
@@ -525,30 +522,16 @@ func (s *Server) addr(e *router.Exchange) string {
 	return scopeAddr + throttle.RemoteAddr(e.R)
 }
 
-// newCookie builds a hardened cookie. A maxAge of zero yields a
-// browser-session cookie; negative values delete the cookie on the
-// user-agent.
-func newCookie(
-	name, value string,
-	maxAge int,
-	sameSite http.SameSite,
-) *http.Cookie {
-	return &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: sameSite,
-		MaxAge:   maxAge,
-	}
-}
-
 // newSessionCookie builds the cookie carrying the resource owner's session
 // key. SameSite=Lax keeps the cookie out of cross-site subrequests while
 // still covering top-level navigations to the authorization endpoint.
 func (s *Server) newSessionCookie(value string, maxAge int) *http.Cookie {
-	return newCookie(s.sessionCookieName, value, maxAge, http.SameSiteLaxMode)
+	return router.NewCookie(
+		s.sessionCookieName,
+		value,
+		maxAge,
+		http.SameSiteLaxMode,
+	)
 }
 
 // newStateCookie builds the CSRF state cookie for external login flows. It
@@ -556,7 +539,12 @@ func (s *Server) newSessionCookie(value string, maxAge int) *http.Cookie {
 // response mode (e.g., Sign in with Apple) deliver the callback as a
 // cross-site POST, which would not carry a Lax cookie.
 func (s *Server) newStateCookie(value string, maxAge int) *http.Cookie {
-	return newCookie(s.stateCookieName, value, maxAge, http.SameSiteNoneMode)
+	return router.NewCookie(
+		s.stateCookieName,
+		value,
+		maxAge,
+		http.SameSiteNoneMode,
+	)
 }
 
 // subjectFromSession resolves the resource owner bound to the session cookie.
@@ -1264,7 +1252,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 func (s *Server) DeviceVerify(e *router.Exchange) error {
 	sub, err := s.subjectFromSession(e)
 	if err != nil {
-		return s.internalError("failed to lookup subject", err)
+		return router.ServerError("failed to lookup subject", err)
 	}
 	if sub == nil {
 		return &router.Error{
@@ -1297,7 +1285,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 		NewDigest(normalizeUserCode(req.UserCode)),
 	)
 	if err != nil {
-		return s.internalError("failed to retrieve device code",
+		return router.ServerError("failed to retrieve device code",
 			err,
 		)
 	}
@@ -1328,7 +1316,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	}
 
 	if err := s.sessions.UpdateDeviceCode(e.Context(), code); err != nil {
-		return s.internalError("failed to update device code",
+		return router.ServerError("failed to update device code",
 			err,
 		)
 	}
