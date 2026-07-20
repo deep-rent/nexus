@@ -119,7 +119,9 @@ func Lifetime(h http.Header, now func() time.Time) time.Duration {
 				}
 			case "max-age":
 				if d, err := strconv.ParseInt(v, 10, 64); err == nil {
-					maxAge, found = time.Duration(d)*time.Second, true
+					// A negative age denotes a response that is already
+					// stale, not one that expired in the past.
+					maxAge, found = max(0, time.Duration(d)*time.Second), true
 				}
 			}
 		}

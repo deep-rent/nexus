@@ -101,3 +101,38 @@ func TestLifetime_FallsBackToExpires(t *testing.T) {
 		t.Errorf("got %v; want %v", got, want)
 	}
 }
+
+// The documented contract is a non-negative duration.
+func TestLifetime_NeverNegative(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		h    http.Header
+	}{
+		{
+			"negative max-age",
+			http.Header{"Cache-Control": []string{"max-age=-3600"}},
+		},
+		{
+			"max-age of minus one",
+			http.Header{"Cache-Control": []string{"max-age=-1"}},
+		},
+		{
+			"expires in the past",
+			http.Header{"Expires": []string{
+				time.Now().Add(-time.Hour).Format(http.TimeFormat),
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := header.Lifetime(tt.h, time.Now); got < 0 {
+				t.Errorf("got %v; want a non-negative duration", got)
+			}
+		})
+	}
+}
