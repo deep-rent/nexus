@@ -290,3 +290,62 @@ func TestEncode_Error(t *testing.T) {
 		t.Error("should have returned an error")
 	}
 }
+
+func TestEncodeDecodePublic(t *testing.T) {
+	t.Parallel()
+
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+
+	data, err := sign.EncodePublic(&k.PublicKey)
+	if err != nil {
+		t.Fatalf("encoding: should not have returned an error: %v", err)
+	}
+
+	parsed, err := sign.DecodePublic(data)
+	if err != nil {
+		t.Fatalf("decoding: should not have returned an error: %v", err)
+	}
+
+	pub, ok := parsed.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatalf("public key: got %T; want *ecdsa.PublicKey", parsed)
+	}
+	if !pub.Equal(&k.PublicKey) {
+		t.Error("public key does not match the generated key")
+	}
+}
+
+func TestEncodePublic_Error(t *testing.T) {
+	t.Parallel()
+
+	_, err := sign.EncodePublic("not-a-key")
+	if err == nil {
+		t.Error("should have returned an error")
+	}
+}
+
+func TestDecodePublic_Error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid block", func(t *testing.T) {
+		t.Parallel()
+		if _, err := sign.DecodePublic([]byte("invalid")); err == nil {
+			t.Error("should have returned an error")
+		}
+	})
+
+	t.Run("invalid key material", func(t *testing.T) {
+		t.Parallel()
+		block := &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: []byte("invalid-key-data"),
+		}
+		data := pem.EncodeToMemory(block)
+		if _, err := sign.DecodePublic(data); err == nil {
+			t.Fatal("should have returned an error")
+		}
+	})
+}

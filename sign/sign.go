@@ -194,3 +194,35 @@ func Encode(key any) ([]byte, error) {
 
 	return pem.EncodeToMemory(block), nil
 }
+
+// DecodePublic decodes a PEM block and parses the contained public key into a
+// standard [crypto.PublicKey]. It supports standard PKIX public keys.
+func DecodePublic(data []byte) (crypto.PublicKey, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	return key, nil
+}
+
+// EncodePublic encodes a cryptographic public key into a standard PKIX PEM
+// formatted byte sequence. It accepts standard library public keys.
+func EncodePublic(key crypto.PublicKey) ([]byte, error) {
+	der, err := x509.MarshalPKIXPublicKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal public key: %w", err)
+	}
+
+	block := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}
+
+	return pem.EncodeToMemory(block), nil
+}
