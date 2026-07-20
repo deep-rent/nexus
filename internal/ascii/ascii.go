@@ -29,7 +29,7 @@
 //
 //	r := 'A'
 //	if ascii.IsUpper(r) {
-//		lower := ascii.ToLower(r) // 'a'
+//		lower := ascii.Lower(r) // 'a'
 //	}
 package ascii
 
