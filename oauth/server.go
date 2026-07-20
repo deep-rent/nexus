@@ -31,6 +31,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/pkce"
 	"github.com/deep-rent/nexus/router"
+	"github.com/deep-rent/nexus/throttle"
 	"github.com/deep-rent/nexus/vault"
 )
 
@@ -105,9 +106,9 @@ type Config struct {
 	DevicePollInterval time.Duration
 	// Throttle rate limits the credential-verifying endpoints and applies
 	// escalating penalties to failed authentication attempts. When set,
-	// [Server.Mount] installs [Throttle.Middleware] on those routes
+	// [Server.Mount] installs [throttle.Throttle.Middleware] on those routes
 	// automatically. A nil value disables throttling.
-	Throttle *Throttle
+	Throttle *throttle.Throttle
 	// Logger receives structured diagnostics. Defaults to [slog.Default].
 	Logger *slog.Logger
 }
@@ -142,7 +143,7 @@ type Server struct {
 	generateUserCode     TokenGeneratorFn
 	generateState        TokenGeneratorFn
 	verificationURI      string
-	throttle             *Throttle
+	throttle             *throttle.Throttle
 	logger               *slog.Logger
 	clock                func() time.Time
 }
@@ -323,7 +324,7 @@ func (s *Server) Supports(grant GrantType) bool {
 //
 // When [Config.Throttle] is set, every endpoint that verifies a credential
 // — the token, revocation, introspection, login, device authorization, and
-// device verification endpoints — is wrapped in [Throttle.Middleware].
+// device verification endpoints — is wrapped in the throttle middleware.
 func (s *Server) Mount(r *router.Router, prefix string) {
 	// guarded protects endpoints that accept credential guesses.
 	var guarded []router.Middleware
@@ -461,7 +462,7 @@ func (s *Server) throttled(e *router.Exchange, key string) bool {
 	}
 	blocked, wait := s.throttle.Blocked(key)
 	if blocked {
-		retryAfter(e, wait)
+		throttle.RetryAfter(e, wait)
 	}
 	return blocked
 }
@@ -492,7 +493,7 @@ func (s *Server) addr(e *router.Exchange) string {
 	if s.throttle == nil {
 		return ""
 	}
-	return s.throttle.addrKey(e.R)
+	return s.throttle.AddrKey(e.R)
 }
 
 // newCookie builds a hardened cookie. A maxAge of zero yields a

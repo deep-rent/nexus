@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oauth
+package throttle
 
 import (
 	"net/http"
@@ -28,7 +28,7 @@ import (
 // testThrottle builds a throttle with a controllable clock. The allowance is
 // small so that lockout is reached in a few attempts.
 func testThrottle(now *time.Time) *Throttle {
-	return NewThrottle(ThrottleConfig{
+	return New(Config{
 		Rate:    rate.Limit(1),
 		Burst:   10,
 		Penalty: 5,
@@ -36,18 +36,18 @@ func testThrottle(now *time.Time) *Throttle {
 	})
 }
 
-func TestNewThrottleValidation(t *testing.T) {
+func TestNewValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
-		cfg  ThrottleConfig
+		cfg  Config
 	}{
-		{name: "negative rate", cfg: ThrottleConfig{Rate: -1}},
-		{name: "negative burst", cfg: ThrottleConfig{Burst: -1}},
+		{name: "negative rate", cfg: Config{Rate: -1}},
+		{name: "negative burst", cfg: Config{Burst: -1}},
 		{
 			name: "penalty exceeds burst",
-			cfg:  ThrottleConfig{Burst: 5, Penalty: 6},
+			cfg:  Config{Burst: 5, Penalty: 6},
 		},
 	}
 
@@ -60,31 +60,31 @@ func TestNewThrottleValidation(t *testing.T) {
 					t.Error("should have panicked on invalid configuration")
 				}
 			}()
-			NewThrottle(tt.cfg)
+			New(tt.cfg)
 		})
 	}
 
 	t.Run("defaults", func(t *testing.T) {
 		t.Parallel()
 
-		th := NewThrottle(ThrottleConfig{})
-		if th.rate != DefaultThrottleRate {
-			t.Errorf("got rate %v; want %v", th.rate, DefaultThrottleRate)
+		th := New(Config{})
+		if th.rate != DefaultRate {
+			t.Errorf("got rate %v; want %v", th.rate, DefaultRate)
 		}
-		if th.burst != DefaultThrottleBurst {
-			t.Errorf("got burst %d; want %d", th.burst, DefaultThrottleBurst)
+		if th.burst != DefaultBurst {
+			t.Errorf("got burst %d; want %d", th.burst, DefaultBurst)
 		}
-		if th.penalty != DefaultThrottlePenalty {
+		if th.penalty != DefaultPenalty {
 			t.Errorf(
 				"got penalty %d; want %d",
 				th.penalty,
-				DefaultThrottlePenalty,
+				DefaultPenalty,
 			)
 		}
 	})
 }
 
-func TestThrottlePenalize(t *testing.T) {
+func TestPenalize(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(1_752_000_000, 0)
@@ -125,7 +125,7 @@ func TestThrottlePenalize(t *testing.T) {
 	}
 }
 
-func TestThrottleReset(t *testing.T) {
+func TestReset(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(1_752_000_000, 0)
@@ -143,7 +143,7 @@ func TestThrottleReset(t *testing.T) {
 	}
 }
 
-func TestThrottleKeysAreIndependent(t *testing.T) {
+func TestKeysAreIndependent(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(1_752_000_000, 0)
@@ -159,14 +159,14 @@ func TestThrottleKeysAreIndependent(t *testing.T) {
 	}
 }
 
-func TestThrottleSweep(t *testing.T) {
+func TestSweep(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(1_752_000_000, 0)
 
 	// At one token per ten seconds, a single penalty is repaid within the
 	// sweep interval while a double penalty is not.
-	th := NewThrottle(ThrottleConfig{
+	th := New(Config{
 		Rate:    rate.Limit(0.1),
 		Burst:   10,
 		Penalty: 5,
@@ -196,12 +196,12 @@ func TestThrottleSweep(t *testing.T) {
 	}
 }
 
-func TestThrottleMiddleware(t *testing.T) {
+func TestMiddleware(t *testing.T) {
 	t.Parallel()
 
 	// The middleware drives the limiter with the wall clock, so use a
 	// generous burst and a rate slow enough that no token refills mid-test.
-	th := NewThrottle(ThrottleConfig{
+	th := New(Config{
 		Rate:    rate.Limit(0.01),
 		Burst:   3,
 		Penalty: 1,

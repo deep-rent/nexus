@@ -70,7 +70,8 @@
 // scopes, which is appropriate for first-party clients only.
 //
 // Set [Config.Throttle] to rate limit the credential-verifying endpoints
-// and slow down brute-force attempts; see [Throttle] for the trade-offs.
+// and slow down brute-force attempts; see [throttle.Throttle] for the
+// trade-offs.
 // Because its buckets live in memory, it complements rather than replaces
 // volumetric rate limiting at the load balancer or reverse proxy.
 //

@@ -37,6 +37,7 @@ import (
 	"github.com/deep-rent/nexus/pkce"
 	"github.com/deep-rent/nexus/rotor"
 	"github.com/deep-rent/nexus/router"
+	"github.com/deep-rent/nexus/throttle"
 	"github.com/deep-rent/nexus/vault"
 )
 
@@ -145,7 +146,7 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 // code sets [Config.Throttle]; this mirrors it without threading a config
 // mutator through every call site. Options run before Mount, so the
 // middleware is installed as usual.
-func withThrottle(th *Throttle) Option {
+func withThrottle(th *throttle.Throttle) Option {
 	return func(s *Server) { s.throttle = th }
 }
 
@@ -1346,7 +1347,7 @@ func TestThrottleIntegration(t *testing.T) {
 	// two failed attempts before locking out.
 	newThrottled := func(t *testing.T, now *time.Time) *testEnv {
 		t.Helper()
-		return newTestEnv(t, withThrottle(NewThrottle(ThrottleConfig{
+		return newTestEnv(t, withThrottle(throttle.New(throttle.Config{
 			Rate:    rate.Limit(1),
 			Burst:   10,
 			Penalty: 5,
