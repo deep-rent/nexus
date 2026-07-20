@@ -477,22 +477,18 @@ func TestBus_ConcurrentSubUnsub(t *testing.T) {
 		stop atomic.Bool
 	)
 
-	pub.Add(1)
-	go func() {
-		defer pub.Done()
+	pub.Go(func() {
 		for !stop.Load() {
 			bus.Publish(1)
 			runtime.Gosched()
 		}
-	}()
+	})
 
 	var sub sync.WaitGroup
 	const subscribers = 50
 
 	for range subscribers {
-		sub.Add(1)
-		go func() {
-			defer sub.Done()
+		sub.Go(func() {
 
 			// Waiting for a delivery beats sleeping for a fixed window: under
 			// load a subscriber can legitimately see nothing for a few
@@ -510,7 +506,7 @@ func TestBus_ConcurrentSubUnsub(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Error("subscriber received no event")
 			}
-		}()
+		})
 	}
 
 	sub.Wait()

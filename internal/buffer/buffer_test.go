@@ -167,9 +167,7 @@ func TestPool_Concurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 200 {
 				buf := p.Get()
 				if len(buf) == 0 {
@@ -179,7 +177,7 @@ func TestPool_Concurrent(t *testing.T) {
 				buf[0] = 1
 				p.Put(buf[:len(buf)/2])
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

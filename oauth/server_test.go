@@ -26,9 +26,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"uuid"
 
 	"golang.org/x/time/rate"
+	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwa"
@@ -1461,7 +1461,11 @@ func TestThrottleIntegration(t *testing.T) {
 		wrong := `{"username":"alice","password":"nope"}`
 
 		for i := range 2 {
-			if w := postJSON(env, PathLogin, wrong); w.Code != http.StatusUnauthorized {
+			if w := postJSON(
+				env,
+				PathLogin,
+				wrong,
+			); w.Code != http.StatusUnauthorized {
 				t.Fatalf(
 					"attempt %d: got status %d; want %d",
 					i,

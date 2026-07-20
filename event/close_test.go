@@ -80,15 +80,13 @@ func TestBus_CloseDrainsConcurrentPublishers(t *testing.T) {
 		)
 
 		for range 4 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for range 50 {
 					if bus.Publish(1) {
 						accepted.Add(1)
 					}
 				}
-			}()
+			})
 		}
 
 		// Close while the publishers are still going.

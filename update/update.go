@@ -49,8 +49,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/transport"
 	"golang.org/x/mod/semver"
+
+	"github.com/deep-rent/nexus/transport"
 )
 
 // Default configuration values for the [Updater].
@@ -114,7 +115,8 @@ type Updater struct {
 // New creates a new [Updater] with the given configuration.
 //
 // Requests use [transport.DefaultClient] unless [Config.Client] overrides it.
-// It panics if the configuration is missing required fields or if the current version string is
+// It panics if the configuration is missing required fields or if the current
+// version string is
 // not a valid semantic version.
 func New(cfg *Config) *Updater {
 	if cfg.Owner == "" {

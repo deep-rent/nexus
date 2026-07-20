@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -182,7 +183,9 @@ func TestEndpoint_Errors(t *testing.T) {
 			name: "zero subject",
 			claims: func() *auth.Claims {
 				c := &auth.Claims{}
-				c.Azp = uuid.NewV7().String() // delegated, but no usable subject
+				c.Azp = uuid.NewV7().
+					String()
+					// delegated, but no usable subject
 				return c
 			}(),
 			body:       valid(),

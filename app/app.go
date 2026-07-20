@@ -453,8 +453,7 @@ func (r *runner) launch(
 // report logs a component failure as it happens, so that the cause of a
 // cascading shutdown is visible before the runner returns.
 func (r *runner) report(err error) {
-	var panicErr *PanicError
-	if errors.As(err, &panicErr) {
+	if panicErr, ok := errors.AsType[*PanicError](err); ok {
 		r.cfg.logger.Error(
 			"Component panicked",
 			slog.Any("panic", panicErr.Value),
@@ -471,8 +470,8 @@ func (r *runner) stop() bool {
 	timer := time.NewTimer(r.cfg.timeout)
 	defer timer.Stop()
 
-	for i := len(r.started) - 1; i >= 0; i-- {
-		s := r.started[i]
+	for i, s := range slices.Backward(r.started) {
+
 		s.cancel()
 
 		drained := make(chan struct{})

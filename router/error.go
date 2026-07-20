@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+
 	"uuid"
 )
 
@@ -233,8 +234,7 @@ func record(
 	}
 
 	// A recovered panic is only useful with the stack that produced it.
-	var pe *panicError
-	if errors.As(res.Cause, &pe) {
+	if pe, ok := errors.AsType[*panicError](res.Cause); ok {
 		attrs = append(attrs, slog.String("stack", string(pe.stack)))
 	}
 

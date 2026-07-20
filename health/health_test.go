@@ -257,7 +257,10 @@ func TestMonitor_CachePoisoning(t *testing.T) {
 	}()
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req) // This should return immediately with a generic error due to context cancellation.
+	r.ServeHTTP(
+		w,
+		req,
+	) // This should return immediately with a generic error due to context cancellation.
 
 	// The background check should still complete successfully.
 	time.Sleep(200 * time.Millisecond)
@@ -272,7 +275,11 @@ func TestMonitor_CachePoisoning(t *testing.T) {
 	}
 
 	if got, want := rep.Status, health.StatusHealthy; got != want {
-		t.Errorf("report status: got %v; want %v (cache was poisoned)", got, want)
+		t.Errorf(
+			"report status: got %v; want %v (cache was poisoned)",
+			got,
+			want,
+		)
 	}
 }
 
@@ -286,7 +293,12 @@ func TestMonitor_Timeout(t *testing.T) {
 		return health.StatusHealthy, ctx.Err()
 	}
 
-	m.Attach("timeout", 1*time.Minute, chk, health.WithTimeout(10*time.Millisecond))
+	m.Attach(
+		"timeout",
+		1*time.Minute,
+		chk,
+		health.WithTimeout(10*time.Millisecond),
+	)
 
 	r := router.New()
 	m.Mount(r)
@@ -369,7 +381,6 @@ func TestMonitor_Concurrency(t *testing.T) {
 	}
 	wg.Wait()
 }
-
 
 func TestStatus_Serialization(t *testing.T) {
 	t.Parallel()

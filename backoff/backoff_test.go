@@ -375,13 +375,11 @@ func TestStrategy_ConcurrentUse(t *testing.T) {
 	got := make([]time.Duration, 64)
 
 	for i := range got {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 100 {
 				got[i] = s.Delay(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -401,16 +399,14 @@ func TestJitter_ConcurrentUse(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 64 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for n := range 100 {
 				if d := s.Delay(n + 1); d < 0 {
 					t.Errorf("delay: got %v; want a non-negative duration", d)
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

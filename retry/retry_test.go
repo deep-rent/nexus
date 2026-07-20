@@ -836,9 +836,7 @@ func TestRoundTrip_ConcurrentRequestsBackOffIndependently(t *testing.T) {
 	start := time.Now()
 
 	for range requests {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			req, err := http.NewRequestWithContext(
 				t.Context(), http.MethodGet, "http://example.com", nil,
@@ -854,7 +852,7 @@ func TestRoundTrip_ConcurrentRequestsBackOffIndependently(t *testing.T) {
 				return
 			}
 			res.Body.Close()
-		}()
+		})
 	}
 	wg.Wait()
 

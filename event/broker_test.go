@@ -129,14 +129,12 @@ func TestBroker_TopicDuringClose(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := range 20 {
 				bus := event.Topic[int](b, strconv.Itoa(i*20+j))
 				bus.Publish(1)
 			}
-		}()
+		})
 	}
 
 	b.Close()

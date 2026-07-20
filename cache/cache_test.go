@@ -183,7 +183,13 @@ func TestController_Run_ClampsInterval(t *testing.T) {
 		want   time.Duration
 	}{
 		{"below minimum", "max-age=1", time.Minute, time.Hour, time.Minute},
-		{"within range", "max-age=600", time.Minute, time.Hour, 10 * time.Minute},
+		{
+			"within range",
+			"max-age=600",
+			time.Minute,
+			time.Hour,
+			10 * time.Minute,
+		},
 		{"above maximum", "max-age=100000", time.Minute, time.Hour, time.Hour},
 		{"no headers", "", time.Minute, time.Hour, time.Minute},
 		{
@@ -519,15 +525,13 @@ func TestController_ConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 20 {
 				ctrl.Run(t.Context())
 				ctrl.Get()
 				ctrl.Ready()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -553,7 +557,9 @@ func TestController_Options(t *testing.T) {
 		cache.WithClock(nil),
 	)
 
-	if got, want := ctrl.Run(t.Context()), cache.DefaultMinInterval; got != want {
+	if got, want := ctrl.Run(
+		t.Context(),
+	), cache.DefaultMinInterval; got != want {
 		t.Errorf("interval: got %v; want %v", got, want)
 	}
 }

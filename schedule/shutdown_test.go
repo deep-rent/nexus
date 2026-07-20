@@ -104,15 +104,13 @@ func TestScheduler_DispatchDuringShutdown(t *testing.T) {
 	s := schedule.New(t.Context())
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range 100 {
 			s.Dispatch(schedule.TickFn(func(context.Context) time.Duration {
 				return time.Hour
 			}))
 		}
-	}()
+	})
 
 	s.Shutdown()
 	wg.Wait()

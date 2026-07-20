@@ -61,7 +61,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha3"
@@ -71,6 +70,8 @@ import (
 	"hash"
 	"math/big"
 	"sync"
+
+	"crypto/mldsa"
 
 	sign "github.com/deep-rent/nexus/sign"
 )

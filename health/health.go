@@ -46,8 +46,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deep-rent/nexus/router"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/deep-rent/nexus/router"
 )
 
 // Status enumerates the operational states of a dependency.
@@ -188,8 +189,9 @@ func (c *check) run(ctx context.Context) Result {
 	}
 	c.mu.RUnlock()
 
-	ch := c.sf.DoChan("run", func() (interface{}, error) {
-		// Detach context to prevent client disconnects from poisoning the cache.
+	ch := c.sf.DoChan("run", func() (any, error) {
+		// Detach context to prevent client disconnects from poisoning the
+		// cache.
 		bgCtx := context.WithoutCancel(ctx)
 		if c.timeout > 0 {
 			var cancel context.CancelFunc

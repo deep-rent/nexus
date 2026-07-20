@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"

@@ -353,8 +353,7 @@ func TestRunAll_CascadingPanic(t *testing.T) {
 
 	err := app.RunAll([]app.Component{panicking, worker})
 
-	var panicErr *app.PanicError
-	if !errors.As(err, &panicErr) {
+	if _, ok := errors.AsType[*app.PanicError](err); !ok {
 		t.Errorf("error: got %v; want *app.PanicError", err)
 	}
 

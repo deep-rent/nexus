@@ -83,8 +83,7 @@ func TestNamed_WrapsPanic(t *testing.T) {
 
 	err := c(t.Context())
 
-	var componentErr *app.ComponentError
-	if !errors.As(err, &componentErr) {
+	if _, ok := errors.AsType[*app.ComponentError](err); !ok {
 		t.Fatalf("error: got %T; want *app.ComponentError", err)
 	}
 
@@ -231,8 +230,7 @@ func TestGraceful_RecoversPanic(t *testing.T) {
 
 	err := c(ctx)
 
-	var panicErr *app.PanicError
-	if !errors.As(err, &panicErr) {
+	if _, ok := errors.AsType[*app.PanicError](err); !ok {
 		t.Fatalf("error: got %v; want *app.PanicError", err)
 	}
 }

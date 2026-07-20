@@ -85,7 +85,10 @@ func TestNewLimitTransport_UnderLimit(t *testing.T) {
 
 func TestNewLimitTransport_AtLimit(t *testing.T) {
 	const body = "hello"
-	rt := transport.NewLimitTransport(&stubTripper{body: body}, int64(len(body)))
+	rt := transport.NewLimitTransport(
+		&stubTripper{body: body},
+		int64(len(body)),
+	)
 
 	res := roundTrip(t, rt)
 	got, err := io.ReadAll(res.Body)

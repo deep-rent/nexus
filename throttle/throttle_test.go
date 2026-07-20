@@ -115,7 +115,11 @@ func TestPenalize(t *testing.T) {
 	th.Penalize("k")
 	_, longer := th.Blocked("k")
 	if longer <= wait {
-		t.Errorf("got wait %v; want more than %v after another failure", longer, wait)
+		t.Errorf(
+			"got wait %v; want more than %v after another failure",
+			longer,
+			wait,
+		)
 	}
 
 	// The allowance recovers at the configured rate.
@@ -223,7 +227,12 @@ func TestMiddleware(t *testing.T) {
 
 	for i := range 3 {
 		if got := call(); got != http.StatusNoContent {
-			t.Fatalf("request %d: got status %d; want %d", i, got, http.StatusNoContent)
+			t.Fatalf(
+				"request %d: got status %d; want %d",
+				i,
+				got,
+				http.StatusNoContent,
+			)
 		}
 	}
 
@@ -237,7 +246,11 @@ func TestMiddleware(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
-		t.Errorf("got status %d; want %d for a fresh address", w.Code, http.StatusNoContent)
+		t.Errorf(
+			"got status %d; want %d for a fresh address",
+			w.Code,
+			http.StatusNoContent,
+		)
 	}
 }
 
