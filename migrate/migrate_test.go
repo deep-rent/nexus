@@ -348,6 +348,109 @@ func TestMigrator_Up(t *testing.T) {
 	})
 }
 
+func TestMigrator_StrictOrder(t *testing.T) {
+	t.Parallel()
+
+	content1 := []byte("CREATE t1")
+	content2 := []byte("CREATE t2")
+	content3 := []byte("CREATE t3")
+
+	src := srcmock.New(
+		migrate.SourceScript{
+			Version:   1,
+			Direction: migrate.Up,
+			Path:      "1_a.up.sql",
+			Content:   content1,
+		},
+		migrate.SourceScript{
+			Version:   2,
+			Direction: migrate.Up,
+			Path:      "2_b.up.sql",
+			Content:   content2,
+		},
+		migrate.SourceScript{
+			Version:   3,
+			Direction: migrate.Up,
+			Path:      "3_c.up.sql",
+			Content:   content3,
+		},
+	)
+
+	t.Run("error out of order", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		// Version 3 is applied, but 1 and 2 are still pending.
+		drv.Set(migrate.Record{Version: 3, Checksum: sha256.Sum256(content3)})
+		m := migrate.New(
+			migrate.WithSource(src),
+			migrate.WithDriver(drv),
+			migrate.WithStrictOrder(true),
+		)
+
+		err := m.Up(t.Context())
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+		if len(drv.State()) != 1 {
+			t.Errorf("state size: got %d; want 1", len(drv.State()))
+		}
+		if drv.IsLocked {
+			t.Error("lock was not released")
+		}
+	})
+
+	t.Run("success in order", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1, Checksum: sha256.Sum256(content1)})
+		m := migrate.New(
+			migrate.WithSource(src),
+			migrate.WithDriver(drv),
+			migrate.WithStrictOrder(true),
+		)
+
+		if err := m.Up(t.Context()); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 3 {
+			t.Errorf("state size: got %d; want 3", len(drv.State()))
+		}
+	})
+
+	t.Run("lenient by default", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 3, Checksum: sha256.Sum256(content3)})
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		if err := m.Up(t.Context()); err != nil {
+			t.Errorf("should not have returned an error: %v", err)
+		}
+		if len(drv.State()) != 3 {
+			t.Errorf("state size: got %d; want 3", len(drv.State()))
+		}
+	})
+
+	t.Run("error out of order via migrate to", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 3, Checksum: sha256.Sum256(content3)})
+		m := migrate.New(
+			migrate.WithSource(src),
+			migrate.WithDriver(drv),
+			migrate.WithStrictOrder(true),
+		)
+
+		err := m.MigrateTo(t.Context(), 3)
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+		if len(drv.State()) != 1 {
+			t.Errorf("state size: got %d; want 1", len(drv.State()))
+		}
+	})
+}
+
 func TestMigrator_Down(t *testing.T) {
 	t.Parallel()
 

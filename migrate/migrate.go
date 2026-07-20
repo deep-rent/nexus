@@ -204,6 +204,8 @@ type Migrator struct {
 	driver Driver
 	// dryRun determines if execution should be skipped.
 	dryRun bool
+	// strict determines if out-of-order pending migrations are rejected.
+	strict bool
 	// logger is the structured logger for migration events.
 	logger *slog.Logger
 }
@@ -235,6 +237,19 @@ func WithDriver(driver Driver) Option {
 func WithDryRun(enabled bool) Option {
 	return func(m *Migrator) {
 		m.dryRun = enabled
+	}
+}
+
+// WithStrictOrder makes the [Migrator] reject out-of-order migrations.
+//
+// When enabled, applying a pending migration whose version is lower than the
+// highest already-applied version returns an error instead of silently
+// executing it after its successors. Such gaps typically appear when branches
+// with independently numbered migrations are merged. The default is lenient:
+// out-of-order migrations are applied in ascending version order.
+func WithStrictOrder(enabled bool) Option {
+	return func(m *Migrator) {
+		m.strict = enabled
 	}
 }
 
@@ -381,12 +396,28 @@ func (m *Migrator) Up(ctx context.Context) error {
 // It assumes the caller has already acquired the necessary database locks.
 func (m *Migrator) up(ctx context.Context) error {
 	// 1. Identify which migrations have not yet been applied.
-	pending, err := m.Pending(ctx)
+	records, files, err := m.load(ctx)
 	if err != nil {
 		return err
 	}
+	applied := toLookup(records)
 
-	// 2. Fast-path return if the database is already fully up to date.
+	pending := make([]Migration, 0, len(files))
+	for _, f := range files {
+		if f.Direction == Up && !applied[f.Version] {
+			pending = append(pending, f)
+		}
+	}
+
+	// 2. In strict mode, refuse to apply migrations that sort below the
+	// current database version.
+	if m.strict {
+		if err := checkOrder(records, pending); err != nil {
+			return err
+		}
+	}
+
+	// 3. Fast-path return if the database is already fully up to date.
 	if len(pending) == 0 {
 		m.logger.Info("Migrations are up to date")
 		return nil
@@ -397,7 +428,7 @@ func (m *Migrator) up(ctx context.Context) error {
 		slog.Int("count", len(pending)),
 	)
 
-	// 3. Execute each pending migration in strict ascending order.
+	// 4. Execute each pending migration in strict ascending order.
 	// If any single migration fails, the loop halts immediately to prevent
 	// cascading errors and leaves the database in a dirty state for review.
 	for _, p := range pending {
@@ -488,6 +519,26 @@ func (m *Migrator) MigrateTo(ctx context.Context, target int64) error {
 		}
 		applied := toLookup(records)
 		downs := toDowns(files)
+
+		// In strict mode, fail fast if reaching the target would apply a
+		// migration below the version the database will sit at afterward.
+		if m.strict {
+			kept := records
+			for len(kept) > 0 && kept[len(kept)-1].Version > target {
+				kept = kept[:len(kept)-1]
+			}
+			pending := make([]Migration, 0, len(files))
+			for _, f := range files {
+				if f.Direction == Up &&
+					f.Version <= target &&
+					!applied[f.Version] {
+					pending = append(pending, f)
+				}
+			}
+			if err := checkOrder(kept, pending); err != nil {
+				return err
+			}
+		}
 
 		// Revert applied migrations strictly greater than the target version in
 		// descending order.
@@ -646,6 +697,29 @@ func toLookup(records []Record) map[int64]bool {
 		applied[r.Version] = true
 	}
 	return applied
+}
+
+// checkOrder rejects pending migrations that sort below the newest applied
+// record.
+//
+// The records must be sorted by version in ascending order. It returns an
+// error naming the offending file so operators can renumber or explicitly
+// disable strict ordering.
+func checkOrder(records []Record, pending []Migration) error {
+	if len(records) == 0 {
+		return nil
+	}
+	newest := records[len(records)-1].Version
+	for _, p := range pending {
+		if p.Version < newest {
+			return fmt.Errorf(
+				"out-of-order migration %d (%s): database is already at "+
+					"version %d",
+				p.Version, p.Path, newest,
+			)
+		}
+	}
+	return nil
 }
 
 // toDowns indexes the down migrations among the given files by version.
