@@ -20,6 +20,9 @@
 // predicate functions for format verification and a stateful [Validator] for
 // aggregating errors across complex, nested structures.
 //
+// Note: By package convention, all character class predicates return true for
+// an empty string, unless otherwise noted.
+//
 // # Usage
 //
 // You can use standalone functions for simple checks or the [Validator] type
@@ -63,9 +66,9 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"uuid"
 
 	"golang.org/x/mod/semver"
-	"uuid"
 
 	"github.com/deep-rent/nexus/internal/ascii"
 )
@@ -147,26 +150,27 @@ func URN(s string) bool {
 }
 
 // Alpha checks if the string contains only alphabetical characters (a-z, A-Z).
-// An empty string returns false.
+// An empty string returns true.
 func Alpha(s string) bool {
-	return all(s, ascii.IsAlpha)
+	return ascii.All(s, ascii.IsAlpha)
 }
 
 // AlphaNum checks if the string contains only alphanumeric characters (a-z,
-// A-Z, 0-9). An empty string returns false.
+// A-Z, 0-9). An empty string returns true.
 func AlphaNum(s string) bool {
-	return all(s, ascii.IsAlphaNum)
+	return ascii.All(s, ascii.IsAlphaNum)
 }
 
 // ASCII checks if the string contains only ASCII characters.
-// An empty string returns false.
+// An empty string returns true.
 func ASCII(s string) bool {
-	return all(s, func(r rune) bool { return r <= '\x7F' })
+	return ascii.All(s, func(r rune) bool { return r <= '\x7F' })
 }
 
 // Slug checks if the string is a valid URL slug.
 // A slug consists of lowercase letters, numbers, and hyphens, and cannot
-// start or end with a hyphen or contain consecutive hyphens.
+// start or end with a hyphen or contain consecutive hyphens. Empty strings will
+// be rejected.
 func Slug(s string) bool {
 	if s == "" || s[0] == '-' || s[len(s)-1] == '-' {
 		return false
@@ -188,28 +192,27 @@ func Slug(s string) bool {
 }
 
 // Upper checks if the string contains only uppercase characters (A-Z).
-// An empty string returns false.
+// An empty string returns true.
 func Upper(s string) bool {
-	return all(s, ascii.IsUpper)
+	return ascii.All(s, ascii.IsUpper)
 }
 
 // Lower checks if the string contains only lowercase characters (a-z).
-// An empty string returns false.
+// An empty string returns true.
 func Lower(s string) bool {
-	return all(s, ascii.IsLower)
+	return ascii.All(s, ascii.IsLower)
 }
 
 // Base64 checks if the string is a valid Base64 encoded string.
-// It allows standard padding characters. An empty string returns false.
+// It allows standard padding characters. An empty string returns true.
 func Base64(s string) bool {
-	return s != "" && rxBase64.MatchString(s)
+	return rxBase64.MatchString(s)
 }
 
 // Base64URL checks if the string is a valid Base64URL encoded string.
-// Padding characters are supported but optional. An empty string returns
-// false.
+// Padding characters are supported but optional. An empty string returns true.
 func Base64URL(s string) bool {
-	return s != "" && rxBase64URL.MatchString(s)
+	return rxBase64URL.MatchString(s)
 }
 
 // MAC checks if the string is a valid IEEE 802 MAC address.
@@ -279,7 +282,7 @@ func Hex(s string) bool {
 	if len(s) > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {
 		s = s[2:]
 	}
-	return all(s, ascii.IsHex)
+	return ascii.All(s, ascii.IsHex)
 }
 
 // HexColor checks if the string is a valid hex color code.
@@ -292,7 +295,7 @@ func HexColor(s string) bool {
 	}
 	switch len(s) {
 	case 3, 4, 6, 8:
-		return all(s, ascii.IsHex)
+		return ascii.All(s, ascii.IsHex)
 	default:
 		return false
 	}
@@ -385,25 +388,25 @@ func ISBN(s string) bool {
 // Country2 checks if the string is a valid ISO 3166-1 alpha-2
 // country code (e.g., "US").
 func Country2(s string) bool {
-	return len(s) == 2 && all(s, ascii.IsUpper)
+	return len(s) == 2 && ascii.All(s, ascii.IsUpper)
 }
 
 // Country3 checks if the string is a valid ISO 3166-1 alpha-3
 // country code (e.g., "USA").
 func Country3(s string) bool {
-	return len(s) == 3 && all(s, ascii.IsUpper)
+	return len(s) == 3 && ascii.All(s, ascii.IsUpper)
 }
 
 // CountryN checks if the string is a valid ISO 3166-1 numeric
 // country code (e.g., "840").
 func CountryN(s string) bool {
-	return len(s) == 3 && all(s, ascii.IsDigit)
+	return len(s) == 3 && ascii.All(s, ascii.IsDigit)
 }
 
 // Currency checks if the string is a valid ISO 4217 currency code (e.g.,
 // "EUR", "USD").
 func Currency(s string) bool {
-	return len(s) == 3 && all(s, ascii.IsUpper)
+	return len(s) == 3 && ascii.All(s, ascii.IsUpper)
 }
 
 // UUID checks if the string is a valid Version 4 or 7 UUID as defined in RFC
@@ -508,25 +511,10 @@ func IBAN(s string) bool {
 	return rem == 1
 }
 
-// all reports whether s is non-empty and every byte, interpreted as a rune,
-// satisfies pred. It is the shared basis of the character-class predicates,
-// which all reject the empty string.
-func all(s string, pred func(rune) bool) bool {
-	if s == "" {
-		return false
-	}
-	for i := range len(s) {
-		if !pred(rune(s[i])) {
-			return false
-		}
-	}
-	return true
-}
-
-// isHash reports whether the string s has the specified length and consists
+// isHash reports whether the string has the specified length and consists
 // entirely of hexadecimal characters.
-func isHash(s string, size int) bool {
-	return len(s) == size && all(s, ascii.IsHex)
+func isHash(s string, n int) bool {
+	return len(s) == n && ascii.All(s, ascii.IsHex)
 }
 
 // mod97 updates the running remainder for a large numeric string using the

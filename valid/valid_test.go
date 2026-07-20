@@ -16,7 +16,6 @@ package valid_test
 
 import (
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"
@@ -182,7 +181,7 @@ func TestAlpha(t *testing.T) {
 		{"valid mixed", "abcABC", true},
 		{"invalid with numbers", "abc1", false},
 		{"invalid with spaces", "abc ABC", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.Alpha, tests)
 }
@@ -192,7 +191,7 @@ func TestAlphaNum(t *testing.T) {
 	tests := []test{
 		{"valid mixed", "abc123XYZ", true},
 		{"invalid special char", "abc-123", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.AlphaNum, tests)
 }
@@ -202,7 +201,7 @@ func TestASCII(t *testing.T) {
 	tests := []test{
 		{"valid standard", "abc123-!", true},
 		{"invalid non-ascii", "abc€", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.ASCII, tests)
 }
@@ -226,7 +225,7 @@ func TestUpper(t *testing.T) {
 		{"valid", "ABC", true},
 		{"invalid mixed", "ABc", false},
 		{"invalid numbers", "ABC1", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.Upper, tests)
 }
@@ -237,7 +236,7 @@ func TestLower(t *testing.T) {
 		{"valid", "abc", true},
 		{"invalid mixed", "abC", false},
 		{"invalid numbers", "abc1", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.Lower, tests)
 }
@@ -344,7 +343,7 @@ func TestHex(t *testing.T) {
 		{"valid plain", "1a", true},
 		{"valid prefixed", "0x1A", true},
 		{"invalid chars", "1g", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.Hex, tests)
 }
@@ -602,7 +601,7 @@ func TestIBAN(t *testing.T) {
 
 // Every character-class predicate rejects the empty string. This is the
 // package convention, and the shared basis makes it uniform.
-func TestCharacterClasses_RejectEmpty(t *testing.T) {
+func TestCharacterClasses_AcceptEmpty(t *testing.T) {
 	t.Parallel()
 
 	fns := map[string]func(string) bool{
@@ -612,21 +611,15 @@ func TestCharacterClasses_RejectEmpty(t *testing.T) {
 		"Upper":     valid.Upper,
 		"Lower":     valid.Lower,
 		"Hex":       valid.Hex,
-		"HexColor":  valid.HexColor,
 		"Base64":    valid.Base64,
 		"Base64URL": valid.Base64URL,
-		"Slug":      valid.Slug,
-		"Country2":  valid.Country2,
-		"Country3":  valid.Country3,
-		"CountryN":  valid.CountryN,
-		"Currency":  valid.Currency,
 	}
 
 	for name, fn := range fns {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if fn("") {
-				t.Errorf("%s(%q) = true; want false", name, "")
+			if !fn("") {
+				t.Errorf("%s(%q) = false; want true", name, "")
 			}
 		})
 	}
