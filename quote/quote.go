@@ -29,7 +29,7 @@
 //	s := quote.Remove(`"hello"`) // returns: hello
 //
 //	// Remove nested layers
-//	s = quote.RemoveAll(`"'nested'"`) // returns: hello
+//	s = quote.RemoveAll(`"'nested'"`) // returns: nested
 //
 //	// Wrap content
 //	s = quote.Double("content") // returns: "content"

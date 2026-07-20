@@ -14,26 +14,23 @@
 
 // Package mock provides an in-memory implementation of the migrate.Source.
 //
-// Package mock provides an in-memory implementation of the [migrate.Source]
-// interface designed strictly for unit testing. It allows developers to
-// simulate various migration scenarios, including success paths and error
-// conditions, without requiring access to a physical filesystem or external
-// storage.
+// It is designed strictly for unit testing: it allows developers to simulate
+// various migration scenarios, including success paths and error conditions,
+// without requiring access to a physical filesystem or external storage.
 //
 // # Usage
 //
-// Initialize the source with a slice of predefined scripts and use it in place
-// of a real source in your migration tests.
+// Initialize the source with predefined scripts and use it in place of a real
+// source in your migration tests.
 //
 // Example:
 //
-//	scripts := []migrate.SourceScript{
-//	    {Version: 1, Description: "init", Direction: migrate.Up, Content:
-//
-// []byte("...")},
-//
-//	}
-//	src := mock.New(scripts...)
+//	src := mock.New(migrate.SourceScript{
+//	    Version:     1,
+//	    Description: "init",
+//	    Direction:   migrate.Up,
+//	    Content:     []byte("..."),
+//	})
 package mock
 
 import (

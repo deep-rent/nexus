@@ -15,10 +15,10 @@
 // Package migrate provides the core orchestration logic for database
 // migrations.
 //
-// Package migrate manages the loading, sorting, verification, and execution of
-// migration files against a database driver. It ensures that migrations are
-// applied in a consistent, reproducible order and tracks the state of the
-// database to prevent duplicate or conflicting changes.
+// It manages the loading, sorting, verification, and execution of migration
+// files against a database driver. Migrations are applied in a consistent,
+// reproducible order, and the state of the database is tracked to prevent
+// duplicate or conflicting changes.
 //
 // # Usage
 //
@@ -38,6 +38,34 @@
 //	if err := m.Up(context.Background()); err != nil {
 //	    log.Fatal("Migration failed:", err)
 //	}
+//
+// # Locking
+//
+// All mutating operations ([Migrator.Up], [Migrator.Down], [Migrator.Steps],
+// [Migrator.MigrateTo], and [Migrator.Force]) acquire an exclusive,
+// driver-provided distributed lock so that concurrent migrator instances
+// cannot interleave. The read-only status queries ([Migrator.Pending],
+// [Migrator.Applied], and [Migrator.Version]) do not lock; they provide a
+// consistent snapshot but no protection against a migration running at the
+// same time.
+//
+// # Dirty State and Recovery
+//
+// Before a migration executes, its version is recorded as dirty; after
+// successful completion the flag is cleared. A migration that fails without
+// transactional protection leaves the record dirty, and every subsequent
+// operation refuses to proceed until the database has been inspected.
+// After manually restoring a consistent state, use [Migrator.Force] to set
+// the version and clear the flag. [Migrator.Version] can inspect the current
+// (possibly dirty) state at any time.
+//
+// # Integrity
+//
+// The SHA-256 checksum of every applied "up" migration is stored in the
+// tracking table and verified on each run, so historical migration files
+// cannot change unnoticed. Down scripts are not checksummed: they only run
+// when explicitly requested, and no reference hash exists once the record
+// has been removed. Review down scripts before reverting.
 package migrate
 
 import (

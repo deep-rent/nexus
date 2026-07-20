@@ -14,10 +14,9 @@
 
 // Package mock provides an in-memory implementation of the migrate.Driver.
 //
-// Package mock provides an in-memory implementation of the [migrate.Driver]
-// interface designed strictly for unit testing. It is safe for concurrent use
-// and allows injecting errors for every operation to test the Migrator's error
-// handling and rollback logic.
+// It is designed strictly for unit testing: the driver is safe for concurrent
+// use and allows injecting errors for every operation to test the Migrator's
+// error handling and rollback logic.
 //
 // # Usage
 //

@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Explicitly allow SQL string concatenation:
-// #nosec G202
+// Queries concatenate only the quoted identifier from quote.Ident; all
+// values are passed as bind parameters:
+//gosec:disable G202 -- identifiers are escaped, values are parameterized
 
 // Package postgres provides a PostgreSQL-specific driver for the migrate
 // package.
 //
-// Package postgres executes database migrations, manages the state of applied
-// migrations, and ensures concurrent safety using PostgreSQL advisory locks.
-// The driver supports configurable schema and table names for state tracking,
-// structured logging, and transactional execution of migration scripts.
+// It executes database migrations, manages the state of applied migrations,
+// and ensures concurrent safety using PostgreSQL advisory locks. The driver
+// supports configurable schema and table names for state tracking, structured
+// logging, and transactional execution of migration scripts.
 //
 // # Usage
 //
