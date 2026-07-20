@@ -49,6 +49,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/push"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
@@ -285,14 +286,14 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to drain response body",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		if err := res.Body.Close(); err != nil {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to close response body",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 	}()
@@ -305,7 +306,7 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to read response body",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		} else {
 			body = string(buf)

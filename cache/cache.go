@@ -85,6 +85,7 @@ import (
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/internal/jitter"
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/schedule"
 	"github.com/deep-rent/nexus/transport"
 )
@@ -238,7 +239,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		if !errors.Is(err, context.Canceled) {
 			c.logger.ErrorContext(ctx,
 				"Failed to fetch resource",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		return c.retry()
@@ -320,7 +321,7 @@ func (c *controller[T]) update(
 	if err != nil {
 		c.logger.ErrorContext(ctx,
 			"Failed to read response body",
-			slog.Any("error", err),
+			log.Err(err),
 		)
 		return c.retry()
 	}
@@ -333,7 +334,7 @@ func (c *controller[T]) update(
 	if err != nil {
 		c.logger.ErrorContext(ctx,
 			"Couldn't parse response body",
-			slog.Any("error", err),
+			log.Err(err),
 		)
 		return c.retry()
 	}
@@ -359,7 +360,7 @@ func (c *controller[T]) close(res *http.Response) {
 	if err := res.Body.Close(); err != nil {
 		c.logger.Warn(
 			"Failed to close response body",
-			slog.Any("error", err),
+			log.Err(err),
 		)
 	}
 }

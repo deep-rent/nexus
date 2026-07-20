@@ -65,6 +65,7 @@ import (
 
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/header"
+	"github.com/deep-rent/nexus/log"
 )
 
 // transport wraps an underlying [http.RoundTripper] to provide automatic
@@ -236,7 +237,7 @@ func (t *transport) discard(res *http.Response) {
 		case err != nil:
 			t.logger.Warn(
 				"Failed to drain response body",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		case n > t.drain:
 			t.logger.Debug(
@@ -249,7 +250,7 @@ func (t *transport) discard(res *http.Response) {
 	if err := res.Body.Close(); err != nil {
 		t.logger.Warn(
 			"Failed to close response body",
-			slog.Any("error", err),
+			log.Err(err),
 		)
 	}
 }
@@ -274,7 +275,7 @@ func (t *transport) log(
 		slog.String("url", req.URL.String()),
 	}
 	if err != nil {
-		attrs = append(attrs, slog.Any("error", err))
+		attrs = append(attrs, log.Err(err))
 	}
 	if res != nil {
 		attrs = append(attrs, slog.Int("status", res.StatusCode))

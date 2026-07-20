@@ -48,6 +48,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/transport"
 )
 
@@ -291,14 +292,14 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to drain response body",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		if err := res.Body.Close(); err != nil {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to close response body",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 	}()
@@ -312,7 +313,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to parse API error response",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		return &apiErr

@@ -49,6 +49,7 @@ import (
 
 	"github.com/deep-rent/nexus/internal/quote"
 	"github.com/deep-rent/nexus/internal/schema"
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/migrate"
 )
 
@@ -245,7 +246,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 		if e := conn.Close(); e != nil {
 			d.logger.Error(
 				"Failed to close connection after lock failure",
-				slog.Any("error", e),
+				log.Err(e),
 			)
 		}
 		return fmt.Errorf("failed to acquire advisory lock: %w", err)
@@ -319,7 +320,7 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	}
 	defer func() {
 		if e := rows.Close(); e != nil {
-			d.logger.Error("Failed to close rows", slog.Any("error", e))
+			d.logger.Error("Failed to close rows", log.Err(e))
 		}
 	}()
 
@@ -354,7 +355,7 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
 			d.logger.Error(
 				"Failed to rollback transaction",
-				slog.Any("error", e),
+				log.Err(e),
 			)
 		}
 	}()

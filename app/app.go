@@ -92,7 +92,7 @@
 //	    app.WithLogger(logger),
 //	  )
 //	  if err != nil {
-//	    logger.Error("Application failed", slog.Any("error", err))
+//	    logger.Error("Application failed", log.Err(err))
 //	    os.Exit(1)
 //	  }
 //	}
@@ -110,6 +110,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 const (
@@ -461,7 +463,7 @@ func (r *runner) report(err error) {
 		)
 		return
 	}
-	r.cfg.logger.Error("Component failed", slog.Any("error", err))
+	r.cfg.logger.Error("Component failed", log.Err(err))
 }
 
 // stop cancels the started stages in reverse order, draining each one before

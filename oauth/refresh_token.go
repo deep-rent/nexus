@@ -16,10 +16,11 @@ package oauth
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 // refreshTokenGrant implements the [Grant] interface for token rotation.
@@ -79,7 +80,7 @@ func (g refreshTokenGrant) Authorize(
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired refresh token",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		return nil, &Error{

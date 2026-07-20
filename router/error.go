@@ -22,6 +22,8 @@ import (
 	"net/http"
 
 	"uuid"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 // Error describes the standardized shape of API errors returned to clients.
@@ -166,7 +168,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		if e.W.Closed() {
 			logger.ErrorContext(ctx,
 				"Handler returned error after writing response",
-				slog.Any("error", err),
+				log.Err(err),
 				slog.String("method", e.Method()),
 				slog.String("path", e.Path()),
 			)
@@ -194,7 +196,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		if werr := e.JSON(res.Status, res); werr != nil {
 			logger.WarnContext(ctx,
 				"Failed to write error response",
-				slog.Any("error", werr),
+				log.Err(werr),
 			)
 		}
 	}
@@ -230,7 +232,7 @@ func record(
 	// The cause carries the internal detail that the description withholds
 	// from the client.
 	if res.Cause != nil {
-		attrs = append(attrs, slog.Any("error", res.Cause))
+		attrs = append(attrs, log.Err(res.Cause))
 	}
 
 	// A recovered panic is only useful with the stack that produced it.

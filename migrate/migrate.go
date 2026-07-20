@@ -49,6 +49,7 @@ import (
 	"slices"
 
 	"github.com/deep-rent/nexus/internal/schema"
+	"github.com/deep-rent/nexus/log"
 )
 
 // Direction signals whether a migration is being applied or reverted.
@@ -279,7 +280,7 @@ func (m *Migrator) lock(
 
 	defer func() {
 		if err := m.driver.Unlock(context.Background()); err != nil {
-			m.logger.Error("Failed to release lock", slog.Any("error", err))
+			m.logger.Error("Failed to release lock", log.Err(err))
 		}
 	}()
 
@@ -552,7 +553,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	})
 	if err != nil {
 		err = fmt.Errorf("migration %d failed: %w", migration.Version, err)
-		m.logger.Error("Migration failed", slog.Any("error", err))
+		m.logger.Error("Migration failed", log.Err(err))
 		return err
 	}
 

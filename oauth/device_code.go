@@ -17,8 +17,9 @@ package oauth
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 // deviceCodeGrant implements the [Grant] interface for the Device
@@ -86,7 +87,7 @@ func (g deviceCodeGrant) Authorize(
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired device code",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		return nil, &Error{
@@ -115,7 +116,7 @@ func (g deviceCodeGrant) Authorize(
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to record device code poll",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		return nil, &Error{
@@ -129,7 +130,7 @@ func (g deviceCodeGrant) Authorize(
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete denied device code",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 		return nil, &Error{

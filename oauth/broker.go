@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/deep-rent/nexus/auth"
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/router"
 )
 
@@ -114,7 +115,7 @@ func (s *Server) Logout(e *router.Exchange) error {
 			s.logger.ErrorContext(
 				e.Context(),
 				"Failed to delete subject session",
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 	}
@@ -233,7 +234,7 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 			"Failed to process external exchange",
 			slog.String("idp", name),
 			slog.String("error_id", id),
-			slog.Any("error", err),
+			log.Err(err),
 		)
 
 		return &router.Error{

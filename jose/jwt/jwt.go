@@ -411,7 +411,7 @@ func Parse[T Claims](in []byte) (Token[T], error) {
 // isJWT checks if the token type is a JWT.
 // It handles special case such as "application/jwt" and "at+jwt".
 func isJWT(typ string) bool {
-    typ = ascii.ToLower(typ)
+	typ = ascii.ToLower(typ)
 	typ = strings.TrimPrefix(typ, "application/")
 	return typ == "jwt" || strings.HasSuffix(typ, "+jwt")
 }

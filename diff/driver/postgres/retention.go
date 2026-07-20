@@ -18,6 +18,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 // Default retention windows enforced by [Retention].
@@ -108,12 +110,12 @@ func NewRetention(s *Store, opts ...RetentionOption) *Retention {
 func (r *Retention) Run(ctx context.Context) {
 	logger := r.store.logger
 	if n, err := r.store.PruneMutations(ctx, r.mutations); err != nil {
-		logger.Error("Failed to prune mutations", slog.Any("error", err))
+		logger.Error("Failed to prune mutations", log.Err(err))
 	} else if n > 0 {
 		logger.Info("Pruned aged mutations", slog.Int64("count", n))
 	}
 	if n, err := r.store.PruneTombstones(ctx, r.tombstones); err != nil {
-		logger.Error("Failed to prune tombstones", slog.Any("error", err))
+		logger.Error("Failed to prune tombstones", log.Err(err))
 	} else if n > 0 {
 		logger.Info("Pruned aged tombstones", slog.Int64("count", n))
 	}

@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/internal/buffer"
+	"github.com/deep-rent/nexus/log"
 )
 
 const (
@@ -159,7 +160,7 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 				"Upstream request failed",
 				slog.String("method", method),
 				slog.String("uri", uri),
-				slog.Any("error", err),
+				log.Err(err),
 			)
 		}
 

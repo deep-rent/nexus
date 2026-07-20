@@ -69,6 +69,7 @@ import (
 	"github.com/deep-rent/nexus/diff"
 	"github.com/deep-rent/nexus/internal/hlc"
 	"github.com/deep-rent/nexus/internal/quote"
+	"github.com/deep-rent/nexus/log"
 )
 
 // Default names for the store's bookkeeping objects.
@@ -288,7 +289,7 @@ func (s *Store) Exec(
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
 			s.logger.Error(
 				"Failed to rollback transaction",
-				slog.Any("error", e),
+				log.Err(e),
 			)
 		}
 	}()
@@ -1351,7 +1352,7 @@ func resolve(
 // caller's error.
 func close(rows *sql.Rows, logger *slog.Logger) {
 	if err := rows.Close(); err != nil {
-		logger.Error("Failed to close rows", slog.Any("error", err))
+		logger.Error("Failed to close rows", log.Err(err))
 	}
 }
 

@@ -27,6 +27,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/internal/hlc"
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -260,7 +261,7 @@ func (e *Engine[Tx]) Sync(
 			})
 			ids = fresh
 		} else {
-			e.cfg.logger.Warn("prefilter failed", slog.Any("error", err))
+			e.cfg.logger.Warn("prefilter failed", log.Err(err))
 		}
 	}
 
@@ -325,7 +326,7 @@ func (e *Engine[Tx]) Sync(
 
 	if e.cfg.prefilter != nil && len(ids) > 0 {
 		if err := e.cfg.prefilter.Mark(ctx, ids); err != nil {
-			e.cfg.logger.Warn("prefilter mark failed", slog.Any("error", err))
+			e.cfg.logger.Warn("prefilter mark failed", log.Err(err))
 		}
 	}
 

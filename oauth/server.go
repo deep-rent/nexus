@@ -30,6 +30,7 @@ import (
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/jose/jwt"
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/pkce"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/throttle"
@@ -711,7 +712,7 @@ func (s *Server) introspect(e *router.Exchange) error {
 		s.logger.DebugContext(
 			e.Context(),
 			"Token verification failed during introspection",
-			slog.Any("error", err),
+			log.Err(err),
 		)
 	} else {
 		res = IntrospectionResponse{
@@ -1114,7 +1115,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 		s.logger.ErrorContext(
 			e.Context(),
 			"Failed to delete refresh token during revocation",
-			slog.Any("error", err),
+			log.Err(err),
 		)
 	}
 
@@ -1368,7 +1369,7 @@ func (s *Server) record(e *router.Exchange, oerr *Error) {
 		attrs = append(attrs, slog.String("error_id", oerr.ID))
 	}
 	if oerr.Cause != nil {
-		attrs = append(attrs, slog.Any("error", oerr.Cause))
+		attrs = append(attrs, log.Err(oerr.Cause))
 	}
 
 	s.logger.Log(ctx, level, oerr.Description, attrs...)
