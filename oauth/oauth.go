@@ -91,7 +91,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"
@@ -754,6 +753,17 @@ type AuthorizationServerMetadata struct {
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported,omitempty"`
 }
+
+// Key namespaces keep the identifier spaces disjoint within the single
+// [throttle.Throttle] the server shares across every axis it limits, so that
+// a client ID can never share a bucket with a username, a one-time code, or a
+// network address.
+const (
+	scopeAddr   = "addr:"
+	scopeClient = "client:"
+	scopeUser   = "user:"
+	scopeCode   = "code:"
+)
 
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
 //

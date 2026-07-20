@@ -46,7 +46,11 @@ func (s *Server) Login(e *router.Exchange) error {
 	// the capitalization cannot buy a fresh allowance.
 	userKey := scopeUser + strings.ToLower(cred.Username)
 	if s.throttled(e, userKey) {
-		return tooManyRequests()
+		return &router.Error{
+			Status:      http.StatusTooManyRequests,
+			Reason:      router.ReasonRateLimit,
+			Description: "Too many failed attempts. Try again later.",
+		}
 	}
 
 	sub, err := s.subjects.Authenticate(

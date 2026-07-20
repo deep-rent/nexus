@@ -24,7 +24,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -639,7 +638,18 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 	// the store is consulted, regardless of the address they arrive from.
 	clientKey := scopeClient + clientID
 	if s.throttled(e, clientKey) {
-		return nil, tooManyAttempts()
+		// Build an OAuth-shaped rejection returned once a the endpoint has
+		// exhausted its throttle allowance.
+		//
+		// RFC 6749 defines no error code for rate limiting, so the device-flow
+		// "slow_down" code (RFC 8628 Section 3.5) is reused: its semantics
+		// match exactly, and clients that do not recognize it still honor the
+		// 429 status and the accompanying Retry-After header.
+		return nil, &Error{
+			Status:      http.StatusTooManyRequests,
+			Code:        ErrorCodeSlowDown,
+			Description: "too many failed attempts",
+		}
 	}
 
 	// deny records a failed credential attempt before returning the
@@ -1275,7 +1285,11 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	// controls their own session but not the codes they hit.
 	subjectKey := scopeCode + sub.ID().String()
 	if s.throttled(e, subjectKey) {
-		return tooManyRequests()
+		return &router.Error{
+			Status:      http.StatusTooManyRequests,
+			Reason:      router.ReasonRateLimit,
+			Description: "Too many failed attempts. Try again later.",
+		}
 	}
 
 	code, err := s.sessions.GetDeviceCodeByUserCode(
