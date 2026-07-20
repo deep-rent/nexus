@@ -47,12 +47,13 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/router"
+	"golang.org/x/sync/singleflight"
 )
 
 // Status enumerates the operational states of a dependency.
 //
-// Note that statuses are ranked by severity: StatusHealthy > StatusDegraded >
-// StatusSick. This allows for direct comparison using standard operators.
+// Note that statuses are ranked by severity: [StatusHealthy] > [StatusDegraded]
+// > [StatusSick]. This allows for direct comparison using standard operators.
 type Status int
 
 const (
@@ -130,23 +131,55 @@ type Report struct {
 // perceived [Status] and an error if applicable.
 type CheckFunc func(ctx context.Context) (Status, error)
 
+// Kind is a bitmask used to categorize health checks for different probes.
+type Kind int
+
+const (
+	// KindReadiness indicates the check should be evaluated by the readiness
+	// probe.
+	KindReadiness Kind = 1 << iota
+	// KindLiveness indicates the check should be evaluated by the liveness
+	// probe.
+	KindLiveness
+	// KindAll is a convenience mask that includes all kinds of checks.
+	KindAll = KindReadiness | KindLiveness
+)
+
+// Option configures a health check.
+type Option func(*check)
+
+// WithTimeout sets a maximum execution duration for the check. If the check
+// takes longer than this timeout, it is canceled and reports as sick.
+func WithTimeout(t time.Duration) Option {
+	return func(c *check) {
+		c.timeout = t
+	}
+}
+
+// WithKind categorizes the check, restricting it to specific probes like
+// liveness or readiness. By default, checks are evaluated for all probes.
+func WithKind(k Kind) Option {
+	return func(c *check) {
+		c.kind = k
+	}
+}
+
 // check wraps a registered check with its caching state and mutex.
 type check struct {
-	// name is the identifier for the health check.
-	name string
-	// fn is the [CheckFunc] to execute.
-	fn CheckFunc
-	// ttl is the duration for which the [Result] is considered fresh.
-	ttl time.Duration
-	// mu protects access to the cached last result.
-	mu sync.RWMutex
-	// last is the most recently recorded [Result].
-	last Result
+	name    string             // specific identifier for the health check
+	fn      CheckFunc          // health check callback to execute
+	ttl     time.Duration      // time for which the result is considered fresh
+	timeout time.Duration      // maximum execution time for the check
+	kind    Kind               // bitmask of probes this check applies to
+	sf      singleflight.Group // deduplicates concurrent executions
+	mu      sync.RWMutex       // protects access to the cached last result
+	last    Result             // most recently recorded result
 }
 
 // run executes the check or returns the cached result if the TTL hasn't
-// expired. It protects against panics in the callback.
-func (c *check) run(ctx context.Context) (res Result) {
+// expired. It protects against panics in the callback and deduplicates
+// concurrent executions using singleflight.
+func (c *check) run(ctx context.Context) Result {
 	c.mu.RLock()
 	if !c.last.Timestamp.IsZero() && time.Since(c.last.Timestamp) < c.ttl {
 		res := c.last
@@ -155,41 +188,71 @@ func (c *check) run(ctx context.Context) (res Result) {
 	}
 	c.mu.RUnlock()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	// Double-check the cache after acquiring the write lock.
-	if !c.last.Timestamp.IsZero() && time.Since(c.last.Timestamp) < c.ttl {
-		return c.last
-	}
+	ch := c.sf.DoChan("run", func() (interface{}, error) {
+		// Detach context to prevent client disconnects from poisoning the cache.
+		bgCtx := context.WithoutCancel(ctx)
+		if c.timeout > 0 {
+			var cancel context.CancelFunc
+			bgCtx, cancel = context.WithTimeout(bgCtx, c.timeout)
+			defer cancel()
+		}
 
-	defer func() {
-		if r := recover(); r != nil {
-			c.last = Result{
-				Status:    StatusSick,
-				Error:     fmt.Sprintf("health check panicked: %v", r),
+		var res Result
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					res = Result{
+						Status:    StatusSick,
+						Error:     fmt.Sprintf("health check panicked: %v", r),
+						Timestamp: time.Now(),
+					}
+				}
+			}()
+
+			status, err := c.fn(bgCtx)
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+				// Default to sick if an error occurs but the status wasn't
+				// explicitly set to degraded.
+				if status != StatusDegraded {
+					status = StatusSick
+				}
+			}
+
+			res = Result{
+				Status:    status,
+				Error:     msg,
 				Timestamp: time.Now(),
 			}
-			res = c.last
-		}
-	}()
+		}()
 
-	status, err := c.fn(ctx)
-	msg := ""
-	if err != nil {
-		msg = err.Error()
-		// Default to sick if an error occurs but the status wasn't explicitly
-		// set to degraded.
-		if status != StatusDegraded {
-			status = StatusSick
-		}
-	}
+		c.mu.Lock()
+		c.last = res
+		c.mu.Unlock()
 
-	c.last = Result{
-		Status:    status,
-		Error:     msg,
-		Timestamp: time.Now(),
+		return res, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		// Client disconnected or request timed out. Return a stale result if
+		// available so we don't return an error while the check is successfully
+		// updating in the background.
+		c.mu.RLock()
+		res := c.last
+		c.mu.RUnlock()
+		if res.Timestamp.IsZero() {
+			return Result{
+				Status:    StatusSick,
+				Error:     ctx.Err().Error(),
+				Timestamp: time.Now(),
+			}
+		}
+		return res
+	case res := <-ch:
+		return res.Val.(Result)
 	}
-	return c.last
 }
 
 // Monitor manages the registry of health checks and provides the
@@ -215,14 +278,24 @@ func NewMonitor() *Monitor {
 // The TTL (Time-To-Live) parameter defines the minimum duration between
 // consecutive executions of the [CheckFunc]; subsequent calls within this
 // window return the cached [Result] to prevent overloading the dependency.
-func (m *Monitor) Attach(name string, ttl time.Duration, fn CheckFunc) {
+func (m *Monitor) Attach(
+	name string,
+	ttl time.Duration,
+	fn CheckFunc,
+	opts ...Option,
+) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.checks[name] = &check{
+	c := &check{
 		name: name,
 		fn:   fn,
 		ttl:  ttl,
+		kind: KindAll,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	m.checks[name] = c
 }
 
 // Detach unregisters a health check by name. If the check does not exist, this
@@ -233,13 +306,17 @@ func (m *Monitor) Detach(name string) {
 	delete(m.checks, name)
 }
 
-// run runs all registered checks concurrently and compiles the overall [Status]
-// from the gathered results.
-func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
+// run runs all registered checks matching the given kind concurrently and
+// compiles the overall [Status] from the gathered results.
+func (m *Monitor) run(
+	ctx context.Context, kind Kind,
+) (Status, map[string]Result) {
 	m.mu.RLock()
 	checks := make([]*check, 0, len(m.checks))
 	for _, c := range m.checks {
-		checks = append(checks, c)
+		if c.kind&kind != 0 {
+			checks = append(checks, c)
+		}
 	}
 	m.mu.RUnlock()
 
@@ -268,23 +345,31 @@ func (m *Monitor) run(ctx context.Context) (Status, map[string]Result) {
 	return overall, results
 }
 
-// Live returns a handler that indicates if the application process is alive.
-// It always returns [StatusHealthy] and HTTP 200 without checking dependencies,
-// serving as a basic liveness probe to detect process hangs.
+// Live returns a handler that evaluates liveness checks.
+// It returns HTTP 503 (Service Unavailable) if any check results in
+// [StatusSick]. Otherwise, it returns HTTP 200.
 func (m *Monitor) Live() router.HandlerFunc {
 	return func(e *router.Exchange) error {
-		return e.JSON(http.StatusOK, Report{
-			Status: StatusHealthy,
+		overall, results := m.run(e.Context(), KindLiveness)
+
+		code := http.StatusOK
+		if overall == StatusSick {
+			code = http.StatusServiceUnavailable
+		}
+
+		return e.JSON(code, Report{
+			Status: overall,
+			Checks: results,
 		})
 	}
 }
 
-// Ready returns a handler that evaluates all registered checks.
+// Ready returns a handler that evaluates readiness checks.
 // It returns HTTP 503 (Service Unavailable) if any check results in
 // [StatusSick]. Otherwise, it returns HTTP 200.
 func (m *Monitor) Ready() router.HandlerFunc {
 	return func(e *router.Exchange) error {
-		overall, results := m.run(e.Context())
+		overall, results := m.run(e.Context(), KindReadiness)
 
 		code := http.StatusOK
 		if overall == StatusSick {
@@ -312,7 +397,7 @@ func (m *Monitor) Handler() router.HandlerFunc {
 //   - GET /health/live: Shallow liveness probe.
 //   - GET /health/ready: Deep readiness probe.
 func (m *Monitor) Mount(r *router.Router) {
-	r.HandleFunc("GET /health", m.Handler())
-	r.HandleFunc("GET /health/live", m.Live())
-	r.HandleFunc("GET /health/ready", m.Ready())
+	r.HandleFunc(http.MethodGet+" /health", m.Handler())
+	r.HandleFunc(http.MethodGet+" /health/live", m.Live())
+	r.HandleFunc(http.MethodGet+" /health/ready", m.Ready())
 }

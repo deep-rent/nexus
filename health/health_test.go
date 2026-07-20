@@ -166,7 +166,7 @@ func TestMonitor_Live(t *testing.T) {
 	chk := func(ctx context.Context) (health.Status, error) {
 		return health.StatusSick, nil
 	}
-	m.Attach("failure", 0, chk)
+	m.Attach("failure", 0, chk, health.WithKind(health.KindReadiness))
 
 	r := router.New()
 	m.Mount(r)
@@ -227,6 +227,83 @@ func TestMonitor_Caching(t *testing.T) {
 
 	if got := calls.Load(); got != 2 {
 		t.Errorf("calls after cache expiry: got %d; want 2", got)
+	}
+}
+
+func TestMonitor_CachePoisoning(t *testing.T) {
+	t.Parallel()
+
+	m := health.NewMonitor()
+
+	started := make(chan struct{})
+	chk := func(ctx context.Context) (health.Status, error) {
+		close(started)
+		time.Sleep(100 * time.Millisecond) // Simulate slow check
+		return health.StatusHealthy, nil
+	}
+
+	m.Attach("slow", 1*time.Minute, chk)
+
+	r := router.New()
+	m.Mount(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+
+	go func() {
+		<-started
+		cancel() // Cancel the HTTP request context while the check is running
+	}()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req) // This should return immediately with a generic error due to context cancellation.
+
+	// The background check should still complete successfully.
+	time.Sleep(200 * time.Millisecond)
+
+	// Second request should return a cached healthy result
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	var rep health.Report
+	if err := json.Unmarshal(w2.Body.Bytes(), &rep); err != nil {
+		t.Fatalf("unmarshaling body: %v", err)
+	}
+
+	if got, want := rep.Status, health.StatusHealthy; got != want {
+		t.Errorf("report status: got %v; want %v (cache was poisoned)", got, want)
+	}
+}
+
+func TestMonitor_Timeout(t *testing.T) {
+	t.Parallel()
+
+	m := health.NewMonitor()
+
+	chk := func(ctx context.Context) (health.Status, error) {
+		<-ctx.Done() // Block until context is canceled by timeout
+		return health.StatusHealthy, ctx.Err()
+	}
+
+	m.Attach("timeout", 1*time.Minute, chk, health.WithTimeout(10*time.Millisecond))
+
+	r := router.New()
+	m.Mount(r)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	var rep health.Report
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
+		t.Fatalf("unmarshaling body: %v", err)
+	}
+
+	if got, want := rep.Status, health.StatusSick; got != want {
+		t.Errorf("report status: got %v; want %v", got, want)
+	}
+	if msg := rep.Checks["timeout"].Error; msg != "context deadline exceeded" {
+		t.Errorf("expected context deadline exceeded, got: %q", msg)
 	}
 }
 
@@ -293,38 +370,6 @@ func TestMonitor_Concurrency(t *testing.T) {
 	wg.Wait()
 }
 
-func TestMonitor_ContextPropagation(t *testing.T) {
-	t.Parallel()
-
-	m := health.NewMonitor()
-	received := make(chan struct{})
-
-	m.Attach("ctx_test", 0, func(ctx context.Context) (health.Status, error) {
-		select {
-		case <-ctx.Done():
-			close(received)
-			return health.StatusSick, ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-			return health.StatusHealthy, nil
-		}
-	})
-
-	r := router.New()
-	m.Mount(r)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	req := httptest.NewRequest(http.MethodGet, "/health", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
-
-	cancel()
-	r.ServeHTTP(w, req)
-
-	select {
-	case <-received:
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("CheckFunc did not receive context cancellation")
-	}
-}
 
 func TestStatus_Serialization(t *testing.T) {
 	t.Parallel()
