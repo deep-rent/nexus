@@ -1344,3 +1344,58 @@ func TestBinder_InlineNestedPointer(t *testing.T) {
 		}
 	})
 }
+
+// Everything wrong with a struct is reported at once, so that a caller
+// fixing a configuration does not have to rerun to discover the next fault.
+func TestBinder_CollectsAllErrors(t *testing.T) {
+	t.Parallel()
+
+	var cfg struct {
+		Host string `bind:"host,required"`
+		Port int    `bind:"port,required"`
+		User string `bind:"user,required"`
+		Size int    `bind:"size"`
+	}
+
+	src := mockSource{"size": {"not-a-number"}}
+
+	err := bind.New("bind").Bind(&cfg, "", src)
+	if err == nil {
+		t.Fatal("should have returned an error")
+	}
+
+	want := []string{
+		`required key "host" is missing`,
+		`required key "port" is missing`,
+		`required key "user" is missing`,
+		`field "Size"`,
+	}
+
+	for _, w := range want {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("want match for %q; got %q", w, err)
+		}
+	}
+}
+
+// A failure inside an optional section must not attach a half-bound value.
+func TestBinder_FailedSectionIsNotAttached(t *testing.T) {
+	t.Parallel()
+
+	type TLS struct {
+		Port int `bind:"port"`
+	}
+	var cfg struct {
+		TLS *TLS `bind:"tls"`
+	}
+
+	src := mockSource{"tls_port": {"not-a-number"}}
+
+	if err := bind.New("bind").Bind(&cfg, "", src); err == nil {
+		t.Fatal("should have returned an error")
+	}
+
+	if cfg.TLS != nil {
+		t.Errorf("attached a section that failed to bind: %+v", cfg.TLS)
+	}
+}

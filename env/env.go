@@ -150,9 +150,13 @@ type config struct {
 	Lookup Lookup
 }
 
+// binder is shared by every call to [Unmarshal]. Caching the reflection
+// metadata is safe because a type's tags cannot change, and it keeps a
+// process that unmarshals repeatedly from re-walking the same structs.
 var binder = bind.New(
 	"env",
 	bind.WithTransformer(snake.ToUpper),
+	bind.WithCache(true),
 )
 
 type source struct {
@@ -176,6 +180,10 @@ var _ bind.Source = (*source)(nil)
 // To ignore a field, tag it with `env:"-"`. Unexported fields are always
 // excluded. If a variable is not set, the field remains unchanged unless a
 // default value is specified in the struct tag, or it is marked as required.
+//
+// Every problem found is reported together, so a misconfigured environment
+// can be corrected in one pass rather than one variable per attempt. Use
+// [errors.Join] semantics to inspect the result.
 func Unmarshal[T any](v *T, opts ...Option) error {
 	cfg := config{
 		Lookup: os.LookupEnv,

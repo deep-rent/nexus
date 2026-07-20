@@ -16,6 +16,7 @@ package env_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,6 +261,31 @@ func BenchmarkExpand(b *testing.B) {
 		_, err := env.Expand(input, opts...)
 		if err != nil {
 			b.Fatalf("should not have returned an error: %v", err)
+		}
+	}
+}
+
+// A misconfigured environment should reveal every fault at once, so it can be
+// corrected in a single pass.
+func TestUnmarshal_CollectsAllErrors(t *testing.T) {
+	t.Parallel()
+
+	var cfg struct {
+		Host string `env:",required"`
+		Port int    `env:",required"`
+		User string `env:",required"`
+	}
+
+	err := env.Unmarshal(&cfg, env.WithLookup(func(string) (string, bool) {
+		return "", false
+	}))
+	if err == nil {
+		t.Fatal("should have returned an error")
+	}
+
+	for _, want := range []string{"HOST", "PORT", "USER"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("want match for %q; got %q", want, err)
 		}
 	}
 }

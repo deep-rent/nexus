@@ -228,7 +228,14 @@ func (b *Binder) process(
 		return false, err
 	}
 
-	var bound bool
+	// Field errors are collected rather than returned at the first one, so a
+	// caller fixing a configuration sees everything that is wrong with it in
+	// one pass instead of one variable per attempt.
+	var (
+		bound bool
+		errs  []error
+	)
+
 	for _, f := range fields {
 		fv := rv.Field(f.Index)
 
@@ -236,7 +243,7 @@ func (b *Binder) process(
 		if f.Inline {
 			ok, err := b.nested(fv, prefix, source)
 			if err != nil {
-				return bound, err
+				errs = append(errs, err)
 			}
 			bound = bound || ok
 			continue
@@ -254,7 +261,7 @@ func (b *Binder) process(
 			}
 			ok, err := b.nested(fv, nested, source)
 			if err != nil {
-				return bound, err
+				errs = append(errs, err)
 			}
 			bound = bound || ok
 			continue
@@ -275,21 +282,26 @@ func (b *Binder) process(
 			case f.Flags.Default != "":
 				vals = []string{f.Flags.Default}
 			case f.Flags.Required:
-				return bound, fmt.Errorf("required key %q is missing", key)
+				errs = append(errs, fmt.Errorf(
+					"required key %q is missing", key,
+				))
+				continue
 			default:
 				continue
 			}
 		}
 
 		if err := setValues(fv, vals, f.Flags); err != nil {
-			return bound, fmt.Errorf(
+			errs = append(errs, fmt.Errorf(
 				"could not set field %q from key %q: %w",
 				f.Name, key, err,
-			)
+			))
+			continue
 		}
 		bound = true
 	}
-	return bound, nil
+
+	return bound, errors.Join(errs...)
 }
 
 // nested processes a struct field, which may be reached through one or more
