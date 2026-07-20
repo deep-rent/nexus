@@ -401,6 +401,25 @@ func (e *Exchange) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(e.W, cookie)
 }
 
+// NewCookie builds a hardened cookie. A maxAge of zero yields a
+// browser-session cookie; negative values delete the cookie on the
+// user-agent.
+func NewCookie(
+	name, value string,
+	maxAge int,
+	sameSite http.SameSite,
+) *http.Cookie {
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: sameSite,
+	}
+}
+
 // Handler defines the interface for HTTP request handlers used by the [Router].
 type Handler interface {
 	// ServeHTTP processes an HTTP request encapsulated in the Exchange object.
