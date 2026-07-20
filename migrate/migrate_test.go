@@ -585,6 +585,9 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pending: should not have returned an error: %v", err)
 	}
+	if !drv.IsInit {
+		t.Error("pending: should have initialized the tracking table")
+	}
 	if len(pending) != 2 {
 		t.Errorf("pending size: got %d; want 2", len(pending))
 	}
@@ -674,6 +677,19 @@ func TestMigrator_Integration(t *testing.T) {
 		migrate.WithSource(src),
 		migrate.WithDriver(drv),
 	)
+
+	// Status queries must work against a pristine database, before any
+	// migration has created the tracking table.
+	pending, err := m.Pending(ctx)
+	if err != nil {
+		t.Fatalf(
+			"pending on fresh db: should not have returned an error: %v",
+			err,
+		)
+	}
+	if len(pending) != 2 {
+		t.Errorf("on fresh db: got pending size %d; want 2", len(pending))
+	}
 
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("on up: should not have returned an error: %v", err)

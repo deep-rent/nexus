@@ -346,7 +346,14 @@ func (m *Migrator) files() ([]Migration, error) {
 }
 
 // filter is a helper to fetch either pending or applied migrations.
+//
+// It ensures the tracking table exists first, so read-only queries also work
+// against a pristine database.
 func (m *Migrator) filter(ctx context.Context, up bool) ([]Migration, error) {
+	if err := m.driver.Init(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize driver: %w", err)
+	}
+
 	records, files, err := m.load(ctx)
 	if err != nil {
 		return nil, err
@@ -520,11 +527,17 @@ func (m *Migrator) MigrateTo(ctx context.Context, target int64) error {
 }
 
 // Pending returns a list of "Up" migrations that have not yet been applied.
+//
+// It initializes the tracking table if necessary, so it can be called against
+// a pristine database before any migration has run.
 func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
 	return m.filter(ctx, false)
 }
 
 // Applied returns a list of "Up" migrations that have already been executed.
+//
+// It initializes the tracking table if necessary, so it can be called against
+// a pristine database before any migration has run.
 func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 	return m.filter(ctx, true)
 }
