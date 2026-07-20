@@ -439,6 +439,19 @@ func (d *Driver) Execute(
 			return d.execAll(ctx, tx, script.Statements)
 		})
 		if err != nil {
+			// The transaction rolled back, so the schema is unchanged; undo
+			// the dirty marker to spare the operator a manual Force. If the
+			// cleanup itself fails, the marker stays and blocks further runs,
+			// which is the safe direction to err in.
+			if e := d.undoDirty(
+				script.Version,
+				script.Direction,
+			); e != nil {
+				d.logger.Error(
+					"Failed to undo dirty marker after rollback",
+					log.Err(e),
+				)
+			}
 			return err
 		}
 	} else {
@@ -526,6 +539,37 @@ func (d *Driver) setDirty(
 			version,
 		); err != nil {
 			return fmt.Errorf("failed to mark migration as dirty: %w", err)
+		}
+	}
+	return nil
+}
+
+// undoDirty reverts the marker written by setDirty after a transactional
+// migration failed and rolled back cleanly.
+//
+// For upward migrations, it deletes the record inserted for the attempt. For
+// downward migrations, it restores the existing record to a clean state. It
+// runs on a fresh context so cleanup still succeeds when the migration failed
+// due to cancellation of the original context.
+func (d *Driver) undoDirty(version int64, direction migrate.Direction) error {
+	d.logger.Debug(
+		"Undoing dirty marker after rollback",
+		slog.Int64("version", version),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	switch direction {
+	case migrate.Up:
+		query := "DELETE FROM " + d.ident + " WHERE version = $1 AND dirty"
+		if _, err := d.db.ExecContext(ctx, query, version); err != nil {
+			return fmt.Errorf("failed to delete dirty record: %w", err)
+		}
+	case migrate.Down:
+		query := "UPDATE " + d.ident + " SET dirty = false WHERE version = $1"
+		if _, err := d.db.ExecContext(ctx, query, version); err != nil {
+			return fmt.Errorf("failed to restore clean state: %w", err)
 		}
 	}
 	return nil

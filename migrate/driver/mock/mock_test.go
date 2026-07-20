@@ -297,6 +297,44 @@ func TestDriver_Execute(t *testing.T) {
 			},
 		},
 		{
+			name:    "up error transactional",
+			giveErr: errors.New("execute error"),
+			script: migrate.ParsedScript{
+				Version:   2,
+				Direction: migrate.Up,
+				Checksum:  [32]byte{4, 5, 6},
+				Tx:        true,
+			},
+			validate: func(t *testing.T, d *mock.Driver) {
+				t.Helper()
+				if _, ok := d.Get(2); ok {
+					t.Error("version 2 should not be recorded after rollback")
+				}
+			},
+		},
+		{
+			name: "down error transactional",
+			setup: func(d *mock.Driver) {
+				d.Set(migrate.Record{Version: 4, Dirty: false})
+			},
+			giveErr: errors.New("execute error"),
+			script: migrate.ParsedScript{
+				Version:   4,
+				Direction: migrate.Down,
+				Tx:        true,
+			},
+			validate: func(t *testing.T, d *mock.Driver) {
+				t.Helper()
+				rec, ok := d.Get(4)
+				if !ok {
+					t.Fatal("version 4 not found in the state")
+				}
+				if rec.Dirty {
+					t.Error("dirty flag: got true; want false after rollback")
+				}
+			},
+		},
+		{
 			name: "down success",
 			setup: func(d *mock.Driver) {
 				d.Set(migrate.Record{Version: 3})

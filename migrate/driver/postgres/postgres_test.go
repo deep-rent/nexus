@@ -316,16 +316,14 @@ func TestDriver_Execute_FailureRollback(t *testing.T) {
 		t.Error("execute: should have returned a syntax error")
 	}
 
-	// Verify the database state is marked as dirty
+	// A transactional migration rolls back cleanly, so no dirty record must
+	// remain that would force manual intervention.
 	applied, err := drv.Applied(ctx)
 	if err != nil {
 		t.Fatalf("applied: should not have returned an error: %v", err)
 	}
-	if got, want := len(applied), 1; got != want {
+	if got, want := len(applied), 0; got != want {
 		t.Fatalf("got applied size %d; want %d", got, want)
-	}
-	if !applied[0].Dirty {
-		t.Error("got dirty false; want true")
 	}
 
 	// Verify the table creation was rolled back
@@ -338,6 +336,45 @@ func TestDriver_Execute_FailureRollback(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("got count %d; want 0 (rolled back)", count)
+	}
+}
+
+func TestDriver_Execute_FailureNonTransactional(t *testing.T) {
+	db := setupDB(t)
+
+	drv := postgres.New(db)
+	ctx := context.Background()
+
+	if err := drv.Init(ctx); err != nil {
+		t.Fatalf("init: should not have returned an error: %v", err)
+	}
+
+	script := migrate.ParsedScript{
+		Version:   3,
+		Direction: migrate.Up,
+		Checksum:  sha256.Sum256([]byte("fail-notx")),
+		Statements: []string{
+			"CREATE TABLE comments (id INT PRIMARY KEY);",
+			"SYNTAX ERROR;",
+		},
+		Tx: false,
+	}
+
+	if err := drv.Execute(ctx, script); err == nil {
+		t.Error("execute: should have returned a syntax error")
+	}
+
+	// Without a transaction the first statement persisted, so the record
+	// must stay dirty to block further automated runs.
+	applied, err := drv.Applied(ctx)
+	if err != nil {
+		t.Fatalf("applied: should not have returned an error: %v", err)
+	}
+	if got, want := len(applied), 1; got != want {
+		t.Fatalf("got applied size %d; want %d", got, want)
+	}
+	if !applied[0].Dirty {
+		t.Error("got dirty false; want true")
 	}
 }
 

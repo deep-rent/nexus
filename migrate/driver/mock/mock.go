@@ -222,8 +222,10 @@ func (d *Driver) Force(ctx context.Context, version int64) error {
 
 // Execute simulates running a migration script.
 //
-// If [Driver.ExecuteErr] is set, it correctly simulates a failure by leaving
-// the target version in a dirty state.
+// If [Driver.ExecuteErr] is set, it simulates a failure: transactional
+// scripts roll back cleanly and leave no dirty state, while
+// non-transactional scripts leave the target version dirty, mirroring the
+// behavior of real drivers.
 func (d *Driver) Execute(
 	ctx context.Context,
 	script migrate.ParsedScript,
@@ -232,7 +234,13 @@ func (d *Driver) Execute(
 	defer d.mu.Unlock()
 
 	if d.ExecuteErr != nil {
-		// Simulate the dirty state left behind by a failed migration.
+		if script.Tx {
+			// A failed transactional migration rolls back and removes its
+			// dirty marker again.
+			return d.ExecuteErr
+		}
+		// Simulate the dirty state left behind by a failed non-transactional
+		// migration.
 		switch script.Direction {
 		case migrate.Up:
 			d.records[script.Version] = migrate.Record{
