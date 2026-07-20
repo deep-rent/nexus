@@ -64,7 +64,7 @@ func (t *limitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil || res == nil || res.Body == nil {
 		return res, err
 	}
-	res.Body = &limitedReader{
+	res.Body = &limitReader{
 		body: res.Body,
 		left: t.max,
 	}
@@ -73,9 +73,9 @@ func (t *limitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 var _ http.RoundTripper = (*limitTransport)(nil)
 
-// limitedReader wraps a response body and fails once more than left bytes have
+// limitReader wraps a response body and fails once more than left bytes have
 // been read from it.
-type limitedReader struct {
+type limitReader struct {
 	// body is the wrapped response body.
 	body io.ReadCloser
 	// left counts the bytes still admissible. It drops to -1 once the limit
@@ -86,7 +86,7 @@ type limitedReader struct {
 // Read implements [io.Reader]. It reads at most one byte beyond the remaining
 // allowance in order to distinguish a body that ends exactly at the limit from
 // one that overruns it.
-func (r *limitedReader) Read(p []byte) (int, error) {
+func (r *limitReader) Read(p []byte) (int, error) {
 	if r.left < 0 {
 		return 0, ErrBodyTooLarge
 	}
@@ -106,6 +106,6 @@ func (r *limitedReader) Read(p []byte) (int, error) {
 }
 
 // Close implements [io.Closer].
-func (r *limitedReader) Close() error { return r.body.Close() }
+func (r *limitReader) Close() error { return r.body.Close() }
 
-var _ io.ReadCloser = (*limitedReader)(nil)
+var _ io.ReadCloser = (*limitReader)(nil)
