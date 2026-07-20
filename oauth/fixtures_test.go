@@ -15,6 +15,7 @@
 package oauth
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"net/url"
@@ -77,23 +78,28 @@ var _ ClientStore = (*fakeClientStore)(nil)
 
 // fakeSubject is a minimal [Subject] implementation.
 type fakeSubject struct {
-	id    uuid.UUID
-	roles []string
+	id       uuid.UUID
+	username string
+	roles    []string
 }
 
-func (s *fakeSubject) ID() uuid.UUID   { return s.id }
-func (s *fakeSubject) Roles() []string { return s.roles }
+func (s *fakeSubject) ID() uuid.UUID    { return s.id }
+func (s *fakeSubject) Username() string { return s.username }
+func (s *fakeSubject) Roles() []string  { return s.roles }
 
 var _ Subject = (*fakeSubject)(nil)
 
 // fakeSubjectStore is an in-memory [SubjectStore].
 type fakeSubjectStore struct {
 	subjects  map[uuid.UUID]*fakeSubject
-	passwords map[string]string    // username -> password
-	usernames map[string]uuid.UUID // username -> subject ID
-	external  map[string]uuid.UUID // provider "/" external ID -> subject ID
-	sessions  map[string]uuid.UUID // session key -> subject ID
-	err       error
+	passwords map[string]string           // username -> password
+	usernames map[string]uuid.UUID        // username -> subject ID
+	external  map[string]uuid.UUID        // provider "/" external ID -> subject ID
+	sessions  map[string]uuid.UUID        // session key -> subject ID
+	factors   map[uuid.UUID]*SecondFactor // subject ID -> second factor
+	// credentials maps subject IDs to registered passkey credentials.
+	credentials map[uuid.UUID][]WebAuthnCredential
+	err         error
 }
 
 func newFakeSubjectStore() *fakeSubjectStore {
@@ -103,7 +109,60 @@ func newFakeSubjectStore() *fakeSubjectStore {
 		usernames: make(map[string]uuid.UUID),
 		external:  make(map[string]uuid.UUID),
 		sessions:  make(map[string]uuid.UUID),
+		factors:   make(map[uuid.UUID]*SecondFactor),
+		credentials: make(
+			map[uuid.UUID][]WebAuthnCredential,
+		),
 	}
+}
+
+func (s *fakeSubjectStore) GetWebAuthnCredentials(
+	_ context.Context,
+	subjectID uuid.UUID,
+) ([]WebAuthnCredential, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.credentials[subjectID], nil
+}
+
+func (s *fakeSubjectStore) CreateWebAuthnCredential(
+	_ context.Context,
+	subjectID uuid.UUID,
+	_ string,
+	credential WebAuthnCredential,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.credentials[subjectID] = append(s.credentials[subjectID], credential)
+	return nil
+}
+
+func (s *fakeSubjectStore) UpdateWebAuthnCredential(
+	_ context.Context,
+	subjectID uuid.UUID,
+	credential WebAuthnCredential,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	for i, c := range s.credentials[subjectID] {
+		if bytes.Equal(c.ID, credential.ID) {
+			s.credentials[subjectID][i] = credential
+		}
+	}
+	return nil
+}
+
+func (s *fakeSubjectStore) GetSecondFactor(
+	_ context.Context,
+	subjectID uuid.UUID,
+) (*SecondFactor, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.factors[subjectID], nil
 }
 
 func (s *fakeSubjectStore) Authenticate(
@@ -197,7 +256,10 @@ type fakeSessionStore struct {
 	authCodes     map[Digest]AuthCode
 	refreshTokens map[Digest]RefreshToken
 	deviceCodes   map[Digest]DeviceCode
-	err           error
+	otpChallenges map[Digest]OTPChallenge
+	// webAuthnSessions maps handle digests to pending ceremony sessions.
+	webAuthnSessions map[Digest]WebAuthnSession
+	err              error
 }
 
 func newFakeSessionStore() *fakeSessionStore {
@@ -205,7 +267,44 @@ func newFakeSessionStore() *fakeSessionStore {
 		authCodes:     make(map[Digest]AuthCode),
 		refreshTokens: make(map[Digest]RefreshToken),
 		deviceCodes:   make(map[Digest]DeviceCode),
+		otpChallenges: make(map[Digest]OTPChallenge),
+		webAuthnSessions: make(
+			map[Digest]WebAuthnSession,
+		),
 	}
+}
+
+func (s *fakeSessionStore) GetWebAuthnSession(
+	_ context.Context,
+	handle Digest,
+) (WebAuthnSession, error) {
+	if s.err != nil {
+		return WebAuthnSession{}, s.err
+	}
+	return s.webAuthnSessions[handle], nil
+}
+
+func (s *fakeSessionStore) CreateWebAuthnSession(
+	_ context.Context,
+	data WebAuthnSession,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.webAuthnSessions[data.Handle] = data
+	return nil
+}
+
+func (s *fakeSessionStore) DeleteWebAuthnSession(
+	_ context.Context,
+	handle Digest,
+) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	_, ok := s.webAuthnSessions[handle]
+	delete(s.webAuthnSessions, handle)
+	return ok, nil
 }
 
 func (s *fakeSessionStore) GetAuthCode(
@@ -345,6 +444,50 @@ func (s *fakeSessionStore) DeleteDeviceCode(
 	}
 	_, ok := s.deviceCodes[code]
 	delete(s.deviceCodes, code)
+	return ok, nil
+}
+
+func (s *fakeSessionStore) GetOTPChallenge(
+	_ context.Context,
+	challenge Digest,
+) (OTPChallenge, error) {
+	if s.err != nil {
+		return OTPChallenge{}, s.err
+	}
+	return s.otpChallenges[challenge], nil
+}
+
+func (s *fakeSessionStore) CreateOTPChallenge(
+	_ context.Context,
+	data OTPChallenge,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.otpChallenges[data.Challenge] = data
+	return nil
+}
+
+func (s *fakeSessionStore) UpdateOTPChallenge(
+	_ context.Context,
+	data OTPChallenge,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.otpChallenges[data.Challenge] = data
+	return nil
+}
+
+func (s *fakeSessionStore) DeleteOTPChallenge(
+	_ context.Context,
+	challenge Digest,
+) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	_, ok := s.otpChallenges[challenge]
+	delete(s.otpChallenges, challenge)
 	return ok, nil
 }
 

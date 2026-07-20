@@ -62,6 +62,41 @@
 //	// 4. Start serving.
 //	http.ListenAndServe(":8080", r)
 //
+// # Two-factor logins
+//
+// Password logins can be stepped up with a one-time password delivered over
+// SMS or email; see [WithSecondFactor]. When enabled, subjects that have
+// enrolled a [SecondFactor] receive an [OTPChallengeResponse] instead of a
+// session from the login endpoint and confirm the code via
+// [Server.VerifyOTP] (or request redelivery via [Server.ResendOTP]).
+// Delivery is abstracted by the otp package:
+//
+//	s := oauth.New(cfg,
+//	  oauth.WithGrant(oauth.AuthCodeGrant()),
+//	  oauth.WithSecondFactor(oauth.SecondFactorConfig{
+//	    SMS:  otp.NewSMSSender(smsSender, "+15551234567", ""),
+//	    Mail: otp.NewMailSender(mailSender, from, "template-id", ""),
+//	  }),
+//	)
+//
+// # Passkeys
+//
+// WebAuthn passkeys are supported both as a first-party web login and as a
+// direct token grant for native apps; see [WithWebAuthn]. Web clients run
+// the registration and login ceremonies against the /webauthn endpoints and
+// end up with the same session cookie as a password login, while native
+// apps exchange an assertion for tokens at the token endpoint using
+// [GrantTypeWebAuthn]:
+//
+//	s := oauth.New(cfg,
+//	  oauth.WithGrant(oauth.AuthCodeGrant()),
+//	  oauth.WithWebAuthn(oauth.WebAuthnConfig{
+//	    RPID:          "example.com",
+//	    RPDisplayName: "Example",
+//	    RPOrigins:     []string{"https://app.example.com"},
+//	  }),
+//	)
+//
 // # Operational notes
 //
 // The server issues stateless JWT access tokens; only refresh tokens can be
@@ -109,6 +144,11 @@ const (
 	GrantTypeRefreshToken GrantType = "refresh_token"
 	// GrantTypeDeviceCode refers to the Device Code grant.
 	GrantTypeDeviceCode GrantType = "urn:ietf:params:oauth:grant-type:device_code"
+	// GrantTypeWebAuthn refers to the custom WebAuthn grant, which exchanges
+	// a passkey assertion directly for tokens. It is not defined by any RFC;
+	// the URN follows the naming convention of RFC 8628 for extension
+	// grants.
+	GrantTypeWebAuthn GrantType = "urn:ietf:params:oauth:grant-type:webauthn"
 )
 
 // Client represents an OAuth 2.0 registered client application.
@@ -176,9 +216,41 @@ type ClientStore interface {
 type Subject interface {
 	// ID returns the unique identifier for the subject.
 	ID() uuid.UUID
+	// Username returns the unique, human-readable identifier the subject
+	// logs in with (e.g., an email address or handle). It labels the
+	// subject's account in contexts where the raw UUID would be meaningless
+	// to humans, such as the account picker of a passkey ceremony.
+	Username() string
 	// Roles returns the list of roles assigned to the subject, used to populate
 	// the roles claim in access tokens.
 	Roles() []string
+}
+
+// SecondFactorChannel identifies the side channel over which a one-time
+// password is delivered during a two-factor login.
+type SecondFactorChannel string
+
+const (
+	// SecondFactorChannelSMS delivers one-time passwords as text messages.
+	SecondFactorChannelSMS SecondFactorChannel = "sms"
+	// SecondFactorChannelEmail delivers one-time passwords via email.
+	SecondFactorChannelEmail SecondFactorChannel = "email"
+)
+
+// SecondFactor describes a subject's enrolled second authentication factor.
+//
+// It is returned by [SubjectStore.GetSecondFactor] and consumed by the
+// [Server] to decide whether a password login must be confirmed with a
+// one-time password, and where to deliver it. Enrollment itself (capturing
+// and verifying the destination) is application concern and happens outside
+// this package.
+type SecondFactor struct {
+	// Channel selects the delivery mechanism for one-time passwords.
+	Channel SecondFactorChannel
+	// Destination is the channel-specific address of the subject: a phone
+	// number in E.164 format for [SecondFactorChannelSMS], or an email
+	// address for [SecondFactorChannelEmail].
+	Destination string
 }
 
 // SubjectStore provides data access and authentication for resource owners.
@@ -196,6 +268,60 @@ type SubjectStore interface {
 		ctx context.Context,
 		username, password string,
 	) (Subject, error)
+	// GetSecondFactor retrieves the second authentication factor enrolled
+	// by the subject.
+	//
+	// If the subject has enrolled a second factor, it must return the
+	// factor and nil. If the subject is not enrolled (password alone
+	// completes the login), it must return nil and nil. It should return an
+	// error only if the storage lookup fails.
+	//
+	// The method is only consulted when the server was constructed with
+	// [WithSecondFactor]; implementations backing servers without two-factor
+	// support may simply return nil, nil.
+	GetSecondFactor(
+		ctx context.Context,
+		subjectID uuid.UUID,
+	) (*SecondFactor, error)
+	// GetWebAuthnCredentials retrieves all passkey credentials registered
+	// by the subject. An enrolled subject typically owns a handful; a
+	// subject without any yields an empty slice.
+	//
+	// It should return an error only if the storage lookup fails.
+	//
+	// The WebAuthn store methods are only consulted when the server was
+	// constructed with [WithWebAuthn]; implementations backing servers
+	// without passkey support may simply return zero values.
+	GetWebAuthnCredentials(
+		ctx context.Context,
+		subjectID uuid.UUID,
+	) ([]WebAuthnCredential, error)
+	// CreateWebAuthnCredential stores a newly registered passkey credential
+	// for the subject. The name is an optional human-readable label chosen
+	// by the subject (e.g., "MacBook Touch ID"); implementations may ignore
+	// it. Credentials are opaque records: implementations should persist
+	// them as-is (e.g., as a JSON blob keyed by [WebAuthnCredential.ID])
+	// and must not modify them.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateWebAuthnCredential(
+		ctx context.Context,
+		subjectID uuid.UUID,
+		name string,
+		credential WebAuthnCredential,
+	) error
+	// UpdateWebAuthnCredential replaces a stored passkey credential, keyed
+	// by [WebAuthnCredential.ID] and the owning subject. The [Server] calls
+	// it after every successful assertion to persist the updated signature
+	// counter and backup flags, which future assertions are validated
+	// against. Updating an absent credential is a no-op.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateWebAuthnCredential(
+		ctx context.Context,
+		subjectID uuid.UUID,
+		credential WebAuthnCredential,
+	) error
 	// GetSubject retrieves a subject by their unique ID.
 	//
 	// If the user is found, it must return the subject and nil.
@@ -230,8 +356,8 @@ type SubjectStore interface {
 }
 
 // Digest is the SHA-256 fingerprint of a bearer artifact (authorization
-// code, refresh token, device code, or user code), encoded as an unpadded
-// base64url string.
+// code, refresh token, device code, user code, OTP challenge, or one-time
+// password), encoded as an unpadded base64url string.
 //
 // The [Server] hashes every artifact before it crosses the [SessionStore]
 // boundary, so implementations never see plaintext bearer secrets: a leaked
@@ -346,6 +472,83 @@ type DeviceCode struct {
 	LastPolledAt int64 `json:"last_polled_at,omitzero"`
 }
 
+// OTPChallenge holds the state of a pending two-factor login: a password
+// that has been verified but still awaits confirmation by a one-time
+// password.
+//
+// The challenge is the client's handle for the pending login; the code is
+// the secret delivered to the subject over the side channel. Both are
+// digested before they reach the store. Challenges are short-lived (a few
+// minutes) and must be deleted after a single successful confirmation.
+//
+// A short numeric code is guessable by brute force, and its digest is
+// equally brute-forceable offline, so the digest is defense in depth rather
+// than protection: the effective safeguards are the expiry, the attempt
+// counter, and the server's throttling.
+type OTPChallenge struct {
+	// Challenge is the digest of the high-entropy handle issued to the
+	// client. The plaintext value never reaches the store.
+	Challenge Digest `json:"challenge"`
+	// SubjectID identifies the resource owner whose password has already
+	// been verified.
+	SubjectID uuid.UUID `json:"subject_id"`
+	// Code is the digest of the one-time password delivered to the subject.
+	// The plaintext value never reaches the store. It is replaced when the
+	// code is resent.
+	Code Digest `json:"code"`
+	// Attempts counts the failed confirmation attempts made against this
+	// challenge. The [Server] refuses further attempts once the configured
+	// maximum is reached.
+	Attempts int `json:"attempts,omitzero"`
+	// Resends counts how many times the code has been redelivered. The
+	// [Server] refuses further resends once the configured maximum is
+	// reached.
+	Resends int `json:"resends,omitzero"`
+	// ExpiresAt defines when this challenge expires, as a UNIX timestamp in
+	// seconds. Resending a code does not extend the expiry.
+	ExpiresAt int64 `json:"expires_at"`
+}
+
+// WebAuthnCeremony distinguishes the two kinds of WebAuthn ceremonies whose
+// state is tracked by a [WebAuthnSession].
+type WebAuthnCeremony string
+
+const (
+	// WebAuthnCeremonyRegistration marks the session of a credential
+	// registration (attestation) ceremony.
+	WebAuthnCeremonyRegistration WebAuthnCeremony = "registration"
+	// WebAuthnCeremonyLogin marks the session of an authentication
+	// (assertion) ceremony.
+	WebAuthnCeremonyLogin WebAuthnCeremony = "login"
+)
+
+// WebAuthnSession holds the server-side state of a WebAuthn ceremony
+// between its begin and finish steps, most importantly the challenge the
+// authenticator response must answer.
+//
+// The handle is the client's reference to the pending ceremony; the
+// serialized ceremony state is produced and consumed by the server and is
+// opaque to the store. Sessions are short-lived and must be deleted after a
+// single finish attempt, successful or not.
+type WebAuthnSession struct {
+	// Handle is the digest of the high-entropy handle issued to the client.
+	// The plaintext value never reaches the store.
+	Handle Digest `json:"handle"`
+	// Ceremony states which kind of ceremony this session belongs to. A
+	// session begun for one ceremony cannot finish another.
+	Ceremony WebAuthnCeremony `json:"ceremony"`
+	// SubjectID identifies the authenticated subject who began a
+	// registration ceremony. It remains the zero UUID for login ceremonies,
+	// where the subject is only discovered from the assertion itself.
+	SubjectID uuid.UUID `json:"subject_id,omitzero"`
+	// Data carries the serialized ceremony state. Implementations must
+	// persist it verbatim.
+	Data []byte `json:"data"`
+	// ExpiresAt defines when this session expires, as a UNIX timestamp in
+	// seconds.
+	ExpiresAt int64 `json:"expires_at"`
+}
+
 // SessionStore abstracts the persistence layer for ephemeral authorization
 // artifacts.
 //
@@ -433,6 +636,54 @@ type SessionStore interface {
 	//
 	// It should return an error only if the removal operation fails.
 	DeleteDeviceCode(ctx context.Context, code Digest) (bool, error)
+	// GetOTPChallenge retrieves a pending two-factor login challenge by its
+	// digest.
+	//
+	// If found, it must return the data and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetOTPChallenge(
+		ctx context.Context,
+		challenge Digest,
+	) (OTPChallenge, error)
+	// CreateOTPChallenge stores a new two-factor login challenge.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateOTPChallenge(ctx context.Context, data OTPChallenge) error
+	// UpdateOTPChallenge replaces the stored state of a challenge, keyed by
+	// [OTPChallenge.Challenge]. It is used to record failed attempts and
+	// code resends.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateOTPChallenge(ctx context.Context, data OTPChallenge) error
+	// DeleteOTPChallenge removes a challenge by its digest and reports
+	// whether it was present. Like [DeleteAuthCode], the deletion and the
+	// report must be atomic so that concurrent confirmation attempts cannot
+	// both succeed.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteOTPChallenge(ctx context.Context, challenge Digest) (bool, error)
+	// GetWebAuthnSession retrieves a pending WebAuthn ceremony session by
+	// its digest.
+	//
+	// If found, it must return the data and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetWebAuthnSession(
+		ctx context.Context,
+		handle Digest,
+	) (WebAuthnSession, error)
+	// CreateWebAuthnSession stores a new WebAuthn ceremony session.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateWebAuthnSession(ctx context.Context, data WebAuthnSession) error
+	// DeleteWebAuthnSession removes a session by its digest and reports
+	// whether it was present. Like [DeleteAuthCode], the deletion and the
+	// report must be atomic so that concurrent finish attempts cannot both
+	// succeed.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteWebAuthnSession(ctx context.Context, handle Digest) (bool, error)
 }
 
 const (
@@ -686,6 +937,59 @@ func (r *LoginRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*LoginRequest)(nil)
 
+// OTPChallengeResponse is the payload returned by the login endpoint when
+// the authenticated subject has a second factor enrolled, and by the resend
+// endpoint after a code has been redelivered.
+//
+// Instead of a session, the client receives a challenge handle. It must
+// prompt the resource owner for the one-time password delivered over the
+// indicated channel and confirm the login via [Server.VerifyOTP].
+type OTPChallengeResponse struct {
+	// Challenge is the opaque handle identifying the pending login. It is
+	// required to confirm or resend the one-time password.
+	Challenge string `json:"challenge"`
+	// Channel names the side channel the one-time password was sent over.
+	Channel SecondFactorChannel `json:"channel"`
+	// ExpiresIn is the remaining lifetime of the challenge in seconds.
+	ExpiresIn int64 `json:"expires_in"`
+}
+
+// OTPVerificationRequest represents the payload for the OTP verification
+// endpoint.
+//
+// It is consumed by [Server.VerifyOTP] to confirm a pending two-factor
+// login with the one-time password delivered to the resource owner.
+type OTPVerificationRequest struct {
+	// Challenge is the handle returned by the login endpoint.
+	Challenge string `json:"challenge"`
+	// Code is the one-time password received over the side channel.
+	Code string `json:"code"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *OTPVerificationRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("challenge", r.Challenge)
+	v.NotEmpty("code", r.Code)
+}
+
+var _ valid.Validatable = (*OTPVerificationRequest)(nil)
+
+// OTPResendRequest represents the payload for the OTP resend endpoint.
+//
+// It is consumed by [Server.ResendOTP] to redeliver the one-time password
+// for a pending two-factor login.
+type OTPResendRequest struct {
+	// Challenge is the handle returned by the login endpoint.
+	Challenge string `json:"challenge"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *OTPResendRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("challenge", r.Challenge)
+}
+
+var _ valid.Validatable = (*OTPResendRequest)(nil)
+
 const (
 	// DeviceVerificationApprove signals that the resource owner approves the
 	// pending device authorization request.
@@ -725,18 +1029,24 @@ var _ valid.Validatable = (*DeviceVerificationRequest)(nil)
 
 // Path constants define the specific endpoints managed by the [Server].
 const (
-	PathAuthorize           = "/authorize"
-	PathDeviceAuthorization = "/device_authorization"
-	PathDeviceVerify        = "/device"
-	PathExternalCallback    = "/callback/{provider}"
-	PathExternalLogin       = "/login/{provider}"
-	PathIntrospect          = "/introspect"
-	PathKeySet              = "/jwks.json"
-	PathLogin               = "/login"
-	PathLogout              = "/logout"
-	PathRevoke              = "/revoke"
-	PathToken               = "/token"
-	PathWellKnown           = "/.well-known/oauth-authorization-server"
+	PathAuthorize               = "/authorize"
+	PathDeviceAuthorization     = "/device_authorization"
+	PathDeviceVerify            = "/device"
+	PathExternalCallback        = "/callback/{provider}"
+	PathExternalLogin           = "/login/{provider}"
+	PathIntrospect              = "/introspect"
+	PathKeySet                  = "/jwks.json"
+	PathLogin                   = "/login"
+	PathLoginOTP                = "/login/otp"
+	PathLoginOTPResend          = "/login/otp/resend"
+	PathLogout                  = "/logout"
+	PathRevoke                  = "/revoke"
+	PathToken                   = "/token"
+	PathWebAuthnLogin           = "/webauthn/login"
+	PathWebAuthnLoginOptions    = "/webauthn/login/options"
+	PathWebAuthnRegister        = "/webauthn/register"
+	PathWebAuthnRegisterOptions = "/webauthn/register/options"
+	PathWellKnown               = "/.well-known/oauth-authorization-server"
 )
 
 // AuthorizationServerMetadata represents the OAuth 2.0 Authorization Server
@@ -764,6 +1074,7 @@ const (
 	scopeClient = "client:"
 	scopeUser   = "user:"
 	scopeCode   = "code:"
+	scopeOTP    = "otp:"
 )
 
 // VerifyRedirectURI checks a URI against a list of wildcard patterns.
@@ -924,6 +1235,18 @@ func GenerateDeviceCode(context.Context) (string, error) {
 // GenerateState returns a random 43-character, base64url-encoded string
 // for use as a state parameter.
 func GenerateState(context.Context) (string, error) {
+	return opaque()
+}
+
+// GenerateOTPChallenge returns a random 43-character, base64url-encoded
+// string for use as the handle of a pending two-factor login.
+func GenerateOTPChallenge(context.Context) (string, error) {
+	return opaque()
+}
+
+// GenerateWebAuthnHandle returns a random 43-character, base64url-encoded
+// string for use as the handle of a pending WebAuthn ceremony.
+func GenerateWebAuthnHandle(context.Context) (string, error) {
 	return opaque()
 }
 

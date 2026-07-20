@@ -33,6 +33,14 @@ import (
 // generates a high-entropy session key, stores it via [SubjectStore], and sets
 // a secure session cookie on the user-agent.
 //
+// When two-factor logins are enabled via [WithSecondFactor] and the subject
+// has a [SecondFactor] enrolled, a verified password alone does not
+// establish a session. The endpoint instead delivers a one-time password
+// over the enrolled channel and responds 200 with an
+// [OTPChallengeResponse]; the client completes the login via
+// [Server.VerifyOTP]. Clients therefore have to distinguish a 204 (session
+// established) from a 200 (confirmation pending) response.
+//
 // Note: When calling this endpoint from a cross-origin frontend (e.g., an SPA),
 // the CORS middleware must be configured with AllowCredentials set to true,
 // and AllowOrigin must not be a wildcard ("*").
@@ -72,6 +80,20 @@ func (s *Server) Login(e *router.Exchange) error {
 
 	// The password is proven; drop any penalty from earlier attempts.
 	s.clear(userKey)
+
+	// A subject with an enrolled second factor must confirm the login with
+	// a one-time password before a session is established.
+	if s.otp != nil {
+		sf, err := s.subjects.GetSecondFactor(e.Context(), sub.ID())
+		if err != nil {
+			return router.ServerError("failed to lookup second factor",
+				err,
+			)
+		}
+		if sf != nil {
+			return s.beginOTPChallenge(e, sub, sf)
+		}
+	}
 
 	if err := s.establishSession(e, sub); err != nil {
 		return err

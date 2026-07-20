@@ -16,6 +16,7 @@ package oauth
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,7 @@ import (
 	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/otp"
 	"github.com/deep-rent/nexus/pkce"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/throttle"
@@ -134,35 +136,40 @@ type Config struct {
 // Create instances with [New] and attach them to a router via
 // [Server.Mount].
 type Server struct {
-	grants               map[GrantType]Grant
-	idps                 map[string]IdentityProvider
-	vault                vault.Vault
-	clients              ClientStore
-	sessions             SessionStore
-	subjects             SubjectStore
-	introspector         jwt.Verifier[*auth.Claims]
-	issuer               string
-	sessionCookieName    string
-	stateCookieName      string
-	accessTokenLifetime  time.Duration
-	refreshTokenLifetime time.Duration
-	authCodeLifetime     time.Duration
-	deviceCodeLifetime   time.Duration
-	devicePollInterval   time.Duration
-	realm                string
-	loginTerminalURI     string
-	loginRedirectURI     string
-	generateSessionKey   TokenGeneratorFn
-	generateAuthCode     TokenGeneratorFn
-	generateRefreshToken TokenGeneratorFn
-	generateDeviceCode   TokenGeneratorFn
-	generateUserCode     TokenGeneratorFn
-	generateState        TokenGeneratorFn
-	verificationURI      string
-	throttle             *throttle.Throttle
-	throttlePenalty      int
-	logger               *slog.Logger
-	clock                func() time.Time
+	grants                 map[GrantType]Grant
+	idps                   map[string]IdentityProvider
+	vault                  vault.Vault
+	clients                ClientStore
+	sessions               SessionStore
+	subjects               SubjectStore
+	introspector           jwt.Verifier[*auth.Claims]
+	issuer                 string
+	sessionCookieName      string
+	stateCookieName        string
+	accessTokenLifetime    time.Duration
+	refreshTokenLifetime   time.Duration
+	authCodeLifetime       time.Duration
+	deviceCodeLifetime     time.Duration
+	devicePollInterval     time.Duration
+	realm                  string
+	loginTerminalURI       string
+	loginRedirectURI       string
+	generateSessionKey     TokenGeneratorFn
+	generateAuthCode       TokenGeneratorFn
+	generateRefreshToken   TokenGeneratorFn
+	generateDeviceCode     TokenGeneratorFn
+	generateUserCode       TokenGeneratorFn
+	generateState          TokenGeneratorFn
+	generateOTPChallenge   TokenGeneratorFn
+	generateOTPCode        TokenGeneratorFn
+	generateWebAuthnHandle TokenGeneratorFn
+	verificationURI        string
+	otp                    *secondFactor
+	webauthn               *webAuthnSupport
+	throttle               *throttle.Throttle
+	throttlePenalty        int
+	logger                 *slog.Logger
+	clock                  func() time.Time
 }
 
 // Option customizes a [Server] during construction with [New].
@@ -219,6 +226,23 @@ func WithUserCodeGenerator(fn TokenGeneratorFn) Option {
 // WithStateGenerator overrides [GenerateState].
 func WithStateGenerator(fn TokenGeneratorFn) Option {
 	return func(s *Server) { s.generateState = fn }
+}
+
+// WithOTPChallengeGenerator overrides [GenerateOTPChallenge].
+func WithOTPChallengeGenerator(fn TokenGeneratorFn) Option {
+	return func(s *Server) { s.generateOTPChallenge = fn }
+}
+
+// WithOTPCodeGenerator overrides the one-time password generator. The
+// default draws a uniformly random numeric code of the length configured
+// via [SecondFactorConfig.CodeLength]; see [otp.Generate].
+func WithOTPCodeGenerator(fn TokenGeneratorFn) Option {
+	return func(s *Server) { s.generateOTPCode = fn }
+}
+
+// WithWebAuthnHandleGenerator overrides [GenerateWebAuthnHandle].
+func WithWebAuthnHandleGenerator(fn TokenGeneratorFn) Option {
+	return func(s *Server) { s.generateWebAuthnHandle = fn }
 }
 
 // New assembles a [Server] from the given configuration and options.
@@ -291,17 +315,19 @@ func New(cfg Config, opts ...Option) *Server {
 			cfg.DevicePollInterval,
 			DefaultDevicePollInterval,
 		),
-		realm:                cmp.Or(cfg.Realm, DefaultRealm),
-		loginTerminalURI:     cfg.LoginTerminalURI,
-		loginRedirectURI:     cfg.LoginRedirectURI,
-		verificationURI:      cfg.VerificationURI,
-		generateSessionKey:   GenerateSessionKey,
-		generateAuthCode:     GenerateAuthCode,
-		generateRefreshToken: GenerateRefreshToken,
-		generateDeviceCode:   GenerateDeviceCode,
-		generateUserCode:     GenerateUserCode,
-		generateState:        GenerateState,
-		throttle:             cfg.Throttle,
+		realm:                  cmp.Or(cfg.Realm, DefaultRealm),
+		loginTerminalURI:       cfg.LoginTerminalURI,
+		loginRedirectURI:       cfg.LoginRedirectURI,
+		verificationURI:        cfg.VerificationURI,
+		generateSessionKey:     GenerateSessionKey,
+		generateAuthCode:       GenerateAuthCode,
+		generateRefreshToken:   GenerateRefreshToken,
+		generateDeviceCode:     GenerateDeviceCode,
+		generateUserCode:       GenerateUserCode,
+		generateState:          GenerateState,
+		generateOTPChallenge:   GenerateOTPChallenge,
+		generateWebAuthnHandle: GenerateWebAuthnHandle,
+		throttle:               cfg.Throttle,
 		throttlePenalty: cmp.Or(
 			cfg.ThrottlePenalty,
 			DefaultThrottlePenalty,
@@ -322,6 +348,17 @@ func New(cfg Config, opts ...Option) *Server {
 		)
 	}
 
+	// The default one-time password generator depends on the configured
+	// code length, so it is resolved only after all options have been
+	// applied. An explicit [WithOTPCodeGenerator] always wins, regardless
+	// of option order.
+	if s.otp != nil && s.generateOTPCode == nil {
+		length := s.otp.codeLength
+		s.generateOTPCode = func(context.Context) (string, error) {
+			return otp.Generate(length)
+		}
+	}
+
 	s.introspector = jwt.NewVerifier[*auth.Claims](
 		s.vault.Keys(),
 		jwt.WithIssuers(s.issuer),
@@ -340,8 +377,11 @@ func (s *Server) Supports(grant GrantType) bool {
 // Mount registers all endpoints of the server below the given path prefix.
 //
 // The device authorization endpoints are only registered when a verification
-// URI has been configured, and the external login endpoints only when at
-// least one identity provider is registered.
+// URI has been configured, the external login endpoints only when at least
+// one identity provider is registered, the OTP verification and resend
+// endpoints only when two-factor logins are enabled via [WithSecondFactor],
+// and the WebAuthn endpoints only when passkey support is enabled via
+// [WithWebAuthn].
 //
 // When [Config.Throttle] is set, every endpoint that verifies a credential
 // — the token, revocation, introspection, login, device authorization, and
@@ -379,6 +419,42 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 	)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogin, s.Login, guarded...)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogout, s.Logout)
+
+	if s.otp != nil {
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathLoginOTP,
+			s.VerifyOTP,
+			guarded...,
+		)
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathLoginOTPResend,
+			s.ResendOTP,
+			guarded...,
+		)
+	}
+
+	if s.webauthn != nil {
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathWebAuthnRegisterOptions,
+			s.WebAuthnRegisterOptions,
+			guarded...,
+		)
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathWebAuthnRegister,
+			s.WebAuthnRegister,
+			guarded...,
+		)
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathWebAuthnLoginOptions,
+			s.WebAuthnLoginOptions,
+			guarded...,
+		)
+		r.HandleFunc(
+			http.MethodPost+" "+prefix+PathWebAuthnLogin,
+			s.WebAuthnLogin,
+			guarded...,
+		)
+	}
 
 	if s.verificationURI != "" {
 		r.HandleFunc(

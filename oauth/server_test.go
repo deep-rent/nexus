@@ -96,8 +96,9 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 			scopes:    []string{"read"},
 		},
 		subject: &fakeSubject{
-			id:    uuid.New(),
-			roles: []string{"admin"},
+			id:       uuid.New(),
+			username: "alice",
+			roles:    []string{"admin"},
 		},
 	}
 
