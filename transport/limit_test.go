@@ -1,4 +1,18 @@
-package transport
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package transport_test
 
 import (
 	"errors"
@@ -6,23 +20,42 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/deep-rent/nexus/transport"
 )
 
 // stubTripper returns a canned response carrying the given body.
 type stubTripper struct {
 	body string
-	nil  bool // return a response without a body
+	// bodyless makes the stub return a response without a body.
+	bodyless bool
+	// closed records whether the response body was closed.
+	closed bool
 }
 
 func (s *stubTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	res := &http.Response{StatusCode: http.StatusOK}
-	if !s.nil {
-		res.Body = io.NopCloser(strings.NewReader(s.body))
+	if !s.bodyless {
+		res.Body = &closeTracker{
+			Reader: strings.NewReader(s.body),
+			closed: &s.closed,
+		}
 	}
 	return res, nil
 }
 
-// roundTrip sends a request through rt and returns the response body.
+// closeTracker records whether Close was called.
+type closeTracker struct {
+	io.Reader
+	closed *bool
+}
+
+func (c *closeTracker) Close() error {
+	*c.closed = true
+	return nil
+}
+
+// roundTrip sends a request through rt and returns the response.
 func roundTrip(t *testing.T, rt http.RoundTripper) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
@@ -38,7 +71,7 @@ func roundTrip(t *testing.T, rt http.RoundTripper) *http.Response {
 
 func TestNewLimitTransport_UnderLimit(t *testing.T) {
 	const body = "hello"
-	rt := NewLimitTransport(&stubTripper{body: body}, 1024)
+	rt := transport.NewLimitTransport(&stubTripper{body: body}, 1024)
 
 	res := roundTrip(t, rt)
 	got, err := io.ReadAll(res.Body)
@@ -52,7 +85,7 @@ func TestNewLimitTransport_UnderLimit(t *testing.T) {
 
 func TestNewLimitTransport_AtLimit(t *testing.T) {
 	const body = "hello"
-	rt := NewLimitTransport(&stubTripper{body: body}, int64(len(body)))
+	rt := transport.NewLimitTransport(&stubTripper{body: body}, int64(len(body)))
 
 	res := roundTrip(t, rt)
 	got, err := io.ReadAll(res.Body)
@@ -66,13 +99,13 @@ func TestNewLimitTransport_AtLimit(t *testing.T) {
 
 func TestNewLimitTransport_OverLimit(t *testing.T) {
 	const body = "hello world"
-	rt := NewLimitTransport(&stubTripper{body: body}, 5)
+	rt := transport.NewLimitTransport(&stubTripper{body: body}, 5)
 
 	res := roundTrip(t, rt)
 	got, err := io.ReadAll(res.Body)
 
-	if !errors.Is(err, ErrBodyTooLarge) {
-		t.Fatalf("error: got %v; want %v", err, ErrBodyTooLarge)
+	if !errors.Is(err, transport.ErrBodyTooLarge) {
+		t.Fatalf("error: got %v; want %v", err, transport.ErrBodyTooLarge)
 	}
 	// The error must not be mistakable for a clean end of input.
 	if errors.Is(err, io.EOF) {
@@ -85,19 +118,24 @@ func TestNewLimitTransport_OverLimit(t *testing.T) {
 }
 
 func TestNewLimitTransport_OverLimitIsSticky(t *testing.T) {
-	rt := NewLimitTransport(&stubTripper{body: "hello world"}, 5)
+	rt := transport.NewLimitTransport(&stubTripper{body: "hello world"}, 5)
 
 	res := roundTrip(t, rt)
-	if _, err := io.ReadAll(res.Body); !errors.Is(err, ErrBodyTooLarge) {
-		t.Fatalf("error: got %v; want %v", err, ErrBodyTooLarge)
+	if _, err := io.ReadAll(res.Body); !errors.Is(
+		err, transport.ErrBodyTooLarge,
+	) {
+		t.Fatalf("error: got %v; want %v", err, transport.ErrBodyTooLarge)
 	}
 
 	// Every subsequent read must keep failing rather than resuming.
 	buf := make([]byte, 8)
 	for i := range 3 {
 		n, err := res.Body.Read(buf)
-		if !errors.Is(err, ErrBodyTooLarge) {
-			t.Errorf("read %d: error got %v; want %v", i, err, ErrBodyTooLarge)
+		if !errors.Is(err, transport.ErrBodyTooLarge) {
+			t.Errorf(
+				"read %d: error got %v; want %v",
+				i, err, transport.ErrBodyTooLarge,
+			)
 		}
 		if n != 0 {
 			t.Errorf("read %d: got %d bytes; want 0", i, n)
@@ -108,7 +146,7 @@ func TestNewLimitTransport_OverLimitIsSticky(t *testing.T) {
 func TestNewLimitTransport_SmallReads(t *testing.T) {
 	// Reading through a buffer smaller than the limit must accumulate the
 	// bytes consumed rather than resetting the allowance per call.
-	rt := NewLimitTransport(&stubTripper{body: "abcdefghij"}, 4)
+	rt := transport.NewLimitTransport(&stubTripper{body: "abcdefghij"}, 4)
 
 	res := roundTrip(t, rt)
 
@@ -121,8 +159,8 @@ func TestNewLimitTransport_SmallReads(t *testing.T) {
 		got = append(got, buf[:n]...)
 	}
 
-	if !errors.Is(err, ErrBodyTooLarge) {
-		t.Fatalf("error: got %v; want %v", err, ErrBodyTooLarge)
+	if !errors.Is(err, transport.ErrBodyTooLarge) {
+		t.Fatalf("error: got %v; want %v", err, transport.ErrBodyTooLarge)
 	}
 	if want := "abcd"; string(got) != want {
 		t.Errorf("body: got %q; want %q", got, want)
@@ -132,14 +170,14 @@ func TestNewLimitTransport_SmallReads(t *testing.T) {
 func TestNewLimitTransport_Disabled(t *testing.T) {
 	next := &stubTripper{body: "hello"}
 	for _, max := range []int64{0, -1} {
-		if rt := NewLimitTransport(next, max); rt != next {
+		if rt := transport.NewLimitTransport(next, max); rt != next {
 			t.Errorf("max %d: expected next to be returned unwrapped", max)
 		}
 	}
 }
 
 func TestNewLimitTransport_NilBody(t *testing.T) {
-	rt := NewLimitTransport(&stubTripper{nil: true}, 8)
+	rt := transport.NewLimitTransport(&stubTripper{bodyless: true}, 8)
 
 	res := roundTrip(t, rt)
 	if res.Body != nil {
@@ -148,74 +186,65 @@ func TestNewLimitTransport_NilBody(t *testing.T) {
 }
 
 func TestNewLimitTransport_Close(t *testing.T) {
-	var closed bool
-	body := &closeTracker{
-		Reader: strings.NewReader("hello"),
-		closed: &closed,
-	}
-	lb := &limitedReader{body: body, left: 8}
+	next := &stubTripper{body: "hello"}
+	rt := transport.NewLimitTransport(next, 8)
 
-	if err := lb.Close(); err != nil {
+	res := roundTrip(t, rt)
+	if err := res.Body.Close(); err != nil {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
-	if !closed {
+	if !next.closed {
 		t.Error("expected the underlying body to be closed")
 	}
-}
-
-// closeTracker records whether Close was called.
-type closeTracker struct {
-	io.Reader
-	closed *bool
-}
-
-func (c *closeTracker) Close() error {
-	*c.closed = true
-	return nil
 }
 
 func TestNew_LimitsResponseBodyByDefault(t *testing.T) {
 	// Consumers rely on bodies being capped without opting in, so the limiter
 	// must be part of the default stack.
-	lt, ok := New().(*limitTransport)
+	rt := transport.New()
+	next, max, ok := transport.Unwrap(rt)
 	if !ok {
-		t.Fatalf("expected transport to be *limitTransport, got %T", New())
+		t.Fatalf("expected transport to be limited, got %T", rt)
 	}
-	if exp, act := int64(DefaultMaxResponseBytes), lt.max; exp != act {
-		t.Errorf("max: got %d; want %d", act, exp)
+	if exp := int64(transport.DefaultMaxResponseBytes); exp != max {
+		t.Errorf("max: got %d; want %d", max, exp)
 	}
 
 	// The limiter must sit innermost so that the intermediate responses seen
 	// by the retry transport are capped too.
-	if _, ok := lt.next.(*http.Transport); !ok {
-		t.Errorf("expected limiter to wrap *http.Transport, got %T", lt.next)
+	if _, ok := next.(*http.Transport); !ok {
+		t.Errorf("expected limiter to wrap *http.Transport, got %T", next)
 	}
 }
 
 func TestNew_MaxResponseBytes(t *testing.T) {
-	lt, ok := New(WithMaxResponseBytes(64)).(*limitTransport)
+	_, max, ok := transport.Unwrap(transport.New(
+		transport.WithMaxResponseBytes(64),
+	))
 	if !ok {
-		t.Fatal("expected transport to be *limitTransport")
+		t.Fatal("expected transport to be limited")
 	}
-	if exp, act := int64(64), lt.max; exp != act {
-		t.Errorf("max: got %d; want %d", act, exp)
+	if exp := int64(64); exp != max {
+		t.Errorf("max: got %d; want %d", max, exp)
 	}
 
 	// A nonpositive limit disables capping entirely.
-	if _, ok := New(WithMaxResponseBytes(0)).(*limitTransport); ok {
+	if _, _, ok := transport.Unwrap(transport.New(
+		transport.WithMaxResponseBytes(0),
+	)); ok {
 		t.Error("expected a zero limit to disable capping")
 	}
 }
 
 func TestDefaultClient_LimitsResponseBody(t *testing.T) {
-	lt, ok := DefaultClient.Transport.(*limitTransport)
+	_, max, ok := transport.Unwrap(transport.DefaultClient.Transport)
 	if !ok {
 		t.Fatalf(
 			"expected DefaultClient to cap bodies, got %T",
-			DefaultClient.Transport,
+			transport.DefaultClient.Transport,
 		)
 	}
-	if exp, act := int64(DefaultMaxResponseBytes), lt.max; exp != act {
-		t.Errorf("max: got %d; want %d", act, exp)
+	if exp := int64(transport.DefaultMaxResponseBytes); exp != max {
+		t.Errorf("max: got %d; want %d", max, exp)
 	}
 }

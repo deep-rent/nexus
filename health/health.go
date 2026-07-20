@@ -114,7 +114,7 @@ type Result struct {
 	// Error contains a descriptive error message if the check failed.
 	Error string `json:"error,omitempty"`
 	// Timestamp records when this check was actually executed.
-	Timestamp int64 `json:"timestamp"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // Report represents the aggregated outcome of all registered health checks.
@@ -142,15 +142,13 @@ type check struct {
 	mu sync.RWMutex
 	// last is the most recently recorded [Result].
 	last Result
-	// lastRun tracks the precise time the check was last executed for TTL purposes.
-	lastRun time.Time
 }
 
 // run executes the check or returns the cached result if the TTL hasn't
 // expired. It protects against panics in the callback.
 func (c *check) run(ctx context.Context) (res Result) {
 	c.mu.RLock()
-	if !c.lastRun.IsZero() && time.Since(c.lastRun) < c.ttl {
+	if !c.last.Timestamp.IsZero() && time.Since(c.last.Timestamp) < c.ttl {
 		res := c.last
 		c.mu.RUnlock()
 		return res
@@ -160,19 +158,17 @@ func (c *check) run(ctx context.Context) (res Result) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Double-check the cache after acquiring the write lock.
-	if !c.lastRun.IsZero() && time.Since(c.lastRun) < c.ttl {
+	if !c.last.Timestamp.IsZero() && time.Since(c.last.Timestamp) < c.ttl {
 		return c.last
 	}
 
 	defer func() {
 		if r := recover(); r != nil {
-			now := time.Now()
 			c.last = Result{
 				Status:    StatusSick,
 				Error:     fmt.Sprintf("health check panicked: %v", r),
-				Timestamp: now.Unix(),
+				Timestamp: time.Now(),
 			}
-			c.lastRun = now
 			res = c.last
 		}
 	}()
@@ -188,13 +184,11 @@ func (c *check) run(ctx context.Context) (res Result) {
 		}
 	}
 
-	now := time.Now()
 	c.last = Result{
 		Status:    status,
 		Error:     msg,
-		Timestamp: now.Unix(),
+		Timestamp: time.Now(),
 	}
-	c.lastRun = now
 	return c.last
 }
 

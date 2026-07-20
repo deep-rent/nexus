@@ -1,3 +1,17 @@
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package transport_test
 
 import (
@@ -14,13 +28,17 @@ import (
 	"github.com/deep-rent/nexus/transport"
 )
 
-// base unwraps the response body limiter applied by [New] and returns the
-// underlying [http.Transport].
+// base unwraps the response body limiter applied by [transport.New] and
+// returns the underlying [http.Transport].
 func base(t *testing.T, rt http.RoundTripper) *http.Transport {
 	t.Helper()
-	tr, ok := lt.next.(*http.Transport)
+	next, _, ok := transport.Unwrap(rt)
 	if !ok {
-		t.Fatalf("expected transport to be *http.Transport, got %T", lt.next)
+		t.Fatalf("expected transport to be limited, got %T", rt)
+	}
+	tr, ok := next.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected transport to be *http.Transport, got %T", next)
 	}
 	return tr
 }
@@ -102,27 +120,27 @@ func TestNew_WithOptions(t *testing.T) {
 		return nil, nil
 	}
 
-	rt := New(
-		WithDialTimeout(15*time.Second),
-		WithKeepAlive(16*time.Second),
-		WithTLSHandshakeTimeout(17*time.Second),
-		WithExpectContinueTimeout(18*time.Second),
-		WithIdleConnTimeout(19*time.Second),
-		WithTLSConfig(tlsCfg),
-		WithDisableKeepAlives(true),
-		WithForceAttemptHTTP2(true),
-		WithMaxIdleConns(200),
-		WithMaxIdleConnsPerHost(50),
-		WithDisableCompression(true),
-		WithMaxConnsPerHost(60),
-		WithResponseHeaderTimeout(20*time.Second),
-		WithMaxResponseHeaderBytes(1024),
-		WithWriteBufferSize(2048),
-		WithReadBufferSize(4096),
-		WithHTTP2Config(http2Cfg),
-		WithProtocols(protocols),
-		WithProxy(proxy),
-		WithDialContext(dialer),
+	rt := transport.New(
+		transport.WithDialTimeout(15*time.Second),
+		transport.WithKeepAlive(16*time.Second),
+		transport.WithTLSHandshakeTimeout(17*time.Second),
+		transport.WithExpectContinueTimeout(18*time.Second),
+		transport.WithIdleConnTimeout(19*time.Second),
+		transport.WithTLSConfig(tlsCfg),
+		transport.WithDisableKeepAlives(true),
+		transport.WithForceAttemptHTTP2(true),
+		transport.WithMaxIdleConns(200),
+		transport.WithMaxIdleConnsPerHost(50),
+		transport.WithDisableCompression(true),
+		transport.WithMaxConnsPerHost(60),
+		transport.WithResponseHeaderTimeout(20*time.Second),
+		transport.WithMaxResponseHeaderBytes(1024),
+		transport.WithWriteBufferSize(2048),
+		transport.WithReadBufferSize(4096),
+		transport.WithHTTP2Config(http2Cfg),
+		transport.WithProtocols(protocols),
+		transport.WithProxy(proxy),
+		transport.WithDialContext(dialer),
 	)
 
 	tr := base(t, rt)
@@ -204,19 +222,19 @@ func TestNew_WithOptions(t *testing.T) {
 }
 
 func TestNew_WithNegativeOptions(t *testing.T) {
-	rt := New(
-		WithDialTimeout(-1*time.Second),
-		WithKeepAlive(-1*time.Second),
-		WithTLSHandshakeTimeout(-1*time.Second),
-		WithExpectContinueTimeout(-1*time.Second),
-		WithIdleConnTimeout(-1*time.Second),
-		WithMaxIdleConns(-200),
-		WithMaxIdleConnsPerHost(-50),
-		WithMaxConnsPerHost(-60),
-		WithResponseHeaderTimeout(-20*time.Second),
-		WithMaxResponseHeaderBytes(-1024),
-		WithWriteBufferSize(-2048),
-		WithReadBufferSize(-4096),
+	rt := transport.New(
+		transport.WithDialTimeout(-1*time.Second),
+		transport.WithKeepAlive(-1*time.Second),
+		transport.WithTLSHandshakeTimeout(-1*time.Second),
+		transport.WithExpectContinueTimeout(-1*time.Second),
+		transport.WithIdleConnTimeout(-1*time.Second),
+		transport.WithMaxIdleConns(-200),
+		transport.WithMaxIdleConnsPerHost(-50),
+		transport.WithMaxConnsPerHost(-60),
+		transport.WithResponseHeaderTimeout(-20*time.Second),
+		transport.WithMaxResponseHeaderBytes(-1024),
+		transport.WithWriteBufferSize(-2048),
+		transport.WithReadBufferSize(-4096),
 	)
 
 	tr := base(t, rt)
@@ -243,10 +261,10 @@ func TestNew_WithNegativeOptions(t *testing.T) {
 }
 
 func TestNew_WithHeadersAndRetry(t *testing.T) {
-	rt := New(
-		WithHeader(header.New("X-Test", "true")),
-		WithRetry(retry.WithAttemptLimit(3)),
-		WithUserAgent("my-agent/1.0"),
+	rt := transport.New(
+		transport.WithHeader(header.New("X-Test", "true")),
+		transport.WithRetry(retry.WithAttemptLimit(3)),
+		transport.WithUserAgent("my-agent/1.0"),
 	)
 
 	if _, ok := rt.(*http.Transport); ok {
@@ -255,15 +273,15 @@ func TestNew_WithHeadersAndRetry(t *testing.T) {
 }
 
 func TestNewClient_Timeout(t *testing.T) {
-	clientA := NewClient(10 * time.Second) // Positive
+	clientA := transport.NewClient(10 * time.Second) // Positive
 	if exp, act := 10*time.Second, clientA.Timeout; exp != act {
 		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
-	clientB := NewClient(0) // Zero
+	clientB := transport.NewClient(0) // Zero
 	if exp, act := 5*time.Second, clientB.Timeout; exp != act {
 		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
-	clientC := NewClient(-1 * time.Second) // Negative
+	clientC := transport.NewClient(-1 * time.Second) // Negative
 	if exp, act := 5*time.Second, clientC.Timeout; exp != act {
 		t.Errorf("expected timeout to be %v, got %v", exp, act)
 	}
