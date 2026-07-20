@@ -211,7 +211,7 @@ func TestRateLimitFunc(t *testing.T) {
 		if got, want := re.Status, http.StatusTooManyRequests; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
 		}
-		if got, want := re.Reason, "rate_limit_exceeded"; got != want {
+		if got, want := re.Reason, router.ReasonRateLimit; got != want {
 			t.Errorf("reason: got %q; want %q", got, want)
 		}
 		if got := rec2.Header().Get("Retry-After"); got == "" {
