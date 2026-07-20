@@ -135,14 +135,14 @@ func TestMonitor_Ready(t *testing.T) {
 
 			now := time.Now()
 			for name, res := range rep.Checks {
-				if res.Timestamp.Time.IsZero() {
+				if res.Timestamp == 0 {
 					t.Errorf(
 						"timestamp for check %q is zero; want non-zero",
 						name,
 					)
 				}
 
-				diff := now.Sub(res.Timestamp.Time)
+				diff := now.Sub(time.Unix(res.Timestamp, 0))
 				if diff < 0 {
 					diff = -diff
 				}
@@ -150,7 +150,7 @@ func TestMonitor_Ready(t *testing.T) {
 					t.Errorf(
 						"for check %q: got timestamp %v; want within 2s of %v",
 						name,
-						res.Timestamp.Time,
+						time.Unix(res.Timestamp, 0),
 						now,
 					)
 				}
