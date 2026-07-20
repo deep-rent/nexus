@@ -197,7 +197,11 @@ func TestPenalize_ClampsToBurst(t *testing.T) {
 	// A full-burst deficit against a drained bucket needs Burst seconds at one
 	// token per second, not a thousand.
 	if want := 4 * time.Second; wait > want {
-		t.Errorf("got wait %v; want at most %v (charge was not clamped)", wait, want)
+		t.Errorf(
+			"got wait %v; want at most %v (charge was not clamped)",
+			wait,
+			want,
+		)
 	}
 }
 

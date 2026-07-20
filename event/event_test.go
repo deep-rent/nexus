@@ -489,7 +489,6 @@ func TestBus_ConcurrentSubUnsub(t *testing.T) {
 
 	for range subscribers {
 		sub.Go(func() {
-
 			// Waiting for a delivery beats sleeping for a fixed window: under
 			// load a subscriber can legitimately see nothing for a few
 			// milliseconds, which used to fail this test spuriously.

@@ -305,7 +305,7 @@ func ISSN(s string) bool {
 		return false
 	}
 	var sum int
-	var weight = 8
+	weight := 8
 	for i := range 8 {
 		if i == 4 {
 			continue

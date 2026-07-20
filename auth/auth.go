@@ -59,6 +59,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/header"

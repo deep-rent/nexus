@@ -413,8 +413,10 @@ func TestErr_Key(t *testing.T) {
 	}
 
 	if log.ErrorKey != "error" {
-		t.Errorf("ErrorKey changed to %q; call sites and dashboards depend on it",
-			log.ErrorKey)
+		t.Errorf(
+			"ErrorKey changed to %q; call sites and dashboards depend on it",
+			log.ErrorKey,
+		)
 	}
 }
 

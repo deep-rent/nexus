@@ -17,13 +17,13 @@ package push_test
 import (
 	"context"
 	"errors"
-	"github.com/deep-rent/nexus/log"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/push"
 )
 
@@ -237,7 +237,12 @@ func TestBatchSend_AllSucceed(t *testing.T) {
 func TestBatchSend_Empty(t *testing.T) {
 	t.Parallel()
 
-	if err := push.BatchSend(t.Context(), &countingSender{}, nil, 4); err != nil {
+	if err := push.BatchSend(
+		t.Context(),
+		&countingSender{},
+		nil,
+		4,
+	); err != nil {
 		t.Errorf("got %v; want nil", err)
 	}
 }
@@ -254,7 +259,12 @@ func TestDeliver(t *testing.T) {
 	}{
 		{"success", http.StatusOK, "{}", false},
 		{"created", http.StatusCreated, "", false},
-		{"bad request", http.StatusBadRequest, `{"reason":"BadDeviceToken"}`, true},
+		{
+			"bad request",
+			http.StatusBadRequest,
+			`{"reason":"BadDeviceToken"}`,
+			true,
+		},
 		{"server error", http.StatusInternalServerError, "boom", true},
 	}
 
@@ -294,7 +304,11 @@ func TestDeliver(t *testing.T) {
 					t.Fatalf("got %T; want *push.APIError", err)
 				}
 				if apiErr.Status != tt.status {
-					t.Errorf("status: got %d; want %d", apiErr.Status, tt.status)
+					t.Errorf(
+						"status: got %d; want %d",
+						apiErr.Status,
+						tt.status,
+					)
 				}
 				if apiErr.Body != tt.body {
 					t.Errorf("body: got %q; want %q", apiErr.Body, tt.body)
@@ -332,8 +346,7 @@ func TestDeliver_TransportError(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 
-	var apiErr *push.APIError
-	if errors.As(err, &apiErr) {
+	if _, ok := errors.AsType[*push.APIError](err); ok {
 		t.Error("a transport error should not be an *APIError")
 	}
 }

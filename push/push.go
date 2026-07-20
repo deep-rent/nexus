@@ -257,10 +257,18 @@ func Deliver(
 
 	defer func() {
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			logger.WarnContext(ctx, "Failed to drain response body", log.Err(err))
+			logger.WarnContext(
+				ctx,
+				"Failed to drain response body",
+				log.Err(err),
+			)
 		}
 		if err := res.Body.Close(); err != nil {
-			logger.WarnContext(ctx, "Failed to close response body", log.Err(err))
+			logger.WarnContext(
+				ctx,
+				"Failed to close response body",
+				log.Err(err),
+			)
 		}
 	}()
 
@@ -273,7 +281,11 @@ func Deliver(
 		// The client caps response body size, so this read is bounded.
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			logger.WarnContext(ctx, "Failed to read response body", log.Err(err))
+			logger.WarnContext(
+				ctx,
+				"Failed to read response body",
+				log.Err(err),
+			)
 		}
 		return &APIError{Status: res.StatusCode, Body: string(body)}
 	}
