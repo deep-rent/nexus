@@ -542,3 +542,5 @@ func (e *stageError) Error() string {
 
 // Unwrap allows matching against [ErrStartTimeout].
 func (e *stageError) Unwrap() error { return ErrStartTimeout }
+
+var _ error = (*stageError)(nil)

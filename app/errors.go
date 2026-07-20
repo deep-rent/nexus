@@ -70,10 +70,12 @@ type ComponentError struct {
 	Err error
 }
 
-// Error implements the error interface.
+// Error implements the [error] interface.
 func (e *ComponentError) Error() string {
 	return "component " + strconv.Quote(e.Name) + ": " + e.Err.Error()
 }
 
 // Unwrap returns the underlying error.
 func (e *ComponentError) Unwrap() error { return e.Err }
+
+var _ error = (*ComponentError)(nil)

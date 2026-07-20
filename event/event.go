@@ -519,10 +519,12 @@ type closer interface {
 
 // Broker manages a collection of typed event buses segregated by topic strings.
 type Broker struct {
-	// mu protects the buses map.
+	// mu protects the buses map and the closed flag.
 	mu sync.RWMutex
 	// buses maps topic names to their underlying typed Bus instances.
 	buses map[string]closer
+	// closed indicates whether the broker has been shut down.
+	closed bool
 	// opts are the default options applied to all buses created by this broker.
 	opts []Option
 }
@@ -539,39 +541,38 @@ func NewBroker(opts ...Option) *Broker {
 // Topic retrieves an existing [Bus] for the given topic or creates a new one
 // using the broker's configured options. It panics if the topic already exists
 // but is registered to a different event type.
+//
+// Once the broker has been closed it owns no buses, so Topic hands back an
+// already closed [Bus] that accepts no events. This keeps a shutdown racing
+// with a late caller from silently starting a processor that nothing will ever
+// stop.
 func Topic[T any](b *Broker, name string) *Bus[T] {
 	// Fast path: Invoke the read-only lock.
 	b.mu.RLock()
 	existing, exists := b.buses[name]
+	closed := b.closed
 	b.mu.RUnlock()
 
 	if exists {
-		// Type assert back to the requested generic type.
-		bus, ok := existing.(*Bus[T])
-		if !ok {
-			panic(fmt.Sprintf(
-				"topic %q exists but expects a different event type",
-				name,
-			))
-		}
-		return bus
+		return cast[T](existing, name)
+	}
+
+	if closed {
+		return closedBus[T]()
 	}
 
 	// Slow path: Invoke the write lock to initialize.
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// Double-check locking in case another goroutine initialized it while we
-	// were waiting to acquire the write lock.
+	// Double-check locking in case another goroutine initialized it, or closed
+	// the broker, while we were waiting to acquire the write lock.
 	if existing, exists = b.buses[name]; exists {
-		bus, ok := existing.(*Bus[T])
-		if !ok {
-			panic(fmt.Sprintf(
-				"topic %q exists but expects a different event type",
-				name,
-			))
-		}
-		return bus
+		return cast[T](existing, name)
+	}
+
+	if b.closed {
+		return closedBus[T]()
 	}
 
 	// Create and store the new typed bus.
@@ -581,23 +582,44 @@ func Topic[T any](b *Broker, name string) *Bus[T] {
 	return bus
 }
 
-// Close gracefully shuts down all buses managed by the broker.
+// cast converts a registered bus back to its requested generic type, panicking
+// if the topic was registered for a different event type.
+func cast[T any](existing closer, name string) *Bus[T] {
+	bus, ok := existing.(*Bus[T])
+	if !ok {
+		panic(fmt.Sprintf(
+			"topic %q exists but expects a different event type",
+			name,
+		))
+	}
+	return bus
+}
+
+// closedBus returns a [Bus] that is already shut down, so that it holds no
+// running goroutine and rejects every publish.
+func closedBus[T any]() *Bus[T] {
+	bus := NewBus[T]()
+	bus.Close()
+	return bus
+}
+
+// Close gracefully shuts down all buses managed by the broker. It blocks until
+// every bus has drained, and is safe to call more than once.
+//
+// After Close returns, [Topic] no longer creates buses; see its documentation.
 func (b *Broker) Close() {
 	b.mu.Lock()
 	// 1. Capture the existing buses.
 	buses := b.buses
 	// 2. Clear the map to release references and block new retrievals.
 	b.buses = make(map[string]closer)
+	b.closed = true
 	b.mu.Unlock() // Release the lock before calling Close on all the buses
 
-	// 3. Close all buses concurrently so the 50µs grace periods overlap.
+	// 3. Close all buses concurrently so that their drains overlap.
 	var wg sync.WaitGroup
 	for _, bus := range buses {
-		wg.Add(1)
-		go func(c closer) {
-			defer wg.Done()
-			c.Close()
-		}(bus)
+		wg.Go(bus.Close)
 	}
 	wg.Wait()
 }
