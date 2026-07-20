@@ -32,7 +32,7 @@ type Algorithm[PublicKey any] interface {
 	// Verify checks whether sig is a valid signature for msg under the given
 	// public key. It MUST NOT return true if the public key type or parameters
 	// do not match the algorithm.
-	Verify(key PublicKey, msg []byte, sig []byte) bool
+	Verify(key PublicKey, msg, sig []byte) bool
 
 	// Sign creates a digital signature for msg using the provided opaque
 	// signer. The signer's public key MUST match the algorithm's requirements.

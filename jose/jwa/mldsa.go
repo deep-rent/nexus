@@ -17,11 +17,12 @@ package jwa
 import (
 	"context"
 	"crypto"
-	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/sha3"
 	"errors"
 	"fmt"
+
+	"crypto/mldsa"
 
 	sign "github.com/deep-rent/nexus/sign"
 )

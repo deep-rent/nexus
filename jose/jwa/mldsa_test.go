@@ -16,9 +16,10 @@ package jwa_test
 
 import (
 	"crypto/ed25519"
-	"crypto/mldsa"
 	"crypto/rand"
 	"testing"
+
+	"crypto/mldsa"
 
 	"github.com/deep-rent/nexus/jose/jwa"
 	"github.com/deep-rent/nexus/sign"
