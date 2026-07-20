@@ -247,7 +247,7 @@ func (m *Message) Validate() error {
 // timeouts and cancellation.
 type Sender interface {
 	// Send dispatches the provided [Message] payload to the underlying
-	// rovider. It returns an error if the email is invalid, if the network
+	// provider. It returns an error if the email is invalid, if the network
 	// request fails, or if the provider rejects the payload.
 	Send(ctx context.Context, msg *Message) error
 }
@@ -298,10 +298,13 @@ func WithClient(client *http.Client) Option {
 }
 
 // WithBaseURL allows overriding the SendGrid API base URL for testing or
-// mocking.
+// mocking. Empty string values are ignored, since an empty base URL would
+// leave the sender pointed at a relative path that fails at send time.
 func WithBaseURL(url string) Option {
 	return func(c *config) {
-		c.baseURL = url
+		if url != "" {
+			c.baseURL = url
+		}
 	}
 }
 
@@ -326,11 +329,11 @@ func WithLogger(logger *slog.Logger) Option {
 // NewSender creates a configured SendGrid client implementing the [Sender]
 // interface.
 //
-// It initializes the client with a default base URL, a sensible timeout,
-// and a standard logger. These defaults can be overridden by passing one or
-// more [Option] functions. Requests are dispatched through
-// [transport.DefaultClient] unless [WithClient] provides another one. It
-// panics if the API key is empty or the base URL is invalid.
+// It initializes the client with a default base URL and a standard logger.
+// These defaults can be overridden by passing one or more [Option] functions.
+// Requests are dispatched through [transport.DefaultClient], which applies a
+// sensible timeout, unless [WithClient] provides another one. It panics if the
+// API key is empty or the base URL is invalid.
 func NewSender(apiKey string, opts ...Option) Sender {
 	if apiKey == "" {
 		panic("API key is required")

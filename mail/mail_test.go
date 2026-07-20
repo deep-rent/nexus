@@ -427,3 +427,38 @@ func TestSender_Send_WithBaseURL(t *testing.T) {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 }
+
+// An empty base URL must be ignored rather than leaving the sender pointed at
+// a relative path that only fails once a message is dispatched.
+func TestWithBaseURL_IgnoresEmpty(t *testing.T) {
+	t.Parallel()
+
+	var hit bool
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			hit = true
+			w.WriteHeader(http.StatusAccepted)
+		},
+	))
+	defer srv.Close()
+
+	// The empty override must not clobber the real base URL that follows it.
+	sender := mail.NewSender(
+		"test-key",
+		mail.WithBaseURL(""),
+		mail.WithBaseURL(srv.URL),
+	)
+
+	msg := mail.NewMessage(
+		mail.New("from@example.com", ""),
+		"t-123",
+		mail.NewRecipient(mail.New("to@example.com", "")),
+	)
+
+	if err := sender.Send(t.Context(), msg); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	if !hit {
+		t.Error("request did not reach the configured server")
+	}
+}
