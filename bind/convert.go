@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/pointer"
+	"github.com/deep-rent/nexus/pointer"
 )
 
 // setValues assigns values to a [reflect.Value] based on its type.

@@ -48,8 +48,8 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/deep-rent/nexus/internal/schema"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/schema"
 )
 
 // Direction signals whether a migration is being applied or reverted.

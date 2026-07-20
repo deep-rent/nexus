@@ -19,7 +19,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/graph"
+	"github.com/deep-rent/nexus/graph"
 )
 
 func TestNew(t *testing.T) {

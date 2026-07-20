@@ -44,8 +44,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/deep-rent/nexus/internal/schema"
 	"github.com/deep-rent/nexus/migrate"
+	"github.com/deep-rent/nexus/schema"
 )
 
 // Driver is an in-memory implementation of [migrate.Driver].

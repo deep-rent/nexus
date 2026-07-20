@@ -17,7 +17,7 @@ package quote_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/quote"
+	"github.com/deep-rent/nexus/quote"
 )
 
 func TestRemove(t *testing.T) {

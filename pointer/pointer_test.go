@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/pointer"
+	"github.com/deep-rent/nexus/pointer"
 )
 
 func TestAlloc(t *testing.T) {

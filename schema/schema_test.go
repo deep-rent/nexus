@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/schema"
+	"github.com/deep-rent/nexus/schema"
 )
 
 func TestPostgres(t *testing.T) {

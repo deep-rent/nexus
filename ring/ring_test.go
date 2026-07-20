@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/ring"
+	"github.com/deep-rent/nexus/ring"
 )
 
 func TestNew(t *testing.T) {

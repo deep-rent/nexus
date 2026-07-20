@@ -43,7 +43,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/buffer"
+	"github.com/deep-rent/nexus/buffer"
 	"github.com/deep-rent/nexus/log"
 )
 

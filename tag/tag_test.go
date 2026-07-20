@@ -19,7 +19,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/tag"
+	"github.com/deep-rent/nexus/tag"
 )
 
 func TestParse(t *testing.T) {

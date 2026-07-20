@@ -64,7 +64,7 @@ package backoff
 import (
 	"time"
 
-	"github.com/deep-rent/nexus/internal/jitter"
+	"github.com/deep-rent/nexus/jitter"
 )
 
 const (

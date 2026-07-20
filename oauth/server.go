@@ -28,8 +28,8 @@ import (
 
 	"uuid"
 
+	"github.com/deep-rent/nexus/ascii"
 	"github.com/deep-rent/nexus/auth"
-	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/oauth/pkce"

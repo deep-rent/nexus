@@ -60,8 +60,8 @@ import (
 	"runtime/debug"
 
 	"github.com/deep-rent/nexus/header"
-	"github.com/deep-rent/nexus/internal/bind"
-	"github.com/deep-rent/nexus/internal/snake"
+	"github.com/deep-rent/nexus/bind"
+	"github.com/deep-rent/nexus/snake"
 	"github.com/deep-rent/nexus/valid"
 )
 

@@ -31,7 +31,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff/driver/postgres"
-	"github.com/deep-rent/nexus/internal/schema"
+	"github.com/deep-rent/nexus/schema"
 )
 
 func setupDB(t *testing.T) *sql.DB {

@@ -43,7 +43,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/deep-rent/nexus/internal/quote"
+	"github.com/deep-rent/nexus/quote"
 )
 
 // Tag represents a parsed struct tag, separating the primary name from the

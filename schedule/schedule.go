@@ -52,7 +52,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/jitter"
+	"github.com/deep-rent/nexus/jitter"
 )
 
 // Tick represents a unit of work that can be scheduled to run repeatedly.

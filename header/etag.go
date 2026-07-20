@@ -17,7 +17,7 @@ package header
 import (
 	"strings"
 
-	"github.com/deep-rent/nexus/internal/quote"
+	"github.com/deep-rent/nexus/quote"
 )
 
 // ETag returns the entity tag carried by the ETag header, or an empty string

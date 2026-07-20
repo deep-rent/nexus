@@ -70,7 +70,7 @@ import (
 	"golang.org/x/mod/semver"
 	"uuid"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 // CIDR checks if the string is a valid Classless Inter-Domain Routing (CIDR)

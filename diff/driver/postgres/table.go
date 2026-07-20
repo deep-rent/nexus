@@ -32,8 +32,8 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/diff"
-	"github.com/deep-rent/nexus/internal/hlc"
-	"github.com/deep-rent/nexus/internal/quote"
+	"github.com/deep-rent/nexus/hlc"
+	"github.com/deep-rent/nexus/quote"
 )
 
 // tableConfig holds the internal configuration options of a [Table].

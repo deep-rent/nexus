@@ -63,7 +63,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 // Default configuration values for a new logger.

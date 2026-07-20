@@ -54,7 +54,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/deep-rent/nexus/internal/ring"
+	"github.com/deep-rent/nexus/ring"
 )
 
 // OverflowMode determines how the bus behaves when the internal buffer is

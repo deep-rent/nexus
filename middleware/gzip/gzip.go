@@ -55,8 +55,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/deep-rent/nexus/ascii"
 	"github.com/deep-rent/nexus/header"
-	"github.com/deep-rent/nexus/internal/ascii"
 	"github.com/deep-rent/nexus/middleware"
 )
 

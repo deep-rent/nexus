@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/hlc"
+	"github.com/deep-rent/nexus/hlc"
 )
 
 func TestPackUnpack(t *testing.T) {

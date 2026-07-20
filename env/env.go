@@ -107,9 +107,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/deep-rent/nexus/internal/ascii"
-	"github.com/deep-rent/nexus/internal/bind"
-	"github.com/deep-rent/nexus/internal/snake"
+	"github.com/deep-rent/nexus/ascii"
+	"github.com/deep-rent/nexus/bind"
+	"github.com/deep-rent/nexus/snake"
 )
 
 // Lookup is a function that retrieves the value of an environment variable.

@@ -47,7 +47,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 const (

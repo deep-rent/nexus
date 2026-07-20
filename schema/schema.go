@@ -39,7 +39,7 @@ package schema
 import (
 	"bytes"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 // Parser is a function that splits a raw SQL script into a slice of individual

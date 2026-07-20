@@ -17,7 +17,7 @@ package snake_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/snake"
+	"github.com/deep-rent/nexus/snake"
 )
 
 func TestToUpper(t *testing.T) {

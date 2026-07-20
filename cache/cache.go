@@ -84,7 +84,7 @@ import (
 
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/header"
-	"github.com/deep-rent/nexus/internal/jitter"
+	"github.com/deep-rent/nexus/jitter"
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/schedule"
 	"github.com/deep-rent/nexus/transport"

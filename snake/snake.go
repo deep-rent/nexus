@@ -35,7 +35,7 @@ package snake
 import (
 	"strings"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 // ToUpper converts a camelCase string to an uppercase SNAKE_CASE string.

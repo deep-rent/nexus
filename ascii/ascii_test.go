@@ -17,7 +17,7 @@ package ascii_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 func TestIsUpper(t *testing.T) {

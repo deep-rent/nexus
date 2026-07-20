@@ -35,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/ascii"
+	"github.com/deep-rent/nexus/ascii"
 )
 
 // Directives parses a comma-separated header value into an iterator of

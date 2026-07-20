@@ -21,7 +21,7 @@ import (
 	"slices"
 	"uuid"
 
-	"github.com/deep-rent/nexus/internal/graph"
+	"github.com/deep-rent/nexus/graph"
 	"github.com/deep-rent/nexus/valid"
 )
 

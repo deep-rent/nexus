@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/internal/bind"
-	"github.com/deep-rent/nexus/internal/snake"
+	"github.com/deep-rent/nexus/bind"
+	"github.com/deep-rent/nexus/snake"
 )
 
 type mockSource map[string][]string
