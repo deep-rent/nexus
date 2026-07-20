@@ -47,6 +47,8 @@ package schedule
 
 import (
 	"context"
+	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -128,22 +130,31 @@ type Scheduler interface {
 // New creates a new [Scheduler] tied to the provided parent context.
 //
 // Cancelling this context will also cause the scheduler to shut down.
-func New(ctx context.Context) Scheduler {
+func New(ctx context.Context, opts ...Option) Scheduler {
+	cfg := config{
+		logger:   slog.Default(),
+		recovery: DefaultRecoveryDelay,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	return &scheduler{
-		ctx:    ctx,
-		cancel: cancel,
+		ctx:      ctx,
+		cancel:   cancel,
+		logger:   cfg.logger,
+		recovery: cfg.recovery,
 	}
 }
 
 // scheduler is the concrete implementation of the [Scheduler] interface.
 type scheduler struct {
-	// ctx is the internal lifecycle context.
-	ctx context.Context
-	// cancel stops all dispatched goroutines.
-	cancel context.CancelFunc
-	// wg tracks active task goroutines.
-	wg sync.WaitGroup
+	ctx      context.Context    // internal lifecycle context
+	cancel   context.CancelFunc // stops all dispatched goroutines
+	logger   *slog.Logger       // destination for internal logs
+	recovery time.Duration      // delay applied after a tick panicked
+	wg       sync.WaitGroup     // tracks active task goroutines
 }
 
 // Context implements [Scheduler].
@@ -162,11 +173,29 @@ func (s *scheduler) Dispatch(tick Tick) {
 			case <-s.ctx.Done():
 				return
 			case <-timer.C:
-				wait := tick.Run(s.ctx)
-				timer.Reset(wait)
+				timer.Reset(s.run(tick))
 			}
 		}
 	})
+}
+
+// run executes a single iteration of tick, converting a panic into a log
+// record. A scheduler shared by unrelated jobs must not let one of them take
+// down the process, so a panicking tick is reported and rescheduled after the
+// recovery delay rather than being propagated.
+func (s *scheduler) run(tick Tick) (d time.Duration) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error(
+				"Tick panicked",
+				slog.Any("panic", r),
+				slog.String("stack", string(debug.Stack())),
+			)
+			d = s.recovery
+		}
+	}()
+
+	return tick.Run(s.ctx)
 }
 
 // Shutdown implements [Scheduler].
@@ -182,6 +211,10 @@ var _ Scheduler = (*scheduler)(nil)
 // Its [Scheduler.Dispatch] method is blocking and runs the [Tick] in the
 // calling goroutine. This implementation is useful for testing or executing a
 // task without true background scheduling.
+//
+// Unlike the scheduler returned by [New], it does not recover panics: the tick
+// runs on the caller's stack, where the caller is better placed to handle
+// them, and a swallowed panic would hide failures in tests.
 func Once(ctx context.Context) Scheduler {
 	return &once{ctx: ctx}
 }
