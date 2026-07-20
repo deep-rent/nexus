@@ -20,10 +20,12 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
-// Key namespaces keep the identifier spaces disjoint, so that a client ID
-// can never share a bucket with a username or a one-time code. Addresses are
-// namespaced by the throttle package itself.
+// Key namespaces keep the identifier spaces disjoint within the single
+// [throttle.Throttle] the server shares across every axis it limits, so that
+// a client ID can never share a bucket with a username, a one-time code, or a
+// network address.
 const (
+	scopeAddr   = "addr:"
 	scopeClient = "client:"
 	scopeUser   = "user:"
 	scopeCode   = "code:"

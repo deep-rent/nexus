@@ -59,6 +59,9 @@ const (
 	// DefaultDevicePollInterval is the minimum delay between device code
 	// polling attempts.
 	DefaultDevicePollInterval = 5 * time.Second
+	// DefaultThrottlePenalty is the number of tokens charged against a
+	// throttle bucket for a single failed authentication attempt.
+	DefaultThrottlePenalty = 10
 )
 
 // Config carries the mandatory dependencies and tunable settings for a
@@ -108,9 +111,20 @@ type Config struct {
 	DevicePollInterval time.Duration
 	// Throttle rate limits the credential-verifying endpoints and applies
 	// escalating penalties to failed authentication attempts. When set,
-	// [Server.Mount] installs [throttle.Throttle.Middleware] on those routes
-	// automatically. A nil value disables throttling.
+	// [Server.Mount] guards those routes with per-address limiting
+	// automatically, and the server charges failed attempts against the
+	// address, client, user, and code buckets of the same throttle. A nil
+	// value disables throttling.
+	//
+	// The server derives its own bucket keys, so any [throttle.Config.Key] is
+	// ignored; configure only the rate and burst.
 	Throttle *throttle.Throttle
+	// ThrottlePenalty is the number of tokens a single failed authentication
+	// attempt charges against its buckets. Larger values lock out brute-force
+	// attempts sooner. It should stay below the throttle's burst so that one
+	// failure does not exhaust a bucket outright. Ignored when Throttle is
+	// nil. Defaults to [DefaultThrottlePenalty].
+	ThrottlePenalty int
 	// Logger receives structured diagnostics. Defaults to [slog.Default].
 	Logger *slog.Logger
 }
@@ -146,6 +160,7 @@ type Server struct {
 	generateState        TokenGeneratorFn
 	verificationURI      string
 	throttle             *throttle.Throttle
+	throttlePenalty      int
 	logger               *slog.Logger
 	clock                func() time.Time
 }
@@ -287,6 +302,7 @@ func New(cfg Config, opts ...Option) *Server {
 		generateUserCode:     GenerateUserCode,
 		generateState:        GenerateState,
 		throttle:             cfg.Throttle,
+		throttlePenalty:      cmp.Or(cfg.ThrottlePenalty, DefaultThrottlePenalty),
 		logger:               logger,
 		clock:                time.Now,
 	}
@@ -331,7 +347,7 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 	// guarded protects endpoints that accept credential guesses.
 	var guarded []router.Middleware
 	if s.throttle != nil {
-		guarded = append(guarded, s.throttle.Middleware())
+		guarded = append(guarded, s.throttleMiddleware())
 	}
 
 	wellKnown := s.WellKnown(prefix)
@@ -464,7 +480,7 @@ func (s *Server) throttled(e *router.Exchange, key string) bool {
 	}
 	blocked, wait := s.throttle.Blocked(key)
 	if blocked {
-		throttle.RetryAfter(e, wait)
+		throttle.RetryAfter(e.W.Header(), wait)
 	}
 	return blocked
 }
@@ -475,7 +491,7 @@ func (s *Server) penalize(keys ...string) {
 		return
 	}
 	for _, key := range keys {
-		s.throttle.Penalize(key)
+		s.throttle.Penalize(key, s.throttlePenalty)
 	}
 }
 
@@ -489,13 +505,25 @@ func (s *Server) clear(key string) {
 	}
 }
 
+// throttleMiddleware spends one token per request from the requesting
+// address's bucket, rejecting it with 429 once the bucket is empty. It keys
+// by the same address scope as [Server.addr], so a request's baseline volume
+// and the penalties its failed attempts accrue draw down one shared bucket.
+func (s *Server) throttleMiddleware() router.Middleware {
+	return s.throttle.MiddlewareFunc(func(r *http.Request) string {
+		return scopeAddr + throttle.RemoteAddr(r)
+	})
+}
+
 // addr returns the address-scoped throttle key for the request, or an empty
-// string when throttling is disabled.
+// string when throttling is disabled. It matches the key the throttle
+// middleware spends against, so that per-request volume and per-attempt
+// penalties share one bucket.
 func (s *Server) addr(e *router.Exchange) string {
 	if s.throttle == nil {
 		return ""
 	}
-	return s.throttle.AddrKey(e.R)
+	return scopeAddr + throttle.RemoteAddr(e.R)
 }
 
 // newCookie builds a hardened cookie. A maxAge of zero yields a

@@ -150,6 +150,13 @@ func withThrottle(th *throttle.Throttle) Option {
 	return func(s *Server) { s.throttle = th }
 }
 
+// withThrottlePenalty overrides the per-failure charge on the server under
+// test, mirroring Config.ThrottlePenalty without threading a config mutator
+// through every call site.
+func withThrottlePenalty(n int) Option {
+	return func(s *Server) { s.throttlePenalty = n }
+}
+
 func (env *testEnv) do(req *http.Request) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	env.router.ServeHTTP(w, req)
@@ -1347,12 +1354,14 @@ func TestThrottleIntegration(t *testing.T) {
 	// two failed attempts before locking out.
 	newThrottled := func(t *testing.T, now *time.Time) *testEnv {
 		t.Helper()
-		return newTestEnv(t, withThrottle(throttle.New(throttle.Config{
-			Rate:    rate.Limit(1),
-			Burst:   10,
-			Penalty: 5,
-			Clock:   func() time.Time { return *now },
-		})))
+		return newTestEnv(t,
+			withThrottle(throttle.New(throttle.Config{
+				Rate:  rate.Limit(1),
+				Burst: 10,
+				Clock: func() time.Time { return *now },
+			})),
+			withThrottlePenalty(5),
+		)
 	}
 
 	t.Run("client secret guessing locks out", func(t *testing.T) {

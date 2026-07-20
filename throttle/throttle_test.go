@@ -25,14 +25,16 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
+// penalty is the charge used by the tests that exercise [Throttle.Penalize].
+const penalty = 5
+
 // testThrottle builds a throttle with a controllable clock. The allowance is
-// small so that lockout is reached in a few attempts.
+// small so that lockout is reached in a few penalties of size [penalty].
 func testThrottle(now *time.Time) *Throttle {
 	return New(Config{
-		Rate:    rate.Limit(1),
-		Burst:   10,
-		Penalty: 5,
-		Clock:   func() time.Time { return *now },
+		Rate:  rate.Limit(1),
+		Burst: 10,
+		Clock: func() time.Time { return *now },
 	})
 }
 
@@ -45,10 +47,6 @@ func TestNewValidation(t *testing.T) {
 	}{
 		{name: "negative rate", cfg: Config{Rate: -1}},
 		{name: "negative burst", cfg: Config{Burst: -1}},
-		{
-			name: "penalty exceeds burst",
-			cfg:  Config{Burst: 5, Penalty: 6},
-		},
 	}
 
 	for _, tt := range tests {
@@ -74,14 +72,66 @@ func TestNewValidation(t *testing.T) {
 		if th.burst != DefaultBurst {
 			t.Errorf("got burst %d; want %d", th.burst, DefaultBurst)
 		}
-		if th.penalty != DefaultPenalty {
-			t.Errorf(
-				"got penalty %d; want %d",
-				th.penalty,
-				DefaultPenalty,
-			)
-		}
 	})
+}
+
+func TestAllow(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_752_000_000, 0)
+	th := New(Config{
+		Rate:  rate.Limit(1),
+		Burst: 3,
+		Clock: func() time.Time { return now },
+	})
+
+	// The burst is spent one token at a time, then the key is blocked.
+	for i := range 3 {
+		if !th.Allow("k") {
+			t.Fatalf("token %d: got blocked; want allowed", i)
+		}
+	}
+	if th.Allow("k") {
+		t.Error("a spent bucket should block the next request")
+	}
+
+	// The allowance recovers at the configured rate.
+	now = now.Add(time.Second)
+	if !th.Allow("k") {
+		t.Error("a token should have refilled after a second")
+	}
+}
+
+func TestAllowN(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_752_000_000, 0)
+	th := New(Config{
+		Rate:  rate.Limit(1),
+		Burst: 5,
+		Clock: func() time.Time { return now },
+	})
+
+	// A spend larger than the balance takes nothing and reports failure.
+	if th.AllowN("k", 6) {
+		t.Error("spending more than the burst should fail")
+	}
+	if blocked, _ := th.Blocked("k"); blocked {
+		t.Error("a failed spend must not consume any allowance")
+	}
+
+	// A spend within the balance succeeds.
+	if !th.AllowN("k", 5) {
+		t.Error("spending the full burst should succeed")
+	}
+	if th.AllowN("k", 1) {
+		t.Error("the bucket should be empty after spending the burst")
+	}
+
+	// A non-positive spend is a no-op that always succeeds.
+	if !th.AllowN("k", 0) {
+		t.Error("spending zero should always succeed")
+	}
 }
 
 func TestPenalize(t *testing.T) {
@@ -96,12 +146,12 @@ func TestPenalize(t *testing.T) {
 	}
 
 	// Burst 10 with penalty 5 tolerates two failures before lockout.
-	th.Penalize("k")
+	th.Penalize("k", penalty)
 	if blocked, _ := th.Blocked("k"); blocked {
 		t.Fatal("one failure should not exhaust the allowance")
 	}
 
-	th.Penalize("k")
+	th.Penalize("k", penalty)
 	blocked, wait := th.Blocked("k")
 	if !blocked {
 		t.Fatal("two failures should exhaust the allowance")
@@ -112,7 +162,7 @@ func TestPenalize(t *testing.T) {
 
 	// Each further failure extends the lockout: the deficit grows, so the
 	// wait must increase.
-	th.Penalize("k")
+	th.Penalize("k", penalty)
 	_, longer := th.Blocked("k")
 	if longer <= wait {
 		t.Errorf(
@@ -129,14 +179,51 @@ func TestPenalize(t *testing.T) {
 	}
 }
 
+// A charge is clamped to the burst, so a bucket cannot be driven more than one
+// full burst into deficit at once.
+func TestPenalize_ClampsToBurst(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_752_000_000, 0)
+	th := New(Config{
+		Rate:  rate.Limit(1),
+		Burst: 4,
+		Clock: func() time.Time { return now },
+	})
+
+	th.Penalize("k", 1000)
+	_, wait := th.Blocked("k")
+
+	// A full-burst deficit against a drained bucket needs Burst seconds at one
+	// token per second, not a thousand.
+	if want := 4 * time.Second; wait > want {
+		t.Errorf("got wait %v; want at most %v (charge was not clamped)", wait, want)
+	}
+}
+
+// A non-positive charge does nothing.
+func TestPenalize_NonPositive(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_752_000_000, 0)
+	th := testThrottle(&now)
+
+	th.Penalize("k", 0)
+	th.Penalize("k", -5)
+
+	if blocked, _ := th.Blocked("k"); blocked {
+		t.Error("a non-positive charge should not affect the bucket")
+	}
+}
+
 func TestReset(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(1_752_000_000, 0)
 	th := testThrottle(&now)
 
-	th.Penalize("k")
-	th.Penalize("k")
+	th.Penalize("k", penalty)
+	th.Penalize("k", penalty)
 	if blocked, _ := th.Blocked("k"); !blocked {
 		t.Fatal("the key should be blocked")
 	}
@@ -153,8 +240,8 @@ func TestKeysAreIndependent(t *testing.T) {
 	now := time.Unix(1_752_000_000, 0)
 	th := testThrottle(&now)
 
-	th.Penalize("a")
-	th.Penalize("a")
+	th.Penalize("a", penalty)
+	th.Penalize("a", penalty)
 	if blocked, _ := th.Blocked("a"); !blocked {
 		t.Fatal("key a should be blocked")
 	}
@@ -171,17 +258,16 @@ func TestSweep(t *testing.T) {
 	// At one token per ten seconds, a single penalty is repaid within the
 	// sweep interval while a double penalty is not.
 	th := New(Config{
-		Rate:    rate.Limit(0.1),
-		Burst:   10,
-		Penalty: 5,
-		Clock:   func() time.Time { return now },
+		Rate:  rate.Limit(0.1),
+		Burst: 10,
+		Clock: func() time.Time { return now },
 	})
 
-	// A recovered bucket is evicted; a penalized one is retained so that
-	// its outstanding lockout is not silently dropped.
-	th.Penalize("recovered")
-	th.Penalize("penalized")
-	th.Penalize("penalized")
+	// A recovered bucket is evicted; a penalized one is retained so that its
+	// outstanding lockout is not silently dropped.
+	th.Penalize("recovered", penalty)
+	th.Penalize("penalized", penalty)
+	th.Penalize("penalized", penalty)
 
 	// Let "recovered" refill completely, then trigger a sweep.
 	now = now.Add(sweepInterval)
@@ -203,12 +289,11 @@ func TestSweep(t *testing.T) {
 func TestMiddleware(t *testing.T) {
 	t.Parallel()
 
-	// The middleware drives the limiter with the wall clock, so use a
-	// generous burst and a rate slow enough that no token refills mid-test.
+	// The middleware drives the limiter with the wall clock, so use a generous
+	// burst and a rate slow enough that no token refills mid-test.
 	th := New(Config{
-		Rate:    rate.Limit(0.01),
-		Burst:   3,
-		Penalty: 1,
+		Rate:  rate.Limit(0.01),
+		Burst: 3,
 	})
 
 	r := router.New()
@@ -217,40 +302,57 @@ func TestMiddleware(t *testing.T) {
 		return nil
 	}, th.Middleware())
 
-	call := func() int {
+	call := func(addr string) int {
 		req := httptest.NewRequest(http.MethodPost, "/guarded", nil)
-		req.RemoteAddr = "203.0.113.7:44321"
+		req.RemoteAddr = addr
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		return w.Code
 	}
 
 	for i := range 3 {
-		if got := call(); got != http.StatusNoContent {
-			t.Fatalf(
-				"request %d: got status %d; want %d",
-				i,
-				got,
-				http.StatusNoContent,
-			)
+		if got := call("203.0.113.7:44321"); got != http.StatusNoContent {
+			t.Fatalf("request %d: got status %d; want %d",
+				i, got, http.StatusNoContent)
 		}
 	}
 
-	if got := call(); got != http.StatusTooManyRequests {
+	if got := call("203.0.113.7:44321"); got != http.StatusTooManyRequests {
 		t.Fatalf("got status %d; want %d", got, http.StatusTooManyRequests)
 	}
 
 	// A different address carries its own allowance.
-	req := httptest.NewRequest(http.MethodPost, "/guarded", nil)
-	req.RemoteAddr = "203.0.113.8:44321"
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusNoContent {
-		t.Errorf(
-			"got status %d; want %d for a fresh address",
-			w.Code,
-			http.StatusNoContent,
-		)
+	if got := call("203.0.113.8:44321"); got != http.StatusNoContent {
+		t.Errorf("got status %d; want %d for a fresh address",
+			got, http.StatusNoContent)
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		wait time.Duration
+		want string
+	}{
+		{"whole second", 3 * time.Second, "3"},
+		{"rounds up", 1500 * time.Millisecond, "2"},
+		{"sub-second rounds to one", 10 * time.Millisecond, "1"},
+		{"zero writes nothing", 0, ""},
+		{"negative writes nothing", -time.Second, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := http.Header{}
+			RetryAfter(h, tt.wait)
+			if got := h.Get("Retry-After"); got != tt.want {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
 	}
 }
 
