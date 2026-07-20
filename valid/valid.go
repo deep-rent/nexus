@@ -371,27 +371,31 @@ func ISSN(s string) bool {
 // It strips hyphens before validation.
 func ISBN10(s string) bool {
 	var n int
+	var sum int
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '-' {
 			continue
 		}
 		if n == 9 && c == 'X' {
+			sum += 10 * (10 - n)
 			n++
 			continue
 		}
 		if !ascii.IsDigit(rune(c)) {
 			return false
 		}
+		sum += int(c-'0') * (10 - n)
 		n++
 	}
-	return n == 10
+	return n == 10 && sum%11 == 0
 }
 
 // ISBN13 checks if the string is a valid ISBN-13.
 // It strips hyphens before validation.
 func ISBN13(s string) bool {
 	var n int
+	var sum int
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '-' {
@@ -400,9 +404,15 @@ func ISBN13(s string) bool {
 		if !ascii.IsDigit(rune(c)) {
 			return false
 		}
+		v := int(c - '0')
+		if n%2 == 0 {
+			sum += v
+		} else {
+			sum += v * 3
+		}
 		n++
 	}
-	return n == 13
+	return n == 13 && sum%10 == 0
 }
 
 // ISBN checks if the string is a valid ISBN (10 or 13).

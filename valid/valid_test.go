@@ -377,9 +377,10 @@ func TestISBN10(t *testing.T) {
 	tests := []test{
 		{"valid standard", "0-306-40615-2", true},
 		{"valid no hyphens", "0306406152", true},
-		{"valid X checksum", "0-306-40615-X", true},
+		{"valid X checksum", "0-8044-2957-X", true},
 		{"invalid length", "0-306-40615", false},
 		{"invalid checksum char", "0-306-40615-Y", false},
+		{"invalid checksum", "0-306-40615-3", false},
 	}
 	run(t, valid.ISBN10, tests)
 }
@@ -391,6 +392,7 @@ func TestISBN13(t *testing.T) {
 		{"valid no hyphens", "9783161484100", true},
 		{"invalid length", "978-3-16-148410", false},
 		{"invalid X checksum", "978-3-16-148410-X", false},
+		{"invalid checksum", "978-3-16-148410-1", false},
 	}
 	run(t, valid.ISBN13, tests)
 }
