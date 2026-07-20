@@ -309,7 +309,7 @@ func TestIsASCII(t *testing.T) {
 	}
 }
 
-func TestToLowerRune(t *testing.T) {
+func TestLower(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -327,14 +327,14 @@ func TestToLowerRune(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, want := ascii.ToLowerRune(tt.give), tt.want; got != want {
+			if got, want := ascii.Lower(tt.give), tt.want; got != want {
 				t.Errorf("got %q; want %q", got, want)
 			}
 		})
 	}
 }
 
-func TestToUpperRune(t *testing.T) {
+func TestUpper(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -352,7 +352,7 @@ func TestToUpperRune(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, want := ascii.ToUpperRune(tt.give), tt.want; got != want {
+			if got, want := ascii.Upper(tt.give), tt.want; got != want {
 				t.Errorf("got %q; want %q", got, want)
 			}
 		})

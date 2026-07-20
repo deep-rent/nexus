@@ -88,20 +88,20 @@ func IsControl(c rune) bool { return c < 0x20 || c == 0x7F }
 // IsASCII reports whether the rune is a valid ASCII character.
 func IsASCII(c rune) bool { return c <= 0x7F }
 
-// ToLowerRune converts an uppercase ASCII rune to lowercase.
+// Lower converts an uppercase ASCII rune to lowercase.
 //
 // If the rune is not an uppercase letter, it is returned unchanged.
-func ToLowerRune(c rune) rune {
+func Lower(c rune) rune {
 	if IsUpper(c) {
 		return c + ('a' - 'A')
 	}
 	return c
 }
 
-// ToUpperRune converts a lowercase ASCII rune to uppercase.
+// Upper converts a lowercase ASCII rune to uppercase.
 //
 // If the rune is not a lowercase letter, it is returned unchanged.
-func ToUpperRune(c rune) rune {
+func Upper(c rune) rune {
 	if IsLower(c) {
 		return c - ('a' - 'A')
 	}
@@ -126,15 +126,15 @@ func EqualFold(s, t string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		a, b := s[i], t[i]
+		a, b := rune(s[i]), rune(t[i])
 		if a == b {
 			continue
 		}
 		// Convert both to lowercase and compare.
-		if a >= 'A' && a <= 'Z' {
+		if IsUpper(a) {
 			a += 'a' - 'A'
 		}
-		if b >= 'A' && b <= 'Z' {
+		if IsUpper(b) {
 			b += 'a' - 'A'
 		}
 		if a != b {
@@ -147,7 +147,7 @@ func EqualFold(s, t string) bool {
 // HasUpper reports whether the string contains any uppercase ASCII letters.
 func HasUpper(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if s[i] >= 'A' && s[i] <= 'Z' {
+		if IsUpper(rune(s[i])) {
 			return true
 		}
 	}
@@ -157,7 +157,7 @@ func HasUpper(s string) bool {
 // HasLower reports whether the string contains any lowercase ASCII letters.
 func HasLower(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if s[i] >= 'a' && s[i] <= 'z' {
+		if IsLower(rune(s[i])) {
 			return true
 		}
 	}
@@ -173,7 +173,7 @@ func ToLower(s string) string {
 	b := make([]byte, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c >= 'A' && c <= 'Z' {
+		if IsUpper(rune(c)) {
 			c += 'a' - 'A'
 		}
 		b[i] = c
@@ -190,7 +190,7 @@ func ToUpper(s string) string {
 	b := make([]byte, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c >= 'a' && c <= 'z' {
+		if IsLower(rune(c)) {
 			c -= 'a' - 'A'
 		}
 		b[i] = c
