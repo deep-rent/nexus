@@ -30,7 +30,7 @@ type closer interface {
 type Broker struct {
 	// mu protects the buses map and the closed flag.
 	mu sync.RWMutex
-	// buses maps topic names to their underlying typed Bus instances.
+	// buses maps topic names to their underlying typed [Bus] instances.
 	buses map[string]closer
 	// closed indicates whether the broker has been shut down.
 	closed bool
