@@ -25,7 +25,7 @@
 //
 // Note: Symmetric algorithms (such as HMAC) are not supported.
 //
-// # ML-DSA
+// # Post-Quantum Cryptography
 //
 // The ML-DSA algorithms ([MLDSA44], [MLDSA65], [MLDSA87]) implement the
 // post-quantum signature scheme specified in FIPS 204, using the JOSE
@@ -61,6 +61,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha3"
@@ -70,8 +71,6 @@ import (
 	"hash"
 	"math/big"
 	"sync"
-
-	"crypto/mldsa"
 
 	sign "github.com/deep-rent/nexus/sign"
 )
