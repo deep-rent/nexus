@@ -658,6 +658,33 @@ func TestExchange_Cookies(t *testing.T) {
 	})
 }
 
+func TestNewCookie(t *testing.T) {
+	t.Parallel()
+
+	c := router.NewCookie("session", "xyz", 3600, http.SameSiteLaxMode)
+	if c.Name != "session" {
+		t.Errorf("got name %q, want %q", c.Name, "session")
+	}
+	if c.Value != "xyz" {
+		t.Errorf("got value %q, want %q", c.Value, "xyz")
+	}
+	if c.Path != "/" {
+		t.Errorf("got path %q, want %q", c.Path, "/")
+	}
+	if c.MaxAge != 3600 {
+		t.Errorf("got max age %d, want %d", c.MaxAge, 3600)
+	}
+	if c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("got same-site %v, want %v", c.SameSite, http.SameSiteLaxMode)
+	}
+	if !c.Secure {
+		t.Errorf("got secure %v, want true", c.Secure)
+	}
+	if !c.HttpOnly {
+		t.Errorf("got http-only %v, want true", c.HttpOnly)
+	}
+}
+
 func TestRouter_RouteMatching(t *testing.T) {
 	t.Parallel()
 
