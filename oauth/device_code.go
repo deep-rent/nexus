@@ -59,7 +59,7 @@ func (g deviceCodeGrant) Authorize(
 
 	c, err := pro.Sessions.GetDeviceCode(ctx, digest)
 	if err != nil {
-		return nil, pro.ServerError(ctx, "failed to retrieve device code", err)
+		return nil, pro.ServerError("failed to retrieve device code", err)
 	}
 
 	if c.DeviceCode == "" {
@@ -140,9 +140,7 @@ func (g deviceCodeGrant) Authorize(
 	case DeviceCodeStatusAuthorized:
 		// Proceed to token issuance below.
 	default:
-		return nil, pro.ServerError(
-			ctx,
-			"illegal device code status",
+		return nil, pro.ServerError("illegal device code status",
 			fmt.Errorf("unexpected status %q", status),
 		)
 	}
@@ -152,7 +150,7 @@ func (g deviceCodeGrant) Authorize(
 	// race and this request must not issue tokens.
 	deleted, err := pro.Sessions.DeleteDeviceCode(ctx, digest)
 	if err != nil {
-		return nil, pro.ServerError(ctx, "failed to delete device code", err)
+		return nil, pro.ServerError("failed to delete device code", err)
 	}
 	if !deleted {
 		return nil, &Error{

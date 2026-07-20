@@ -92,7 +92,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -480,7 +479,14 @@ type Error struct {
 	// ID is a trace identifier for the specific occurrence of the error.
 	// This field is not part of the specification.
 	ID string `json:"error_id,omitempty"`
+	// Cause is the underlying error that triggered this one. It is logged
+	// when the response is written, but never serialized, so it may carry
+	// internal detail that must not reach the client.
+	Cause error `json:"-"`
 }
+
+// Unwrap returns the underlying cause, if any.
+func (e Error) Unwrap() error { return e.Cause }
 
 // Error implements the standard [error] interface. It builds a formatted string
 // suitable for logging.
@@ -516,41 +522,19 @@ func (p *Proposal) Get(key string) string { return p.data.Get(key) }
 // Has checks if a grant-specific field is present in the HTTP request body.
 func (p *Proposal) Has(key string) bool { return p.data.Has(key) }
 
-// logError records err in the logger under a fresh trace ID and returns
-// that ID. It centralizes the logging convention shared by all internal
-// error helpers in this package.
-func logError(
-	ctx context.Context,
-	logger *slog.Logger,
-	desc string,
-	err error,
-) string {
-	id := router.ErrorID()
-
-	logger.ErrorContext(
-		ctx,
-		desc,
-		slog.String("error_id", id),
-		slog.Any("error", err),
-	)
-
-	return id
-}
-
-// ServerError logs the given error under a fresh trace ID and returns an
-// opaque internal server [Error] carrying the same trace ID and description.
-// Grants should use it to report unexpected storage or infrastructure
-// failures without leaking details to the client.
-func (p *Proposal) ServerError(
-	ctx context.Context,
-	desc string,
-	err error,
-) *Error {
+// ServerError returns an opaque internal server [Error] carrying the given
+// description and cause. Grants should use it to report unexpected storage or
+// infrastructure failures without leaking details to the client.
+//
+// The cause is not serialized. It is logged, together with a freshly assigned
+// trace identifier, when the response is written; grants must not log it
+// themselves.
+func (p *Proposal) ServerError(desc string, cause error) *Error {
 	return &Error{
 		Status:      http.StatusInternalServerError,
 		Code:        ErrorCodeServerError,
 		Description: desc,
-		ID:          logError(ctx, p.Logger, desc, err),
+		Cause:       cause,
 	}
 }
 

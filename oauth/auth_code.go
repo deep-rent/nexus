@@ -70,9 +70,7 @@ func (g authCodeGrant) Authorize(
 	// Retrieve the authorization code state from the session store.
 	c, err := pro.Sessions.GetAuthCode(ctx, digest)
 	if err != nil {
-		return nil, pro.ServerError(
-			ctx,
-			"failed to retrieve authorization code",
+		return nil, pro.ServerError("failed to retrieve authorization code",
 			err,
 		)
 	}
@@ -92,9 +90,7 @@ func (g authCodeGrant) Authorize(
 	// tokens.
 	deleted, err := pro.Sessions.DeleteAuthCode(ctx, digest)
 	if err != nil {
-		return nil, pro.ServerError(
-			ctx,
-			"failed to delete authorization code",
+		return nil, pro.ServerError("failed to delete authorization code",
 			err,
 		)
 	}

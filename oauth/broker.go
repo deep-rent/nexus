@@ -54,7 +54,7 @@ func (s *Server) Login(e *router.Exchange) error {
 		cred.Password,
 	)
 	if err != nil {
-		return s.internalError(e.Context(), "failed to lookup subject", err)
+		return s.internalError("failed to lookup subject", err)
 	}
 	if sub == nil {
 		s.penalize(userKey, s.addr(e))
@@ -83,17 +83,13 @@ func (s *Server) Login(e *router.Exchange) error {
 func (s *Server) establishSession(e *router.Exchange, sub Subject) error {
 	key, err := s.generateSessionKey(e.Context())
 	if err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to generate session key",
+		return s.internalError("failed to generate session key",
 			err,
 		)
 	}
 
 	if err := s.subjects.CreateSession(e.Context(), key, sub.ID()); err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to create subject session",
+		return s.internalError("failed to create subject session",
 			err,
 		)
 	}
@@ -146,16 +142,14 @@ func (s *Server) ExternalLogin(e *router.Exchange) error {
 
 	state, err := s.generateState(e.Context())
 	if err != nil {
-		return s.internalError(e.Context(), "failed to generate state", err)
+		return s.internalError("failed to generate state", err)
 	}
 
 	e.SetCookie(s.newStateCookie(state, 300))
 
 	authURL, err := idp.AuthURL(e.Context(), state)
 	if err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to initiate external login",
+		return s.internalError("failed to initiate external login",
 			err,
 		)
 	}
@@ -175,9 +169,7 @@ func (s *Server) ExternalCallback(e *router.Exchange) error {
 	if v, ok := errors.AsType[*router.Error](err); ok {
 		u, err := url.Parse(s.loginTerminalURI)
 		if err != nil {
-			return s.internalError(
-				e.Context(),
-				"failed to parse login terminal URI",
+			return s.internalError("failed to parse login terminal URI",
 				err,
 			)
 		}
@@ -258,7 +250,7 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 		identity,
 	)
 	if err != nil {
-		return s.internalError(e.Context(), "failed to lookup subject", err)
+		return s.internalError("failed to lookup subject", err)
 	}
 	if sub == nil {
 		return &router.Error{

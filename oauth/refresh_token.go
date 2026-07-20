@@ -58,9 +58,7 @@ func (g refreshTokenGrant) Authorize(
 	// Retrieve the refresh token details from the session store.
 	r, err := pro.Sessions.GetRefreshToken(ctx, digest)
 	if err != nil {
-		return nil, pro.ServerError(
-			ctx,
-			"failed to retrieve refresh token",
+		return nil, pro.ServerError("failed to retrieve refresh token",
 			err,
 		)
 	}
@@ -123,9 +121,7 @@ func (g refreshTokenGrant) Authorize(
 	// request must not issue tokens.
 	deleted, err := pro.Sessions.DeleteRefreshToken(ctx, digest)
 	if err != nil {
-		return nil, pro.ServerError(
-			ctx,
-			"failed to revoke old refresh token",
+		return nil, pro.ServerError("failed to revoke old refresh token",
 			err,
 		)
 	}

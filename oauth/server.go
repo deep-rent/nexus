@@ -16,7 +16,6 @@ package oauth
 
 import (
 	"cmp"
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -434,34 +433,23 @@ func (s *Server) WellKnown(prefix string) router.Handler {
 	})
 }
 
-// serverError logs err under a fresh trace ID and returns an opaque internal
-// [Error] carrying the same trace ID and description.
-func (s *Server) serverError(
-	ctx context.Context,
-	desc string,
-	err error,
-) *Error {
+// serverError returns an opaque internal [Error] carrying the given
+// description and cause. The cause is logged, under a freshly assigned trace
+// ID, when the response is written; see [Server.wrap].
+func (s *Server) serverError(desc string, cause error) *Error {
 	return &Error{
 		Status:      http.StatusInternalServerError,
 		Code:        ErrorCodeServerError,
 		Description: desc,
-		ID:          logError(ctx, s.logger, desc, err),
+		Cause:       cause,
 	}
 }
 
 // internalError is the [router.Error] counterpart of serverError, used by
-// the first-party endpoints (login, logout, device verification).
-func (s *Server) internalError(
-	ctx context.Context,
-	desc string,
-	err error,
-) *router.Error {
-	return &router.Error{
-		Status:      http.StatusInternalServerError,
-		Reason:      router.ReasonServerError,
-		Description: desc,
-		ID:          logError(ctx, s.logger, desc, err),
-	}
+// the first-party endpoints (login, logout, device verification). The router
+// logs it centrally, so no logging happens here either.
+func (s *Server) internalError(desc string, cause error) *router.Error {
+	return router.ServerError(desc, cause)
 }
 
 // throttled reports whether the given key has exhausted its throttle
@@ -644,7 +632,7 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 
 	client, err := s.clients.GetClient(e.Context(), id)
 	if err != nil {
-		return nil, s.serverError(e.Context(), "failed to retrieve client", err)
+		return nil, s.serverError("failed to retrieve client", err)
 	}
 
 	if client == nil {
@@ -686,7 +674,7 @@ func (s *Server) challenge(e *router.Exchange) {
 // key set. Public clients are rejected, as they could otherwise probe tokens
 // they do not own.
 func (s *Server) Introspect(e *router.Exchange) error {
-	return wrap(e, s.introspect)
+	return s.wrap(e, s.introspect)
 }
 
 // introspect contains the logic for the token introspection endpoint.
@@ -761,7 +749,7 @@ func epoch(t time.Time) int64 {
 // generates an authorization code and redirects the user-agent back to
 // the client's redirect URI.
 func (s *Server) Authorize(e *router.Exchange) error {
-	return wrap(e, s.authorize)
+	return s.wrap(e, s.authorize)
 }
 
 // authorize contains the logic for the authorization endpoint.
@@ -803,7 +791,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 
 	client, err := s.clients.GetClient(e.Context(), id)
 	if err != nil {
-		return s.serverError(e.Context(), "failed to retrieve client", err)
+		return s.serverError("failed to retrieve client", err)
 	}
 
 	if client == nil {
@@ -898,7 +886,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 	// the login endpoint.
 	sub, err := s.subjectFromSession(e)
 	if err != nil {
-		return s.serverError(e.Context(), "failed to lookup subject", err)
+		return s.serverError("failed to lookup subject", err)
 	}
 
 	if sub == nil {
@@ -910,9 +898,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 
 	code, err := s.generateAuthCode(e.Context())
 	if err != nil {
-		return s.serverError(
-			e.Context(),
-			"failed to generate authorization code",
+		return s.serverError("failed to generate authorization code",
 			err,
 		)
 	}
@@ -930,9 +916,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 			ExpiresAt:           s.clock().Add(s.authCodeLifetime).Unix(),
 		},
 	); err != nil {
-		return s.serverError(
-			e.Context(),
-			"failed to store authorization code",
+		return s.serverError("failed to store authorization code",
 			err,
 		)
 	}
@@ -954,7 +938,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 // previously registered via [WithGrant]. Returns a JSON response containing an
 // access token and optional refresh token.
 func (s *Server) Token(e *router.Exchange) error {
-	return wrap(e, s.token)
+	return s.wrap(e, s.token)
 }
 
 // token contains the logic for the token endpoint.
@@ -1016,7 +1000,7 @@ func (s *Server) token(e *router.Exchange) error {
 		e.Context(),
 		iss.Subject,
 	); err != nil {
-		return s.serverError(e.Context(), "failed to retrieve subject", err)
+		return s.serverError("failed to retrieve subject", err)
 	} else if sub != nil {
 		claims.Sub = sub.ID().String()
 		claims.Roles = sub.Roles()
@@ -1036,16 +1020,14 @@ func (s *Server) token(e *router.Exchange) error {
 
 	key := s.vault.Next()
 	if key == nil {
-		return s.serverError(
-			e.Context(),
-			"unable to obtain signing key",
+		return s.serverError("unable to obtain signing key",
 			errors.New("vault returned no signing key"),
 		)
 	}
 
 	token, err := jwt.Sign(e.Context(), key, claims)
 	if err != nil {
-		return s.serverError(e.Context(), "failed to mint access token", err)
+		return s.serverError("failed to mint access token", err)
 	}
 
 	res := TokenResponse{
@@ -1060,9 +1042,7 @@ func (s *Server) token(e *router.Exchange) error {
 		pro.Client.CanUseGrant(GrantTypeRefreshToken) {
 		token, err := s.generateRefreshToken(e.Context())
 		if err != nil {
-			return s.serverError(
-				e.Context(),
-				"failed to generate refresh token",
+			return s.serverError("failed to generate refresh token",
 				err,
 			)
 		}
@@ -1074,9 +1054,7 @@ func (s *Server) token(e *router.Exchange) error {
 			Scope:     cmp.Or(iss.RefreshScope, iss.Scope),
 			ExpiresAt: now.Add(s.refreshTokenLifetime).Unix(),
 		}); err != nil {
-			return s.serverError(
-				e.Context(),
-				"failed to save refresh token",
+			return s.serverError("failed to save refresh token",
 				err,
 			)
 		}
@@ -1094,7 +1072,7 @@ func (s *Server) token(e *router.Exchange) error {
 // token is a valid refresh token belonging to that client, removes it from the
 // [SessionStore].
 func (s *Server) Revoke(e *router.Exchange) error {
-	return wrap(e, s.revoke)
+	return s.wrap(e, s.revoke)
 }
 
 // revoke contains the logic for token revocation.
@@ -1119,7 +1097,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 	// Validate token ownership before revocation per RFC 7009 Section 2.1
 	r, err := s.sessions.GetRefreshToken(e.Context(), digest)
 	if err != nil {
-		return s.serverError(e.Context(), "failed to retrieve token", err)
+		return s.serverError("failed to retrieve token", err)
 	}
 	if r.Token == "" || r.ClientID != pro.Client.ID() {
 		// Token not found or belongs to another client. Return 200 OK.
@@ -1152,7 +1130,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 // Note: This endpoint requires a valid [Config.VerificationURI] to be
 // provided during server initialization.
 func (s *Server) DeviceAuthorization(e *router.Exchange) error {
-	return wrap(e, s.deviceAuthorization)
+	return s.wrap(e, s.deviceAuthorization)
 }
 
 // deviceAuthorization contains the logic for device authorization requests.
@@ -1186,16 +1164,14 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 
 	deviceCode, err := s.generateDeviceCode(e.Context())
 	if err != nil {
-		return s.serverError(
-			e.Context(),
-			"failed to generate device code",
+		return s.serverError("failed to generate device code",
 			err,
 		)
 	}
 
 	userCode, err := s.generateUserCode(e.Context())
 	if err != nil {
-		return s.serverError(e.Context(), "failed to generate user code", err)
+		return s.serverError("failed to generate user code", err)
 	}
 
 	interval := int64(s.devicePollInterval.Seconds())
@@ -1212,7 +1188,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 		ExpiresAt:  s.clock().Add(s.deviceCodeLifetime).Unix(),
 		Interval:   interval,
 	}); err != nil {
-		return s.serverError(e.Context(), "failed to store device code", err)
+		return s.serverError("failed to store device code", err)
 	}
 
 	// Config.VerificationURI is validated during construction, so parsing
@@ -1220,7 +1196,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 	// it correct even when the configured URI already carries a query.
 	complete, err := url.Parse(s.verificationURI)
 	if err != nil {
-		return s.serverError(e.Context(), "invalid verification URI", err)
+		return s.serverError("invalid verification URI", err)
 	}
 	q := complete.Query()
 	q.Set("user_code", userCode)
@@ -1247,7 +1223,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 func (s *Server) DeviceVerify(e *router.Exchange) error {
 	sub, err := s.subjectFromSession(e)
 	if err != nil {
-		return s.internalError(e.Context(), "failed to lookup subject", err)
+		return s.internalError("failed to lookup subject", err)
 	}
 	if sub == nil {
 		return &router.Error{
@@ -1276,9 +1252,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 		NewDigest(normalizeUserCode(req.UserCode)),
 	)
 	if err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to retrieve device code",
+		return s.internalError("failed to retrieve device code",
 			err,
 		)
 	}
@@ -1309,9 +1283,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	}
 
 	if err := s.sessions.UpdateDeviceCode(e.Context(), code); err != nil {
-		return s.internalError(
-			e.Context(),
-			"failed to update device code",
+		return s.internalError("failed to update device code",
 			err,
 		)
 	}
@@ -1337,7 +1309,15 @@ func normalizeUserCode(code string) string {
 
 // wrap executes the handler and translates any returned [Error] into an HTTP
 // JSON response using the error's defined status code.
-func wrap(e *router.Exchange, handler func(*router.Exchange) error) error {
+//
+// This is the error boundary for the RFC 6749 error shape, and therefore the
+// one place that logs it: handlers and grants return errors, they do not
+// report them. Errors that are not an [Error] fall through to the router,
+// which logs them the same way.
+func (s *Server) wrap(
+	e *router.Exchange,
+	handler func(*router.Exchange) error,
+) error {
 	// RFC 6749 Sections 5.1 and 5.2: responses containing tokens or error
 	// details must not be cached. This applies to error responses as well,
 	// so the headers are set up front.
@@ -1345,8 +1325,49 @@ func wrap(e *router.Exchange, handler func(*router.Exchange) error) error {
 	e.SetHeader("Pragma", "no-cache")
 
 	err := handler(e)
-	if v, ok := errors.AsType[*Error](err); ok {
-		return e.JSON(v.Status, v)
+	oerr, ok := errors.AsType[*Error](err)
+	if !ok {
+		return err
 	}
-	return err
+
+	// A server error is the kind a client may quote back in a bug report, so
+	// it always carries an identifier that can be found in the logs.
+	if oerr.ID == "" && oerr.Status >= http.StatusInternalServerError {
+		oerr.ID = router.ErrorID()
+	}
+
+	s.record(e, oerr)
+
+	return e.JSON(oerr.Status, oerr)
+}
+
+// record logs a failed OAuth exchange. Server errors are reported at error
+// level; the protocol errors that make up normal traffic (invalid_grant,
+// invalid_client and friends) are recorded at debug level so they do not
+// drown the logs.
+func (s *Server) record(e *router.Exchange, oerr *Error) {
+	ctx := e.Context()
+
+	level := slog.LevelDebug
+	if oerr.Status >= http.StatusInternalServerError {
+		level = slog.LevelError
+	}
+
+	if !s.logger.Enabled(ctx, level) {
+		return
+	}
+
+	attrs := []any{
+		slog.Int("status", oerr.Status),
+		slog.String("code", oerr.Code),
+		slog.String("path", e.Path()),
+	}
+	if oerr.ID != "" {
+		attrs = append(attrs, slog.String("error_id", oerr.ID))
+	}
+	if oerr.Cause != nil {
+		attrs = append(attrs, slog.Any("error", oerr.Cause))
+	}
+
+	s.logger.Log(ctx, level, oerr.Description, attrs...)
 }
