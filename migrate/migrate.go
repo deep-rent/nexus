@@ -406,49 +406,41 @@ func (m *Migrator) Down(ctx context.Context) error {
 // down script from the source, and executes it. It assumes the caller has
 // already acquired the database lock.
 func (m *Migrator) down(ctx context.Context) error {
-	// 1. Fetch the historical record of all applied migrations.
-	applied, err := m.Applied(ctx)
+	// 1. Fetch the applied records and verified source files in one pass.
+	records, files, err := m.load(ctx)
 	if err != nil {
 		return err
 	}
 
 	// 2. Fast-path return if the database is pristine and has no migrations.
-	if len(applied) == 0 {
+	if len(records) == 0 {
 		m.logger.Info("No applied migrations to revert")
 		return nil
 	}
 
 	// 3. Isolate the target version to rollback (the last one applied).
-	last := applied[len(applied)-1]
+	last := records[len(records)-1]
 
-	// 4. Load all parsed files from the source to find the matching down
-	// script.
-	files, err := m.files()
-	if err != nil {
+	// 4. Locate the matching down script; error out if the database claims a
+	// version is applied, but the source lacks the file to safely revert it.
+	f, ok := toDowns(files)[last.Version]
+	if !ok {
+		return fmt.Errorf(
+			"down migration file not found for version %d",
+			last.Version,
+		)
+	}
+
+	// 5. Execute the rollback script.
+	if err := m.run(ctx, f); err != nil {
 		return err
 	}
 
-	// 5. Scan the available files for the exact version and down direction.
-	for _, f := range files {
-		if f.Version == last.Version && f.Direction == Down {
-			// 6. Execute the rollback script.
-			err := m.run(ctx, f)
-			if err == nil {
-				m.logger.Info(
-					"Migration reverted successfully",
-					slog.Int64("version", f.Version),
-				)
-			}
-			return err
-		}
-	}
-
-	// 7. Error out if the database claims a version is applied, but the source
-	// lacks the required file to safely revert it.
-	return fmt.Errorf(
-		"down migration file not found for version %d",
-		last.Version,
+	m.logger.Info(
+		"Migration reverted successfully",
+		slog.Int64("version", f.Version),
 	)
+	return nil
 }
 
 // Force manually sets the database version and clears the dirty flag.
@@ -477,26 +469,21 @@ func (m *Migrator) MigrateTo(ctx context.Context, target int64) error {
 			return err
 		}
 		applied := toLookup(records)
+		downs := toDowns(files)
 
 		// Revert applied migrations strictly greater than the target version in
 		// descending order.
 		for _, record := range slices.Backward(records) {
 			v := record.Version
 			if v > target {
-				found := false
-				for _, f := range files {
-					if f.Version == v && f.Direction == Down {
-						if err := m.run(c, f); err != nil {
-							return err
-						}
-						found = true
-						break
-					}
-				}
-				if !found {
+				f, ok := downs[v]
+				if !ok {
 					return fmt.Errorf(
 						"down migration file not found for version %d", v,
 					)
+				}
+				if err := m.run(c, f); err != nil {
+					return err
 				}
 				applied[v] = false
 			}
@@ -635,4 +622,15 @@ func toLookup(records []Record) map[int64]bool {
 		applied[r.Version] = true
 	}
 	return applied
+}
+
+// toDowns indexes the down migrations among the given files by version.
+func toDowns(files []Migration) map[int64]Migration {
+	downs := make(map[int64]Migration)
+	for _, f := range files {
+		if f.Direction == Down {
+			downs[f.Version] = f
+		}
+	}
+	return downs
 }
