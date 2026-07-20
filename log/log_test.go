@@ -299,3 +299,91 @@ func TestCombine(t *testing.T) {
 		t.Errorf("buf2: want match for %q; got %q", want, out2)
 	}
 }
+
+func TestWithReplaceAttr(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := log.New(
+		log.WithWriter(&buf),
+		log.WithReplaceAttr(func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == "password" {
+				return slog.String(a.Key, "[REDACTED]")
+			}
+			return a
+		}),
+	)
+
+	logger.Info("login", "user", "alice", "password", "hunter2")
+
+	logs := buf.String()
+	if strings.Contains(logs, "hunter2") {
+		t.Errorf("secret was not redacted: %q", logs)
+	}
+	if !strings.Contains(logs, "[REDACTED]") {
+		t.Errorf("redaction marker missing: %q", logs)
+	}
+	if !strings.Contains(logs, "user=alice") {
+		t.Errorf("unrelated attribute was altered: %q", logs)
+	}
+}
+
+func TestWithReplaceAttr_Nil(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := log.New(log.WithWriter(&buf), log.WithReplaceAttr(nil))
+
+	// A nil replacer must be ignored, leaving attributes untouched.
+	logger.Info("event", "key", "value")
+
+	if !strings.Contains(buf.String(), "key=value") {
+		t.Errorf("nil replacer changed behavior: %q", buf.String())
+	}
+}
+
+func TestRedact(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := log.New(
+		log.WithWriter(&buf),
+		// Mixed casing, since keys derived from headers vary.
+		log.Redact("Authorization", "password"),
+	)
+
+	logger.Info("request",
+		slog.String("authorization", "Bearer abc.def"),
+		slog.String("PASSWORD", "hunter2"),
+		slog.String("path", "/login"),
+	)
+
+	logs := buf.String()
+
+	for _, secret := range []string{"Bearer abc.def", "hunter2"} {
+		if strings.Contains(logs, secret) {
+			t.Errorf("secret %q leaked: %q", secret, logs)
+		}
+	}
+
+	if !strings.Contains(logs, "path=/login") {
+		t.Errorf("unrelated attribute was altered: %q", logs)
+	}
+
+	if n := strings.Count(logs, "[REDACTED]"); n != 2 {
+		t.Errorf("redaction count: got %d; want 2 in %q", n, logs)
+	}
+}
+
+func TestRedact_NoKeys(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := log.New(log.WithWriter(&buf), log.Redact())
+
+	logger.Info("event", "key", "value")
+
+	if !strings.Contains(buf.String(), "key=value") {
+		t.Errorf("empty redact set altered output: %q", buf.String())
+	}
+}

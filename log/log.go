@@ -154,8 +154,9 @@ func NewHandler(opts ...Option) slog.Handler {
 
 	w := c.Writer
 	o := &slog.HandlerOptions{
-		Level:     c.Level,
-		AddSource: c.AddSource,
+		Level:       c.Level,
+		AddSource:   c.AddSource,
+		ReplaceAttr: c.ReplaceAttr,
 	}
 
 	var handler slog.Handler
@@ -179,6 +180,8 @@ type config struct {
 	Format Format
 	// Writer is the output destination.
 	Writer io.Writer
+	// ReplaceAttr rewrites or drops attributes before they are logged.
+	ReplaceAttr func(groups []string, a slog.Attr) slog.Attr
 }
 
 // Option defines a function that modifies the logger configuration.
@@ -219,6 +222,56 @@ func WithWriter(w io.Writer) Option {
 	}
 }
 
+// WithReplaceAttr sets a function that is called for every non-group
+// attribute before it is written, letting the caller rewrite or drop it. It
+// maps directly onto [slog.HandlerOptions.ReplaceAttr].
+//
+// The common use is redaction: keeping secrets out of the logs regardless of
+// what a call site passes. A nil function is ignored.
+//
+//	log.New(log.WithReplaceAttr(func(_ []string, a slog.Attr) slog.Attr {
+//		switch a.Key {
+//		case "authorization", "password", "token":
+//			return slog.String(a.Key, "[REDACTED]")
+//		default:
+//			return a
+//		}
+//	}))
+//
+// Redaction guards accidental leaks; it is not a substitute for not logging
+// secrets in the first place.
+func WithReplaceAttr(
+	fn func(groups []string, a slog.Attr) slog.Attr,
+) Option {
+	return func(c *config) {
+		if fn != nil {
+			c.ReplaceAttr = fn
+		}
+	}
+}
+
+// Redact returns a [WithReplaceAttr] option that replaces the value of any
+// attribute whose key matches one of the given names with a fixed marker. Key
+// comparison is case-insensitive, since header- and field-derived keys vary
+// in casing.
+//
+//	log.New(log.Redact("authorization", "password", "set-cookie"))
+//
+// Only top-level keys are matched; an attribute nested inside a group is
+// compared by its own key, not its group-qualified path.
+func Redact(keys ...string) Option {
+	set := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		set[ascii.ToLower(k)] = struct{}{}
+	}
+	return WithReplaceAttr(func(_ []string, a slog.Attr) slog.Attr {
+		if _, ok := set[ascii.ToLower(a.Key)]; ok {
+			return slog.String(a.Key, "[REDACTED]")
+		}
+		return a
+	})
+}
+
 // ParseLevel converts a case-insensitive string into a [slog.Level].
 // It accepts standard level names like "debug", "info", "warn", and "error".
 // It returns an error if the string is not a valid level.
@@ -236,11 +289,9 @@ func ParseFormat(s string) (format Format, err error) {
 	return format, err
 }
 
-// Silent creates a logger that discards all output.
+// Silent creates a logger that discards all output. Unlike a logger pointed
+// at [io.Discard], it reports every level as disabled, so a caller guarding
+// expensive work with [slog.Logger.Enabled] skips it entirely.
 func Silent() *slog.Logger {
-	const LevelSilent = slog.Level(100)
-	return New(
-		WithWriter(io.Discard),
-		WithLevel(LevelSilent),
-	)
+	return slog.New(slog.DiscardHandler)
 }
