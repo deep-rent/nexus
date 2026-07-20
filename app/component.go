@@ -128,7 +128,7 @@ func Named(name string, c Component) Component {
 // Graceful panics if start or stop is nil.
 func Graceful(start Component, stop func(ctx context.Context) error) Component {
 	if start == nil || stop == nil {
-		panic("app: Graceful requires non-nil start and stop functions")
+		panic("requires non-nil start and stop functions")
 	}
 	return func(ctx context.Context) error {
 		errCh := make(chan error, 1)
