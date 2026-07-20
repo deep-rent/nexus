@@ -298,7 +298,9 @@ var _ event.WaitStrategy = (*mockWait)(nil)
 func TestBus_CustomWaitStrategy(t *testing.T) {
 	t.Parallel()
 	w := &mockWait{}
-	bus := event.NewBus[int](event.WithWaitStrategy(func() event.WaitStrategy { return w }))
+	bus := event.NewBus[int](
+		event.WithWaitStrategy(func() event.WaitStrategy { return w }),
+	)
 
 	if ok := bus.Publish(1); !ok {
 		t.Errorf("publishing 1: got %t; want %t", ok, true)
