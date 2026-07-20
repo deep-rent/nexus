@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/schema"
@@ -62,6 +63,10 @@ const (
 	// migration.
 	Down
 )
+
+// unlockTimeout bounds the deferred lock release so that a wedged database
+// cannot hang the migrator after the actual work has finished.
+const unlockTimeout = 15 * time.Second
 
 // String implements [fmt.Stringer].
 func (d Direction) String() string {
@@ -279,7 +284,15 @@ func (m *Migrator) lock(
 	}
 
 	defer func() {
-		if err := m.driver.Unlock(context.Background()); err != nil {
+		// Release on a fresh context so the lock is returned even when the
+		// caller's context is already canceled, but bound the attempt so a
+		// wedged database cannot hang the process indefinitely.
+		c, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			unlockTimeout,
+		)
+		defer cancel()
+		if err := m.driver.Unlock(c); err != nil {
 			m.logger.Error("Failed to release lock", log.Err(err))
 		}
 	}()
