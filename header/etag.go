@@ -14,7 +14,11 @@
 
 package header
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/deep-rent/nexus/internal/quote"
+)
 
 // ETag returns the entity tag carried by the ETag header, or an empty string
 // if there is none. The value is returned as sent, including its quotes and
@@ -40,13 +44,10 @@ func Quote(tag string) string {
 	if tag == "" {
 		return ""
 	}
-	if strings.HasPrefix(tag, `"`) && strings.HasSuffix(tag, `"`) {
+	if quote.Has(strings.TrimPrefix(tag, "W/")) {
 		return tag
 	}
-	if strings.HasPrefix(tag, `W/"`) && strings.HasSuffix(tag, `"`) {
-		return tag
-	}
-	return `"` + tag + `"`
+	return quote.Double(tag)
 }
 
 // MatchETag reports whether an If-None-Match header value matches the given
