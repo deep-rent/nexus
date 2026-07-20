@@ -44,7 +44,10 @@ func Quote(tag string) string {
 	if tag == "" {
 		return ""
 	}
-	if quote.Has(strings.TrimPrefix(tag, "W/")) {
+	if quote.Has(tag) {
+		return tag
+	}
+	if after, found := strings.CutPrefix(tag, "W/"); found && quote.Has(after) {
 		return tag
 	}
 	return quote.Double(tag)
