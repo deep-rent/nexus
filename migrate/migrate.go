@@ -294,7 +294,9 @@ func (m *Migrator) lock(
 // files fetches migrations from the source and prepares them.
 //
 // It calculates cryptographic checksums, maps them to domain objects, and
-// strictly sorts them.
+// strictly sorts them. It returns an error if two migrations share the same
+// version and direction, since applying such duplicates would silently
+// corrupt the tracking state.
 func (m *Migrator) files() ([]Migration, error) {
 	files, err := m.source.List()
 	if err != nil {
@@ -315,6 +317,18 @@ func (m *Migrator) files() ([]Migration, error) {
 	}
 
 	slices.SortFunc(migrations, Migration.Compare)
+
+	// After sorting, duplicates of (version, direction) are adjacent.
+	for i := 1; i < len(migrations); i++ {
+		prev, cur := migrations[i-1], migrations[i]
+		if prev.Version == cur.Version && prev.Direction == cur.Direction {
+			return nil, fmt.Errorf(
+				"duplicate %s migration for version %d: %q and %q",
+				cur.Direction, cur.Version, prev.Path, cur.Path,
+			)
+		}
+	}
+
 	return migrations, nil
 }
 

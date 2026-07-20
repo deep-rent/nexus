@@ -289,6 +289,37 @@ func TestMigrator_Up(t *testing.T) {
 		}
 	})
 
+	t.Run("error duplicate version", func(t *testing.T) {
+		t.Parallel()
+		src := srcmock.New(
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Path:      "1_a.up.sql",
+				Content:   []byte("CREATE a;"),
+			},
+			migrate.SourceScript{
+				Version:   1,
+				Direction: migrate.Up,
+				Path:      "01_b.up.sql",
+				Content:   []byte("CREATE b;"),
+			},
+		)
+		drv := drvmock.New()
+		m := migrate.New(migrate.WithSource(src), migrate.WithDriver(drv))
+
+		err := m.Up(t.Context())
+		if err == nil {
+			t.Fatal("should have returned an error")
+		}
+		if len(drv.State()) != 0 {
+			t.Errorf("state size: got %d; want 0", len(drv.State()))
+		}
+		if drv.IsLocked {
+			t.Error("lock was not released")
+		}
+	})
+
 	t.Run("error dirty state", func(t *testing.T) {
 		t.Parallel()
 		content := []byte("content")
