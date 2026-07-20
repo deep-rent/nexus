@@ -53,12 +53,10 @@ package router
 import (
 	"context"
 	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"uuid"
 
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/internal/bind"
@@ -176,46 +174,6 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 }
 
 var _ http.ResponseWriter = (*responseWriter)(nil)
-
-// Error describes the standardized shape of API errors returned to clients.
-//
-// Handlers can return this struct directly to control the HTTP status code
-// and error details. If a handler returns a standard Go error, the [Router]
-// will wrap it in a generic internal server error.
-type Error struct {
-	// Status is the HTTP status code (e.g., 400, 404, 500).
-	Status int `json:"status"`
-	// Reason is a short string identifying the error type.
-	Reason string `json:"reason"`
-	// Description is a human-readable explanation of the error cause.
-	Description string `json:"description"`
-	// ID is a unique identifier of the specific occurrence for tracing.
-	ID string `json:"id,omitempty"`
-	// Context contains arbitrary additional data about the error.
-	Context any `json:"context,omitempty"`
-	// Cause is the underlying error that triggered this error.
-	Cause error `json:"-"`
-}
-
-// Error satisfies the standard [error] interface.
-func (e *Error) Error() string {
-	return e.Reason + ": " + e.Description
-}
-
-// Unwrap returns the wrapped error if applicable.
-func (e *Error) Unwrap() error {
-	return e.Cause
-}
-
-// ErrorID generates a unique, string-based identifier intended for use
-// in the [Error.ID] field.
-//
-// This identifier helps correlate client-side error reports with server-side
-// logs, making it easier to trace the specific occurrence of an issue
-// through the system.
-func ErrorID() string {
-	return uuid.NewV7().String()
-}
 
 // Exchange acts as a context object for a single HTTP request/response cycle.
 //
@@ -591,39 +549,4 @@ func (r *Router) HandleFunc(
 // Mount registers a standard [http.Handler] under a pattern.
 func (r *Router) Mount(pattern string, handler http.Handler) {
 	r.Handle(pattern, Wrap(handler))
-}
-
-// defaultErrorHandler centralizes error processing.
-func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
-	return func(e *Exchange, err error) {
-		if e.W.Closed() {
-			logger.Error(
-				"Handler returned error after writing response",
-				slog.Any("error", err),
-			)
-			return
-		}
-		ae := &Error{}
-		ok := errors.As(err, &ae)
-		if !ok {
-			id := ErrorID()
-
-			logger.Error(
-				"An internal server error occurred",
-				slog.String("error_id", id),
-				slog.Any("error", err),
-			)
-
-			ae = &Error{
-				Status:      http.StatusInternalServerError,
-				Reason:      ReasonServerError,
-				Description: "an unhandled internal error occurred",
-				ID:          id,
-			}
-		}
-
-		if we := e.JSON(ae.Status, ae); we != nil {
-			logger.Warn("Failed to write error response", slog.Any("error", we))
-		}
-	}
 }
