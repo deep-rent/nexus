@@ -84,10 +84,10 @@ const (
 	ReasonValidationFailed = "validation_failed"
 	// ReasonServerError indicates that an unexpected internal error occurred.
 	ReasonServerError = "server_error"
-    // ReasonNotFound indicates that the requested resource does not exist.
-    ReasonNotFound = "not_found"
-    // ReasonRateLimit indicates that the rate limit has been exceeded.
-    ReasonRateLimit = "rate_limit"
+	// ReasonNotFound indicates that the requested resource does not exist.
+	ReasonNotFound = "not_found"
+	// ReasonRateLimit indicates that the rate limit has been exceeded.
+	ReasonRateLimit = "rate_limit"
 )
 
 // Standard media types used in the Content-Type header.
