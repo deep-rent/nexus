@@ -19,10 +19,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
+	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/valid"
 )
@@ -151,32 +151,15 @@ func DocumentEndpoint[C auth.AccessClaims](g Getter) router.HandlerFunc {
 		// re-sequencing (team-move cascades, grant touches) never alters the
 		// payload. Caching is private (visibility is per-user) and no-cache
 		// (revalidate on every use), which is exactly the ETag polling loop.
-		etag := `"` + strconv.FormatInt(int64(doc.Time), 10) + `"`
+		etag := header.Quote(strconv.FormatInt(int64(doc.Time), 10))
 		e.SetHeader("ETag", etag)
 		e.SetHeader("Cache-Control", "private, no-cache")
-		if matchesETag(e.GetHeader("If-None-Match"), etag) {
+		if header.MatchETag(e.GetHeader("If-None-Match"), etag) {
 			e.Status(http.StatusNotModified)
 			return nil
 		}
 		return e.JSON(http.StatusOK, doc)
 	}
-}
-
-// matchesETag reports whether an If-None-Match header value matches the
-// given entity tag, using the weak comparison prescribed for If-None-Match
-// (RFC 9110, section 13.1.2): a "W/" prefix is ignored and "*" matches any
-// current representation.
-func matchesETag(header, etag string) bool {
-	if strings.TrimSpace(header) == "*" {
-		return true
-	}
-	for candidate := range strings.SplitSeq(header, ",") {
-		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
-		if candidate == etag {
-			return true
-		}
-	}
-	return false
 }
 
 // scopeFrom extracts the authorization scope from the request's verified

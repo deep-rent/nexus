@@ -340,7 +340,7 @@ func (c *controller[T]) update(
 
 	c.mu.Lock()
 	c.resource = resource
-	c.etag = res.Header.Get("ETag")
+	c.etag = header.ETag(res.Header)
 	c.lastModified = res.Header.Get("Last-Modified")
 	c.ok = true
 	c.failures = 0
