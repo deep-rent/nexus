@@ -273,6 +273,34 @@ type SubjectStore interface {
 	// If authentication fails (e.g., wrong password), it must return nil and
 	// nil. It should return an error only if the underlying storage lookup
 	// fails.
+	//
+	// Implementations should not hand-roll password verification; the
+	// [github.com/deep-rent/nexus/pass] package stores self-describing
+	// JSON records and resolves the hashing algorithm dynamically. Verify
+	// the password and, while the plaintext is still at hand, transparently
+	// upgrade hashes that predate the current hashing configuration:
+	//
+	//	func (s *store) Authenticate(
+	//	  ctx context.Context,
+	//	  username, password string,
+	//	) (oauth.Subject, error) {
+	//	  sub, record, err := s.lookup(ctx, username)
+	//	  if err != nil || sub == nil {
+	//	    return nil, err
+	//	  }
+	//	  ok, err := s.hasher.Verify(record, password)
+	//	  if err != nil || !ok {
+	//	    return nil, err // nil, nil on a wrong password
+	//	  }
+	//	  // The password is proven; converge its stored hash to the
+	//	  // strongest configuration without a mass reset.
+	//	  if stale, _ := s.hasher.Outdated(record); stale {
+	//	    if record, err = s.hasher.Hash(password); err == nil {
+	//	      s.updateRecord(ctx, sub.ID(), record)
+	//	    }
+	//	  }
+	//	  return sub, nil
+	//	}
 	Authenticate(
 		ctx context.Context,
 		username, password string,
