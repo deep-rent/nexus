@@ -25,7 +25,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -667,8 +666,8 @@ func (s *Server) introspect(e *router.Exchange) error {
 			Exp:       epoch(claims.ExpiresAt()),
 			Nbf:       epoch(claims.NotBefore()),
 		}
-		if claims.Azp != uuid.Nil() {
-			res.ClientID = claims.Azp.String()
+		if claims.Azp != "" {
+			res.ClientID = claims.Azp
 		}
 		res.Sub = claims.Sub
 	}
@@ -931,7 +930,7 @@ func (s *Server) token(e *router.Exchange) error {
 	clientID := pro.Client.ID()
 
 	claims := &auth.Claims{
-		Azp:   clientID,
+		Azp:   clientID.String(),
 		Scope: strings.Fields(iss.Scope),
 		Jti:   uuid.New().String(),
 		Iss:   s.issuer,

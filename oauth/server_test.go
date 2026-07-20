@@ -26,7 +26,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -431,7 +430,7 @@ func TestTokenClientCredentials(t *testing.T) {
 	}
 
 	claims := env.verifyToken(t, res.AccessToken)
-	if claims.Azp != env.client.id {
+	if claims.Azp != env.client.id.String() {
 		t.Errorf("got azp %v; want %v", claims.Azp, env.client.id)
 	}
 	if claims.Sub != env.client.id.String() {
@@ -664,7 +663,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	if claims.Sub != env.subject.id.String() {
 		t.Errorf("got sub %v; want %v", claims.Sub, env.subject.id)
 	}
-	if claims.Azp != env.client.id {
+	if claims.Azp != env.client.id.String() {
 		t.Errorf("got azp %v; want %v", claims.Azp, env.client.id)
 	}
 	if !slices.Equal(claims.Roles, []string{"admin"}) {
