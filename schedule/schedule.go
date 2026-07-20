@@ -119,11 +119,14 @@ type Scheduler interface {
 	// Dispatch executes the given tick in a separate goroutine. The tick will
 	// run immediately and then repeat according to the duration it returns
 	// until the scheduler is shut down. Multiple ticks can be dispatched
-	// concurrently without blocking each other.
+	// concurrently without blocking each other. Dispatching after Shutdown
+	// has been called does nothing.
 	Dispatch(tick Tick)
 	// Shutdown gracefully stops the scheduler. It cancels the scheduler's
 	// context and waits for all its pending tasks to complete. Shutdown blocks
-	// until all dispatched goroutines have finished.
+	// until all dispatched goroutines have finished. Once it has been called,
+	// no further tick is started, though a tick already in progress runs to
+	// completion. It is safe to call Shutdown more than once.
 	Shutdown()
 }
 
@@ -155,6 +158,9 @@ type scheduler struct {
 	logger   *slog.Logger       // destination for internal logs
 	recovery time.Duration      // delay applied after a tick panicked
 	wg       sync.WaitGroup     // tracks active task goroutines
+
+	mu     sync.Mutex // guards closed against a concurrent Dispatch
+	closed bool       // whether Shutdown has been called
 }
 
 // Context implements [Scheduler].
@@ -164,6 +170,15 @@ func (s *scheduler) Context() context.Context {
 
 // Dispatch implements [Scheduler].
 func (s *scheduler) Dispatch(tick Tick) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Starting new work once Shutdown has begun would both outlive the
+	// scheduler and add to a WaitGroup that is already being waited on.
+	if s.closed {
+		return
+	}
+
 	s.wg.Go(func() {
 		timer := time.NewTimer(0)
 		defer timer.Stop()
@@ -173,6 +188,12 @@ func (s *scheduler) Dispatch(tick Tick) {
 			case <-s.ctx.Done():
 				return
 			case <-timer.C:
+				// A ready timer and a canceled context are chosen between at
+				// random, so the context is checked explicitly before
+				// committing to another run.
+				if s.ctx.Err() != nil {
+					return
+				}
 				timer.Reset(s.run(tick))
 			}
 		}
@@ -200,7 +221,13 @@ func (s *scheduler) run(tick Tick) (d time.Duration) {
 
 // Shutdown implements [Scheduler].
 func (s *scheduler) Shutdown() {
+	s.mu.Lock()
+	s.closed = true
 	s.cancel()
+	s.mu.Unlock()
+
+	// Waited on without the lock, so that a concurrent Dispatch returns
+	// promptly instead of blocking until every tick has drained.
 	s.wg.Wait()
 }
 
