@@ -30,6 +30,7 @@ type config struct {
 	recovery time.Duration // delay applied after a tick panicked
 	start    time.Duration // delay before the first run of a tick
 	jitter   float64       // fraction of the start delay subject to jitter
+	minimum  time.Duration // floor for the interval a tick asks for
 }
 
 // Option is a function that configures the [Scheduler].
@@ -85,5 +86,25 @@ func WithStartDelay(d time.Duration) Option {
 func WithStartJitter(p float64) Option {
 	return func(c *config) {
 		c.jitter = min(1, max(0, p))
+	}
+}
+
+// WithMinInterval sets a floor for the interval a [Tick] asks for. A tick that
+// returns a shorter duration, including zero, is rescheduled after this
+// duration instead.
+//
+// Rescheduling without delay is a supported and occasionally useful pattern,
+// for instance to drain a queue until it is empty. It is also the way to peg a
+// core by accident: a tick that always returns zero is re-run as fast as the
+// scheduler can call it. Set a floor on schedulers whose ticks are not trusted
+// to converge.
+//
+// Values of zero or less are ignored, and ticks are rescheduled exactly as
+// they ask.
+func WithMinInterval(d time.Duration) Option {
+	return func(c *config) {
+		if d > 0 {
+			c.minimum = d
+		}
 	}
 }

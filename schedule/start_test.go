@@ -17,6 +17,7 @@ package schedule_test
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,6 +121,50 @@ func TestScheduler_StartOptionsIgnoreInvalidValues(t *testing.T) {
 		schedule.WithStartDelay(-time.Hour),
 		schedule.WithStartJitter(-1),
 		schedule.WithStartJitter(5),
+	)
+	defer s.Shutdown()
+
+	if d := started(t, s); d > 100*time.Millisecond {
+		t.Errorf("first run after %v; want an immediate start", d)
+	}
+}
+
+// A tick that always asks to be re-run immediately would otherwise spin as
+// fast as the scheduler can call it.
+func TestScheduler_MinInterval(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int64
+
+	s := schedule.New(t.Context(),
+		schedule.WithMinInterval(20*time.Millisecond),
+	)
+
+	s.Dispatch(schedule.TickFn(func(context.Context) time.Duration {
+		calls.Add(1)
+		return 0 // Asks to run again immediately.
+	}))
+
+	time.Sleep(100 * time.Millisecond)
+	s.Shutdown()
+
+	// Roughly five runs fit into the window; allow generous headroom for
+	// scheduling, but nothing close to an unthrottled loop.
+	if n := calls.Load(); n > 20 {
+		t.Errorf("calls: got %d; want the interval to be enforced", n)
+	}
+
+	if n := calls.Load(); n == 0 {
+		t.Error("calls: got 0; want the tick to run")
+	}
+}
+
+func TestScheduler_MinIntervalIgnoresInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	s := schedule.New(t.Context(),
+		schedule.WithMinInterval(0),
+		schedule.WithMinInterval(-time.Hour),
 	)
 	defer s.Shutdown()
 

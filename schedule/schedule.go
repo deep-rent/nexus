@@ -156,6 +156,7 @@ func New(ctx context.Context, opts ...Option) Scheduler {
 		cancel:   cancel,
 		logger:   cfg.logger,
 		recovery: cfg.recovery,
+		minimum:  cfg.minimum,
 		start:    cfg.start,
 		jitter:   jitter.New(cfg.jitter, nil),
 	}
@@ -167,6 +168,7 @@ type scheduler struct {
 	cancel   context.CancelFunc // stops all dispatched goroutines
 	logger   *slog.Logger       // destination for internal logs
 	recovery time.Duration      // delay applied after a tick panicked
+	minimum  time.Duration      // floor for the interval a tick asks for
 	start    time.Duration      // delay before the first run of a tick
 	jitter   *jitter.Jitter     // scatters the start delay
 	wg       sync.WaitGroup     // tracks active task goroutines
@@ -214,7 +216,7 @@ func (s *scheduler) Dispatch(tick Tick) context.CancelFunc {
 				if ctx.Err() != nil {
 					return
 				}
-				timer.Reset(s.run(ctx, tick))
+				timer.Reset(max(s.minimum, s.run(ctx, tick)))
 			}
 		}
 	})
