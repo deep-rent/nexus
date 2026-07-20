@@ -714,6 +714,102 @@ func TestMigrator_Pending_And_Applied(t *testing.T) {
 	}
 }
 
+func TestMigrator_Version(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty database", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		m := migrate.New(
+			migrate.WithSource(srcmock.New()),
+			migrate.WithDriver(drv),
+		)
+
+		_, ok, err := m.Version(t.Context())
+		if err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if ok {
+			t.Error("ok: got true; want false")
+		}
+		if !drv.IsInit {
+			t.Error("should have initialized the tracking table")
+		}
+	})
+
+	t.Run("latest applied", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 1})
+		drv.Set(migrate.Record{Version: 2})
+		m := migrate.New(
+			migrate.WithSource(srcmock.New()),
+			migrate.WithDriver(drv),
+		)
+
+		rec, ok, err := m.Version(t.Context())
+		if err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if !ok {
+			t.Fatal("ok: got false; want true")
+		}
+		if rec.Version != 2 {
+			t.Errorf("version: got %d; want 2", rec.Version)
+		}
+	})
+
+	t.Run("dirty database", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.Set(migrate.Record{Version: 4, Dirty: true})
+		// No source files exist for version 4; Version must not verify.
+		m := migrate.New(
+			migrate.WithSource(srcmock.New()),
+			migrate.WithDriver(drv),
+		)
+
+		rec, ok, err := m.Version(t.Context())
+		if err != nil {
+			t.Fatalf("should not have returned an error: %v", err)
+		}
+		if !ok {
+			t.Fatal("ok: got false; want true")
+		}
+		if !rec.Dirty {
+			t.Error("dirty: got false; want true")
+		}
+	})
+
+	t.Run("error applied fails", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.AppliedErr = errors.New("db down")
+		m := migrate.New(
+			migrate.WithSource(srcmock.New()),
+			migrate.WithDriver(drv),
+		)
+
+		if _, _, err := m.Version(t.Context()); err == nil {
+			t.Error("should have returned an error")
+		}
+	})
+
+	t.Run("error init fails", func(t *testing.T) {
+		t.Parallel()
+		drv := drvmock.New()
+		drv.InitErr = errors.New("no permissions")
+		m := migrate.New(
+			migrate.WithSource(srcmock.New()),
+			migrate.WithDriver(drv),
+		)
+
+		if _, _, err := m.Version(t.Context()); err == nil {
+			t.Error("should have returned an error")
+		}
+	})
+}
+
 func TestMigrator_DryRun(t *testing.T) {
 	t.Parallel()
 

@@ -591,6 +591,32 @@ func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
 	return m.filter(ctx, true)
 }
 
+// Version reports the newest applied migration record.
+//
+// It initializes the tracking table if necessary, so it can be called against
+// a pristine database. Unlike [Migrator.Applied], it does not verify source
+// files or reject dirty state, making it suitable for inspecting a database
+// after a failed migration. The boolean return is false when no migration has
+// been applied yet.
+func (m *Migrator) Version(ctx context.Context) (Record, bool, error) {
+	if err := m.driver.Init(ctx); err != nil {
+		return Record{}, false, fmt.Errorf(
+			"failed to initialize driver: %w", err,
+		)
+	}
+
+	records, err := m.driver.Applied(ctx)
+	if err != nil {
+		return Record{}, false, fmt.Errorf(
+			"failed to get applied versions: %w", err,
+		)
+	}
+	if len(records) == 0 {
+		return Record{}, false, nil
+	}
+	return records[len(records)-1], true, nil
+}
+
 // run reads the migration payload and executes it via the driver.
 //
 // If dry run is enabled, it logs the statements and skips execution.
