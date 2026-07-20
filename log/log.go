@@ -272,6 +272,25 @@ func Redact(keys ...string) Option {
 	})
 }
 
+// ErrorKey is the attribute key under which [Err] records an error. It is
+// exported so that handlers and log processors can find errors by a stable
+// name.
+const ErrorKey = "error"
+
+// Err returns a [slog.Attr] carrying err under the [ErrorKey]. It is the
+// canonical way to log an error in this codebase, so that every error is
+// recorded under the same key and enriching that record later is a change in
+// one place rather than at every call site:
+//
+//	logger.ErrorContext(ctx, "Failed to fetch resource", log.Err(err))
+//
+// A nil error yields an [slog.Attr] whose value is nil, which the handlers
+// render as such; callers should log an error attribute only when there is an
+// error to report.
+func Err(err error) slog.Attr {
+	return slog.Any(ErrorKey, err)
+}
+
 // ParseLevel converts a case-insensitive string into a [slog.Level].
 // It accepts standard level names like "debug", "info", "warn", and "error".
 // It returns an error if the string is not a valid level.

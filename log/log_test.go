@@ -16,6 +16,8 @@ package log_test
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -385,5 +387,49 @@ func TestRedact_NoKeys(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "key=value") {
 		t.Errorf("empty redact set altered output: %q", buf.String())
+	}
+}
+
+func TestErr(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := log.New(log.WithWriter(&buf), log.WithFormat(log.FormatJSON))
+
+	logger.Error("request failed", log.Err(errors.New("connection refused")))
+
+	logs := buf.String()
+	if !strings.Contains(logs, `"error":"connection refused"`) {
+		t.Errorf("error not recorded under the canonical key: %q", logs)
+	}
+}
+
+// The key must stay stable, since handlers and log processors match on it.
+func TestErr_Key(t *testing.T) {
+	t.Parallel()
+
+	if got := log.Err(errors.New("x")).Key; got != log.ErrorKey {
+		t.Errorf("got %q; want %q", got, log.ErrorKey)
+	}
+
+	if log.ErrorKey != "error" {
+		t.Errorf("ErrorKey changed to %q; call sites and dashboards depend on it",
+			log.ErrorKey)
+	}
+}
+
+// A wrapped error must keep its full message, including under JSON where a
+// naive marshal of the underlying type would lose it.
+func TestErr_PreservesWrappedMessage(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := log.New(log.WithWriter(&buf), log.WithFormat(log.FormatJSON))
+
+	err := fmt.Errorf("querying users: %w", errors.New("timeout"))
+	logger.Error("failed", log.Err(err))
+
+	if !strings.Contains(buf.String(), "querying users: timeout") {
+		t.Errorf("wrapped message lost: %q", buf.String())
 	}
 }
