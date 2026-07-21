@@ -261,9 +261,29 @@ func (c *Challenger) Begin(
 	if err != nil {
 		return "", 0, err
 	}
-	code, err := c.generateCode(c.length)
+	expiresIn, err = c.Start(ctx, purpose, owner, handle, m)
 	if err != nil {
 		return "", 0, err
+	}
+	return handle, expiresIn, nil
+}
+
+// Start mints a challenge under a caller-provided handle instead of a generated
+// one, and otherwise behaves exactly like [Challenger.Begin]. It lets a caller
+// derive the handle deterministically — for example, a login step keying its
+// challenge on an outer flow handle so the client holds a single token.
+//
+// The handle MUST be unpredictable: the challenge is only as unguessable as the
+// handle it is keyed on. Deriving it from a high-entropy secret satisfies this;
+// a low-entropy handle would make the code brute-forceable through the store.
+func (c *Challenger) Start(
+	ctx context.Context,
+	purpose, owner, handle string,
+	m Method,
+) (expiresIn int64, err error) {
+	code, err := c.generateCode(c.length)
+	if err != nil {
+		return 0, err
 	}
 
 	ch := Challenge{
@@ -275,15 +295,15 @@ func (c *Challenger) Begin(
 		ExpiresAt: c.now().Add(c.lifetime).Unix(),
 	}
 	if err := c.store.Create(ctx, ch); err != nil {
-		return "", 0, err
+		return 0, err
 	}
 
 	if err := m.Deliver(ctx, code); err != nil {
 		c.deleteBestEffort(ctx, ch.ID, "undeliverable challenge")
-		return "", 0, err
+		return 0, err
 	}
 
-	return handle, int64(c.lifetime.Seconds()), nil
+	return int64(c.lifetime.Seconds()), nil
 }
 
 // Verify confirms a challenge against the code the owner received. The purpose

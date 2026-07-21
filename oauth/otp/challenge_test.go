@@ -119,6 +119,38 @@ func TestChallenger_New_PanicsOnNilStore(t *testing.T) {
 	otp.New(nil)
 }
 
+func TestChallenger_Start(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	cap := &capture{}
+	c := otp.New(store)
+
+	// Start keys the challenge on a caller-provided handle.
+	handle := "outer-flow-handle:otp"
+	expiresIn, err := c.Start(
+		t.Context(), purpose, "user-1", handle, cap.method("sms"),
+	)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if expiresIn <= 0 {
+		t.Errorf("got expiresIn %d; want > 0", expiresIn)
+	}
+	if cap.sent != 1 {
+		t.Fatalf("code not delivered exactly once (got %d)", cap.sent)
+	}
+
+	// The same handle verifies; no separate handle was returned.
+	out, err := c.Verify(t.Context(), purpose, handle, cap.code)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !out.OK() || out.Owner != "user-1" {
+		t.Errorf("got %+v; want OK owner=user-1", out)
+	}
+}
+
 func TestChallenger_BeginVerify(t *testing.T) {
 	t.Parallel()
 
