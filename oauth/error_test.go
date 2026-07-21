@@ -26,9 +26,6 @@ import (
 	"testing"
 )
 
-// decodeInto unmarshals an OAuth error response.
-func decodeInto(b []byte, v any) error { return json.Unmarshal(b, v) }
-
 // withLogger installs a logger that writes into buf, so that a test can
 // inspect what the server recorded.
 func withLogger(buf *bytes.Buffer, level slog.Level) Option {
@@ -87,7 +84,7 @@ func TestServer_LogsServerErrors(t *testing.T) {
 	}
 
 	var oerr Error
-	if err := decodeInto(res.Body.Bytes(), &oerr); err != nil {
+	if err := json.Unmarshal(res.Body.Bytes(), &oerr); err != nil {
 		t.Fatalf("decoding %q: %v", body, err)
 	}
 
@@ -140,7 +137,7 @@ func TestServer_ProtocolErrorHasNoID(t *testing.T) {
 	}, env.client, env.client.secret)
 
 	var oerr Error
-	if err := decodeInto(res.Body.Bytes(), &oerr); err != nil {
+	if err := json.Unmarshal(res.Body.Bytes(), &oerr); err != nil {
 		t.Fatalf("decoding %q: %v", res.Body.String(), err)
 	}
 
