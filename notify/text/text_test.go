@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sms_test
+package text_test
 
 import (
 	"errors"
@@ -23,13 +23,13 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/sms"
+	"github.com/deep-rent/nexus/notify/text"
 )
 
 func TestAPIError(t *testing.T) {
 	t.Parallel()
 
-	err := &sms.APIError{
+	err := &text.APIError{
 		Status:  400,
 		Code:    21211,
 		Message: "Invalid 'To' Phone Number",
@@ -40,8 +40,38 @@ func TestAPIError(t *testing.T) {
 		t.Errorf("got %q; want %q", got, want)
 	}
 
-	if !errors.Is(err, sms.ErrDispatchFailed) {
+	if !errors.Is(err, text.ErrDispatchFailed) {
 		t.Error("APIError should unwrap to ErrDispatchFailed")
+	}
+}
+
+func TestWhatsApp(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		number string
+		want   string
+	}{
+		{
+			name:   "wraps a bare number",
+			number: "+15558675309",
+			want:   "whatsapp:+15558675309",
+		},
+		{
+			name:   "leaves an already-prefixed number unchanged",
+			number: "whatsapp:+15558675309",
+			want:   "whatsapp:+15558675309",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := text.WhatsApp(tt.number); got != tt.want {
+				t.Errorf("WhatsApp(%q) = %q; want %q", tt.number, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -50,32 +80,32 @@ func TestMessage_Validate(t *testing.T) {
 
 	tests := []struct {
 		name string
-		msg  *sms.Message
+		msg  *text.Message
 		err  error
 	}{
 		{
 			name: "nil message",
 			msg:  nil,
-			err:  sms.ErrNilMessage,
+			err:  text.ErrNilMessage,
 		},
 		{
 			name: "missing to",
-			msg:  sms.NewMessage("", "+1234567890", "Hello"),
-			err:  sms.ErrMissingTo,
+			msg:  text.NewMessage("", "+1234567890", "Hello"),
+			err:  text.ErrMissingTo,
 		},
 		{
 			name: "missing from",
-			msg:  sms.NewMessage("+0987654321", "", "Hello"),
-			err:  sms.ErrMissingFrom,
+			msg:  text.NewMessage("+0987654321", "", "Hello"),
+			err:  text.ErrMissingFrom,
 		},
 		{
 			name: "missing body",
-			msg:  sms.NewMessage("+0987654321", "+1234567890", ""),
-			err:  sms.ErrMissingBody,
+			msg:  text.NewMessage("+0987654321", "+1234567890", ""),
+			err:  text.ErrMissingBody,
 		},
 		{
 			name: "valid message",
-			msg:  sms.NewMessage("+0987654321", "+1234567890", "Hello"),
+			msg:  text.NewMessage("+0987654321", "+1234567890", "Hello"),
 			err:  nil,
 		},
 	}
@@ -111,7 +141,7 @@ func TestNewSender_Panics(t *testing.T) {
 					t.Error("expected a panic")
 				}
 			}()
-			sms.NewSender(tt.accountSID, tt.authToken)
+			text.NewSender(tt.accountSID, tt.authToken)
 		})
 	}
 }
@@ -131,7 +161,7 @@ func TestSender_Send(t *testing.T) {
 		name       string
 		status     int
 		body       string
-		msg        *sms.Message
+		msg        *text.Message
 		wantErr    bool
 		errMatches string
 	}{
@@ -139,21 +169,21 @@ func TestSender_Send(t *testing.T) {
 			name:    "success",
 			status:  http.StatusCreated,
 			body:    `{"sid": "SM123"}`,
-			msg:     sms.NewMessage("+123", "+456", "Hello"),
+			msg:     text.NewMessage("+123", "+456", "Hello"),
 			wantErr: false,
 		},
 		{
 			name:       "api error",
 			status:     http.StatusBadRequest,
 			body:       `{"message": "Invalid to number"}`,
-			msg:        sms.NewMessage("+123", "+456", "Hello"),
+			msg:        text.NewMessage("+123", "+456", "Hello"),
 			wantErr:    true,
 			errMatches: "api returned status 400",
 		},
 		{
 			name:       "invalid message",
 			status:     http.StatusOK,
-			msg:        sms.NewMessage("", "+456", "Hello"),
+			msg:        text.NewMessage("", "+456", "Hello"),
 			wantErr:    true,
 			errMatches: "to number is needed",
 		},
@@ -194,13 +224,13 @@ func TestSender_Send(t *testing.T) {
 				},
 			}
 
-			sender := sms.NewSender("sid", "token",
-				sms.WithClient(&http.Client{
+			sender := text.NewSender("sid", "token",
+				text.WithClient(&http.Client{
 					Timeout:   1 * time.Second,
 					Transport: tr,
 				}),
-				sms.WithBaseURL("http://example.com"),
-				sms.WithLogger(log.Silent()),
+				text.WithBaseURL("http://example.com"),
+				text.WithLogger(log.Silent()),
 			)
 
 			err := sender.Send(t.Context(), tt.msg)
@@ -227,7 +257,7 @@ func TestSender_WithClientAndOptions(t *testing.T) {
 	t.Parallel()
 
 	client := &http.Client{Timeout: 1 * time.Second}
-	sender := sms.NewSender("sid", "token", sms.WithClient(client))
+	sender := text.NewSender("sid", "token", text.WithClient(client))
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")
@@ -253,16 +283,16 @@ func TestSender_Send_StatusFromStatusLine(t *testing.T) {
 		},
 	}
 
-	sender := sms.NewSender("sid", "token",
-		sms.WithClient(&http.Client{Transport: tr}),
-		sms.WithLogger(log.Silent()),
+	sender := text.NewSender("sid", "token",
+		text.WithClient(&http.Client{Transport: tr}),
+		text.WithLogger(log.Silent()),
 	)
 
-	err := sender.Send(t.Context(), sms.NewMessage("+123", "+456", "Hi"))
+	err := sender.Send(t.Context(), text.NewMessage("+123", "+456", "Hi"))
 
-	var apiErr *sms.APIError
+	var apiErr *text.APIError
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("got %T; want *sms.APIError", err)
+		t.Fatalf("got %T; want *text.APIError", err)
 	}
 
 	if apiErr.Status != http.StatusTooManyRequests {

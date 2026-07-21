@@ -33,7 +33,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwk"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/push"
+	"github.com/deep-rent/nexus/notify/push"
 	"github.com/deep-rent/nexus/sign"
 	"github.com/deep-rent/nexus/token"
 	"github.com/deep-rent/nexus/transport"

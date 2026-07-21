@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/mail"
+	"github.com/deep-rent/nexus/notify/mail"
 )
 
 type mockRoundTripper struct {

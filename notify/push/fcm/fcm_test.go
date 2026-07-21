@@ -26,8 +26,8 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/push"
-	"github.com/deep-rent/nexus/push/fcm"
+	"github.com/deep-rent/nexus/notify/push"
+	"github.com/deep-rent/nexus/notify/push/fcm"
 	"github.com/deep-rent/nexus/sign"
 )
 

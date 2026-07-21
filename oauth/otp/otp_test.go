@@ -19,19 +19,20 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/deep-rent/nexus/mail"
-	"github.com/deep-rent/nexus/otp"
-	"github.com/deep-rent/nexus/sms"
+	"github.com/deep-rent/nexus/notify/mail"
+	"github.com/deep-rent/nexus/notify/push"
+	"github.com/deep-rent/nexus/notify/text"
+	"github.com/deep-rent/nexus/oauth/otp"
 )
 
-// fakeSMSSender is an in-memory [sms.Sender] that records dispatched
+// fakeTextSender is an in-memory [text.Sender] that records dispatched
 // messages.
-type fakeSMSSender struct {
-	messages []*sms.Message
+type fakeTextSender struct {
+	messages []*text.Message
 	err      error
 }
 
-func (s *fakeSMSSender) Send(_ context.Context, msg *sms.Message) error {
+func (s *fakeTextSender) Send(_ context.Context, msg *text.Message) error {
 	if s.err != nil {
 		return s.err
 	}
@@ -39,7 +40,7 @@ func (s *fakeSMSSender) Send(_ context.Context, msg *sms.Message) error {
 	return nil
 }
 
-var _ sms.Sender = (*fakeSMSSender)(nil)
+var _ text.Sender = (*fakeTextSender)(nil)
 
 // fakeMailSender is an in-memory [mail.Sender] that records dispatched
 // messages.
@@ -57,6 +58,23 @@ func (s *fakeMailSender) Send(_ context.Context, msg *mail.Message) error {
 }
 
 var _ mail.Sender = (*fakeMailSender)(nil)
+
+// fakePushSender is an in-memory [push.Sender] that records dispatched
+// messages.
+type fakePushSender struct {
+	messages []*push.Message
+	err      error
+}
+
+func (s *fakePushSender) Send(_ context.Context, msg *push.Message) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.messages = append(s.messages, msg)
+	return nil
+}
+
+var _ push.Sender = (*fakePushSender)(nil)
 
 func TestGenerate(t *testing.T) {
 	t.Parallel()
@@ -116,12 +134,12 @@ func TestGenerate_PanicsOnInvalidLength(t *testing.T) {
 	}
 }
 
-func TestSMS_Panics(t *testing.T) {
+func TestViaText_Panics(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name   string
-		sender sms.Sender
+		sender text.Sender
 		from   string
 		format string
 	}{
@@ -132,12 +150,12 @@ func TestSMS_Panics(t *testing.T) {
 		},
 		{
 			name:   "missing from",
-			sender: &fakeSMSSender{},
+			sender: &fakeTextSender{},
 			from:   "",
 		},
 		{
 			name:   "format without verb",
-			sender: &fakeSMSSender{},
+			sender: &fakeTextSender{},
 			from:   "+15551234567",
 			format: "no verb here",
 		},
@@ -148,32 +166,27 @@ func TestSMS_Panics(t *testing.T) {
 			t.Parallel()
 			defer func() {
 				if recover() == nil {
-					t.Error("SMS did not panic")
+					t.Error("ViaText did not panic")
 				}
 			}()
-			otp.SMS(tt.sender, tt.from, tt.format)
+			otp.ViaText(tt.sender, tt.from, "+15558675309", tt.format)
 		})
 	}
 }
 
-func TestSMSChannel_Send(t *testing.T) {
+func TestViaText(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakeSMSSender{}
-	sender := otp.SMS(fake, "+15551234567", "")
+	fake := &fakeTextSender{}
+	deliver := otp.ViaText(fake, "+15551234567", "+15558675309", "")
 
-	if err := sender.Send(
-		t.Context(),
-		"+15558675309",
-		"042917",
-	); err != nil {
-		t.Fatalf("Send returned error: %v", err)
+	if err := deliver(t.Context(), "042917"); err != nil {
+		t.Fatalf("Deliver returned error: %v", err)
 	}
 
 	if len(fake.messages) != 1 {
 		t.Fatalf("got %d messages; want 1", len(fake.messages))
 	}
-
 	msg := fake.messages[0]
 	if msg.To != "+15558675309" {
 		t.Errorf("got to %q; want %q", msg.To, "+15558675309")
@@ -187,14 +200,40 @@ func TestSMSChannel_Send(t *testing.T) {
 	}
 }
 
-func TestSMSChannel_Send_CustomFormat(t *testing.T) {
+func TestViaText_WhatsApp(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakeSMSSender{}
-	sender := otp.SMS(fake, "+15551234567", "%s is your login code")
+	fake := &fakeTextSender{}
+	deliver := otp.ViaText(
+		fake,
+		text.WhatsApp("+15551234567"),
+		text.WhatsApp("+15558675309"),
+		"",
+	)
 
-	if err := sender.Send(t.Context(), "+15558675309", "123456"); err != nil {
-		t.Fatalf("Send returned error: %v", err)
+	if err := deliver(t.Context(), "123456"); err != nil {
+		t.Fatalf("Deliver returned error: %v", err)
+	}
+
+	msg := fake.messages[0]
+	if msg.To != "whatsapp:+15558675309" {
+		t.Errorf("got to %q; want a whatsapp: address", msg.To)
+	}
+	if msg.From != "whatsapp:+15551234567" {
+		t.Errorf("got from %q; want a whatsapp: address", msg.From)
+	}
+}
+
+func TestViaText_CustomFormat(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTextSender{}
+	deliver := otp.ViaText(
+		fake, "+15551234567", "+15558675309", "%s is your login code",
+	)
+
+	if err := deliver(t.Context(), "123456"); err != nil {
+		t.Fatalf("Deliver returned error: %v", err)
 	}
 
 	want := "123456 is your login code"
@@ -203,7 +242,7 @@ func TestSMSChannel_Send_CustomFormat(t *testing.T) {
 	}
 }
 
-func TestSMSChannel_Send_Validation(t *testing.T) {
+func TestViaText_Validation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -212,12 +251,7 @@ func TestSMSChannel_Send_Validation(t *testing.T) {
 		code string
 		err  error
 	}{
-		{
-			name: "missing to",
-			to:   "",
-			code: "123456",
-			err:  otp.ErrMissingTo,
-		},
+		{name: "missing to", to: "", code: "123456", err: otp.ErrMissingTo},
 		{
 			name: "missing code",
 			to:   "+15558675309",
@@ -229,31 +263,28 @@ func TestSMSChannel_Send_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sender := otp.SMS(&fakeSMSSender{}, "+15551234567", "")
-			err := sender.Send(t.Context(), tt.to, tt.code)
-			if !errors.Is(err, tt.err) {
+			deliver := otp.ViaText(&fakeTextSender{}, "+15551234567", tt.to, "")
+			if err := deliver(t.Context(), tt.code); !errors.Is(err, tt.err) {
 				t.Errorf("got %v; want %v", err, tt.err)
 			}
 		})
 	}
 }
 
-func TestSMSChannel_Send_PropagatesError(t *testing.T) {
+func TestViaText_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
-	sender := otp.SMS(&fakeSMSSender{err: boom}, "+15551234567", "")
+	deliver := otp.ViaText(
+		&fakeTextSender{err: boom}, "+15551234567", "+15558675309", "",
+	)
 
-	if err := sender.Send(
-		t.Context(),
-		"+15558675309",
-		"123456",
-	); !errors.Is(err, boom) {
+	if err := deliver(t.Context(), "123456"); !errors.Is(err, boom) {
 		t.Errorf("got %v; want %v", err, boom)
 	}
 }
 
-func TestMail_Panics(t *testing.T) {
+func TestViaMail_Panics(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -287,33 +318,30 @@ func TestMail_Panics(t *testing.T) {
 			t.Parallel()
 			defer func() {
 				if recover() == nil {
-					t.Error("Mail did not panic")
+					t.Error("ViaMail did not panic")
 				}
 			}()
-			otp.Mail(tt.sender, tt.from, tt.templateID, "")
+			otp.ViaMail(
+				tt.sender, tt.from, "alice@example.com", tt.templateID, "",
+			)
 		})
 	}
 }
 
-func TestMailChannel_Send(t *testing.T) {
+func TestViaMail(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeMailSender{}
 	from := mail.New("no-reply@example.com", "Example")
-	sender := otp.Mail(fake, from, "tpl-1", "")
+	deliver := otp.ViaMail(fake, from, "alice@example.com", "tpl-1", "")
 
-	if err := sender.Send(
-		t.Context(),
-		"alice@example.com",
-		"042917",
-	); err != nil {
-		t.Fatalf("Send returned error: %v", err)
+	if err := deliver(t.Context(), "042917"); err != nil {
+		t.Fatalf("Deliver returned error: %v", err)
 	}
 
 	if len(fake.messages) != 1 {
 		t.Fatalf("got %d messages; want 1", len(fake.messages))
 	}
-
 	msg := fake.messages[0]
 	if msg.From != from {
 		t.Errorf("got from %v; want %v", msg.From, from)
@@ -327,28 +355,23 @@ func TestMailChannel_Send(t *testing.T) {
 	if got := msg.Recipients[0].To[0].Addr; got != "alice@example.com" {
 		t.Errorf("got recipient %q; want %q", got, "alice@example.com")
 	}
-	if got := msg.Recipients[0].TemplateData[otp.DefaultTemplateDataKey]; got != "042917" {
+	got := msg.Recipients[0].TemplateData[otp.DefaultTemplateDataKey]
+	if got != "042917" {
 		t.Errorf("got template data %q; want %q", got, "042917")
 	}
 }
 
-func TestMailChannel_Send_CustomDataKey(t *testing.T) {
+func TestViaMail_CustomDataKey(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeMailSender{}
-	sender := otp.Mail(
-		fake,
-		mail.New("no-reply@example.com", ""),
-		"tpl-1",
-		"otp",
+	deliver := otp.ViaMail(
+		fake, mail.New("no-reply@example.com", ""),
+		"alice@example.com", "tpl-1", "otp",
 	)
 
-	if err := sender.Send(
-		t.Context(),
-		"alice@example.com",
-		"123456",
-	); err != nil {
-		t.Fatalf("Send returned error: %v", err)
+	if err := deliver(t.Context(), "123456"); err != nil {
+		t.Fatalf("Deliver returned error: %v", err)
 	}
 
 	if got := fake.messages[0].Recipients[0].TemplateData["otp"]; got != "123456" {
@@ -356,7 +379,7 @@ func TestMailChannel_Send_CustomDataKey(t *testing.T) {
 	}
 }
 
-func TestMailChannel_Send_Validation(t *testing.T) {
+func TestViaMail_Validation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -365,12 +388,7 @@ func TestMailChannel_Send_Validation(t *testing.T) {
 		code string
 		err  error
 	}{
-		{
-			name: "missing to",
-			to:   "",
-			code: "123456",
-			err:  otp.ErrMissingTo,
-		},
+		{name: "missing to", to: "", code: "123456", err: otp.ErrMissingTo},
 		{
 			name: "missing code",
 			to:   "alice@example.com",
@@ -382,36 +400,77 @@ func TestMailChannel_Send_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sender := otp.Mail(
-				&fakeMailSender{},
-				mail.New("no-reply@example.com", ""),
-				"tpl-1",
-				"",
+			deliver := otp.ViaMail(
+				&fakeMailSender{}, mail.New("no-reply@example.com", ""),
+				tt.to, "tpl-1", "",
 			)
-			err := sender.Send(t.Context(), tt.to, tt.code)
-			if !errors.Is(err, tt.err) {
+			if err := deliver(t.Context(), tt.code); !errors.Is(err, tt.err) {
 				t.Errorf("got %v; want %v", err, tt.err)
 			}
 		})
 	}
 }
 
-func TestMailChannel_Send_PropagatesError(t *testing.T) {
+func TestViaPush(t *testing.T) {
 	t.Parallel()
 
-	boom := errors.New("boom")
-	sender := otp.Mail(
-		&fakeMailSender{err: boom},
-		mail.New("no-reply@example.com", ""),
-		"tpl-1",
-		"",
-	)
+	fake := &fakePushSender{}
+	target := push.Target{Token: "device-token"}
+	deliver := otp.ViaPush(fake, target, "Sign-in", "Your code is %s")
 
-	if err := sender.Send(
-		t.Context(),
-		"alice@example.com",
-		"123456",
-	); !errors.Is(err, boom) {
-		t.Errorf("got %v; want %v", err, boom)
+	if err := deliver(t.Context(), "042917"); err != nil {
+		t.Fatalf("Deliver returned error: %v", err)
+	}
+
+	if len(fake.messages) != 1 {
+		t.Fatalf("got %d messages; want 1", len(fake.messages))
+	}
+	msg := fake.messages[0]
+	if msg.Title != "Sign-in" {
+		t.Errorf("got title %q; want %q", msg.Title, "Sign-in")
+	}
+	if want := "Your code is 042917"; msg.Body != want {
+		t.Errorf("got body %q; want %q", msg.Body, want)
+	}
+	if msg.Target.Token != "device-token" {
+		t.Errorf("got target token %q; want %q", msg.Target.Token, "device-token")
+	}
+}
+
+func TestViaPush_Panics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		sender push.Sender
+		format string
+	}{
+		{name: "nil sender", sender: nil, format: "%s"},
+		{
+			name:   "format without verb",
+			sender: &fakePushSender{},
+			format: "no verb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if recover() == nil {
+					t.Error("ViaPush did not panic")
+				}
+			}()
+			otp.ViaPush(tt.sender, push.Target{Token: "t"}, "Title", tt.format)
+		})
+	}
+}
+
+func TestViaPush_MissingCode(t *testing.T) {
+	t.Parallel()
+
+	deliver := otp.ViaPush(&fakePushSender{}, push.Target{Token: "t"}, "T", "")
+	if err := deliver(t.Context(), ""); !errors.Is(err, otp.ErrMissingCode) {
+		t.Errorf("got %v; want %v", err, otp.ErrMissingCode)
 	}
 }

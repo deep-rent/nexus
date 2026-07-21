@@ -25,7 +25,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/deep-rent/nexus/otp"
+	"github.com/deep-rent/nexus/oauth/otp"
 	"github.com/deep-rent/nexus/throttle"
 )
 

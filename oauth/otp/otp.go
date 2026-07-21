@@ -21,8 +21,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/deep-rent/nexus/mail"
-	"github.com/deep-rent/nexus/sms"
+	"github.com/deep-rent/nexus/notify/mail"
+	"github.com/deep-rent/nexus/notify/push"
+	"github.com/deep-rent/nexus/notify/text"
 )
 
 const (
@@ -30,19 +31,18 @@ const (
 	// not specify their own. Six digits match the format users know from
 	// TOTP authenticator apps and carrier-grade verification flows.
 	DefaultLength = 6
-	// DefaultSMSFormat is the message body used by [SMS] when no
-	// custom format is given. It contains a single %s verb that receives
-	// the code.
-	DefaultSMSFormat = "Your verification code is %s."
+	// DefaultFormat is the message body used by [ViaText] and [ViaPush] when
+	// no custom format is given. It contains a single %s verb for the code.
+	DefaultFormat = "Your verification code is %s."
 	// DefaultTemplateDataKey is the template variable name under which
-	// [Mail] exposes the code when no custom key is given.
+	// [ViaMail] exposes the code when no custom key is given.
 	DefaultTemplateDataKey = "code"
 )
 
 var (
-	// ErrMissingTo is returned when a code is sent without a destination.
+	// ErrMissingTo is returned by a [Deliverer] when its destination is empty.
 	ErrMissingTo = errors.New("destination is needed")
-	// ErrMissingCode is returned when an empty code is sent.
+	// ErrMissingCode is returned by a [Deliverer] when the code is empty.
 	ErrMissingCode = errors.New("code is needed")
 )
 
@@ -78,98 +78,79 @@ func Generate(length int) (string, error) {
 	return string(digits), nil
 }
 
-// Channel delivers one-time passwords to recipients over a side channel.
-// The name deliberately differs from the Sender interfaces of the sms and
-// mail packages: a Channel wraps such a sender and speaks in codes rather
-// than messages.
+// Deliverer sends an already-generated code to a preconfigured destination.
 //
-// Implementations are expected to be safe for concurrent use by multiple
-// goroutines and to respect the provided context for timeouts and
-// cancellation. The meaning of the destination string depends on the
-// channel: a phone number in E.164 format for SMS, an email address for
-// mail.
-type Channel interface {
-	// Send delivers the code to the given destination. It returns an error
-	// if the input is invalid, if the network request fails, or if the
-	// underlying provider rejects the payload.
-	Send(ctx context.Context, to, code string) error
+// It replaces the former Channel interface: because the consumer builds a
+// Deliverer with full knowledge of the recipient, it can localize copy or pick
+// a template per subject without the challenge engine knowing any of that. The
+// [ViaText], [ViaMail], and [ViaPush] helpers construct the common cases, but
+// any closure of this shape is a valid delivery mechanism.
+//
+// Implementations should be safe for concurrent use and honor the context.
+type Deliverer func(ctx context.Context, code string) error
+
+// Method is one enrolled way to reach a subject with a challenge, such as an
+// SMS to a specific number or an email in the subject's locale.
+type Method struct {
+	// ID is a stable identifier the client uses to select this method — for
+	// example on resend to switch channels (e.g. "sms", "email", "push"). It
+	// is opaque to the engine.
+	ID string
+	// Label is an optional human-facing hint for pickers, such as a masked
+	// address ("+1 ••• ••09"). It never carries a secret.
+	Label string
+	// Deliver sends the code. It is built by whoever knows the subject, so it
+	// owns all destination, formatting, template, and locale choices.
+	Deliver Deliverer
 }
 
-// smsChannel adapts an [sms.Sender] to the [Channel] interface.
-type smsChannel struct {
-	sender sms.Sender
-	from   string
-	format string
-}
-
-var _ Channel = (*smsChannel)(nil)
-
-// SMS returns a [Channel] that delivers codes as text messages
-// through the given [sms.Sender].
+// ViaText returns a [Deliverer] that sends the code as a text message through
+// the given [text.Sender].
 //
-// The from number is used as the sender of every message. The format string
-// must contain exactly one %s verb, which receives the code; an empty format
-// falls back to [DefaultSMSFormat]. SMS panics if the sender is
-// nil, the from number is empty, or the format lacks a %s verb, since all
-// three are startup configuration errors.
-func SMS(sender sms.Sender, from, format string) Channel {
+// The from and to addresses follow Twilio's convention: bare E.164 numbers are
+// delivered as SMS, and numbers wrapped by [text.WhatsApp] over WhatsApp. The
+// format string must contain exactly one %s verb for the code; an empty format
+// falls back to [DefaultFormat]. It panics if the sender is nil, from is
+// empty, or the format lacks a %s verb — all static configuration errors.
+func ViaText(sender text.Sender, from, to, format string) Deliverer {
 	if sender == nil {
-		panic("sms sender is required")
+		panic("text sender is required")
 	}
 	if from == "" {
-		panic("from number is required")
+		panic("from address is required")
 	}
 	if format == "" {
-		format = DefaultSMSFormat
+		format = DefaultFormat
 	}
 	if !strings.Contains(format, "%s") {
 		panic("format must contain a %s verb for the code")
 	}
-	return &smsChannel{
-		sender: sender,
-		from:   from,
-		format: format,
+	return func(ctx context.Context, code string) error {
+		if to == "" {
+			return ErrMissingTo
+		}
+		if code == "" {
+			return ErrMissingCode
+		}
+		return sender.Send(ctx, text.NewMessage(
+			to, from, fmt.Sprintf(format, code),
+		))
 	}
 }
 
-// Send implements the [Channel] interface.
-func (s *smsChannel) Send(ctx context.Context, to, code string) error {
-	if to == "" {
-		return ErrMissingTo
-	}
-	if code == "" {
-		return ErrMissingCode
-	}
-	return s.sender.Send(ctx, sms.NewMessage(
-		to,
-		s.from,
-		fmt.Sprintf(s.format, code),
-	))
-}
-
-// mailChannel adapts a [mail.Sender] to the [Channel] interface.
-type mailChannel struct {
-	sender     mail.Sender
-	from       mail.Mail
-	templateID string
-	dataKey    string
-}
-
-var _ Channel = (*mailChannel)(nil)
-
-// Mail returns a [Channel] that delivers codes as transactional
-// emails through the given [mail.Sender].
+// ViaMail returns a [Deliverer] that sends the code as a transactional email
+// through the given [mail.Sender].
 //
-// Every email is rendered from the dynamic template identified by
-// templateID, with the code exposed to the template under dataKey. An empty
-// dataKey falls back to [DefaultTemplateDataKey]. Mail panics if
-// the sender is nil, the from address is empty, or the template ID is
-// empty, since all three are startup configuration errors.
-func Mail(
+// Every email is rendered from the dynamic template identified by templateID,
+// with the code exposed under dataKey; an empty dataKey falls back to
+// [DefaultTemplateDataKey]. To localize, build a Method per locale with a
+// locale-specific templateID. It panics if the sender is nil, the from address
+// is empty, or the template ID is empty — all static configuration errors.
+func ViaMail(
 	sender mail.Sender,
 	from mail.Mail,
-	templateID, dataKey string,
-) Channel {
+	to, templateID, dataKey string,
+) Deliverer {
 	if sender == nil {
 		panic("mail sender is required")
 	}
@@ -182,26 +163,49 @@ func Mail(
 	if dataKey == "" {
 		dataKey = DefaultTemplateDataKey
 	}
-	return &mailChannel{
-		sender:     sender,
-		from:       from,
-		templateID: templateID,
-		dataKey:    dataKey,
+	return func(ctx context.Context, code string) error {
+		if to == "" {
+			return ErrMissingTo
+		}
+		if code == "" {
+			return ErrMissingCode
+		}
+		return sender.Send(ctx, mail.NewMessage(
+			from,
+			templateID,
+			mail.NewRecipient(mail.New(to, "")).
+				AddTemplateData(dataKey, code),
+		))
 	}
 }
 
-// Send implements the [Channel] interface.
-func (s *mailChannel) Send(ctx context.Context, to, code string) error {
-	if to == "" {
-		return ErrMissingTo
+// ViaPush returns a [Deliverer] that sends the code as a push notification
+// through the given [push.Sender].
+//
+// The notification carries the given title and a body rendered from format,
+// which must contain exactly one %s verb for the code; an empty format falls
+// back to [DefaultFormat]. It panics if the sender is nil or the format lacks a
+// %s verb — both static configuration errors.
+func ViaPush(
+	sender push.Sender,
+	target push.Target,
+	title, format string,
+) Deliverer {
+	if sender == nil {
+		panic("push sender is required")
 	}
-	if code == "" {
-		return ErrMissingCode
+	if format == "" {
+		format = DefaultFormat
 	}
-	return s.sender.Send(ctx, mail.NewMessage(
-		s.from,
-		s.templateID,
-		mail.NewRecipient(mail.New(to, "")).
-			AddTemplateData(s.dataKey, code),
-	))
+	if !strings.Contains(format, "%s") {
+		panic("format must contain a %s verb for the code")
+	}
+	return func(ctx context.Context, code string) error {
+		if code == "" {
+			return ErrMissingCode
+		}
+		return sender.Send(ctx, push.NewMessage(
+			title, fmt.Sprintf(format, code), target,
+		))
+	}
 }

@@ -32,7 +32,7 @@ import (
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/oauth/pkce"
-	"github.com/deep-rent/nexus/otp"
+	"github.com/deep-rent/nexus/oauth/otp"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/throttle"
 	"github.com/deep-rent/nexus/vault"
