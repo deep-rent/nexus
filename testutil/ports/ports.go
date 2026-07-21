@@ -14,20 +14,7 @@
 
 // Package ports provides integration test helpers for network port management.
 //
-// Package ports offers utilities to find available network ports and block
-// until those ports begin accepting connections. These helpers are primarily
-// intended for integration testing scenarios where services are started on
-// dynamic ports to avoid collisions.
-//
-// # Usage
-//
-// Find a free port and wait for a service to become ready on it.
-//
-// Example:
-//
-//	port := ports.FreeT(t)
-//	go startService(port)
-//	ports.WaitT(t, "127.0.0.1", port)
+
 package ports
 
 import (
