@@ -59,8 +59,6 @@ type APIError struct {
 	Code int `json:"code"`
 	// Message is the description of the error.
 	Message string `json:"message"`
-	// URL is a URL to more information about the error.
-	URL string `json:"more_info"`
 }
 
 // Error implements the [error] interface.
