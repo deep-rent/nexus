@@ -368,6 +368,49 @@ func TestInformationalResponses(t *testing.T) {
 	}
 }
 
+func TestFlushBeforeWrite(t *testing.T) {
+	t.Parallel()
+
+	const payload = "written after an early flush"
+
+	h := gzip.New()(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			// Flushing before the first write transmits the headers, so the
+			// middleware must commit to gzip at this point.
+			w.(http.Flusher).Flush()
+			_, _ = w.Write([]byte(payload))
+		},
+	))
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if got, want := w.Header().Get("Content-Encoding"), "gzip"; got != want {
+		t.Errorf("content-encoding header: got %q; want %q", got, want)
+	}
+
+	gzr, err := compress.NewReader(w.Body)
+	if err != nil {
+		t.Fatalf(
+			"opening gzip reader: should not have returned an error: %v",
+			err,
+		)
+	}
+	data, err := io.ReadAll(gzr)
+	if err != nil {
+		t.Fatalf(
+			"reading gzip body: should not have returned an error: %v",
+			err,
+		)
+	}
+	if got, want := string(data), payload; got != want {
+		t.Errorf("body: got %q; want %q", got, want)
+	}
+}
+
 func TestFlusher(t *testing.T) {
 	t.Parallel()
 

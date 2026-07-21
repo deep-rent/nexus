@@ -215,6 +215,12 @@ func (w *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // It enables incremental flushing of the response body, which is useful for
 // streaming data.
 func (w *interceptor) Flush() {
+	// Flushing transmits the response headers, so the compression decision
+	// must be made first; otherwise a later Write would start a gzip stream
+	// whose Content-Encoding header can no longer be announced.
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		if w.gz != nil {
 			_ = w.gz.Flush()
