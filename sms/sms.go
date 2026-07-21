@@ -12,28 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sms provides abstractions for sending SMS messages via Twilio.
-//
-// It defines a generic payload model ([Message]) and a common [Sender]
-// interface for SMS delivery, decoupling business logic from the underlying
-// mechanism.
-//
-// # Usage
-//
-// Create messages with [NewMessage] and dispatch them through your concrete
-// [Sender] implementation.
-//
-//	msg := sms.NewMessage(
-//		"+15558675309",
-//		"+15551234567",
-//		"Your verification code is 123456.",
-//	)
-//
-//	sender := sms.NewSender(
-//	  "twilio_sid",
-//	  "twilio_auth_token",
-//	)
-//	err := sender.Send(ctx, msg)
 package sms
 
 import (
