@@ -21,12 +21,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	"uuid"
-
-	"github.com/deep-rent/nexus/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"uuid"
+
+	"github.com/deep-rent/nexus/log"
 )
 
 // Error describes the standardized shape of API errors returned to clients.

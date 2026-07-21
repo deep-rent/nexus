@@ -21,13 +21,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/middleware"
-	"github.com/deep-rent/nexus/router"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/middleware"
+	"github.com/deep-rent/nexus/router"
 )
 
 // recordSpans returns a span recorder together with the Trace middleware
@@ -78,7 +79,10 @@ func TestTrace_NamesSpanAfterPattern(t *testing.T) {
 	if got, want := span.Name(), "GET /users/{id}"; got != want {
 		t.Errorf("name: got %q; want %q", got, want)
 	}
-	if got, want := spanAttr(span, "http.route"), "GET /users/{id}"; got != want {
+	if got, want := spanAttr(
+		span,
+		"http.route",
+	), "GET /users/{id}"; got != want {
 		t.Errorf("http.route: got %q; want %q", got, want)
 	}
 }
