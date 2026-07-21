@@ -65,6 +65,47 @@ func TestNew_PanicsOnCredentialsWithoutOrigins(t *testing.T) {
 	})
 }
 
+func TestPreflightVary(t *testing.T) {
+	t.Parallel()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := cors.New()(next)
+
+	r := httptest.NewRequest(http.MethodOptions, "/", nil)
+	r.Header.Set("Origin", "http://a.com")
+	r.Header.Set("Access-Control-Request-Method", http.MethodPut)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	want := []string{
+		"Origin",
+		"Access-Control-Request-Method",
+		"Access-Control-Request-Headers",
+	}
+	got := w.Header().Values("Vary")
+	if len(got) != len(want) {
+		t.Fatalf("vary values: got %v; want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("vary at index %d: got %q; want %q", i, got[i], want[i])
+		}
+	}
+
+	// Actual requests must only vary on Origin.
+	r = httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Origin", "http://a.com")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if got := w.Header().Values("Vary"); len(got) != 1 || got[0] != "Origin" {
+		t.Errorf("vary values for actual request: got %v; want [Origin]", got)
+	}
+}
+
 func TestMiddleware(t *testing.T) {
 	t.Parallel()
 

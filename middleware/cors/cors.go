@@ -216,6 +216,12 @@ func handle(cfg *config, w http.ResponseWriter, r *http.Request) bool {
 	if preflight && r.Header.Get("Access-Control-Request-Method") == "" {
 		return true
 	}
+	if preflight {
+		// Preflight responses also depend on the requested method and
+		// headers, so caches must key on them as well.
+		h.Add("Vary", "Access-Control-Request-Method")
+		h.Add("Vary", "Access-Control-Request-Headers")
+	}
 	// Validate origin if not in wildcard mode.
 	if cfg.allowedOrigins != nil {
 		if _, ok := cfg.allowedOrigins[origin]; !ok {
