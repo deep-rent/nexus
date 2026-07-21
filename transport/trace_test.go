@@ -21,8 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/retry"
-	"github.com/deep-rent/nexus/transport"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -31,6 +29,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/deep-rent/nexus/retry"
+	"github.com/deep-rent/nexus/transport"
 )
 
 // clientTracing bundles a recording tracer provider, a manual metric reader,
@@ -109,7 +110,10 @@ func TestTrace_RecordsClientSpan(t *testing.T) {
 	if got := span.Name(); got != http.MethodGet {
 		t.Errorf("name: got %q; want %q", got, http.MethodGet)
 	}
-	if got, want := clientAttr(span, "url.full"), srv.URL+"/things"; got != want {
+	if got, want := clientAttr(
+		span,
+		"url.full",
+	), srv.URL+"/things"; got != want {
 		t.Errorf("url.full: got %q; want %q", got, want)
 	}
 	if got := clientAttr(span, "http.response.status_code"); got != "200" {

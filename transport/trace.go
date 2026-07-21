@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/retry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -30,6 +29,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/deep-rent/nexus/retry"
 )
 
 // scope is the instrumentation scope reported for spans and metrics emitted
