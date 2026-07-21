@@ -112,6 +112,8 @@ type config struct {
 	disableCompression     bool
 	headers                []header.Header
 	retry                  []retry.Option
+	trace                  bool
+	traceOpts              []TraceOption
 	maxIdleConns           int
 	maxIdleConnsPerHost    int
 	maxConnsPerHost        int
@@ -291,6 +293,19 @@ func WithRetry(opts ...retry.Option) Option {
 	return func(c *config) { c.retry = append(c.retry, opts...) }
 }
 
+// WithTrace enables OpenTelemetry client instrumentation; see
+// [NewTraceTransport] for what is recorded.
+//
+// The tracing layer sits below the retry and header layers, so every retry
+// attempt is captured as its own client span carrying the final headers of
+// the request.
+func WithTrace(opts ...TraceOption) Option {
+	return func(c *config) {
+		c.trace = true
+		c.traceOpts = append(c.traceOpts, opts...)
+	}
+}
+
 // WithMaxIdleConns configures the maximum number of idle (keep-alive)
 // connections across all hosts. Defaults to [DefaultMaxIdleConns].
 // Negative values are ignored.
@@ -389,6 +404,12 @@ func New(opts ...Option) http.RoundTripper {
 	// Cap response bodies first so that the limit also applies to the
 	// intermediate responses observed by the retry transport.
 	t = Limit(t, cfg.maxResponseBytes)
+
+	// The tracing layer sits below retry and header, so that each attempt is
+	// recorded as its own span carrying the final request headers.
+	if cfg.trace {
+		t = NewTraceTransport(t, cfg.traceOpts...)
+	}
 
 	// Add headers if any.
 	if len(cfg.headers) > 0 {
