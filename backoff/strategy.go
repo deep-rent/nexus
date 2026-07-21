@@ -18,7 +18,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/deep-rent/nexus/backoff/jitter"
+	"github.com/deep-rent/nexus/jitter"
 )
 
 // clamp converts a delay computed in floating point to a [time.Duration]
