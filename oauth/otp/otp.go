@@ -152,7 +152,7 @@ func ViaMail(
 	to, templateID, dataKey string,
 ) Deliverer {
 	if sender == nil {
-		panic("mail sender is required")
+		panic("sender is required")
 	}
 	if from.Addr == "" {
 		panic("from address is required")
@@ -192,7 +192,7 @@ func ViaPush(
 	title, format string,
 ) Deliverer {
 	if sender == nil {
-		panic("push sender is required")
+		panic("sender is required")
 	}
 	if format == "" {
 		format = DefaultFormat

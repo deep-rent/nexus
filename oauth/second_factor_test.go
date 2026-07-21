@@ -168,8 +168,8 @@ func TestLoginSecondFactor(t *testing.T) {
 			t.Errorf("got method %q; want %q", res.Method, "sms")
 		}
 		// A single enrolled method yields no picker list.
-		if res.Methods != nil {
-			t.Errorf("got methods %v; want none for a single method", res.Methods)
+		if res.Channels != nil {
+			t.Errorf("got methods %v; want none for a single method", res.Channels)
 		}
 		if want := int64(DefaultOTPLifetime.Seconds()); res.ExpiresIn != want {
 			t.Errorf("got expires_in %d; want %d", res.ExpiresIn, want)
@@ -247,14 +247,14 @@ func TestLoginSecondFactor(t *testing.T) {
 		if res.Method != "sms" {
 			t.Errorf("default method %q; want the first, %q", res.Method, "sms")
 		}
-		if len(res.Methods) != 2 {
-			t.Fatalf("got %d advertised methods; want 2", len(res.Methods))
+		if len(res.Channels) != 2 {
+			t.Fatalf("got %d advertised methods; want 2", len(res.Channels))
 		}
-		if res.Methods[0].ID != "sms" || res.Methods[1].ID != "email" {
-			t.Errorf("got methods %+v; want [sms email]", res.Methods)
+		if res.Channels[0].ID != "sms" || res.Channels[1].ID != "email" {
+			t.Errorf("got methods %+v; want [sms email]", res.Channels)
 		}
-		if res.Methods[1].Label != testEmail {
-			t.Errorf("got label %q; want %q", res.Methods[1].Label, testEmail)
+		if res.Channels[1].Label != testEmail {
+			t.Errorf("got label %q; want %q", res.Channels[1].Label, testEmail)
 		}
 	})
 

@@ -105,9 +105,9 @@ type Challenge struct {
 // Store persists pending challenges keyed by [Challenge.ID].
 //
 // Implementations are expected to be safe for concurrent use and to honor the
-// provided context. Delete must be atomic and report whether this call was the
-// one that removed the challenge; the engine relies on that to enforce single
-// use under concurrent confirmations.
+// provided context. Deletion must be atomic and report whether this call was
+// the one that removed the challenge; the engine relies on that to enforce
+// single use under concurrent confirmations.
 type Store interface {
 	// Create persists a new challenge.
 	Create(ctx context.Context, c Challenge) error
@@ -129,15 +129,15 @@ type Store interface {
 //
 // A Challenger is safe for concurrent use if its [Store] is.
 type Challenger struct {
-	store       Store
-	length      int
-	lifetime    time.Duration
-	maxAttempts int
-	maxResends  int
-	now         func() time.Time
-	newHandle   func() (string, error)
-	newCode     func(length int) (string, error)
-	logger      *slog.Logger
+	store          Store
+	length         int
+	lifetime       time.Duration
+	maxAttempts    int
+	maxResends     int
+	now            func() time.Time
+	generateHandle func() (string, error)
+	generateCode   func(length int) (string, error)
+	logger         *slog.Logger
 }
 
 // Option configures a [Challenger].
@@ -196,7 +196,7 @@ func WithClock(now func() time.Time) Option {
 func WithHandleGenerator(fn func() (string, error)) Option {
 	return func(c *Challenger) {
 		if fn != nil {
-			c.newHandle = fn
+			c.generateHandle = fn
 		}
 	}
 }
@@ -206,7 +206,7 @@ func WithHandleGenerator(fn func() (string, error)) Option {
 func WithCodeGenerator(fn func(length int) (string, error)) Option {
 	return func(c *Challenger) {
 		if fn != nil {
-			c.newCode = fn
+			c.generateCode = fn
 		}
 	}
 }
@@ -228,15 +228,15 @@ func New(store Store, opts ...Option) *Challenger {
 		panic("store is required")
 	}
 	c := &Challenger{
-		store:       store,
-		length:      DefaultLength,
-		lifetime:    DefaultLifetime,
-		maxAttempts: DefaultMaxAttempts,
-		maxResends:  DefaultMaxResends,
-		now:         time.Now,
-		newHandle:   randomHandle,
-		newCode:     Generate,
-		logger:      slog.Default(),
+		store:          store,
+		length:         DefaultLength,
+		lifetime:       DefaultLifetime,
+		maxAttempts:    DefaultMaxAttempts,
+		maxResends:     DefaultMaxResends,
+		now:            time.Now,
+		generateHandle: randomHandle,
+		generateCode:   Generate,
+		logger:         slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -257,11 +257,11 @@ func (c *Challenger) Begin(
 	purpose, owner string,
 	m Method,
 ) (handle string, expiresIn int64, err error) {
-	handle, err = c.newHandle()
+	handle, err = c.generateHandle()
 	if err != nil {
 		return "", 0, err
 	}
-	code, err := c.newCode(c.length)
+	code, err := c.generateCode(c.length)
 	if err != nil {
 		return "", 0, err
 	}
@@ -368,7 +368,7 @@ func (c *Challenger) Resend(
 		return Outcome{Status: StatusResendLimit}, nil
 	}
 
-	code, err := c.newCode(c.length)
+	code, err := c.generateCode(c.length)
 	if err != nil {
 		return Outcome{}, err
 	}

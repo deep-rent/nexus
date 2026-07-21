@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/oauth/otp"
@@ -146,13 +145,14 @@ type SecondFactor struct {
 	Methods []otp.Method
 }
 
-// MethodInfo is the client-facing description of an enrolled [otp.Method],
+// Channel is the client-facing description of an enrolled [otp.Method],
 // returned in an [OTPChallengeResponse] so a client can present a channel
 // picker. It never carries a secret or a raw destination.
-type MethodInfo struct {
+type Channel struct {
 	// ID is the stable identifier used to select this method on resend.
 	ID string `json:"id"`
-	// Label is an optional human-facing hint, such as a masked address.
+	// Label is an optional human-facing hint, such as a masked address or phone
+	// number.
 	Label string `json:"label,omitzero"`
 }
 
@@ -881,10 +881,10 @@ type OTPChallengeResponse struct {
 	Challenge string `json:"challenge"`
 	// Method is the [otp.Method.ID] the one-time password was sent over.
 	Method string `json:"method"`
-	// Methods lists every enrolled delivery method, so the client can offer a
+	// Channels lists every enrolled delivery method, so the client can offer a
 	// picker and resend over a different one. It is omitted when only a single
 	// method is enrolled.
-	Methods []MethodInfo `json:"methods,omitzero"`
+	Channels []Channel `json:"channels,omitzero"`
 	// ExpiresIn is the remaining lifetime of the challenge in seconds.
 	ExpiresIn int64 `json:"expires_in"`
 }

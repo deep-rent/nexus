@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
@@ -60,24 +59,25 @@ type otpStore struct {
 var _ otp.Store = otpStore{}
 
 // Create implements [otp.Store].
-func (a otpStore) Create(ctx context.Context, c otp.Challenge) error {
-	oc, err := a.toChallenge(c)
+func (s otpStore) Create(ctx context.Context, c otp.Challenge) error {
+	oc, err := s.toChallenge(c)
 	if err != nil {
 		return err
 	}
-	return a.sessions.CreateOTPChallenge(ctx, oc)
+	return s.sessions.CreateOTPChallenge(ctx, oc)
 }
 
 // Get implements [otp.Store].
-func (a otpStore) Get(
+func (s otpStore) Get(
 	ctx context.Context,
 	id string,
 ) (otp.Challenge, bool, error) {
-	oc, err := a.sessions.GetOTPChallenge(ctx, Digest(id))
+	oc, err := s.sessions.GetOTPChallenge(ctx, Digest(id))
 	if err != nil {
 		return otp.Challenge{}, false, err
 	}
-	// SessionStore reports an absent or expired challenge as the zero value.
+	// The session store reports an absent or expired challenge as the
+	// zero value.
 	if oc.Challenge == "" {
 		return otp.Challenge{}, false, nil
 	}
@@ -85,7 +85,7 @@ func (a otpStore) Get(
 		ID:        string(oc.Challenge),
 		Code:      string(oc.Code),
 		Owner:     oc.SubjectID.String(),
-		Purpose:   a.purpose,
+		Purpose:   s.purpose,
 		ExpiresAt: oc.ExpiresAt,
 		Attempts:  oc.Attempts,
 		Resends:   oc.Resends,
@@ -93,22 +93,22 @@ func (a otpStore) Get(
 }
 
 // Update implements [otp.Store].
-func (a otpStore) Update(ctx context.Context, c otp.Challenge) error {
-	oc, err := a.toChallenge(c)
+func (s otpStore) Update(ctx context.Context, c otp.Challenge) error {
+	oc, err := s.toChallenge(c)
 	if err != nil {
 		return err
 	}
-	return a.sessions.UpdateOTPChallenge(ctx, oc)
+	return s.sessions.UpdateOTPChallenge(ctx, oc)
 }
 
 // Delete implements [otp.Store].
-func (a otpStore) Delete(ctx context.Context, id string) (bool, error) {
-	return a.sessions.DeleteOTPChallenge(ctx, Digest(id))
+func (s otpStore) Delete(ctx context.Context, id string) (bool, error) {
+	return s.sessions.DeleteOTPChallenge(ctx, Digest(id))
 }
 
 // toChallenge maps an engine challenge onto the stored shape, parsing the owner
 // back into a subject ID.
-func (a otpStore) toChallenge(c otp.Challenge) (OTPChallenge, error) {
+func (s otpStore) toChallenge(c otp.Challenge) (OTPChallenge, error) {
 	sid, err := uuid.Parse(c.Owner)
 	if err != nil {
 		return OTPChallenge{}, fmt.Errorf("invalid challenge owner: %w", err)
@@ -124,7 +124,8 @@ func (a otpStore) toChallenge(c otp.Challenge) (OTPChallenge, error) {
 }
 
 // selectMethod returns the enrolled method with the given ID, or the default
-// (first) method when id is empty. ok is false when no method matches.
+// (first) method when id is empty. The boolean flag is set to false when no
+// method matches.
 func selectMethod(sf *SecondFactor, id string) (otp.Method, bool) {
 	if sf == nil || len(sf.Methods) == 0 {
 		return otp.Method{}, false
@@ -140,15 +141,15 @@ func selectMethod(sf *SecondFactor, id string) (otp.Method, bool) {
 	return otp.Method{}, false
 }
 
-// methodInfos projects enrolled methods to their client-facing descriptions.
+// channels projects enrolled methods to their client-facing descriptions.
 // It returns nil for a single method, since there is nothing to pick between.
-func methodInfos(sf *SecondFactor) []MethodInfo {
+func channels(sf *SecondFactor) []Channel {
 	if len(sf.Methods) < 2 {
 		return nil
 	}
-	infos := make([]MethodInfo, len(sf.Methods))
+	infos := make([]Channel, len(sf.Methods))
 	for i, m := range sf.Methods {
-		infos[i] = MethodInfo{ID: m.ID, Label: m.Label}
+		infos[i] = Channel{ID: m.ID, Label: m.Label}
 	}
 	return infos
 }
@@ -180,7 +181,7 @@ func (s *Server) beginOTPChallenge(
 	return e.JSON(http.StatusOK, OTPChallengeResponse{
 		Challenge: handle,
 		Method:    m.ID,
-		Methods:   methodInfos(sf),
+		Channels:  channels(sf),
 		ExpiresIn: expiresIn,
 	})
 }
@@ -360,7 +361,7 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		return e.JSON(http.StatusOK, OTPChallengeResponse{
 			Challenge: req.Challenge,
 			Method:    m.ID,
-			Methods:   methodInfos(sf),
+			Channels:  channels(sf),
 			ExpiresIn: out.ExpiresIn,
 		})
 	case otp.StatusResendLimit:
