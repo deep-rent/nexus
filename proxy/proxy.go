@@ -26,8 +26,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/deep-rent/nexus/buffer"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/proxy/buffer"
 )
 
 const (

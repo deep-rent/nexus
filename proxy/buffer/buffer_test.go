@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/deep-rent/nexus/buffer"
+	"github.com/deep-rent/nexus/proxy/buffer"
 )
 
 func TestNewPool_PanicOnInvalidSize(t *testing.T) {
