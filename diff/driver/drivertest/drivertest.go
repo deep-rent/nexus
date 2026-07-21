@@ -12,16 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package drivertest provides a backend-agnostic equivalence suite for the
-// diff storage contracts. It exercises the shared semantics that every
-// [diff.Handler] and [diff.Store] implementation must honor, so the mock and
-// postgres drivers can be proven to behave identically without duplicating
-// the scenarios in each package.
-//
-// The suite lives in its own package because it imports neither driver: each
-// backend supplies a [Target] through a constructor and calls
-// [RunEquivalence] from a thin test in its own package. This keeps the shared
-// scenarios in one place while avoiding an import cycle between the drivers.
 package drivertest
 
 import (
