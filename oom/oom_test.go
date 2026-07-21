@@ -19,10 +19,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime/debug"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/deep-rent/nexus/router"
 )
+
+// newExchange builds a throwaway exchange for driving the middleware.
+func newExchange() *router.Exchange {
+	return &router.Exchange{
+		R: httptest.NewRequest(http.MethodGet, "/", nil),
+		W: router.NewResponseWriter(httptest.NewRecorder()),
+	}
+}
 
 func TestMiddleware_NoLimit(t *testing.T) {
 	t.Parallel()
@@ -89,4 +99,71 @@ func TestMiddleware_Overloaded(t *testing.T) {
 	if exp, act := "5", rec.Header().Get("Retry-After"); exp != act {
 		t.Fatalf("expected Retry-After header %s, got %s", exp, act)
 	}
+}
+
+func TestMiddleware_Recovers(t *testing.T) {
+	t.Parallel()
+	prev := debug.SetMemoryLimit(1000) // threshold at 0.90 => 900
+	defer func() { _ = debug.SetMemoryLimit(prev) }()
+
+	now := time.Unix(1_700_000_000, 0)
+	var mem uint64 = 950 // above the threshold
+	mw := Middleware(
+		WithInterval(time.Second),
+		WithClock(func() time.Time { return now }),
+		WithMemoryProvider(func() uint64 { return mem }),
+	)
+	handler := mw(router.HandlerFunc(func(e *router.Exchange) error {
+		e.W.WriteHeader(http.StatusOK)
+		return nil
+	}))
+	serve := func() error { return handler.ServeHTTP(newExchange()) }
+
+	// The first request samples an overloaded reading and sheds load.
+	if serve() == nil {
+		t.Fatal("expected the server to shed load while over the threshold")
+	}
+
+	// Memory drops, but within the same interval the verdict is not resampled.
+	mem = 100
+	if serve() == nil {
+		t.Error("verdict should not be resampled within the interval")
+	}
+
+	// Past the interval, the fresh reading lifts the load-shedding.
+	now = now.Add(2 * time.Second)
+	if err := serve(); err != nil {
+		t.Errorf("expected recovery once memory dropped, got %v", err)
+	}
+}
+
+func TestMiddleware_ConcurrentSampling(t *testing.T) {
+	t.Parallel()
+	prev := debug.SetMemoryLimit(1000)
+	defer func() { _ = debug.SetMemoryLimit(prev) }()
+
+	// A fixed clock makes every goroutine race to claim the single sampling
+	// slot; the memory reading stays below the threshold. Run under -race to
+	// exercise the atomic sample gate.
+	now := time.Unix(1_700_000_000, 0)
+	mw := Middleware(
+		WithClock(func() time.Time { return now }),
+		WithMemoryProvider(func() uint64 { return 100 }),
+	)
+	handler := mw(router.HandlerFunc(func(e *router.Exchange) error {
+		e.W.WriteHeader(http.StatusOK)
+		return nil
+	}))
+
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := handler.ServeHTTP(newExchange()); err != nil {
+				t.Errorf("unexpected load shedding below threshold: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }
