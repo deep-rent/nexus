@@ -15,66 +15,40 @@
 package throttle_test
 
 import (
-	"context"
 	"testing"
 
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
-
+	"github.com/deep-rent/nexus/metrics"
 	"github.com/deep-rent/nexus/throttle"
 )
 
-// throttleCounts collects the named counter grouped by the string form of
-// the "allowed" attribute; data points without it land under "".
-func throttleCounts(
+// decisionCounts collects the decision counter grouped by the allowed tag,
+// returning the instance name tag alongside.
+func decisionCounts(
 	t *testing.T,
-	reader *sdkmetric.ManualReader,
-	name string,
-) (counts map[string]int64, throttleName string) {
+	reg *metrics.Registry,
+) (counts map[string]uint64, name string) {
 	t.Helper()
 
-	var rm metricdata.ResourceMetrics
-	if err := reader.Collect(context.Background(), &rm); err != nil {
-		t.Fatalf("collecting metrics: %v", err)
-	}
-
-	counts = make(map[string]int64)
-	for _, scope := range rm.ScopeMetrics {
-		for _, m := range scope.Metrics {
-			if m.Name != name {
-				continue
-			}
-			sum, ok := m.Data.(metricdata.Sum[int64])
-			if !ok {
-				t.Fatalf("unexpected data type %T", m.Data)
-			}
-			for _, dp := range sum.DataPoints {
-				outcome := ""
-				if v, ok := dp.Attributes.Value("allowed"); ok {
-					outcome = v.Emit()
-				}
-				counts[outcome] += dp.Value
-				if v, ok := dp.Attributes.Value("throttle"); ok {
-					throttleName = v.Emit()
-				}
-			}
+	counts = make(map[string]uint64)
+	for _, s := range reg.Snapshot().Metrics {
+		if s.Name != throttle.Decisions {
+			continue
 		}
+		counts[s.Tags["allowed"]] += uint64(s.Value)
+		name = s.Tags["name"]
 	}
-	return counts, throttleName
+	return counts, name
 }
 
 func TestThrottle_CountsDecisions(t *testing.T) {
 	t.Parallel()
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
-
+	reg := metrics.NewRegistry()
 	th := throttle.New(throttle.Config{
-		Rate:          1,
-		Burst:         2,
-		Name:          "login",
-		MeterProvider: mp,
+		Rate:     1,
+		Burst:    2,
+		Name:     "login",
+		Registry: reg,
 	})
 
 	// The burst of 2 admits two spends; the third is rejected.
@@ -87,7 +61,7 @@ func TestThrottle_CountsDecisions(t *testing.T) {
 		t.Fatal("allow: got true; want false")
 	}
 
-	counts, name := throttleCounts(t, reader, "nexus.throttle.decision")
+	counts, name := decisionCounts(t, reg)
 	if got := counts["true"]; got != 2 {
 		t.Errorf("allowed: got %d; want 2", got)
 	}
@@ -95,24 +69,26 @@ func TestThrottle_CountsDecisions(t *testing.T) {
 		t.Errorf("rejected: got %d; want 1", got)
 	}
 	if name != "login" {
-		t.Errorf("throttle attribute: got %q; want %q", name, "login")
+		t.Errorf("name tag: got %q; want %q", name, "login")
 	}
 }
 
 func TestThrottle_CountsPenalties(t *testing.T) {
 	t.Parallel()
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
-
-	th := throttle.New(throttle.Config{MeterProvider: mp})
+	reg := metrics.NewRegistry()
+	th := throttle.New(throttle.Config{Registry: reg})
 
 	th.Penalize("alice", 10)
 	th.Penalize("alice", 0) // A non-positive charge is not counted.
 
-	counts, _ := throttleCounts(t, reader, "nexus.throttle.penalty")
-	if got := counts[""]; got != 1 {
-		t.Errorf("penalties: got %d; want 1", got)
+	var penalties uint64
+	for _, s := range reg.Snapshot().Metrics {
+		if s.Name == throttle.Penalties {
+			penalties += uint64(s.Value)
+		}
+	}
+	if penalties != 1 {
+		t.Errorf("penalties: got %d; want 1", penalties)
 	}
 }

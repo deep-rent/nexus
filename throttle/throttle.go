@@ -15,19 +15,15 @@
 package throttle
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
 	"golang.org/x/time/rate"
 
+	"github.com/deep-rent/nexus/metrics"
 	"github.com/deep-rent/nexus/router"
 )
 
@@ -69,16 +65,26 @@ type Config struct {
 	// Clock overrides the time source. This is primarily useful for
 	// deterministic testing. Defaults to [time.Now].
 	Clock func() time.Time
-	// Name is the value of the "throttle" attribute on the recorded
-	// counters, keeping multiple instances apart in a telemetry backend.
-	// Defaults to the empty string.
+	// Name is the value of the "name" tag on the recorded counters,
+	// keeping multiple instances apart in a metrics backend. Defaults to
+	// the empty string.
 	Name string
-	// MeterProvider records the nexus.throttle.decision and
-	// nexus.throttle.penalty counters. Defaults to the global provider
-	// registered with [otel.SetMeterProvider], which is a no-op until an
-	// application installs a real one.
-	MeterProvider metric.MeterProvider
+	// Registry records the [Decisions] and [Penalties] counters. Defaults
+	// to [metrics.DefaultRegistry].
+	Registry *metrics.Registry
 }
+
+// Names of the counters recorded by a [Throttle], tagged with the instance
+// name from [Config.Name].
+const (
+	// Decisions counts AllowN outcomes, split by the "allowed" tag. Note
+	// that requests rejected by [Throttle.Middleware] reserve on the
+	// buckets directly and do not pass through here; they surface as 429s
+	// in the HTTP server metrics instead.
+	Decisions = "throttle_decisions_total"
+	// Penalties counts Penalize charges.
+	Penalties = "throttle_penalties_total"
+)
 
 // Throttle is a set of token buckets keyed by opaque strings.
 //
@@ -95,9 +101,9 @@ type Throttle struct {
 	key   func(*http.Request) string
 	clock func() time.Time
 
-	attrs     metric.MeasurementOption // labels carried by both counters
-	decisions metric.Int64Counter      // counts AllowN outcomes
-	penalties metric.Int64Counter      // counts Penalize calls
+	allowed   *metrics.Counter // AllowN spends that succeeded
+	rejected  *metrics.Counter // AllowN spends that were rate limited
+	penalties *metrics.Counter // Penalize charges
 
 	mu      sync.Mutex
 	buckets map[string]*rate.Limiter
@@ -131,51 +137,26 @@ func New(cfg Config) *Throttle {
 	if clock == nil {
 		clock = time.Now
 	}
-	mp := cfg.MeterProvider
-	if mp == nil {
-		mp = otel.GetMeterProvider()
+	reg := cfg.Registry
+	if reg == nil {
+		reg = metrics.DefaultRegistry
 	}
-
-	meter := mp.Meter(scope)
-	count := func(instrument, description string) metric.Int64Counter {
-		counter, err := meter.Int64Counter(
-			instrument,
-			metric.WithDescription(description),
-		)
-		if err != nil {
-			otel.Handle(err)
-			counter, _ = noop.NewMeterProvider().Meter(scope).Int64Counter("")
-		}
-		return counter
-	}
+	name := metrics.T("name", cfg.Name)
 
 	return &Throttle{
 		rate:  limit,
 		burst: burst,
 		key:   key,
 		clock: clock,
-		attrs: metric.WithAttributes(
-			attribute.String("throttle", cfg.Name),
-		),
-		decisions: count(
-			"nexus.throttle.decision",
-			"Number of rate limit decisions by outcome.",
-		),
-		penalties: count(
-			"nexus.throttle.penalty",
-			"Number of penalties charged.",
-		),
-		buckets: make(map[string]*rate.Limiter),
-		swept:   clock(),
+		allowed: reg.Counter(Decisions,
+			name, metrics.T("allowed", "true")),
+		rejected: reg.Counter(Decisions,
+			name, metrics.T("allowed", "false")),
+		penalties: reg.Counter(Penalties, name),
+		buckets:   make(map[string]*rate.Limiter),
+		swept:     clock(),
 	}
 }
-
-// scope is the instrumentation scope reported for metrics emitted by this
-// package.
-const scope = "github.com/deep-rent/nexus/throttle"
-
-// allowedKey is the attribute reporting the outcome of a decision.
-var allowedKey = attribute.Key("allowed")
 
 // RemoteAddr derives a key from the remote address of the request's TCP
 // connection, stripping the port so that all connections from one host share
@@ -229,18 +210,18 @@ func (t *Throttle) Allow(key string) bool {
 // are available, nothing is spent and it returns false. A non-positive n
 // spends nothing and returns true.
 //
-// Every call is counted under nexus.throttle.decision with an "allowed"
-// attribute. Note that requests rejected by [Throttle.Middleware] reserve on
-// the buckets directly and do not pass through here; they surface as 429s in
-// the HTTP server metrics instead.
+// Every call is counted under [Decisions] with an "allowed" tag.
 func (t *Throttle) AllowN(key string, n int) bool {
 	if n <= 0 {
 		return true
 	}
 	now := t.clock()
 	ok := t.limiter(key, now).AllowN(now, n)
-	t.decisions.Add(context.Background(), 1,
-		t.attrs, metric.WithAttributes(allowedKey.Bool(ok)))
+	if ok {
+		t.allowed.Inc()
+	} else {
+		t.rejected.Inc()
+	}
 	return ok
 }
 
@@ -275,7 +256,7 @@ func (t *Throttle) Penalize(key string, tokens int) {
 	}
 	now := t.clock()
 	t.limiter(key, now).ReserveN(now, tokens)
-	t.penalties.Add(context.Background(), 1, t.attrs)
+	t.penalties.Inc()
 }
 
 // Reset restores the full allowance of the given key, discarding any deficit
