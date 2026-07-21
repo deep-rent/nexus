@@ -615,6 +615,32 @@ type SessionStore interface {
 	//
 	// It should return an error only if the removal operation fails.
 	DeleteWebAuthnSession(ctx context.Context, handle Digest) (bool, error)
+	// GetTrustedDevice retrieves a remember-me device trust record by the
+	// digest of its token.
+	//
+	// If found, it must return the record and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetTrustedDevice(ctx context.Context, token Digest) (TrustedDevice, error)
+	// CreateTrustedDevice stores a new device trust record.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateTrustedDevice(ctx context.Context, data TrustedDevice) error
+	// DeleteTrustedDevice removes a device trust record by the digest of its
+	// token and reports whether it was present.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteTrustedDevice(ctx context.Context, token Digest) (bool, error)
+	// DeleteTrustedDevicesForSubject removes every device trust record enrolled
+	// by the given subject. It backs a "sign out everywhere" or a
+	// credential-change revocation, and is a no-op when the subject trusts no
+	// devices.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteTrustedDevicesForSubject(
+		ctx context.Context,
+		subjectID uuid.UUID,
+	) error
 }
 
 const (
@@ -1180,6 +1206,12 @@ func GenerateState(context.Context) (string, error) {
 // GenerateWebAuthnHandle returns a random 43-character, base64url-encoded
 // string for use as the handle of a pending WebAuthn ceremony.
 func GenerateWebAuthnHandle(context.Context) (string, error) {
+	return opaque()
+}
+
+// GenerateTrustToken returns a random 43-character, base64url-encoded string
+// for use as a remember-me device trust token.
+func GenerateTrustToken(context.Context) (string, error) {
 	return opaque()
 }
 

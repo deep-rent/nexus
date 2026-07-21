@@ -62,6 +62,12 @@ const (
 	// DefaultThrottlePenalty is the number of tokens charged against a
 	// throttle bucket for a single failed authentication attempt.
 	DefaultThrottlePenalty = 10
+	// DefaultRememberedSessionLifetime is the persistence of a session when the
+	// client asked to be remembered.
+	DefaultRememberedSessionLifetime = 30 * 24 * time.Hour
+	// DefaultTrustedDeviceLifetime is the validity period of a remember-me
+	// device trust token.
+	DefaultTrustedDeviceLifetime = 30 * 24 * time.Hour
 )
 
 // Config carries the mandatory dependencies and tunable settings for a
@@ -123,6 +129,15 @@ type Config struct {
 	// OTPMaxResends overrides [DefaultOTPMaxResends]. A negative value
 	// disables resends entirely.
 	OTPMaxResends int
+	// RememberedSessionLifetime is how long a session persists when the client
+	// asked to be remembered at login. It sets the Max-Age of the persistent
+	// session cookie; without it, a session lasts only until the browser
+	// closes. Defaults to [DefaultRememberedSessionLifetime].
+	RememberedSessionLifetime time.Duration
+	// TrustedDeviceLifetime is how long a remember-me device trust token stays
+	// valid. On a trusted device within this window, a [Planner] may skip
+	// factors. Defaults to [DefaultTrustedDeviceLifetime].
+	TrustedDeviceLifetime time.Duration
 	// Throttle rate limits the credential-verifying endpoints and applies
 	// escalating penalties to failed authentication attempts. When set,
 	// [Server.Mount] guards those routes with per-address limiting
@@ -148,40 +163,43 @@ type Config struct {
 // Create instances with [New] and attach them to a router via
 // [Server.Mount].
 type Server struct {
-	grants                 map[GrantType]Grant
-	idps                   map[string]IdentityProvider
-	vault                  vault.Vault
-	clients                ClientStore
-	sessions               SessionStore
-	subjects               SubjectStore
-	introspector           jwt.Verifier[*auth.Claims]
-	issuer                 string
-	sessionCookieName      string
-	stateCookieName        string
-	accessTokenLifetime    time.Duration
-	refreshTokenLifetime   time.Duration
-	authCodeLifetime       time.Duration
-	deviceCodeLifetime     time.Duration
-	devicePollInterval     time.Duration
-	realm                  string
-	loginTerminalURI       string
-	loginRedirectURI       string
-	generateSessionKey     TokenGeneratorFn
-	generateAuthCode       TokenGeneratorFn
-	generateRefreshToken   TokenGeneratorFn
-	generateDeviceCode     TokenGeneratorFn
-	generateUserCode       TokenGeneratorFn
-	generateState          TokenGeneratorFn
-	generateWebAuthnHandle TokenGeneratorFn
-	verificationURI        string
-	otpEnabled             bool
-	otpOpts                []otp.Option
-	otp                    *otp.Challenger
-	webauthn               *webAuthnSupport
-	throttle               *throttle.Throttle
-	throttlePenalty        int
-	logger                 *slog.Logger
-	now                    func() time.Time
+	grants                    map[GrantType]Grant
+	idps                      map[string]IdentityProvider
+	vault                     vault.Vault
+	clients                   ClientStore
+	sessions                  SessionStore
+	subjects                  SubjectStore
+	introspector              jwt.Verifier[*auth.Claims]
+	issuer                    string
+	sessionCookieName         string
+	stateCookieName           string
+	accessTokenLifetime       time.Duration
+	refreshTokenLifetime      time.Duration
+	authCodeLifetime          time.Duration
+	deviceCodeLifetime        time.Duration
+	devicePollInterval        time.Duration
+	realm                     string
+	loginTerminalURI          string
+	loginRedirectURI          string
+	generateSessionKey        TokenGeneratorFn
+	generateAuthCode          TokenGeneratorFn
+	generateRefreshToken      TokenGeneratorFn
+	generateDeviceCode        TokenGeneratorFn
+	generateUserCode          TokenGeneratorFn
+	generateState             TokenGeneratorFn
+	generateWebAuthnHandle    TokenGeneratorFn
+	generateTrustToken        TokenGeneratorFn
+	verificationURI           string
+	otpEnabled                bool
+	otpOpts                   []otp.Option
+	otp                       *otp.Challenger
+	rememberedSessionLifetime time.Duration
+	trustedDeviceLifetime     time.Duration
+	webauthn                  *webAuthnSupport
+	throttle                  *throttle.Throttle
+	throttlePenalty           int
+	logger                    *slog.Logger
+	now                       func() time.Time
 }
 
 // Option customizes a [Server] during construction with [New].
@@ -213,6 +231,15 @@ func WithClock(now func() time.Time) Option {
 // WithSessionKeyGenerator overrides [GenerateSessionKey].
 func WithSessionKeyGenerator(fn TokenGeneratorFn) Option {
 	return func(s *Server) { s.generateSessionKey = fn }
+}
+
+// WithTrustTokenGenerator overrides [GenerateTrustToken].
+func WithTrustTokenGenerator(fn TokenGeneratorFn) Option {
+	return func(s *Server) {
+		if fn != nil {
+			s.generateTrustToken = fn
+		}
+	}
 }
 
 // WithAuthCodeGenerator overrides [GenerateAuthCode].
@@ -336,6 +363,14 @@ func New(cfg Config, opts ...Option) *Server {
 			cfg.DevicePollInterval,
 			DefaultDevicePollInterval,
 		),
+		rememberedSessionLifetime: cmp.Or(
+			cfg.RememberedSessionLifetime,
+			DefaultRememberedSessionLifetime,
+		),
+		trustedDeviceLifetime: cmp.Or(
+			cfg.TrustedDeviceLifetime,
+			DefaultTrustedDeviceLifetime,
+		),
 		realm:                  cmp.Or(cfg.Realm, DefaultRealm),
 		loginTerminalURI:       cfg.LoginTerminalURI,
 		loginRedirectURI:       cfg.LoginRedirectURI,
@@ -347,6 +382,7 @@ func New(cfg Config, opts ...Option) *Server {
 		generateUserCode:       GenerateUserCode,
 		generateState:          GenerateState,
 		generateWebAuthnHandle: GenerateWebAuthnHandle,
+		generateTrustToken:     GenerateTrustToken,
 		throttle:               cfg.Throttle,
 		throttlePenalty: cmp.Or(
 			cfg.ThrottlePenalty,

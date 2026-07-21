@@ -259,7 +259,9 @@ type fakeSessionStore struct {
 	otpChallenges map[Digest]OTPChallenge
 	// webAuthnSessions maps handle digests to pending ceremony sessions.
 	webAuthnSessions map[Digest]WebAuthnSession
-	err              error
+	// trustedDevices maps token digests to remember-me device trust records.
+	trustedDevices map[Digest]TrustedDevice
+	err            error
 }
 
 func newFakeSessionStore() *fakeSessionStore {
@@ -271,7 +273,56 @@ func newFakeSessionStore() *fakeSessionStore {
 		webAuthnSessions: make(
 			map[Digest]WebAuthnSession,
 		),
+		trustedDevices: make(map[Digest]TrustedDevice),
 	}
+}
+
+func (s *fakeSessionStore) GetTrustedDevice(
+	_ context.Context,
+	token Digest,
+) (TrustedDevice, error) {
+	if s.err != nil {
+		return TrustedDevice{}, s.err
+	}
+	return s.trustedDevices[token], nil
+}
+
+func (s *fakeSessionStore) CreateTrustedDevice(
+	_ context.Context,
+	data TrustedDevice,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.trustedDevices[data.Token] = data
+	return nil
+}
+
+func (s *fakeSessionStore) DeleteTrustedDevice(
+	_ context.Context,
+	token Digest,
+) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	_, ok := s.trustedDevices[token]
+	delete(s.trustedDevices, token)
+	return ok, nil
+}
+
+func (s *fakeSessionStore) DeleteTrustedDevicesForSubject(
+	_ context.Context,
+	subjectID uuid.UUID,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	for k, v := range s.trustedDevices {
+		if v.SubjectID == subjectID {
+			delete(s.trustedDevices, k)
+		}
+	}
+	return nil
 }
 
 func (s *fakeSessionStore) GetWebAuthnSession(
