@@ -52,19 +52,20 @@ func Middleware(opts ...Option) router.Middleware {
 	}
 
 	threshold := uint64(float64(limit) * cfg.fraction)
+	var lastCheck atomic.Int64
 	var overloaded atomic.Bool
-
-	go func() {
-		ticker := time.NewTicker(cfg.interval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			overloaded.Store(cfg.memory() >= threshold)
-		}
-	}()
 
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
+			now := time.Now().UnixNano()
+			last := lastCheck.Load()
+
+			if now-last > int64(cfg.interval) {
+				if lastCheck.CompareAndSwap(last, now) {
+					overloaded.Store(cfg.memory() >= threshold)
+				}
+			}
+
 			if overloaded.Load() {
 				return router.Fail(
 					http.StatusServiceUnavailable,
