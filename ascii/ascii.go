@@ -94,10 +94,10 @@ func IsLower(c byte) bool { return lookup[c]&low != 0 }
 func IsDigit(c byte) bool { return lookup[c]&dig != 0 }
 
 // IsAlpha reports whether the byte is an ASCII letter (uppercase or lowercase).
-func IsAlpha(c byte) bool { return lookup[c]&letterMask != 0 }
+func IsAlpha(c byte) bool { return lookup[c]&alphaMask != 0 }
 
 // IsAlphaNum reports whether the byte is an ASCII letter or decimal digit.
-func IsAlphaNum(c byte) bool { return lookup[c]&alnumMask != 0 }
+func IsAlphaNum(c byte) bool { return lookup[c]&alphaNumMask != 0 }
 
 // IsHex reports whether the given byte is a hexadecimal character
 // ('0' through '9', 'a' through 'f', or 'A' through 'F').
@@ -270,11 +270,11 @@ const (
 
 // Class masks combining the individual character class bits.
 const (
-	letterMask = upp | low                   // IsAlpha
-	alnumMask  = upp | low | dig             // IsAlphaNum
-	hexMask    = dig | hex                   // IsHex
-	graphMask  = upp | low | dig | pun | sym // IsGraph
-	printMask  = graphMask | spc             // IsPrint
+	alphaMask    = upp | low                   // IsAlpha
+	alphaNumMask = upp | low | dig             // IsAlphaNum
+	hexMask      = dig | hex                   // IsHex
+	graphMask    = upp | low | dig | pun | sym // IsGraph
+	printMask    = graphMask | spc             // IsPrint
 )
 
 // Convenience combinations used when building the lookup table.
@@ -290,21 +290,37 @@ const (
 // table is indexed by a byte, which is always in range, so the classification
 // functions need neither a bounds check nor a preceding range test.
 var lookup = [256]uint16{
-	/* 00-07  NUL SOH STX ETX EOT ENQ ACK BEL */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
-	/* 08-0F  BS  HT  LF  VT  FF  CR  SO  SI  */ ctl, csp, csp, csp, csp, csp, ctl, ctl,
-	/* 10-17  DLE DC1 DC2 DC3 DC4 NAK SYN ETB */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
-	/* 18-1F  CAN EM  SUB ESC FS  GS  RS  US  */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
-	/* 20-27  SP  !   "   #   $   %   &   '   */ tsp, pun, pun, pun, sym, pun, pun, pun,
-	/* 28-2F  (   )   *   +   ,   -   .   /   */ pun, pun, pun, sym, pun, pun, pun, pun,
-	/* 30-37  0   1   2   3   4   5   6   7   */ dig, dig, dig, dig, dig, dig, dig, dig,
-	/* 38-3F  8   9   :   ;   <   =   >   ?   */ dig, dig, pun, pun, sym, sym, sym, pun,
-	/* 40-47  @   A   B   C   D   E   F   G   */ pun, uhx, uhx, uhx, uhx, uhx, uhx, upp,
-	/* 48-4F  H   I   J   K   L   M   N   O   */ upp, upp, upp, upp, upp, upp, upp, upp,
-	/* 50-57  P   Q   R   S   T   U   V   W   */ upp, upp, upp, upp, upp, upp, upp, upp,
-	/* 58-5F  X   Y   Z   [   \   ]   ^   _   */ upp, upp, upp, pun, pun, pun, sym, pun,
-	/* 60-67  `   a   b   c   d   e   f   g   */ sym, lhx, lhx, lhx, lhx, lhx, lhx, low,
-	/* 68-6F  h   i   j   k   l   m   n   o   */ low, low, low, low, low, low, low, low,
-	/* 70-77  p   q   r   s   t   u   v   w   */ low, low, low, low, low, low, low, low,
-	/* 78-7F  x   y   z   {   |   }   ~   DEL */ low, low, low, pun, sym, pun, sym, ctl,
+	/* 00-07  NUL SOH STX ETX EOT ENQ ACK BEL */
+	ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
+	/* 08-0F  BS  HT  LF  VT  FF  CR  SO  SI  */
+	ctl, csp, csp, csp, csp, csp, ctl, ctl,
+	/* 10-17  DLE DC1 DC2 DC3 DC4 NAK SYN ETB */
+	ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
+	/* 18-1F  CAN EM  SUB ESC FS  GS  RS  US  */
+	ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
+	/* 20-27  SP  !   "   #   $   %   &   '   */
+	tsp, pun, pun, pun, sym, pun, pun, pun,
+	/* 28-2F  (   )   *   +   ,   -   .   /   */
+	pun, pun, pun, sym, pun, pun, pun, pun,
+	/* 30-37  0   1   2   3   4   5   6   7   */
+	dig, dig, dig, dig, dig, dig, dig, dig,
+	/* 38-3F  8   9   :   ;   <   =   >   ?   */
+	dig, dig, pun, pun, sym, sym, sym, pun,
+	/* 40-47  @   A   B   C   D   E   F   G   */
+	pun, uhx, uhx, uhx, uhx, uhx, uhx, upp,
+	/* 48-4F  H   I   J   K   L   M   N   O   */
+	upp, upp, upp, upp, upp, upp, upp, upp,
+	/* 50-57  P   Q   R   S   T   U   V   W   */
+	upp, upp, upp, upp, upp, upp, upp, upp,
+	/* 58-5F  X   Y   Z   [   \   ]   ^   _   */
+	upp, upp, upp, pun, pun, pun, sym, pun,
+	/* 60-67  `   a   b   c   d   e   f   g   */
+	sym, lhx, lhx, lhx, lhx, lhx, lhx, low,
+	/* 68-6F  h   i   j   k   l   m   n   o   */
+	low, low, low, low, low, low, low, low,
+	/* 70-77  p   q   r   s   t   u   v   w   */
+	low, low, low, low, low, low, low, low,
+	/* 78-7F  x   y   z   {   |   }   ~   DEL */
+	low, low, low, pun, sym, pun, sym, ctl,
 	// 0x80–0xFF are non-ASCII; every entry is zero (no class).
 }
