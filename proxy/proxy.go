@@ -14,24 +14,7 @@
 
 // Package proxy provides a configurable reverse proxy handler.
 //
-// Package proxy constructs an [httputil.ReverseProxy], starting with sensible
-// defaults, integrating a reusable buffer pool, structured logging, and robust
-// error handling via a functional options API.
-//
-// # Usage
-//
-// Create a new proxy handler by providing a target URL and optional
-// configuration functions.
-//
-// Example:
-//
-//	target, _ := url.Parse("https://backend.internal")
-//	proxyHandler := proxy.NewHandler(target,
-//	    proxy.WithFlushInterval(100*time.Millisecond),
-//	    proxy.WithMaxBufferSize(512<<10),
-//	)
-//
-//	http.ListenAndServe(":8080", proxyHandler)
+
 package proxy
 
 import (
