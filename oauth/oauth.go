@@ -27,6 +27,7 @@ import (
 
 	"uuid"
 
+	"github.com/deep-rent/nexus/oauth/otp"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -124,37 +125,35 @@ type Subject interface {
 	Roles() []string
 }
 
-// SecondFactorChannel names the side channel over which a one-time
-// password is delivered during a two-factor login. Channels are registered
-// under such names via [WithOTPChannel]; any name is valid as long as
-// enrollments and registrations agree on it.
-type SecondFactorChannel string
-
-const (
-	// SecondFactorChannelSMS is the conventional name for a channel that
-	// delivers one-time passwords as text messages.
-	SecondFactorChannelSMS SecondFactorChannel = "sms"
-	// SecondFactorChannelEmail is the conventional name for a channel that
-	// delivers one-time passwords via email.
-	SecondFactorChannelEmail SecondFactorChannel = "email"
-)
-
 // SecondFactor describes a subject's enrolled second authentication factor.
 //
 // It is returned by [SubjectStore.GetSecondFactor] and consumed by the
 // [Server] to decide whether a password login must be confirmed with a
-// one-time password, and where to deliver it. Enrollment itself (capturing
-// and verifying the destination) is application concern and happens outside
+// one-time password, and how to deliver it. Enrollment itself (capturing and
+// verifying the destinations) is an application concern and happens outside
 // this package.
+//
+// Rather than naming a globally-registered channel, the store supplies the
+// delivery mechanism directly as one or more [otp.Method] values, building each
+// [otp.Method.Deliver] closure with full knowledge of the subject. That is what
+// lets an implementation localize copy or select a template per subject — the
+// server never needs to know how a code is rendered or where it is sent.
 type SecondFactor struct {
-	// Channel selects the delivery mechanism for one-time passwords. It
-	// must match the name of a channel registered via [WithOTPChannel].
-	Channel SecondFactorChannel
-	// Destination is the channel-specific address of the subject: a phone
-	// number in E.164 format for [SecondFactorChannelSMS], an email
-	// address for [SecondFactorChannelEmail], or whatever a custom channel
-	// expects.
-	Destination string
+	// Methods are the subject's enrolled delivery methods, most preferred
+	// first. The first is used by default; the client may select another by
+	// [otp.Method.ID] when resending. It must be non-empty for an enrolled
+	// subject.
+	Methods []otp.Method
+}
+
+// MethodInfo is the client-facing description of an enrolled [otp.Method],
+// returned in an [OTPChallengeResponse] so a client can present a channel
+// picker. It never carries a secret or a raw destination.
+type MethodInfo struct {
+	// ID is the stable identifier used to select this method on resend.
+	ID string `json:"id"`
+	// Label is an optional human-facing hint, such as a masked address.
+	Label string `json:"label,omitzero"`
 }
 
 // SubjectStore provides data access and authentication for resource owners.
@@ -209,8 +208,8 @@ type SubjectStore interface {
 	// error only if the storage lookup fails.
 	//
 	// The method is only consulted when the server was constructed with
-	// [WithOTPChannel]; implementations backing servers without two-factor
-	// support may simply return nil, nil.
+	// [WithOTP]; implementations backing servers without two-factor support
+	// may simply return nil, nil.
 	GetSecondFactor(
 		ctx context.Context,
 		subjectID uuid.UUID,
@@ -875,13 +874,17 @@ var _ valid.Validatable = (*LoginRequest)(nil)
 //
 // Instead of a session, the client receives a challenge handle. It must
 // prompt the resource owner for the one-time password delivered over the
-// indicated channel and confirm the login via [Server.VerifyOTP].
+// selected method and confirm the login via [Server.VerifyOTP].
 type OTPChallengeResponse struct {
 	// Challenge is the opaque handle identifying the pending login. It is
 	// required to confirm or resend the one-time password.
 	Challenge string `json:"challenge"`
-	// Channel names the side channel the one-time password was sent over.
-	Channel SecondFactorChannel `json:"channel"`
+	// Method is the [otp.Method.ID] the one-time password was sent over.
+	Method string `json:"method"`
+	// Methods lists every enrolled delivery method, so the client can offer a
+	// picker and resend over a different one. It is omitted when only a single
+	// method is enrolled.
+	Methods []MethodInfo `json:"methods,omitzero"`
 	// ExpiresIn is the remaining lifetime of the challenge in seconds.
 	ExpiresIn int64 `json:"expires_in"`
 }
@@ -913,6 +916,10 @@ var _ valid.Validatable = (*OTPVerificationRequest)(nil)
 type OTPResendRequest struct {
 	// Challenge is the handle returned by the login endpoint.
 	Challenge string `json:"challenge"`
+	// Method optionally selects a different enrolled method (by
+	// [otp.Method.ID]) to switch channels for the redelivery. When empty, the
+	// subject's default (first) method is used.
+	Method string `json:"method,omitzero"`
 }
 
 // Validate implements the [valid.Validatable] interface.
@@ -1167,12 +1174,6 @@ func GenerateDeviceCode(context.Context) (string, error) {
 // GenerateState returns a random 43-character, base64url-encoded string
 // for use as a state parameter.
 func GenerateState(context.Context) (string, error) {
-	return opaque()
-}
-
-// GenerateOTPChallenge returns a random 43-character, base64url-encoded
-// string for use as the handle of a pending two-factor login.
-func GenerateOTPChallenge(context.Context) (string, error) {
 	return opaque()
 }
 

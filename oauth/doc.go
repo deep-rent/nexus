@@ -65,24 +65,34 @@
 // # Two-factor logins
 //
 // Password logins can be stepped up with a one-time password delivered over
-// a side channel; see [WithOTPChannel]. When at least one channel is
-// registered, subjects that have enrolled a [SecondFactor] receive an
-// [OTPChallengeResponse] instead of a session from the login endpoint and
-// confirm the code via [Server.VerifyOTP] (or request redelivery via
-// [Server.ResendOTP]). Channels are registered under free-form names that
-// enrollments refer to; delivery is abstracted by the otp package:
+// a side channel; see [WithOTP]. When enabled, subjects that have enrolled a
+// [SecondFactor] receive an [OTPChallengeResponse] instead of a session from
+// the login endpoint and confirm the code via [Server.VerifyOTP] (or request
+// redelivery, possibly over a different channel, via [Server.ResendOTP]):
 //
 //	s := oauth.New(cfg,
 //	  oauth.WithGrant(oauth.AuthCodeGrant()),
-//	  oauth.WithOTPChannel(
-//	    oauth.SecondFactorChannelSMS,
-//	    otp.SMS(smsSender, "+15551234567", ""),
-//	  ),
-//	  oauth.WithOTPChannel(
-//	    oauth.SecondFactorChannelEmail,
-//	    otp.Mail(mailSender, from, "template-id", ""),
-//	  ),
+//	  oauth.WithOTP(),
 //	)
+//
+// The store decides delivery per subject by returning one or more [otp.Method]
+// values from [SubjectStore.GetSecondFactor], each built with the
+// [github.com/deep-rent/nexus/oauth/otp] helpers ([otp.ViaText], [otp.ViaMail],
+// [otp.ViaPush]). Because the store builds them, it can localize copy or pick a
+// template per subject:
+//
+//	func (s *store) GetSecondFactor(
+//	  ctx context.Context, id uuid.UUID,
+//	) (*oauth.SecondFactor, error) {
+//	  u, err := s.lookup(ctx, id)
+//	  if err != nil || u == nil {
+//	    return nil, err
+//	  }
+//	  return &oauth.SecondFactor{Methods: []otp.Method{{
+//	    ID:      "sms",
+//	    Deliver: otp.ViaText(smsSender, "+15551234567", u.Phone, ""),
+//	  }}}, nil
+//	}
 //
 // # Passkeys
 //

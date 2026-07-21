@@ -425,6 +425,62 @@ func TestChallenger_Resend_SwitchesMethod(t *testing.T) {
 	}
 }
 
+func TestChallenger_Peek(t *testing.T) {
+	t.Parallel()
+
+	cap := &capture{}
+	c := otp.New(newMemStore())
+
+	handle, _, err := c.Begin(t.Context(), purpose, "user-9", cap.method("sms"))
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+
+	owner, ok, err := c.Peek(t.Context(), purpose, handle)
+	if err != nil {
+		t.Fatalf("Peek: %v", err)
+	}
+	if !ok || owner != "user-9" {
+		t.Errorf("got (%q, %v); want (\"user-9\", true)", owner, ok)
+	}
+
+	// Wrong purpose or unknown handle is not found.
+	if _, ok, _ := c.Peek(t.Context(), "other", handle); ok {
+		t.Error("Peek matched across purposes")
+	}
+	if _, ok, _ := c.Peek(t.Context(), purpose, "nope"); ok {
+		t.Error("Peek matched an unknown handle")
+	}
+}
+
+func TestChallenger_Cancel(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	cap := &capture{}
+	c := otp.New(store)
+
+	handle, _, err := c.Begin(t.Context(), purpose, "u", cap.method("sms"))
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+
+	deleted, err := c.Cancel(t.Context(), handle)
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if !deleted {
+		t.Error("Cancel reported no deletion for a live challenge")
+	}
+	if store.len() != 0 {
+		t.Error("Cancel did not remove the challenge")
+	}
+	// Cancelling again is a no-op.
+	if deleted, _ := c.Cancel(t.Context(), handle); deleted {
+		t.Error("second Cancel reported a deletion")
+	}
+}
+
 func TestChallenger_Verify_StoreError(t *testing.T) {
 	t.Parallel()
 

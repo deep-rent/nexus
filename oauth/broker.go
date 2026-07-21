@@ -33,7 +33,7 @@ import (
 // generates a high-entropy session key, stores it via [SubjectStore], and sets
 // a secure session cookie on the user-agent.
 //
-// When two-factor logins are enabled via [WithOTPChannel] and the subject
+// When two-factor logins are enabled via [WithOTP] and the subject
 // has a [SecondFactor] enrolled, a verified password alone does not
 // establish a session. The endpoint instead delivers a one-time password
 // over the enrolled channel and responds 200 with an
@@ -83,7 +83,7 @@ func (s *Server) Login(e *router.Exchange) error {
 
 	// A subject with an enrolled second factor must confirm the login with
 	// a one-time password before a session is established.
-	if len(s.otpChannels) > 0 {
+	if s.otp != nil {
 		sf, err := s.subjects.GetSecondFactor(e.Context(), sub.ID())
 		if err != nil {
 			return router.ServerError("failed to lookup second factor",

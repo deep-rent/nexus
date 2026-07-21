@@ -34,78 +34,102 @@ const (
 	testEmail = "alice@example.com"
 )
 
-// fakeOTPChannel is an in-memory [otp.Channel] that records deliveries.
-type fakeOTPChannel struct {
-	to    []string
+// fakeDelivery records the codes an [otp.Method] delivered, standing in for a
+// concrete channel. It fails delivery when err is set. The destination is
+// baked into the method closure (as a real store would), and kept here only
+// for the method's Label and for readable assertions.
+type fakeDelivery struct {
+	id    string
+	dest  string
 	codes []string
 	err   error
 }
 
-func (s *fakeOTPChannel) Send(_ context.Context, to, code string) error {
-	if s.err != nil {
-		return s.err
+// method builds an [otp.Method] whose Deliver records each code.
+func (d *fakeDelivery) method() otp.Method {
+	return otp.Method{
+		ID:    d.id,
+		Label: d.dest,
+		Deliver: func(_ context.Context, code string) error {
+			if d.err != nil {
+				return d.err
+			}
+			d.codes = append(d.codes, code)
+			return nil
+		},
 	}
-	s.to = append(s.to, to)
-	s.codes = append(s.codes, code)
-	return nil
 }
 
-var _ otp.Channel = (*fakeOTPChannel)(nil)
+// last returns the most recently delivered code.
+func (d *fakeDelivery) last(t *testing.T) string {
+	t.Helper()
+	if len(d.codes) == 0 {
+		t.Fatal("no code was delivered")
+	}
+	return d.codes[len(d.codes)-1]
+}
 
 // otpEnv bundles a [testEnv] with the fakes backing its two-factor setup.
-// The default subject is enrolled with the SMS channel.
+// The default subject is enrolled with a single SMS method.
 type otpEnv struct {
 	*testEnv
-	sms  *fakeOTPChannel
-	mail *fakeOTPChannel
+	sms  *fakeDelivery
+	mail *fakeDelivery
 }
 
-// withOTPCodeLength overrides the configured code length on the server
-// under test, mirroring Config.OTPCodeLength without threading a config
-// mutator through every call site. The same applies to the other
-// withOTP* helpers below.
+// withOTPCodeLength mirrors Config.OTPCodeLength on the server under test,
+// without threading a config mutator through every call site. The same applies
+// to the other withOTP* helpers below.
 func withOTPCodeLength(n int) Option {
-	return func(s *Server) { s.otpCodeLength = n }
+	return func(s *Server) {
+		s.otpOpts = append(s.otpOpts, otp.WithCodeLength(n))
+	}
 }
 
 // withOTPMaxAttempts mirrors Config.OTPMaxAttempts.
 func withOTPMaxAttempts(n int) Option {
-	return func(s *Server) { s.otpMaxAttempts = n }
+	return func(s *Server) {
+		s.otpOpts = append(s.otpOpts, otp.WithMaxAttempts(n))
+	}
 }
 
 // withOTPMaxResends mirrors Config.OTPMaxResends.
 func withOTPMaxResends(n int) Option {
-	return func(s *Server) { s.otpMaxResends = n }
+	return func(s *Server) {
+		s.otpOpts = append(s.otpOpts, otp.WithMaxResends(n))
+	}
 }
 
-// newOTPEnv builds a two-factor enabled environment with fake channels
-// registered under the conventional SMS and email names, and deterministic
-// generators: challenges are numbered "challenge-1", "challenge-2", ... and
-// codes "000001", "000002", and so on.
-func newOTPEnv(t *testing.T, opts ...Option) *otpEnv {
-	t.Helper()
-
-	sms := &fakeOTPChannel{}
-	mail := &fakeOTPChannel{}
-
+// deterministicOTP enables two-factor logins with deterministic generators:
+// challenges are numbered "challenge-1", "challenge-2", ... and codes "000001",
+// "000002", and so on.
+func deterministicOTP() Option {
 	var codes, challenges int
-	opts = append([]Option{
-		WithOTPChannel(SecondFactorChannelSMS, sms),
-		WithOTPChannel(SecondFactorChannelEmail, mail),
-		WithOTPCodeGenerator(func(context.Context) (string, error) {
+	return WithOTP(
+		otp.WithCodeGenerator(func(int) (string, error) {
 			codes++
 			return fmt.Sprintf("%06d", codes), nil
 		}),
-		WithOTPChallengeGenerator(func(context.Context) (string, error) {
+		otp.WithHandleGenerator(func() (string, error) {
 			challenges++
 			return fmt.Sprintf("challenge-%d", challenges), nil
 		}),
-	}, opts...)
+	)
+}
+
+// newOTPEnv builds a two-factor enabled environment with deterministic
+// generators and the default subject enrolled with a single SMS method.
+func newOTPEnv(t *testing.T, opts ...Option) *otpEnv {
+	t.Helper()
+
+	sms := &fakeDelivery{id: "sms", dest: testPhone}
+	mail := &fakeDelivery{id: "email", dest: testEmail}
+
+	opts = append([]Option{deterministicOTP()}, opts...)
 
 	env := &otpEnv{testEnv: newTestEnv(t, opts...), sms: sms, mail: mail}
 	env.subjects.factors[env.subject.id] = &SecondFactor{
-		Channel:     SecondFactorChannelSMS,
-		Destination: testPhone,
+		Methods: []otp.Method{sms.method()},
 	}
 	return env
 }
@@ -128,15 +152,6 @@ func (env *otpEnv) beginLogin(t *testing.T) OTPChallengeResponse {
 	return decodeJSON[OTPChallengeResponse](t, w)
 }
 
-// lastCode returns the most recently delivered code on the given sender.
-func lastCode(t *testing.T, sender *fakeOTPChannel) string {
-	t.Helper()
-	if len(sender.codes) == 0 {
-		t.Fatal("no code was delivered")
-	}
-	return sender.codes[len(sender.codes)-1]
-}
-
 func TestLoginSecondFactor(t *testing.T) {
 	t.Parallel()
 
@@ -149,8 +164,12 @@ func TestLoginSecondFactor(t *testing.T) {
 		if res.Challenge == "" {
 			t.Fatal("missing challenge")
 		}
-		if res.Channel != SecondFactorChannelSMS {
-			t.Errorf("got channel %q; want %q", res.Channel, "sms")
+		if res.Method != "sms" {
+			t.Errorf("got method %q; want %q", res.Method, "sms")
+		}
+		// A single enrolled method yields no picker list.
+		if res.Methods != nil {
+			t.Errorf("got methods %v; want none for a single method", res.Methods)
 		}
 		if want := int64(DefaultOTPLifetime.Seconds()); res.ExpiresIn != want {
 			t.Errorf("got expires_in %d; want %d", res.ExpiresIn, want)
@@ -158,9 +177,8 @@ func TestLoginSecondFactor(t *testing.T) {
 		if len(env.subjects.sessions) != 0 {
 			t.Error("no session should have been created")
 		}
-
-		if len(env.sms.to) != 1 || env.sms.to[0] != testPhone {
-			t.Errorf("got deliveries %v; want one to %q", env.sms.to, testPhone)
+		if len(env.sms.codes) != 1 {
+			t.Errorf("got %d deliveries; want 1", len(env.sms.codes))
 		}
 
 		ch, ok := env.sessions.otpChallenges[NewDigest(res.Challenge)]
@@ -170,7 +188,7 @@ func TestLoginSecondFactor(t *testing.T) {
 		if ch.SubjectID != env.subject.id {
 			t.Errorf("got subject %v; want %v", ch.SubjectID, env.subject.id)
 		}
-		if ch.Code != NewDigest(lastCode(t, env.sms)) {
+		if ch.Code != NewDigest(env.sms.last(t)) {
 			t.Error("stored code digest does not match the delivered code")
 		}
 		want := env.now.Add(DefaultOTPLifetime).Unix()
@@ -197,45 +215,58 @@ func TestLoginSecondFactor(t *testing.T) {
 		}
 	})
 
-	t.Run("delivers over the enrolled channel", func(t *testing.T) {
+	t.Run("delivers over the enrolled method", func(t *testing.T) {
 		t.Parallel()
 		env := newOTPEnv(t)
 		env.subjects.factors[env.subject.id] = &SecondFactor{
-			Channel:     SecondFactorChannelEmail,
-			Destination: testEmail,
+			Methods: []otp.Method{env.mail.method()},
 		}
 
 		res := env.beginLogin(t)
 
-		if res.Channel != SecondFactorChannelEmail {
-			t.Errorf("got channel %q; want %q", res.Channel, "email")
+		if res.Method != "email" {
+			t.Errorf("got method %q; want %q", res.Method, "email")
 		}
-		if len(env.mail.to) != 1 || env.mail.to[0] != testEmail {
-			t.Errorf(
-				"got deliveries %v; want one to %q",
-				env.mail.to,
-				testEmail,
-			)
+		if len(env.mail.codes) != 1 {
+			t.Errorf("got %d email deliveries; want 1", len(env.mail.codes))
 		}
-		if len(env.sms.to) != 0 {
+		if len(env.sms.codes) != 0 {
 			t.Error("no SMS should have been sent")
 		}
 	})
 
-	t.Run("unregistered channel fails closed", func(t *testing.T) {
+	t.Run("advertises multiple methods for a picker", func(t *testing.T) {
 		t.Parallel()
-		// Only an SMS channel is registered, but the subject enrolled email.
-		env := newTestEnv(t, WithOTPChannel(
-			SecondFactorChannelSMS,
-			&fakeOTPChannel{},
-		))
+		env := newOTPEnv(t)
 		env.subjects.factors[env.subject.id] = &SecondFactor{
-			Channel:     SecondFactorChannelEmail,
-			Destination: testEmail,
+			Methods: []otp.Method{env.sms.method(), env.mail.method()},
 		}
 
+		res := env.beginLogin(t)
+
+		if res.Method != "sms" {
+			t.Errorf("default method %q; want the first, %q", res.Method, "sms")
+		}
+		if len(res.Methods) != 2 {
+			t.Fatalf("got %d advertised methods; want 2", len(res.Methods))
+		}
+		if res.Methods[0].ID != "sms" || res.Methods[1].ID != "email" {
+			t.Errorf("got methods %+v; want [sms email]", res.Methods)
+		}
+		if res.Methods[1].Label != testEmail {
+			t.Errorf("got label %q; want %q", res.Methods[1].Label, testEmail)
+		}
+	})
+
+	t.Run("empty enrollment fails closed", func(t *testing.T) {
+		t.Parallel()
+		env := newOTPEnv(t)
+		// A non-nil SecondFactor with no methods is a store bug, not a valid
+		// "not enrolled" signal.
+		env.subjects.factors[env.subject.id] = &SecondFactor{}
+
 		w := postJSON(
-			env,
+			env.testEnv,
 			PathLogin,
 			`{"username":"alice","password":"wonderland"}`,
 		)
@@ -273,52 +304,12 @@ func TestLoginSecondFactor(t *testing.T) {
 		}
 	})
 
-	t.Run("delivers over a custom channel name", func(t *testing.T) {
-		t.Parallel()
-		push := &fakeOTPChannel{}
-		env := newTestEnv(t, WithOTPChannel("push", push))
-		env.subjects.factors[env.subject.id] = &SecondFactor{
-			Channel:     "push",
-			Destination: "device-token-123",
-		}
-
-		w := postJSON(
-			env,
-			PathLogin,
-			`{"username":"alice","password":"wonderland"}`,
-		)
-		if w.Code != http.StatusOK {
-			t.Fatalf(
-				"got status %d; want %d: %s",
-				w.Code,
-				http.StatusOK,
-				w.Body,
-			)
-		}
-
-		res := decodeJSON[OTPChallengeResponse](t, w)
-		if res.Channel != "push" {
-			t.Errorf("got channel %q; want %q", res.Channel, "push")
-		}
-		if len(push.to) != 1 || push.to[0] != "device-token-123" {
-			t.Errorf(
-				"got deliveries %v; want one to %q",
-				push.to,
-				"device-token-123",
-			)
-		}
-	})
-
 	t.Run("default generator honors code length", func(t *testing.T) {
 		t.Parallel()
-		sender := &fakeOTPChannel{}
-		env := newTestEnv(t,
-			WithOTPChannel(SecondFactorChannelSMS, sender),
-			withOTPCodeLength(8),
-		)
+		sender := &fakeDelivery{id: "sms", dest: testPhone}
+		env := newTestEnv(t, WithOTP(), withOTPCodeLength(8))
 		env.subjects.factors[env.subject.id] = &SecondFactor{
-			Channel:     SecondFactorChannelSMS,
-			Destination: testPhone,
+			Methods: []otp.Method{sender.method()},
 		}
 
 		w := postJSON(
@@ -327,15 +318,10 @@ func TestLoginSecondFactor(t *testing.T) {
 			`{"username":"alice","password":"wonderland"}`,
 		)
 		if w.Code != http.StatusOK {
-			t.Fatalf(
-				"got status %d; want %d: %s",
-				w.Code,
-				http.StatusOK,
-				w.Body,
-			)
+			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
 		}
 
-		code := lastCode(t, sender)
+		code := sender.last(t)
 		if len(code) != 8 {
 			t.Errorf("got code %q; want 8 digits", code)
 		}
@@ -366,7 +352,7 @@ func TestVerifyOTP(t *testing.T) {
 		env := newOTPEnv(t)
 		res := env.beginLogin(t)
 
-		w := verify(env, res.Challenge, lastCode(t, env.sms))
+		w := verify(env, res.Challenge, env.sms.last(t))
 		if w.Code != http.StatusNoContent {
 			t.Fatalf(
 				"got status %d; want %d: %s",
@@ -405,7 +391,7 @@ func TestVerifyOTP(t *testing.T) {
 			t.Errorf("got %d attempts; want 1", ch.Attempts)
 		}
 
-		w = verify(env, res.Challenge, lastCode(t, env.sms))
+		w = verify(env, res.Challenge, env.sms.last(t))
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusNoContent)
 		}
@@ -428,7 +414,7 @@ func TestVerifyOTP(t *testing.T) {
 
 		env.now = env.now.Add(DefaultOTPLifetime + time.Second)
 
-		w := verify(env, res.Challenge, lastCode(t, env.sms))
+		w := verify(env, res.Challenge, env.sms.last(t))
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
@@ -457,7 +443,7 @@ func TestVerifyOTP(t *testing.T) {
 		}
 
 		// Even the correct code is refused once the budget is exhausted.
-		w := verify(env, res.Challenge, lastCode(t, env.sms))
+		w := verify(env, res.Challenge, env.sms.last(t))
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
@@ -470,7 +456,7 @@ func TestVerifyOTP(t *testing.T) {
 		t.Parallel()
 		env := newOTPEnv(t)
 		res := env.beginLogin(t)
-		code := lastCode(t, env.sms)
+		code := env.sms.last(t)
 
 		if w := verify(
 			env,
@@ -494,7 +480,7 @@ func TestVerifyOTP(t *testing.T) {
 		res := env.beginLogin(t)
 		delete(env.subjects.subjects, env.subject.id)
 
-		w := verify(env, res.Challenge, lastCode(t, env.sms))
+		w := verify(env, res.Challenge, env.sms.last(t))
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
@@ -527,12 +513,11 @@ func TestVerifyOTP(t *testing.T) {
 func TestResendOTP(t *testing.T) {
 	t.Parallel()
 
-	resend := func(env *otpEnv, challenge string) *httptest.ResponseRecorder {
-		return postJSON(
-			env.testEnv,
-			PathLoginOTPResend,
-			fmt.Sprintf(`{"challenge":%q}`, challenge),
-		)
+	resend := func(
+		env *otpEnv,
+		body string,
+	) *httptest.ResponseRecorder {
+		return postJSON(env.testEnv, PathLoginOTPResend, body)
 	}
 
 	verify := func(
@@ -550,27 +535,22 @@ func TestResendOTP(t *testing.T) {
 		t.Parallel()
 		env := newOTPEnv(t)
 		res := env.beginLogin(t)
-		old := lastCode(t, env.sms)
+		old := env.sms.last(t)
 
-		w := resend(env, res.Challenge)
+		w := resend(env, fmt.Sprintf(`{"challenge":%q}`, res.Challenge))
 		if w.Code != http.StatusOK {
-			t.Fatalf(
-				"got status %d; want %d: %s",
-				w.Code,
-				http.StatusOK,
-				w.Body,
-			)
+			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
 		}
 
 		re := decodeJSON[OTPChallengeResponse](t, w)
 		if re.Challenge != res.Challenge {
 			t.Errorf("got challenge %q; want %q", re.Challenge, res.Challenge)
 		}
-		if re.Channel != SecondFactorChannelSMS {
-			t.Errorf("got channel %q; want %q", re.Channel, "sms")
+		if re.Method != "sms" {
+			t.Errorf("got method %q; want %q", re.Method, "sms")
 		}
 
-		fresh := lastCode(t, env.sms)
+		fresh := env.sms.last(t)
 		if fresh == old {
 			t.Fatal("resend should have delivered a fresh code")
 		}
@@ -595,6 +575,51 @@ func TestResendOTP(t *testing.T) {
 		}
 	})
 
+	t.Run("switches to a different method", func(t *testing.T) {
+		t.Parallel()
+		env := newOTPEnv(t)
+		env.subjects.factors[env.subject.id] = &SecondFactor{
+			Methods: []otp.Method{env.sms.method(), env.mail.method()},
+		}
+		res := env.beginLogin(t)
+
+		w := resend(env, fmt.Sprintf(
+			`{"challenge":%q,"method":"email"}`, res.Challenge,
+		))
+		if w.Code != http.StatusOK {
+			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+		}
+
+		re := decodeJSON[OTPChallengeResponse](t, w)
+		if re.Method != "email" {
+			t.Errorf("got method %q; want %q", re.Method, "email")
+		}
+		if len(env.mail.codes) != 1 {
+			t.Errorf("got %d email deliveries; want 1", len(env.mail.codes))
+		}
+		// The code from the switched channel confirms the login.
+		if w := verify(
+			env,
+			res.Challenge,
+			env.mail.last(t),
+		); w.Code != http.StatusNoContent {
+			t.Fatalf("got status %d; want %d", w.Code, http.StatusNoContent)
+		}
+	})
+
+	t.Run("rejects an unknown method", func(t *testing.T) {
+		t.Parallel()
+		env := newOTPEnv(t)
+		res := env.beginLogin(t)
+
+		w := resend(env, fmt.Sprintf(
+			`{"challenge":%q,"method":"carrier-pigeon"}`, res.Challenge,
+		))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
+		}
+	})
+
 	t.Run("does not extend the expiry", func(t *testing.T) {
 		t.Parallel()
 		env := newOTPEnv(t)
@@ -602,7 +627,7 @@ func TestResendOTP(t *testing.T) {
 
 		env.now = env.now.Add(2 * time.Minute)
 
-		w := resend(env, res.Challenge)
+		w := resend(env, fmt.Sprintf(`{"challenge":%q}`, res.Challenge))
 		if w.Code != http.StatusOK {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
 		}
@@ -619,12 +644,15 @@ func TestResendOTP(t *testing.T) {
 		env := newOTPEnv(t, withOTPMaxResends(1))
 		res := env.beginLogin(t)
 
-		if w := resend(env, res.Challenge); w.Code != http.StatusOK {
+		if w := resend(
+			env,
+			fmt.Sprintf(`{"challenge":%q}`, res.Challenge),
+		); w.Code != http.StatusOK {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
 		}
 		if w := resend(
 			env,
-			res.Challenge,
+			fmt.Sprintf(`{"challenge":%q}`, res.Challenge),
 		); w.Code != http.StatusTooManyRequests {
 			t.Fatalf(
 				"got status %d; want %d",
@@ -641,7 +669,7 @@ func TestResendOTP(t *testing.T) {
 
 		if w := resend(
 			env,
-			res.Challenge,
+			fmt.Sprintf(`{"challenge":%q}`, res.Challenge),
 		); w.Code != http.StatusTooManyRequests {
 			t.Fatalf(
 				"got status %d; want %d",
@@ -657,7 +685,7 @@ func TestResendOTP(t *testing.T) {
 
 		if w := resend(
 			env,
-			"no-such-challenge",
+			`{"challenge":"no-such-challenge"}`,
 		); w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
@@ -670,7 +698,10 @@ func TestResendOTP(t *testing.T) {
 
 		env.now = env.now.Add(DefaultOTPLifetime + time.Second)
 
-		if w := resend(env, res.Challenge); w.Code != http.StatusUnauthorized {
+		if w := resend(
+			env,
+			fmt.Sprintf(`{"challenge":%q}`, res.Challenge),
+		); w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
 	})
@@ -681,7 +712,7 @@ func TestResendOTP(t *testing.T) {
 		res := env.beginLogin(t)
 		delete(env.subjects.factors, env.subject.id)
 
-		w := resend(env, res.Challenge)
+		w := resend(env, fmt.Sprintf(`{"challenge":%q}`, res.Challenge))
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
@@ -766,37 +797,4 @@ func TestSecondFactorThrottle(t *testing.T) {
 			)
 		}
 	})
-}
-
-func TestWithOTPChannelPanics(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		channel SecondFactorChannel
-		ch      otp.Channel
-	}{
-		{
-			name:    "empty name",
-			channel: "",
-			ch:      &fakeOTPChannel{},
-		},
-		{
-			name:    "nil channel",
-			channel: SecondFactorChannelSMS,
-			ch:      nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			defer func() {
-				if recover() == nil {
-					t.Error("WithOTPChannel did not panic")
-				}
-			}()
-			newTestEnv(t, WithOTPChannel(tt.channel, tt.ch))
-		})
-	}
 }

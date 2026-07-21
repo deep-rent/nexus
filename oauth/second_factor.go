@@ -15,10 +15,11 @@
 package oauth
 
 import (
-	"crypto/subtle"
+	"context"
 	"fmt"
 	"net/http"
-	"time"
+
+	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/log"
@@ -26,140 +27,178 @@ import (
 	"github.com/deep-rent/nexus/router"
 )
 
-// Default values applied by [New] for the optional OTP-related [Config]
-// fields.
+// otpPurpose namespaces two-factor login challenges within the challenge store.
+const otpPurpose = "2fa"
+
+// Default values applied by [New] for the optional OTP-related [Config] fields.
 const (
 	// DefaultOTPCodeLength is the number of digits in a one-time password.
 	DefaultOTPCodeLength = otp.DefaultLength
 	// DefaultOTPLifetime is the validity period of a two-factor login
 	// challenge.
-	DefaultOTPLifetime = 5 * time.Minute
+	DefaultOTPLifetime = otp.DefaultLifetime
 	// DefaultOTPMaxAttempts is the number of failed confirmation attempts
 	// after which a challenge is burned.
-	DefaultOTPMaxAttempts = 5
+	DefaultOTPMaxAttempts = otp.DefaultMaxAttempts
 	// DefaultOTPMaxResends is the number of times the one-time password of a
 	// single challenge may be redelivered.
-	DefaultOTPMaxResends = 3
+	DefaultOTPMaxResends = otp.DefaultMaxResends
 )
 
-// WithOTPChannel registers an [otp.Channel] for delivering one-time
-// passwords under the given name, and thereby enables two-factor logins.
+// otpStore adapts the server's [SessionStore] to the [otp.Store] interface, so
+// existing SessionStore implementations back the challenge engine unchanged.
 //
-// The name connects enrollments to channels: a subject whose
-// [SecondFactor.Channel] equals the name receives their codes through the
-// registered channel. [SecondFactorChannelSMS] and
-// [SecondFactorChannelEmail] are the conventional names for the adapters
-// provided by the otp package, but any name may be used to plug in custom
-// delivery mechanisms (e.g., push notifications or messenger bots):
-//
-//	s := oauth.New(cfg,
-//	  oauth.WithOTPChannel(oauth.SecondFactorChannelSMS, otp.SMS(...)),
-//	  oauth.WithOTPChannel("push", myPushChannel),
-//	)
-//
-// Once at least one channel is registered, a successful password login of
-// a subject with an enrolled [SecondFactor] (see
-// [SubjectStore.GetSecondFactor]) no longer establishes a session directly.
-// Instead, the server delivers a one-time password over the enrolled
-// channel and returns an [OTPChallengeResponse]; the client completes the
-// login via [Server.VerifyOTP]. [Server.Mount] registers the verification
-// and resend endpoints only when a channel is present. The flow is tuned
-// via the OTP-prefixed fields of [Config].
-//
-// It panics if the name is empty or the channel is nil, since both are
-// startup configuration errors.
-func WithOTPChannel(name SecondFactorChannel, ch otp.Channel) Option {
-	return func(s *Server) {
-		if name == "" {
-			panic("channel name is required")
-		}
-		if ch == nil {
-			panic("channel is required")
-		}
-		s.otpChannels[name] = ch
-	}
+// Every challenge in this store belongs to a single purpose, injected on read
+// because [OTPChallenge] does not persist it. The engine's
+// [otp.Challenge.MethodID] is likewise not persisted: the server selects the
+// delivery method per request from the subject's current enrollment.
+type otpStore struct {
+	sessions SessionStore
+	purpose  string
 }
 
-// beginOTPChallenge starts the second phase of a two-factor login: it mints
-// a challenge handle, delivers a one-time password to the subject over the
-// enrolled channel, and returns the challenge to the client. The password
-// has already been verified at this point; no session is established until
-// the code is confirmed via [Server.VerifyOTP].
+var _ otp.Store = otpStore{}
+
+// Create implements [otp.Store].
+func (a otpStore) Create(ctx context.Context, c otp.Challenge) error {
+	oc, err := a.toChallenge(c)
+	if err != nil {
+		return err
+	}
+	return a.sessions.CreateOTPChallenge(ctx, oc)
+}
+
+// Get implements [otp.Store].
+func (a otpStore) Get(
+	ctx context.Context,
+	id string,
+) (otp.Challenge, bool, error) {
+	oc, err := a.sessions.GetOTPChallenge(ctx, Digest(id))
+	if err != nil {
+		return otp.Challenge{}, false, err
+	}
+	// SessionStore reports an absent or expired challenge as the zero value.
+	if oc.Challenge == "" {
+		return otp.Challenge{}, false, nil
+	}
+	return otp.Challenge{
+		ID:        string(oc.Challenge),
+		Code:      string(oc.Code),
+		Owner:     oc.SubjectID.String(),
+		Purpose:   a.purpose,
+		ExpiresAt: oc.ExpiresAt,
+		Attempts:  oc.Attempts,
+		Resends:   oc.Resends,
+	}, true, nil
+}
+
+// Update implements [otp.Store].
+func (a otpStore) Update(ctx context.Context, c otp.Challenge) error {
+	oc, err := a.toChallenge(c)
+	if err != nil {
+		return err
+	}
+	return a.sessions.UpdateOTPChallenge(ctx, oc)
+}
+
+// Delete implements [otp.Store].
+func (a otpStore) Delete(ctx context.Context, id string) (bool, error) {
+	return a.sessions.DeleteOTPChallenge(ctx, Digest(id))
+}
+
+// toChallenge maps an engine challenge onto the stored shape, parsing the owner
+// back into a subject ID.
+func (a otpStore) toChallenge(c otp.Challenge) (OTPChallenge, error) {
+	sid, err := uuid.Parse(c.Owner)
+	if err != nil {
+		return OTPChallenge{}, fmt.Errorf("invalid challenge owner: %w", err)
+	}
+	return OTPChallenge{
+		Challenge: Digest(c.ID),
+		SubjectID: sid,
+		Code:      Digest(c.Code),
+		Attempts:  c.Attempts,
+		Resends:   c.Resends,
+		ExpiresAt: c.ExpiresAt,
+	}, nil
+}
+
+// selectMethod returns the enrolled method with the given ID, or the default
+// (first) method when id is empty. ok is false when no method matches.
+func selectMethod(sf *SecondFactor, id string) (otp.Method, bool) {
+	if sf == nil || len(sf.Methods) == 0 {
+		return otp.Method{}, false
+	}
+	if id == "" {
+		return sf.Methods[0], true
+	}
+	for _, m := range sf.Methods {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return otp.Method{}, false
+}
+
+// methodInfos projects enrolled methods to their client-facing descriptions.
+// It returns nil for a single method, since there is nothing to pick between.
+func methodInfos(sf *SecondFactor) []MethodInfo {
+	if len(sf.Methods) < 2 {
+		return nil
+	}
+	infos := make([]MethodInfo, len(sf.Methods))
+	for i, m := range sf.Methods {
+		infos[i] = MethodInfo{ID: m.ID, Label: m.Label}
+	}
+	return infos
+}
+
+// beginOTPChallenge starts the second phase of a two-factor login: it mints a
+// challenge, delivers a one-time password over the subject's default method,
+// and returns the challenge to the client. The password has already been
+// verified; no session is established until the code is confirmed via
+// [Server.VerifyOTP].
 func (s *Server) beginOTPChallenge(
 	e *router.Exchange,
 	sub Subject,
 	sf *SecondFactor,
 ) error {
-	channel := s.otpChannels[sf.Channel]
-	if channel == nil {
-		return router.ServerError("second factor channel is not available",
-			fmt.Errorf("no delivery channel configured for %q", sf.Channel),
+	m, ok := selectMethod(sf, "")
+	if !ok {
+		return router.ServerError("no second factor method is enrolled",
+			fmt.Errorf("subject %s has an empty second factor", sub.ID()),
 		)
 	}
 
-	challenge, err := s.generateOTPChallenge(e.Context())
+	handle, expiresIn, err := s.otp.Begin(
+		e.Context(), otpPurpose, sub.ID().String(), m,
+	)
 	if err != nil {
-		return router.ServerError("failed to generate challenge", err)
-	}
-
-	code, err := s.generateOTPCode(e.Context())
-	if err != nil {
-		return router.ServerError("failed to generate one-time password",
-			err,
-		)
-	}
-
-	digest := NewDigest(challenge)
-
-	if err := s.sessions.CreateOTPChallenge(e.Context(), OTPChallenge{
-		Challenge: digest,
-		SubjectID: sub.ID(),
-		Code:      NewDigest(code),
-		ExpiresAt: s.now().Add(s.otpLifetime).Unix(),
-	}); err != nil {
-		return router.ServerError("failed to store challenge", err)
-	}
-
-	if err := channel.Send(e.Context(), sf.Destination, code); err != nil {
-		// The challenge is unusable without its code; remove it so that the
-		// subject's next login attempt starts from a clean slate.
-		if _, derr := s.sessions.DeleteOTPChallenge(
-			e.Context(),
-			digest,
-		); derr != nil {
-			s.logger.ErrorContext(
-				e.Context(),
-				"Failed to delete undeliverable challenge",
-				log.Err(derr),
-			)
-		}
-		return router.ServerError("failed to deliver one-time password",
-			err,
-		)
+		return router.ServerError("failed to deliver one-time password", err)
 	}
 
 	return e.JSON(http.StatusOK, OTPChallengeResponse{
-		Challenge: challenge,
-		Channel:   sf.Channel,
-		ExpiresIn: int64(s.otpLifetime.Seconds()),
+		Challenge: handle,
+		Method:    m.ID,
+		Methods:   methodInfos(sf),
+		ExpiresIn: expiresIn,
 	})
 }
 
 // VerifyOTP confirms a pending two-factor login with the one-time password
 // delivered to the resource owner, and establishes the session on success.
 //
-// It expects an [OTPVerificationRequest] carrying the challenge handle
-// returned by [Server.Login] and the code received over the side channel.
-// Challenges are single-use: after a successful confirmation, or once the
-// configured attempt limit is exhausted, the challenge is deleted and the
-// client must restart the login.
+// It expects an [OTPVerificationRequest] carrying the challenge handle returned
+// by [Server.Login] and the code received over the side channel. Challenges are
+// single-use: after a successful confirmation, or once the attempt limit is
+// exhausted, the challenge is deleted and the client must restart the login.
 //
 // One-time passwords are short enough to be guessed, so the endpoint is
-// deliberately hostile to guessing: failed attempts are counted against
-// both the challenge and the throttle, and the code comparison runs in
-// constant time.
+// deliberately hostile to guessing: failed attempts are counted against both
+// the challenge and the throttle, and the code comparison runs in constant time
+// inside the challenge engine.
 func (s *Server) VerifyOTP(e *router.Exchange) error {
-	if len(s.otpChannels) == 0 {
+	if s.otp == nil {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -170,11 +209,9 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 	}
 
 	// Guesses are counted per challenge: an attacker holding one challenge
-	// cannot spread guesses across it and a fresh allowance, and a
-	// legitimate subject on a shared address is not locked out by someone
-	// else's failures.
-	digest := NewDigest(req.Challenge)
-	otpKey := scopeOTP + string(digest)
+	// cannot spread guesses across it and a fresh allowance, and a legitimate
+	// subject on a shared address is not locked out by someone else's failures.
+	otpKey := scopeOTP + string(NewDigest(req.Challenge))
 	if s.throttled(e, otpKey) {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
@@ -183,9 +220,9 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 		}
 	}
 
-	ch, err := s.sessions.GetOTPChallenge(e.Context(), digest)
+	out, err := s.otp.Verify(e.Context(), otpPurpose, req.Challenge, req.Code)
 	if err != nil {
-		return router.ServerError("failed to retrieve challenge", err)
+		return router.ServerError("failed to verify challenge", err)
 	}
 
 	// The rejection is deliberately uniform: it does not reveal whether the
@@ -196,63 +233,27 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 		Description: "invalid or expired challenge",
 	}
 
-	if ch.Challenge == "" ||
-		(ch.ExpiresAt != 0 && s.now().Unix() > ch.ExpiresAt) {
+	if out.Status != otp.StatusOK {
 		s.penalize(otpKey, s.addr(e))
-		return invalid
-	}
-
-	if ch.Attempts >= s.otpMaxAttempts {
-		// The challenge is burned. Delete it best-effort; expiry cleans up
-		// after a failed deletion.
-		if _, err := s.sessions.DeleteOTPChallenge(
-			e.Context(),
-			digest,
-		); err != nil {
-			s.logger.ErrorContext(
-				e.Context(),
-				"Failed to delete burned challenge",
-				log.Err(err),
-			)
+		if out.Status == otp.StatusWrongCode {
+			return &router.Error{
+				Status:      http.StatusUnauthorized,
+				Reason:      auth.ReasonAuthenticationFailed,
+				Description: "invalid code",
+			}
 		}
-		s.penalize(otpKey, s.addr(e))
-		return invalid
-	}
-
-	// Record the attempt before comparing, so that a crash between compare
-	// and update cannot hand out free guesses.
-	ch.Attempts++
-	if err := s.sessions.UpdateOTPChallenge(e.Context(), ch); err != nil {
-		return router.ServerError("failed to update challenge", err)
-	}
-
-	if subtle.ConstantTimeCompare(
-		[]byte(NewDigest(req.Code)),
-		[]byte(ch.Code),
-	) == 0 {
-		s.penalize(otpKey, s.addr(e))
-		return &router.Error{
-			Status:      http.StatusUnauthorized,
-			Reason:      auth.ReasonAuthenticationFailed,
-			Description: "invalid code",
-		}
-	}
-
-	// The atomic delete enforces single use: of two concurrent requests
-	// carrying the correct code, only the one that performed the deletion
-	// may establish a session.
-	deleted, err := s.sessions.DeleteOTPChallenge(e.Context(), digest)
-	if err != nil {
-		return router.ServerError("failed to delete challenge", err)
-	}
-	if !deleted {
 		return invalid
 	}
 
 	// The code is proven; drop any penalty from earlier attempts.
 	s.clear(otpKey)
 
-	sub, err := s.subjects.GetSubject(e.Context(), ch.SubjectID)
+	id, err := uuid.Parse(out.Owner)
+	if err != nil {
+		return router.ServerError("invalid challenge owner", err)
+	}
+
+	sub, err := s.subjects.GetSubject(e.Context(), id)
 	if err != nil {
 		return router.ServerError("failed to lookup subject", err)
 	}
@@ -271,18 +272,18 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 	return nil
 }
 
-// ResendOTP redelivers the one-time password for a pending two-factor
-// login.
+// ResendOTP redelivers the one-time password for a pending two-factor login,
+// optionally over a different enrolled method.
 //
-// It expects an [OTPResendRequest] carrying the challenge handle returned
-// by [Server.Login]. A fresh code replaces the previous one, but the
-// challenge itself — its handle, expiry, and attempt count — remains
-// unchanged, so resending cannot be used to keep a login pending forever or
-// to reset the guess budget. The number of resends per challenge is capped
-// by [Config.OTPMaxResends], because every delivery costs money
-// and unsolicited deliveries spam the subject.
+// It expects an [OTPResendRequest] carrying the challenge handle returned by
+// [Server.Login] and an optional method ID to switch channels. A fresh code
+// replaces the previous one, but the challenge itself — its handle, expiry, and
+// attempt count — remains unchanged, so resending cannot keep a login pending
+// forever or reset the guess budget. The number of resends per challenge is
+// capped by [Config.OTPMaxResends], because every delivery costs money and
+// unsolicited deliveries spam the subject.
 func (s *Server) ResendOTP(e *router.Exchange) error {
-	if len(s.otpChannels) == 0 {
+	if s.otp == nil {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -292,8 +293,7 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		return err
 	}
 
-	digest := NewDigest(req.Challenge)
-	otpKey := scopeOTP + string(digest)
+	otpKey := scopeOTP + string(NewDigest(req.Challenge))
 	if s.throttled(e, otpKey) {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
@@ -302,85 +302,75 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 		}
 	}
 
-	ch, err := s.sessions.GetOTPChallenge(e.Context(), digest)
-	if err != nil {
-		return router.ServerError("failed to retrieve challenge", err)
-	}
-
 	invalid := &router.Error{
 		Status:      http.StatusUnauthorized,
 		Reason:      auth.ReasonAuthenticationFailed,
 		Description: "invalid or expired challenge",
 	}
 
-	if ch.Challenge == "" ||
-		(ch.ExpiresAt != 0 && s.now().Unix() > ch.ExpiresAt) {
+	// Resolve the owner so the enrollment can be re-read: a change of address
+	// or channel mid-login then takes effect immediately.
+	owner, ok, err := s.otp.Peek(e.Context(), otpPurpose, req.Challenge)
+	if err != nil {
+		return router.ServerError("failed to retrieve challenge", err)
+	}
+	if !ok {
 		s.penalize(otpKey, s.addr(e))
 		return invalid
 	}
 
-	if s.otpMaxResends < 0 || ch.Resends >= s.otpMaxResends {
-		return &router.Error{
-			Status:      http.StatusTooManyRequests,
-			Reason:      router.ReasonRateLimit,
-			Description: "resend limit reached",
-		}
+	id, err := uuid.Parse(owner)
+	if err != nil {
+		return router.ServerError("invalid challenge owner", err)
 	}
 
-	// The enrollment is re-read on every resend so that a change of phone
-	// number or channel mid-login takes effect immediately.
-	sf, err := s.subjects.GetSecondFactor(e.Context(), ch.SubjectID)
+	sf, err := s.subjects.GetSecondFactor(e.Context(), id)
 	if err != nil {
 		return router.ServerError("failed to lookup second factor", err)
 	}
 	if sf == nil {
-		// Enrollment was revoked mid-login; the pending challenge can never
-		// be completed.
-		if _, err := s.sessions.DeleteOTPChallenge(
-			e.Context(),
-			digest,
-		); err != nil {
+		// Enrollment was revoked mid-login; the pending challenge can never be
+		// completed, so cancel it.
+		if _, cerr := s.otp.Cancel(e.Context(), req.Challenge); cerr != nil {
 			s.logger.ErrorContext(
 				e.Context(),
-				"Failed to delete orphaned challenge",
-				log.Err(err),
+				"Failed to cancel orphaned challenge",
+				log.Err(cerr),
 			)
 		}
 		return invalid
 	}
 
-	channel := s.otpChannels[sf.Channel]
-	if channel == nil {
-		return router.ServerError("second factor channel is not available",
-			fmt.Errorf("no delivery channel configured for %q", sf.Channel),
-		)
+	m, ok := selectMethod(sf, req.Method)
+	if !ok {
+		return &router.Error{
+			Status:      http.StatusBadRequest,
+			Reason:      router.ReasonValidationFailed,
+			Description: "unknown delivery method",
+		}
 	}
 
-	code, err := s.generateOTPCode(e.Context())
+	out, err := s.otp.Resend(e.Context(), otpPurpose, req.Challenge, m)
 	if err != nil {
-		return router.ServerError("failed to generate one-time password",
-			err,
-		)
+		return router.ServerError("failed to deliver one-time password", err)
 	}
 
-	// The fresh code invalidates the previous one before it leaves the
-	// server: once the update is stored, only the latest delivery can
-	// confirm the login.
-	ch.Code = NewDigest(code)
-	ch.Resends++
-	if err := s.sessions.UpdateOTPChallenge(e.Context(), ch); err != nil {
-		return router.ServerError("failed to update challenge", err)
+	switch out.Status {
+	case otp.StatusOK:
+		return e.JSON(http.StatusOK, OTPChallengeResponse{
+			Challenge: req.Challenge,
+			Method:    m.ID,
+			Methods:   methodInfos(sf),
+			ExpiresIn: out.ExpiresIn,
+		})
+	case otp.StatusResendLimit:
+		return &router.Error{
+			Status:      http.StatusTooManyRequests,
+			Reason:      router.ReasonRateLimit,
+			Description: "resend limit reached",
+		}
+	default:
+		s.penalize(otpKey, s.addr(e))
+		return invalid
 	}
-
-	if err := channel.Send(e.Context(), sf.Destination, code); err != nil {
-		return router.ServerError("failed to deliver one-time password",
-			err,
-		)
-	}
-
-	return e.JSON(http.StatusOK, OTPChallengeResponse{
-		Challenge: req.Challenge,
-		Channel:   sf.Channel,
-		ExpiresIn: max(ch.ExpiresAt-s.now().Unix(), 0),
-	})
 }

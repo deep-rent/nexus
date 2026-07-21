@@ -16,7 +16,6 @@ package oauth
 
 import (
 	"cmp"
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -112,8 +111,9 @@ type Config struct {
 	DevicePollInterval time.Duration
 	// OTPCodeLength is the number of digits in a generated one-time
 	// password. Defaults to [DefaultOTPCodeLength]. It is ignored when a
-	// custom generator is installed via [WithOTPCodeGenerator]. Only
-	// relevant when two-factor logins are enabled via [WithOTPChannel].
+	// custom generator is installed via an [otp.WithCodeGenerator] passed to
+	// [WithOTP]. Only relevant when two-factor logins are enabled via
+	// [WithOTP].
 	OTPCodeLength int
 	// OTPLifetime overrides [DefaultOTPLifetime]. Resending a one-time
 	// password does not extend a challenge's lifetime.
@@ -172,15 +172,11 @@ type Server struct {
 	generateDeviceCode     TokenGeneratorFn
 	generateUserCode       TokenGeneratorFn
 	generateState          TokenGeneratorFn
-	generateOTPChallenge   TokenGeneratorFn
-	generateOTPCode        TokenGeneratorFn
 	generateWebAuthnHandle TokenGeneratorFn
 	verificationURI        string
-	otpChannels            map[SecondFactorChannel]otp.Channel
-	otpCodeLength          int
-	otpLifetime            time.Duration
-	otpMaxAttempts         int
-	otpMaxResends          int
+	otpEnabled             bool
+	otpOpts                []otp.Option
+	otp                    *otp.Challenger
 	webauthn               *webAuthnSupport
 	throttle               *throttle.Throttle
 	throttlePenalty        int
@@ -244,16 +240,25 @@ func WithStateGenerator(fn TokenGeneratorFn) Option {
 	return func(s *Server) { s.generateState = fn }
 }
 
-// WithOTPChallengeGenerator overrides [GenerateOTPChallenge].
-func WithOTPChallengeGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateOTPChallenge = fn }
-}
-
-// WithOTPCodeGenerator overrides the one-time password generator. The
-// default draws a uniformly random numeric code of the length configured
-// via [Config.OTPCodeLength]; see [otp.Generate].
-func WithOTPCodeGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateOTPCode = fn }
+// WithOTP enables two-factor logins.
+//
+// Once enabled, a successful password login by a subject with an enrolled
+// [SecondFactor] (see [SubjectStore.GetSecondFactor]) no longer establishes a
+// session directly. Instead, the server delivers a one-time password over one
+// of the subject's enrolled [otp.Method] values and returns an
+// [OTPChallengeResponse]; the client completes the login via [Server.VerifyOTP]
+// and may switch channels via [Server.ResendOTP]. [Server.Mount] registers the
+// verification and resend endpoints only when this option is present.
+//
+// Challenges are persisted through the server's [SessionStore] (its
+// OTPChallenge methods). The flow is tuned via the OTP-prefixed fields of
+// [Config]; pass [otp.Option] values such as [otp.WithCodeGenerator] or
+// [otp.WithHandleGenerator] to override the generators.
+func WithOTP(opts ...otp.Option) Option {
+	return func(s *Server) {
+		s.otpEnabled = true
+		s.otpOpts = append(s.otpOpts, opts...)
+	}
 }
 
 // WithWebAuthnHandleGenerator overrides [GenerateWebAuthnHandle].
@@ -331,23 +336,6 @@ func New(cfg Config, opts ...Option) *Server {
 			cfg.DevicePollInterval,
 			DefaultDevicePollInterval,
 		),
-		otpChannels: make(map[SecondFactorChannel]otp.Channel),
-		otpCodeLength: cmp.Or(
-			cfg.OTPCodeLength,
-			DefaultOTPCodeLength,
-		),
-		otpLifetime: cmp.Or(
-			cfg.OTPLifetime,
-			DefaultOTPLifetime,
-		),
-		otpMaxAttempts: cmp.Or(
-			cfg.OTPMaxAttempts,
-			DefaultOTPMaxAttempts,
-		),
-		otpMaxResends: cmp.Or(
-			cfg.OTPMaxResends,
-			DefaultOTPMaxResends,
-		),
 		realm:                  cmp.Or(cfg.Realm, DefaultRealm),
 		loginTerminalURI:       cfg.LoginTerminalURI,
 		loginRedirectURI:       cfg.LoginRedirectURI,
@@ -358,7 +346,6 @@ func New(cfg Config, opts ...Option) *Server {
 		generateDeviceCode:     GenerateDeviceCode,
 		generateUserCode:       GenerateUserCode,
 		generateState:          GenerateState,
-		generateOTPChallenge:   GenerateOTPChallenge,
 		generateWebAuthnHandle: GenerateWebAuthnHandle,
 		throttle:               cfg.Throttle,
 		throttlePenalty: cmp.Or(
@@ -381,15 +368,26 @@ func New(cfg Config, opts ...Option) *Server {
 		)
 	}
 
-	// The default one-time password generator depends on the configured
-	// code length, so it is resolved only after all options have been
-	// applied. An explicit [WithOTPCodeGenerator] always wins, regardless
-	// of option order.
-	if s.generateOTPCode == nil {
-		length := s.otpCodeLength
-		s.generateOTPCode = func(context.Context) (string, error) {
-			return otp.Generate(length)
-		}
+	// The challenge engine is built only after all options are applied, so it
+	// observes the final clock and logger. Caller-supplied otp.Options (from
+	// WithOTP) win over the Config-derived defaults, since they are appended
+	// last.
+	if s.otpEnabled {
+		s.otp = otp.New(
+			otpStore{sessions: s.sessions, purpose: otpPurpose},
+			append([]otp.Option{
+				otp.WithCodeLength(cmp.Or(cfg.OTPCodeLength, DefaultOTPCodeLength)),
+				otp.WithLifetime(cmp.Or(cfg.OTPLifetime, DefaultOTPLifetime)),
+				otp.WithMaxAttempts(
+					cmp.Or(cfg.OTPMaxAttempts, DefaultOTPMaxAttempts),
+				),
+				otp.WithMaxResends(
+					cmp.Or(cfg.OTPMaxResends, DefaultOTPMaxResends),
+				),
+				otp.WithClock(s.now),
+				otp.WithLogger(s.logger),
+			}, s.otpOpts...)...,
+		)
 	}
 
 	s.introspector = jwt.NewVerifier[*auth.Claims](
@@ -412,9 +410,8 @@ func (s *Server) Supports(grant GrantType) bool {
 // The device authorization endpoints are only registered when a verification
 // URI has been configured, the external login endpoints only when at least
 // one identity provider is registered, the OTP verification and resend
-// endpoints only when two-factor logins are enabled via [WithOTPChannel],
-// and the WebAuthn endpoints only when passkey support is enabled via
-// [WithWebAuthn].
+// endpoints only when two-factor logins are enabled via [WithOTP], and the
+// WebAuthn endpoints only when passkey support is enabled via [WithWebAuthn].
 //
 // When [Config.Throttle] is set, every endpoint that verifies a credential
 // — the token, revocation, introspection, login, device authorization, and
@@ -453,7 +450,7 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogin, s.Login, guarded...)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogout, s.Logout)
 
-	if len(s.otpChannels) > 0 {
+	if s.otp != nil {
 		r.HandleFunc(
 			http.MethodPost+" "+prefix+PathLoginOTP,
 			s.VerifyOTP,

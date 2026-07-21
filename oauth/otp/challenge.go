@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"log/slog"
 	"time"
@@ -389,6 +390,35 @@ func (c *Challenger) Resend(
 	}, nil
 }
 
+// Peek returns the owner recorded for a live challenge without modifying it, so
+// a caller can resolve delivery details (for example, re-read a subject's
+// enrollment) before a [Challenger.Resend]. ok is false when the challenge is
+// absent, expired, or belongs to another purpose; the error is reserved for
+// storage failures.
+func (c *Challenger) Peek(
+	ctx context.Context,
+	purpose, handle string,
+) (owner string, ok bool, err error) {
+	ch, found, err := c.store.Get(ctx, hashValue(handle))
+	if err != nil {
+		return "", false, err
+	}
+	if !found || ch.Purpose != purpose || c.expired(ch) {
+		return "", false, nil
+	}
+	return ch.Owner, true, nil
+}
+
+// Cancel removes a pending challenge, reporting whether one existed. Holding
+// the handle is sufficient authority to cancel, so no purpose is required. It
+// is a no-op, returning (false, nil), when no such challenge exists.
+func (c *Challenger) Cancel(
+	ctx context.Context,
+	handle string,
+) (bool, error) {
+	return c.store.Delete(ctx, hashValue(handle))
+}
+
 // expired reports whether the challenge has passed its expiry.
 func (c *Challenger) expired(ch Challenge) bool {
 	return ch.ExpiresAt != 0 && c.now().Unix() > ch.ExpiresAt
@@ -414,8 +444,10 @@ func randomHandle() (string, error) {
 // hashValue reduces a handle or code to a digest for storage and comparison.
 // The scheme need only be internally consistent, as the engine both writes and
 // reads its own digests; a random 256-bit input makes SHA-256 preimage
-// resistance sufficient.
+// resistance sufficient. It uses unpadded base64url — the same encoding oauth
+// applies to its other bearer digests — so a [Store] backed by that datastore
+// sees a familiar key format.
 func hashValue(s string) string {
 	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
