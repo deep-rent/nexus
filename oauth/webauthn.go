@@ -623,7 +623,7 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 		}
 	}
 
-	if err := s.establishSession(e, sub); err != nil {
+	if err := s.session(e, sub); err != nil {
 		return err
 	}
 

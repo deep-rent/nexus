@@ -95,7 +95,7 @@ func (s *Server) Login(e *router.Exchange) error {
 		}
 	}
 
-	if err := s.establishSession(e, sub); err != nil {
+	if err := s.session(e, sub); err != nil {
 		return err
 	}
 
@@ -104,10 +104,11 @@ func (s *Server) Login(e *router.Exchange) error {
 	return nil
 }
 
-// establishSession generates a high-entropy session key, persists the
-// session mapping for the subject, and sets the session cookie on the
-// user-agent. It is shared by the password login and external login flows.
-func (s *Server) establishSession(e *router.Exchange, sub Subject) error {
+// session establishes a session by generating a high-entropy session key,
+// persisting the session mapping for the subject, and setting the session
+// cookie on the user-agent. It is shared by the password login and external
+// login flows.
+func (s *Server) session(e *router.Exchange, sub Subject) error {
 	key, err := s.generateSessionKey(e.Context())
 	if err != nil {
 		return router.ServerError("failed to generate session key",
@@ -287,7 +288,7 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 		}
 	}
 
-	if err := s.establishSession(e, sub); err != nil {
+	if err := s.session(e, sub); err != nil {
 		return err
 	}
 
