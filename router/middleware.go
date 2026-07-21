@@ -110,6 +110,23 @@ func Log(logger *slog.Logger) Middleware {
 	return Adapt(middleware.Log(logger))
 }
 
+// Trace mirrors [middleware.Trace] for use in the router.
+//
+// On top of the plain adapter, it records the matched [http.ServeMux]
+// pattern via [middleware.SetRoute] before the handler runs, so that the
+// server span is named after the route (e.g. "GET /users/{id}") rather than
+// the raw method. Since [Adapt] resolves handler errors inside the pipe, the
+// span also observes the final status code produced by the error handler.
+func Trace(opts ...middleware.TraceOption) Middleware {
+	adapted := Adapt(middleware.Trace(opts...))
+	return func(next Handler) Handler {
+		return adapted(HandlerFunc(func(e *Exchange) error {
+			middleware.SetRoute(e.Context(), e.R.Pattern)
+			return next.ServeHTTP(e)
+		}))
+	}
+}
+
 // Volatile mirrors [middleware.Volatile] for use in the router.
 func Volatile() Middleware {
 	return Adapt(middleware.Volatile())

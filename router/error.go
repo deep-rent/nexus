@@ -24,6 +24,9 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Error describes the standardized shape of API errors returned to clients.
@@ -43,7 +46,10 @@ type Error struct {
 	Description string `json:"description"`
 	// ID is a unique identifier of the specific occurrence for tracing. The
 	// router fills it in for server errors, so that the value a client
-	// reports can be found in the logs.
+	// reports can be found in the logs. It is deliberately distinct from an
+	// OpenTelemetry trace ID, which exists only when the request is traced
+	// and sampled; when both are present, the router records the ID on the
+	// active span under "error.id" to link the two.
 	ID string `json:"id,omitempty"`
 	// Context contains arbitrary additional data about the error.
 	Context any `json:"context,omitempty"`
@@ -189,6 +195,22 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		// carries an identifier that can be found in the logs.
 		if res.ID == "" && res.Status >= http.StatusInternalServerError {
 			res.ID = ErrorID()
+		}
+
+		// When the request is traced, the failure is mirrored onto the span.
+		// The error ID ties the span to the value reported by the client, and
+		// the log record below carries the trace ID via its context.
+		span := trace.SpanFromContext(ctx)
+		if res.Status >= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, res.Reason)
+			if res.Cause != nil {
+				span.RecordError(res.Cause)
+			} else {
+				span.RecordError(res)
+			}
+		}
+		if res.ID != "" {
+			span.SetAttributes(attribute.String("error.id", res.ID))
 		}
 
 		record(ctx, logger, e, res)
