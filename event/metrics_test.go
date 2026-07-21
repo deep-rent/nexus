@@ -18,10 +18,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/deep-rent/nexus/event"
-	"github.com/deep-rent/nexus/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	"github.com/deep-rent/nexus/event"
+	"github.com/deep-rent/nexus/log"
 )
 
 // counterValue sums the data points of the named counter, returning the bus
