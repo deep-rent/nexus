@@ -78,26 +78,25 @@ const (
 
 // IsUpper reports whether the rune is an uppercase ASCII letter
 // ('A' through 'Z').
-func IsUpper(c rune) bool { return c >= 'A' && c <= 'Z' }
+func IsUpper(c rune) bool { return uint32(c) < 0x80 && lookup[c]&upp != 0 }
 
 // IsLower reports whether the rune is a lowercase ASCII letter
 // ('a' through 'z').
-func IsLower(c rune) bool { return c >= 'a' && c <= 'z' }
+func IsLower(c rune) bool { return uint32(c) < 0x80 && lookup[c]&low != 0 }
 
 // IsDigit reports whether the rune is an ASCII decimal digit
 // ('0' through '9').
-func IsDigit(c rune) bool { return c >= '0' && c <= '9' }
+func IsDigit(c rune) bool { return uint32(c) < 0x80 && lookup[c]&dig != 0 }
 
 // IsAlpha reports whether the rune is an ASCII letter (uppercase or lowercase).
-func IsAlpha(c rune) bool { return IsUpper(c) || IsLower(c) }
+func IsAlpha(c rune) bool { return uint32(c) < 0x80 && lookup[c]&letterMask != 0 }
 
 // IsAlphaNum reports whether the rune is an ASCII letter or decimal digit.
-func IsAlphaNum(c rune) bool { return IsAlpha(c) || IsDigit(c) }
+func IsAlphaNum(c rune) bool { return uint32(c) < 0x80 && lookup[c]&alnumMask != 0 }
 
-// IsHex reports whether the given rune is a hexadecimal character.
-func IsHex(c rune) bool {
-	return IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-}
+// IsHex reports whether the given rune is a hexadecimal character
+// ('0' through '9', 'a' through 'f', or 'A' through 'F').
+func IsHex(c rune) bool { return uint32(c) < 0x80 && lookup[c]&hexMask != 0 }
 
 // IsWord reports whether the rune is an ASCII letter, digit, or underscore
 // ('_').
@@ -112,21 +111,15 @@ func IsSlug(c rune) bool { return IsAlphaNum(c) || c == '-' }
 
 // IsSpace reports whether the rune is a space character as defined
 // by ASCII's property: ' ', '\t', '\n', '\v', '\f', '\r'.
-func IsSpace(c rune) bool {
-	switch c {
-	case ' ', '\t', '\n', '\v', '\f', '\r':
-		return true
-	}
-	return false
-}
+func IsSpace(c rune) bool { return uint32(c) < 0x80 && lookup[c]&isp != 0 }
 
 // IsPrint reports whether the rune is a printable ASCII character,
 // defined as any character from space (0x20) to tilde (0x7E).
-func IsPrint(c rune) bool { return c >= 0x20 && c <= 0x7E }
+func IsPrint(c rune) bool { return uint32(c) < 0x80 && lookup[c]&printMask != 0 }
 
 // IsControl reports whether the rune is an ASCII control character, defined as
 // any character less than space (0x20) or the delete character (0x7F).
-func IsControl(c rune) bool { return c < 0x20 || c == 0x7F }
+func IsControl(c rune) bool { return uint32(c) < 0x80 && lookup[c]&ctl != 0 }
 
 // IsASCII reports whether the rune is a valid ASCII character.
 func IsASCII(c rune) bool { return c <= 0x7F }
@@ -240,4 +233,58 @@ func ToUpper(s string) string {
 		b[i] = c
 	}
 	return string(b)
+}
+
+// Character class bits. Every printable code point belongs to exactly one of
+// the exclusive classes below; the hex and whitespace bits are additive flags
+// layered on top.
+const (
+	ctl uint16 = 1 << iota // control character
+	spc                    // the space character (0x20)
+	dig                    // decimal digit
+	upp                    // uppercase letter
+	low                    // lowercase letter
+	pun                    // punctuation
+	sym                    // symbol
+	hex                    // hexadecimal digit (additive)
+	isp                    // whitespace (additive; reported by IsSpace)
+)
+
+// Class masks combining the individual character class bits.
+const (
+	letterMask = upp | low                         // IsAlpha
+	alnumMask  = upp | low | dig                   // IsAlphaNum
+	hexMask    = dig | hex                         // IsHex
+	printMask  = upp | low | dig | pun | sym | spc // IsPrint
+)
+
+// Convenience combinations used when building the lookup table.
+const (
+	csp = ctl | isp // control character that is also whitespace
+	tsp = spc | isp // the space character
+	uhx = upp | hex // uppercase hexadecimal digit (A–F)
+	lhx = low | hex // lowercase hexadecimal digit (a–f)
+)
+
+// lookup maps every ASCII code point to its set of character class bits. The
+// classification functions consult this table after rejecting non-ASCII runes
+// with a range check, which also lets the compiler elide the bounds check on
+// the table access.
+var lookup = [128]uint16{
+	/* 00-07  NUL SOH STX ETX EOT ENQ ACK BEL */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
+	/* 08-0F  BS  HT  LF  VT  FF  CR  SO  SI  */ ctl, csp, csp, csp, csp, csp, ctl, ctl,
+	/* 10-17  DLE DC1 DC2 DC3 DC4 NAK SYN ETB */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
+	/* 18-1F  CAN EM  SUB ESC FS  GS  RS  US  */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
+	/* 20-27  SP  !   "   #   $   %   &   '   */ tsp, pun, pun, pun, sym, pun, pun, pun,
+	/* 28-2F  (   )   *   +   ,   -   .   /   */ pun, pun, pun, sym, pun, pun, pun, pun,
+	/* 30-37  0   1   2   3   4   5   6   7   */ dig, dig, dig, dig, dig, dig, dig, dig,
+	/* 38-3F  8   9   :   ;   <   =   >   ?   */ dig, dig, pun, pun, sym, sym, sym, pun,
+	/* 40-47  @   A   B   C   D   E   F   G   */ pun, uhx, uhx, uhx, uhx, uhx, uhx, upp,
+	/* 48-4F  H   I   J   K   L   M   N   O   */ upp, upp, upp, upp, upp, upp, upp, upp,
+	/* 50-57  P   Q   R   S   T   U   V   W   */ upp, upp, upp, upp, upp, upp, upp, upp,
+	/* 58-5F  X   Y   Z   [   \   ]   ^   _   */ upp, upp, upp, pun, pun, pun, sym, pun,
+	/* 60-67  `   a   b   c   d   e   f   g   */ sym, lhx, lhx, lhx, lhx, lhx, lhx, low,
+	/* 68-6F  h   i   j   k   l   m   n   o   */ low, low, low, low, low, low, low, low,
+	/* 70-77  p   q   r   s   t   u   v   w   */ low, low, low, low, low, low, low, low,
+	/* 78-7F  x   y   z   {   |   }   ~   DEL */ low, low, low, pun, sym, pun, sym, ctl,
 }

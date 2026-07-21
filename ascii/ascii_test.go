@@ -134,6 +134,91 @@ func TestIsDigit(t *testing.T) {
 	}
 }
 
+func TestIsHex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"digit", '0', true},
+		{"digit nine", '9', true},
+		{"lower a", 'a', true},
+		{"lower f", 'f', true},
+		{"upper A", 'A', true},
+		{"upper F", 'F', true},
+		{"just after f", 'g', false},
+		{"just after F", 'G', false},
+		{"symbol", '#', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsHex(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestClassificationEquivalence cross-checks the lookup-table classifiers
+// against independent range-based definitions across the entire ASCII range
+// plus a selection of non-ASCII runes, guarding the table against typos.
+func TestClassificationEquivalence(t *testing.T) {
+	t.Parallel()
+
+	isSpace := func(c rune) bool {
+		switch c {
+		case ' ', '\t', '\n', '\v', '\f', '\r':
+			return true
+		}
+		return false
+	}
+
+	classes := []struct {
+		name string
+		got  func(rune) bool
+		want func(rune) bool
+	}{
+		{"IsUpper", ascii.IsUpper, func(c rune) bool { return c >= 'A' && c <= 'Z' }},
+		{"IsLower", ascii.IsLower, func(c rune) bool { return c >= 'a' && c <= 'z' }},
+		{"IsDigit", ascii.IsDigit, func(c rune) bool { return c >= '0' && c <= '9' }},
+		{"IsAlpha", ascii.IsAlpha, func(c rune) bool {
+			return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+		}},
+		{"IsAlphaNum", ascii.IsAlphaNum, func(c rune) bool {
+			return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+		}},
+		{"IsHex", ascii.IsHex, func(c rune) bool {
+			return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		}},
+		{"IsSpace", ascii.IsSpace, isSpace},
+		{"IsPrint", ascii.IsPrint, func(c rune) bool { return c >= 0x20 && c <= 0x7E }},
+		{"IsControl", ascii.IsControl, func(c rune) bool {
+			return (c >= 0 && c < 0x20) || c == 0x7F
+		}},
+	}
+
+	runes := make([]rune, 0, 0x88)
+	for c := rune(0); c <= 0x7F; c++ {
+		runes = append(runes, c)
+	}
+	runes = append(runes, 0x80, 0x81, 0xFF, 0x100, 0x7FF, 0xFFFD, 0x1F600)
+
+	for _, cl := range classes {
+		t.Run(cl.name, func(t *testing.T) {
+			t.Parallel()
+			for _, c := range runes {
+				if got, want := cl.got(c), cl.want(c); got != want {
+					t.Errorf("%s(%#x) = %v; want %v", cl.name, c, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestIsAlpha(t *testing.T) {
 	t.Parallel()
 
