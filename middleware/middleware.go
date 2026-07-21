@@ -53,6 +53,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -90,12 +91,20 @@ func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 // returns an empty response with status code 500 to the client. The log entry
 // also pinpoints the request method and URL that caused the panic. For maximum
 // effectiveness, this should be the first (outermost) middleware in the chain.
+//
+// Panics with [http.ErrAbortHandler] are re-raised untouched: the standard
+// library uses this sentinel to abort a response on purpose, and the server
+// suppresses its stack trace.
 func Recover(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(res http.ResponseWriter, req *http.Request) {
 				defer func() {
 					if r := recover(); r != nil {
+						if err, ok := r.(error); ok &&
+							errors.Is(err, http.ErrAbortHandler) {
+							panic(r)
+						}
 						method, url := req.Method, req.URL.String()
 						logger.Error(
 							"Panic caught by middleware",

@@ -140,6 +140,32 @@ func TestRecover(t *testing.T) {
 		}
 	})
 
+	t.Run("re-panics on ErrAbortHandler", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		logger := mockLogger(&buf)
+		pipe := mw.Recover(logger)
+
+		h := pipe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic(http.ErrAbortHandler)
+		}))
+
+		defer func() {
+			r := recover()
+			if r != http.ErrAbortHandler {
+				t.Errorf("recovered: got %v; want http.ErrAbortHandler", r)
+			}
+			if got := buf.String(); len(got) != 0 {
+				t.Errorf("log: got %q; want empty", got)
+			}
+		}()
+
+		h.ServeHTTP(
+			httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodGet, "/", nil),
+		)
+	})
+
 	t.Run("does nothing if no panic", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
