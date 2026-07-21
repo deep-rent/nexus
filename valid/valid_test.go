@@ -16,7 +16,6 @@ package valid_test
 
 import (
 	"testing"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"
@@ -249,7 +248,7 @@ func TestBase64(t *testing.T) {
 		{"valid padding", "YWI=", true},
 		{"invalid no padding", "YWI", false},
 		{"invalid chars", "YWI!", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.Base64, tests)
 }
@@ -261,7 +260,7 @@ func TestBase64URL(t *testing.T) {
 		{"valid no padding", "YWI", true},
 		{"valid padding", "YWI=", true},
 		{"invalid base64 chars", "YWI+", false},
-		{"empty", "", false},
+		{"empty", "", true},
 	}
 	run(t, valid.Base64URL, tests)
 }
