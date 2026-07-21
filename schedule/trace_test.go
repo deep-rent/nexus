@@ -19,14 +19,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/schedule"
 	"go.opentelemetry.io/otel/codes"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/schedule"
 )
 
 func TestRun_RecordsSpan(t *testing.T) {

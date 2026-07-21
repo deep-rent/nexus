@@ -52,13 +52,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deep-rent/nexus/jitter"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/deep-rent/nexus/jitter"
 )
 
 // scope is the instrumentation scope reported for spans and metrics emitted
