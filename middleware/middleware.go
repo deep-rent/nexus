@@ -50,11 +50,13 @@
 package middleware
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"slices"
@@ -170,6 +172,10 @@ func SetRequestID(ctx context.Context, id string) context.Context {
 
 // interceptor is used to wrap the original [http.ResponseWriter] to capture
 // the status code.
+//
+// It forwards the optional [http.Flusher] and [http.Hijacker] interfaces so
+// that wrapping a handler does not disable streaming responses or protocol
+// upgrades further down the chain.
 type interceptor struct {
 	// ResponseWriter is the original writer.
 	http.ResponseWriter
@@ -182,6 +188,28 @@ func (i *interceptor) WriteHeader(code int) {
 	i.statusCode = code
 	i.ResponseWriter.WriteHeader(code)
 }
+
+// Flush implements [http.Flusher] by delegating to the underlying writer.
+func (i *interceptor) Flush() {
+	if flusher, ok := i.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Hijack implements [http.Hijacker] by delegating to the underlying writer.
+func (i *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := i.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, errors.New("hijacking not supported")
+}
+
+// Ensure interceptor implements the necessary contracts.
+var (
+	_ http.ResponseWriter = (*interceptor)(nil)
+	_ http.Flusher        = (*interceptor)(nil)
+	_ http.Hijacker       = (*interceptor)(nil)
+)
 
 // Log returns a middleware [Pipe] that logs a summary of each HTTP request.
 //

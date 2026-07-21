@@ -279,6 +279,57 @@ func TestLog(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves flusher", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		pipe := mw.Log(mockLogger(&buf))
+
+		var flushable bool
+		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			flusher, ok := w.(http.Flusher)
+			flushable = ok
+			if ok {
+				_, _ = w.Write([]byte("chunk"))
+				flusher.Flush()
+			}
+		})
+
+		rr := httptest.NewRecorder()
+		pipe(final).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if !flushable {
+			t.Fatal("wrapped writer should implement http.Flusher")
+		}
+		if !rr.Flushed {
+			t.Error("flush was not delegated to the underlying writer")
+		}
+	})
+
+	t.Run("hijack unsupported", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		pipe := mw.Log(mockLogger(&buf))
+
+		var err error
+		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("wrapped writer should implement http.Hijacker")
+				return
+			}
+			// httptest.ResponseRecorder is not hijackable, so delegation
+			// must surface an error rather than panic.
+			_, _, err = hijacker.Hijack()
+		})
+
+		rr := httptest.NewRecorder()
+		pipe(final).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if err == nil {
+			t.Error("should have returned an error for a non-hijackable writer")
+		}
+	})
+
 	t.Run("logs with default status", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
