@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 
+	"uuid"
+
 	"github.com/deep-rent/nexus/oauth/flow"
 	"github.com/deep-rent/nexus/oauth/otp"
 )
@@ -31,6 +33,22 @@ const purposeLogin = "login"
 // "channel" action parameter.
 const ActionResend = "resend"
 
+// Default values applied by [New] for the optional OTP-related [Config] fields,
+// which configure the one-time password steps of a login flow.
+const (
+	// DefaultOTPCodeLength is the number of digits in a one-time password.
+	DefaultOTPCodeLength = otp.DefaultLength
+	// DefaultOTPLifetime is the validity period of a one-time password code
+	// and, aligned with it, of a login flow.
+	DefaultOTPLifetime = otp.DefaultLifetime
+	// DefaultOTPMaxAttempts is the number of failed confirmation attempts after
+	// which a code is burned.
+	DefaultOTPMaxAttempts = otp.DefaultMaxAttempts
+	// DefaultOTPMaxResends is the number of times a single code may be
+	// redelivered.
+	DefaultOTPMaxResends = otp.DefaultMaxResends
+)
+
 // Device describes the requesting client for planning purposes, notably whether
 // it presented a valid remember-me trust token. It lets a [Planner] skip
 // factors on a device the subject has already trusted.
@@ -41,16 +59,31 @@ type Device struct {
 	ID string
 }
 
+// Steps builds login steps bound to the server's engines. It is passed to a
+// [Planner] so the planner can assemble a chain without holding the server's
+// internal challenger.
+type Steps struct {
+	s *Server
+}
+
+// OTP returns a one-time password [flow.Step] delivering over the given ordered
+// methods, most preferred first. See [OTPStep].
+func (b Steps) OTP(id string, methods []otp.Method) flow.Step {
+	return OTPStep(id, b.s.otp, methods)
+}
+
 // Planner decides the authentication steps for a subject on a given device.
 //
 // It runs after the identifying factor (e.g. a password) has been verified, and
 // again on every continuation, so a change to the subject's enrolled factors —
-// or the device's trust — takes effect mid-login. Returning an empty slice
-// completes the login with no further factors.
+// or the device's trust — takes effect mid-login. It builds steps with the
+// provided [Steps]. Returning an empty slice completes the login with no
+// further factors.
 type Planner func(
 	ctx context.Context,
 	sub Subject,
 	dev Device,
+	b Steps,
 ) ([]flow.Step, error)
 
 // otpChallengePayload is the client-facing prompt an [OTPStep] returns: the
@@ -153,14 +186,14 @@ func (s *otpStep) Act(
 	a flow.Action,
 ) (any, error) {
 	if a.Name != ActionResend {
-		return nil, fmt.Errorf("otp step: unsupported action %q", a.Name)
+		return nil, fmt.Errorf("%w: unsupported action %q", flow.ErrRejected, a.Name)
 	}
 
 	m := s.methods[0]
 	if id := a.Extra["channel"]; id != "" {
 		picked, ok := pickMethod(s.methods, id)
 		if !ok {
-			return nil, fmt.Errorf("otp step: unknown channel %q", id)
+			return nil, fmt.Errorf("%w: unknown channel %q", flow.ErrRejected, id)
 		}
 		m = picked
 	}
@@ -200,4 +233,167 @@ func pickMethod(methods []otp.Method, id string) (otp.Method, bool) {
 		}
 	}
 	return otp.Method{}, false
+}
+
+// FlowTransaction is the persisted state of an in-progress login flow, the
+// stored shape of a [flow.Transaction].
+//
+// Like every bearer artifact, the handle is stored only as its digest: a leaked
+// datastore yields no usable flow handles.
+type FlowTransaction struct {
+	// Handle is the digest of the client-facing flow handle and the storage
+	// key. The plaintext value never reaches the store.
+	Handle Digest `json:"handle"`
+	// SubjectID is the resource owner whose identifying factor was verified.
+	SubjectID uuid.UUID `json:"subject_id"`
+	// Completed lists the IDs of the steps finished so far, in order.
+	Completed []string `json:"completed,omitzero"`
+	// Remember records whether the client asked to be remembered.
+	Remember bool `json:"remember,omitzero"`
+	// ExpiresAt is when the login lapses, as a Unix timestamp in seconds.
+	ExpiresAt int64 `json:"expires_at"`
+}
+
+// otpStore adapts the server's [SessionStore] to the [otp.Store] interface, so
+// existing SessionStore implementations back the challenge engine unchanged.
+//
+// Every challenge in this store belongs to a single purpose, injected on read
+// because [OTPChallenge] does not persist it. The engine's
+// [otp.Challenge.MethodID] is likewise not persisted: the step selects the
+// delivery method per request from the plan.
+type otpStore struct {
+	sessions SessionStore
+	purpose  string
+}
+
+var _ otp.Store = otpStore{}
+
+// Create implements [otp.Store].
+func (s otpStore) Create(ctx context.Context, c otp.Challenge) error {
+	oc, err := s.toChallenge(c)
+	if err != nil {
+		return err
+	}
+	return s.sessions.CreateOTPChallenge(ctx, oc)
+}
+
+// Get implements [otp.Store].
+func (s otpStore) Get(
+	ctx context.Context,
+	id string,
+) (otp.Challenge, bool, error) {
+	oc, err := s.sessions.GetOTPChallenge(ctx, Digest(id))
+	if err != nil {
+		return otp.Challenge{}, false, err
+	}
+	if oc.Challenge == "" {
+		return otp.Challenge{}, false, nil
+	}
+	return otp.Challenge{
+		ID:        string(oc.Challenge),
+		Code:      string(oc.Code),
+		Owner:     oc.SubjectID.String(),
+		Purpose:   s.purpose,
+		ExpiresAt: oc.ExpiresAt,
+		Attempts:  oc.Attempts,
+		Resends:   oc.Resends,
+	}, true, nil
+}
+
+// Update implements [otp.Store].
+func (s otpStore) Update(ctx context.Context, c otp.Challenge) error {
+	oc, err := s.toChallenge(c)
+	if err != nil {
+		return err
+	}
+	return s.sessions.UpdateOTPChallenge(ctx, oc)
+}
+
+// Delete implements [otp.Store].
+func (s otpStore) Delete(ctx context.Context, id string) (bool, error) {
+	return s.sessions.DeleteOTPChallenge(ctx, Digest(id))
+}
+
+// toChallenge maps an engine challenge onto the stored shape, parsing the owner
+// back into a subject ID.
+func (s otpStore) toChallenge(c otp.Challenge) (OTPChallenge, error) {
+	sid, err := uuid.Parse(c.Owner)
+	if err != nil {
+		return OTPChallenge{}, fmt.Errorf("invalid challenge owner: %w", err)
+	}
+	return OTPChallenge{
+		Challenge: Digest(c.ID),
+		SubjectID: sid,
+		Code:      Digest(c.Code),
+		Attempts:  c.Attempts,
+		Resends:   c.Resends,
+		ExpiresAt: c.ExpiresAt,
+	}, nil
+}
+
+// flowStore adapts the server's [SessionStore] to the [flow.Store] interface.
+type flowStore struct {
+	sessions SessionStore
+}
+
+var _ flow.Store = flowStore{}
+
+// Create implements [flow.Store].
+func (s flowStore) Create(ctx context.Context, t flow.Transaction) error {
+	ft, err := s.toTransaction(t)
+	if err != nil {
+		return err
+	}
+	return s.sessions.CreateFlowTransaction(ctx, ft)
+}
+
+// Get implements [flow.Store].
+func (s flowStore) Get(
+	ctx context.Context,
+	id string,
+) (flow.Transaction, bool, error) {
+	ft, err := s.sessions.GetFlowTransaction(ctx, Digest(id))
+	if err != nil {
+		return flow.Transaction{}, false, err
+	}
+	if ft.Handle == "" {
+		return flow.Transaction{}, false, nil
+	}
+	return flow.Transaction{
+		ID:        string(ft.Handle),
+		Owner:     ft.SubjectID.String(),
+		Completed: ft.Completed,
+		Remember:  ft.Remember,
+		ExpiresAt: ft.ExpiresAt,
+	}, true, nil
+}
+
+// Update implements [flow.Store].
+func (s flowStore) Update(ctx context.Context, t flow.Transaction) error {
+	ft, err := s.toTransaction(t)
+	if err != nil {
+		return err
+	}
+	return s.sessions.UpdateFlowTransaction(ctx, ft)
+}
+
+// Delete implements [flow.Store].
+func (s flowStore) Delete(ctx context.Context, id string) (bool, error) {
+	return s.sessions.DeleteFlowTransaction(ctx, Digest(id))
+}
+
+// toTransaction maps an engine transaction onto the stored shape, parsing the
+// owner back into a subject ID.
+func (s flowStore) toTransaction(t flow.Transaction) (FlowTransaction, error) {
+	sid, err := uuid.Parse(t.Owner)
+	if err != nil {
+		return FlowTransaction{}, fmt.Errorf("invalid flow owner: %w", err)
+	}
+	return FlowTransaction{
+		Handle:    Digest(t.ID),
+		SubjectID: sid,
+		Completed: t.Completed,
+		Remember:  t.Remember,
+		ExpiresAt: t.ExpiresAt,
+	}, nil
 }

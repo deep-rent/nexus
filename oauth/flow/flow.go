@@ -24,6 +24,11 @@ import (
 // failure the client may retry later; transports typically map it to HTTP 429.
 var ErrRateLimited = errors.New("action rate limited")
 
+// ErrRejected is returned by [Step.Act] when an action request is malformed —
+// an unsupported action or an unknown parameter. It is a client error;
+// transports typically map it to HTTP 400.
+var ErrRejected = errors.New("action rejected")
+
 // Verdict is the outcome of verifying a client's input against a [Step]. It is
 // the step's domain result, which the [Coordinator] translates into flow
 // control and a [Result].

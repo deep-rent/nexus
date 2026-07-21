@@ -30,6 +30,7 @@ import (
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/oauth/flow"
 	"github.com/deep-rent/nexus/oauth/otp"
 	"github.com/deep-rent/nexus/oauth/pkce"
 	"github.com/deep-rent/nexus/router"
@@ -48,6 +49,9 @@ const (
 	// DefaultStateCookieName names the cookie carrying the CSRF state during
 	// external login flows.
 	DefaultStateCookieName = "oauth_state"
+	// DefaultTrustCookieName names the cookie carrying the remember-me device
+	// trust token.
+	DefaultTrustCookieName = "oauth_trust"
 	// DefaultAccessTokenLifetime is the validity period of access tokens.
 	DefaultAccessTokenLifetime = 1 * time.Hour
 	// DefaultRefreshTokenLifetime is the validity period of refresh tokens.
@@ -105,6 +109,8 @@ type Config struct {
 	SessionCookieName string
 	// StateCookieName overrides [DefaultStateCookieName].
 	StateCookieName string
+	// TrustCookieName overrides [DefaultTrustCookieName].
+	TrustCookieName string
 	// AccessTokenLifetime overrides [DefaultAccessTokenLifetime].
 	AccessTokenLifetime time.Duration
 	// RefreshTokenLifetime overrides [DefaultRefreshTokenLifetime].
@@ -118,8 +124,8 @@ type Config struct {
 	// OTPCodeLength is the number of digits in a generated one-time
 	// password. Defaults to [DefaultOTPCodeLength]. It is ignored when a
 	// custom generator is installed via an [otp.WithCodeGenerator] passed to
-	// [WithOTP]. Only relevant when two-factor logins are enabled via
-	// [WithOTP].
+	// [WithFlow]. Only relevant for the one-time password steps of a login
+	// flow enabled via [WithFlow].
 	OTPCodeLength int
 	// OTPLifetime overrides [DefaultOTPLifetime]. Resending a one-time
 	// password does not extend a challenge's lifetime.
@@ -173,6 +179,7 @@ type Server struct {
 	issuer                    string
 	sessionCookieName         string
 	stateCookieName           string
+	trustCookieName           string
 	accessTokenLifetime       time.Duration
 	refreshTokenLifetime      time.Duration
 	authCodeLifetime          time.Duration
@@ -190,8 +197,9 @@ type Server struct {
 	generateWebAuthnHandle    TokenGeneratorFn
 	generateTrustToken        TokenGeneratorFn
 	verificationURI           string
-	otpEnabled                bool
+	planner                   Planner
 	otpOpts                   []otp.Option
+	flow                      *flow.Coordinator
 	otp                       *otp.Challenger
 	rememberedSessionLifetime time.Duration
 	trustedDeviceLifetime     time.Duration
@@ -267,23 +275,28 @@ func WithStateGenerator(fn TokenGeneratorFn) Option {
 	return func(s *Server) { s.generateState = fn }
 }
 
-// WithOTP enables two-factor logins.
+// WithFlow enables multi-step logins driven by the given [Planner].
 //
-// Once enabled, a successful password login by a subject with an enrolled
-// [SecondFactor] (see [SubjectStore.GetSecondFactor]) no longer establishes a
-// session directly. Instead, the server delivers a one-time password over one
-// of the subject's enrolled [otp.Method] values and returns an
-// [OTPChallengeResponse]; the client completes the login via [Server.VerifyOTP]
-// and may switch channels via [Server.ResendOTP]. [Server.Mount] registers the
-// verification and resend endpoints only when this option is present.
+// Once enabled, a successful password login no longer establishes a session
+// directly. Instead the server runs the planner to decide the remaining
+// authentication steps for the subject and device, and — if any remain —
+// returns a [FlowResponse] carrying a flow handle. The client satisfies each
+// step via [Server.Continue] and may drive out-of-band actions (such as
+// resending a code) via [Server.Action], carrying the handle throughout.
+// [Server.Mount] registers the continue and action endpoints only when this
+// option is present.
 //
-// Challenges are persisted through the server's [SessionStore] (its
-// OTPChallenge methods). The flow is tuned via the OTP-prefixed fields of
-// [Config]; pass [otp.Option] values such as [otp.WithCodeGenerator] or
-// [otp.WithHandleGenerator] to override the generators.
-func WithOTP(opts ...otp.Option) Option {
+// Flow transactions and one-time password challenges are persisted through the
+// server's [SessionStore]. The OTP steps are tuned via the OTP-prefixed fields
+// of [Config]; pass [otp.Option] values such as [otp.WithCodeGenerator] or
+// [otp.WithHandleGenerator] to override the generators. It panics if planner is
+// nil, since that is a startup configuration error.
+func WithFlow(planner Planner, opts ...otp.Option) Option {
 	return func(s *Server) {
-		s.otpEnabled = true
+		if planner == nil {
+			panic("planner is required")
+		}
+		s.planner = planner
 		s.otpOpts = append(s.otpOpts, opts...)
 	}
 }
@@ -342,6 +355,10 @@ func New(cfg Config, opts ...Option) *Server {
 		stateCookieName: cmp.Or(
 			cfg.StateCookieName,
 			DefaultStateCookieName,
+		),
+		trustCookieName: cmp.Or(
+			cfg.TrustCookieName,
+			DefaultTrustCookieName,
 		),
 		accessTokenLifetime: cmp.Or(
 			cfg.AccessTokenLifetime,
@@ -404,16 +421,18 @@ func New(cfg Config, opts ...Option) *Server {
 		)
 	}
 
-	// The challenge engine is built only after all options are applied, so it
-	// observes the final clock and logger. Caller-supplied otp.Options (from
-	// WithOTP) win over the Config-derived defaults, since they are appended
-	// last.
-	if s.otpEnabled {
+	// The login engines are built only after all options are applied, so they
+	// observe the final clock and logger. The OTP challenge lifetime doubles as
+	// the flow lifetime, so a code stays live for as long as the login it backs.
+	// Caller-supplied otp.Options (from WithFlow) win over the Config-derived
+	// defaults, since they are appended last.
+	if s.planner != nil {
+		lifetime := cmp.Or(cfg.OTPLifetime, DefaultOTPLifetime)
 		s.otp = otp.New(
-			otpStore{sessions: s.sessions, purpose: otpPurpose},
+			otpStore{sessions: s.sessions, purpose: purposeLogin},
 			append([]otp.Option{
 				otp.WithCodeLength(cmp.Or(cfg.OTPCodeLength, DefaultOTPCodeLength)),
-				otp.WithLifetime(cmp.Or(cfg.OTPLifetime, DefaultOTPLifetime)),
+				otp.WithLifetime(lifetime),
 				otp.WithMaxAttempts(
 					cmp.Or(cfg.OTPMaxAttempts, DefaultOTPMaxAttempts),
 				),
@@ -423,6 +442,12 @@ func New(cfg Config, opts ...Option) *Server {
 				otp.WithClock(s.now),
 				otp.WithLogger(s.logger),
 			}, s.otpOpts...)...,
+		)
+		s.flow = flow.New(
+			flowStore{sessions: s.sessions},
+			flow.WithLifetime(lifetime),
+			flow.WithClock(s.now),
+			flow.WithLogger(s.logger),
 		)
 	}
 
@@ -445,8 +470,8 @@ func (s *Server) Supports(grant GrantType) bool {
 //
 // The device authorization endpoints are only registered when a verification
 // URI has been configured, the external login endpoints only when at least
-// one identity provider is registered, the OTP verification and resend
-// endpoints only when two-factor logins are enabled via [WithOTP], and the
+// one identity provider is registered, the login continue and action
+// endpoints only when a multi-step login is enabled via [WithFlow], and the
 // WebAuthn endpoints only when passkey support is enabled via [WithWebAuthn].
 //
 // When [Config.Throttle] is set, every endpoint that verifies a credential
@@ -486,15 +511,15 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogin, s.Login, guarded...)
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogout, s.Logout)
 
-	if s.otp != nil {
+	if s.flow != nil {
 		r.HandleFunc(
-			http.MethodPost+" "+prefix+PathLoginOTP,
-			s.VerifyOTP,
+			http.MethodPost+" "+prefix+PathLoginContinue,
+			s.Continue,
 			guarded...,
 		)
 		r.HandleFunc(
-			http.MethodPost+" "+prefix+PathLoginOTPResend,
-			s.ResendOTP,
+			http.MethodPost+" "+prefix+PathLoginAction,
+			s.Action,
 			guarded...,
 		)
 	}
@@ -670,6 +695,17 @@ func (s *Server) addr(e *router.Exchange) string {
 func (s *Server) newSessionCookie(value string, maxAge int) *http.Cookie {
 	return router.NewCookie(
 		s.sessionCookieName,
+		value,
+		maxAge,
+		http.SameSiteLaxMode,
+	)
+}
+
+// newTrustCookie builds the remember-me device trust cookie. A negative maxAge
+// clears it on the user-agent.
+func (s *Server) newTrustCookie(value string, maxAge int) *http.Cookie {
+	return router.NewCookie(
+		s.trustCookieName,
 		value,
 		maxAge,
 		http.SameSiteLaxMode,

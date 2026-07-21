@@ -92,11 +92,10 @@ var _ Subject = (*fakeSubject)(nil)
 // fakeSubjectStore is an in-memory [SubjectStore].
 type fakeSubjectStore struct {
 	subjects  map[uuid.UUID]*fakeSubject
-	passwords map[string]string           // username -> password
-	usernames map[string]uuid.UUID        // username -> subject ID
-	external  map[string]uuid.UUID        // provider "/" external ID -> subject ID
-	sessions  map[string]uuid.UUID        // session key -> subject ID
-	factors   map[uuid.UUID]*SecondFactor // subject ID -> second factor
+	passwords map[string]string    // username -> password
+	usernames map[string]uuid.UUID // username -> subject ID
+	external  map[string]uuid.UUID // provider "/" external ID -> subject ID
+	sessions  map[string]uuid.UUID // session key -> subject ID
 	// credentials maps subject IDs to registered passkey credentials.
 	credentials map[uuid.UUID][]WebAuthnCredential
 	err         error
@@ -109,7 +108,6 @@ func newFakeSubjectStore() *fakeSubjectStore {
 		usernames: make(map[string]uuid.UUID),
 		external:  make(map[string]uuid.UUID),
 		sessions:  make(map[string]uuid.UUID),
-		factors:   make(map[uuid.UUID]*SecondFactor),
 		credentials: make(
 			map[uuid.UUID][]WebAuthnCredential,
 		),
@@ -153,16 +151,6 @@ func (s *fakeSubjectStore) UpdateWebAuthnCredential(
 		}
 	}
 	return nil
-}
-
-func (s *fakeSubjectStore) GetSecondFactor(
-	_ context.Context,
-	subjectID uuid.UUID,
-) (*SecondFactor, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	return s.factors[subjectID], nil
 }
 
 func (s *fakeSubjectStore) Authenticate(
@@ -261,7 +249,9 @@ type fakeSessionStore struct {
 	webAuthnSessions map[Digest]WebAuthnSession
 	// trustedDevices maps token digests to remember-me device trust records.
 	trustedDevices map[Digest]TrustedDevice
-	err            error
+	// flowTransactions maps handle digests to in-progress login flows.
+	flowTransactions map[Digest]FlowTransaction
+	err              error
 }
 
 func newFakeSessionStore() *fakeSessionStore {
@@ -273,8 +263,53 @@ func newFakeSessionStore() *fakeSessionStore {
 		webAuthnSessions: make(
 			map[Digest]WebAuthnSession,
 		),
-		trustedDevices: make(map[Digest]TrustedDevice),
+		trustedDevices:   make(map[Digest]TrustedDevice),
+		flowTransactions: make(map[Digest]FlowTransaction),
 	}
+}
+
+func (s *fakeSessionStore) GetFlowTransaction(
+	_ context.Context,
+	handle Digest,
+) (FlowTransaction, error) {
+	if s.err != nil {
+		return FlowTransaction{}, s.err
+	}
+	return s.flowTransactions[handle], nil
+}
+
+func (s *fakeSessionStore) CreateFlowTransaction(
+	_ context.Context,
+	data FlowTransaction,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.flowTransactions[data.Handle] = data
+	return nil
+}
+
+func (s *fakeSessionStore) UpdateFlowTransaction(
+	_ context.Context,
+	data FlowTransaction,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.flowTransactions[data.Handle] = data
+	return nil
+}
+
+func (s *fakeSessionStore) DeleteFlowTransaction(
+	_ context.Context,
+	handle Digest,
+) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	_, ok := s.flowTransactions[handle]
+	delete(s.flowTransactions, handle)
+	return ok, nil
 }
 
 func (s *fakeSessionStore) GetTrustedDevice(
