@@ -39,6 +39,7 @@ const ReasonOverload = "server_overload"
 func Middleware(opts ...Option) router.Middleware {
 	limit := debug.SetMemoryLimit(-1)
 	if limit <= 0 || limit == math.MaxInt64 {
+		// No memory limit set, act as a no-op.
 		return func(next router.Handler) router.Handler { return next }
 	}
 
@@ -61,13 +62,12 @@ func Middleware(opts ...Option) router.Middleware {
 
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
-			// Sample at most once per interval. The CompareAndSwap claims the
+			// Sample at most once per interval. The CAS operation claims the
 			// sampling slot for exactly one goroutine; concurrent requests read
 			// the last recorded verdict from overloaded.
-			now := cfg.now()
-			prev := last.Load()
-			if now.Sub(time.Unix(0, prev)) > cfg.interval &&
-				last.CompareAndSwap(prev, now.UnixNano()) {
+			curr, prev := cfg.now(), last.Load()
+			if curr.Sub(time.Unix(0, prev)) > cfg.interval &&
+				last.CompareAndSwap(prev, curr.UnixNano()) {
 				overloaded.Store(cfg.memory() >= threshold)
 			}
 
