@@ -341,13 +341,3 @@ func TestRequestID_AdoptsTraceID(t *testing.T) {
 		t.Errorf("request id: got %q; want %q", got, want)
 	}
 }
-
-func TestRoute_WithoutHolder(t *testing.T) {
-	t.Parallel()
-
-	// Outside a traced request, SetRoute is a no-op and GetRoute is empty.
-	mw.SetRoute(t.Context(), "/users/{id}")
-	if got := mw.GetRoute(t.Context()); got != "" {
-		t.Errorf("route: got %q; want %q", got, "")
-	}
-}

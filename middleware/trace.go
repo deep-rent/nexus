@@ -42,40 +42,6 @@ var buckets = []float64{
 	0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
 }
 
-// routeKey is the context key under which [Trace] stores its route holder.
-type routeKey struct{}
-
-// routeHolder carries the matched route pattern by reference.
-//
-// [http.ServeMux] stamps the pattern onto the request it receives, but any
-// middleware between [Trace] and the mux that calls [http.Request.WithContext]
-// hands the mux a shallow clone, hiding the pattern from the request Trace
-// holds. A pointer in the context survives every clone.
-type routeHolder struct {
-	pattern string
-}
-
-// SetRoute records the matched route pattern for the [Trace] middleware,
-// which uses it to name the server span and to label the request duration
-// metric. It is a no-op if the request is not being traced.
-//
-// The router package calls this with the matched [http.ServeMux] pattern;
-// custom handlers only need it when they resolve routes themselves.
-func SetRoute(ctx context.Context, pattern string) {
-	if holder, ok := ctx.Value(routeKey{}).(*routeHolder); ok {
-		holder.pattern = pattern
-	}
-}
-
-// GetRoute returns the route pattern recorded via [SetRoute], or the empty
-// string if none was recorded.
-func GetRoute(ctx context.Context) string {
-	if holder, ok := ctx.Value(routeKey{}).(*routeHolder); ok {
-		return holder.pattern
-	}
-	return ""
-}
-
 // traceConfig holds the configuration for the [Trace] middleware.
 type traceConfig struct {
 	tracerProvider trace.TracerProvider
