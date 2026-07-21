@@ -40,7 +40,8 @@ const ReasonOverload = "server_overload"
 func Middleware(opts ...Option) router.Middleware {
 	limit := debug.SetMemoryLimit(-1)
 	if limit <= 0 || limit == math.MaxInt64 {
-		// No memory limit set: return nil so router.Chain skips it entirely.
+		// No memory limit set: return nil so middleware chaining skips
+		// it entirely.
 		return nil
 	}
 
