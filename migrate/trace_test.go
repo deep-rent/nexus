@@ -19,14 +19,15 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/migrate"
-	drvmock "github.com/deep-rent/nexus/migrate/driver/mock"
-	srcmock "github.com/deep-rent/nexus/migrate/source/mock"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/migrate"
+	drvmock "github.com/deep-rent/nexus/migrate/driver/mock"
+	srcmock "github.com/deep-rent/nexus/migrate/source/mock"
 )
 
 // migrationAttr returns the string form of an attribute recorded on a span,

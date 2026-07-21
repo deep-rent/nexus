@@ -77,12 +77,13 @@ import (
 	"slices"
 	"time"
 
-	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/schema"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/schema"
 )
 
 // Direction signals whether a migration is being applied or reverted.
