@@ -136,14 +136,16 @@ type Credentials struct {
 	ClientEmail string `json:"client_email"`
 	// PrivateKey is the PEM-encoded PKCS#8 private key. It is a string rather
 	// than a byte slice because a service account file stores it as a JSON
-	// string; a byte slice would be decoded as base64 and fail.
+	// string; a byte slice would be decoded as base64 and fail. Only RSA and
+	// EC P-256 key types are supported.
 	PrivateKey string `json:"private_key"`
 }
 
 // New creates a configured Firebase Cloud Messaging client implementing the
 // [push.Sender] interface. It requires the raw contents of the Google Service
-// Account JSON credentials file. Requests are dispatched through
-// [transport.DefaultClient] unless [WithClient] provides another one.
+// Account JSON credentials file. Only RSA and EC P-256 private keys are
+// supported. Requests are dispatched through [transport.DefaultClient] unless
+// [WithClient] provides another one.
 func New(
 	cred Credentials,
 	opts ...Option,

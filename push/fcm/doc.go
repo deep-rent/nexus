@@ -26,7 +26,7 @@
 //		fcm.Credentials{
 //			ProjectID:   "my-project",
 //			ClientEmail: "test@my-project.iam.gserviceaccount.com",
-//			PrivateKey:  string(key), // PEM data
+//			PrivateKey:  string(key), // PEM data (RSA or EC P-256)
 //		},
 //	)
 //	err := sender.Send(ctx, msg)
