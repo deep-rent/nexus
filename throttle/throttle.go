@@ -73,6 +73,7 @@
 package throttle
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strconv"
@@ -82,6 +83,10 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/deep-rent/nexus/router"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 // Default values applied by [New] for the optional [Config] fields.
@@ -122,6 +127,15 @@ type Config struct {
 	// Clock overrides the time source. This is primarily useful for
 	// deterministic testing. Defaults to [time.Now].
 	Clock func() time.Time
+	// Name is the value of the "throttle" attribute on the recorded
+	// counters, keeping multiple instances apart in a telemetry backend.
+	// Defaults to the empty string.
+	Name string
+	// MeterProvider records the nexus.throttle.decision and
+	// nexus.throttle.penalty counters. Defaults to the global provider
+	// registered with [otel.SetMeterProvider], which is a no-op until an
+	// application installs a real one.
+	MeterProvider metric.MeterProvider
 }
 
 // Throttle is a set of token buckets keyed by opaque strings.
@@ -138,6 +152,10 @@ type Throttle struct {
 	burst int
 	key   func(*http.Request) string
 	clock func() time.Time
+
+	attrs     metric.MeasurementOption // labels carried by both counters
+	decisions metric.Int64Counter      // counts AllowN outcomes
+	penalties metric.Int64Counter      // counts Penalize calls
 
 	mu      sync.Mutex
 	buckets map[string]*rate.Limiter
@@ -171,16 +189,51 @@ func New(cfg Config) *Throttle {
 	if clock == nil {
 		clock = time.Now
 	}
+	mp := cfg.MeterProvider
+	if mp == nil {
+		mp = otel.GetMeterProvider()
+	}
+
+	meter := mp.Meter(scope)
+	count := func(instrument, description string) metric.Int64Counter {
+		counter, err := meter.Int64Counter(
+			instrument,
+			metric.WithDescription(description),
+		)
+		if err != nil {
+			otel.Handle(err)
+			counter, _ = noop.NewMeterProvider().Meter(scope).Int64Counter("")
+		}
+		return counter
+	}
 
 	return &Throttle{
-		rate:    limit,
-		burst:   burst,
-		key:     key,
-		clock:   clock,
+		rate:  limit,
+		burst: burst,
+		key:   key,
+		clock: clock,
+		attrs: metric.WithAttributes(
+			attribute.String("throttle", cfg.Name),
+		),
+		decisions: count(
+			"nexus.throttle.decision",
+			"Number of rate limit decisions by outcome.",
+		),
+		penalties: count(
+			"nexus.throttle.penalty",
+			"Number of penalties charged.",
+		),
 		buckets: make(map[string]*rate.Limiter),
 		swept:   clock(),
 	}
 }
+
+// scope is the instrumentation scope reported for metrics emitted by this
+// package.
+const scope = "github.com/deep-rent/nexus/throttle"
+
+// allowedKey is the attribute reporting the outcome of a decision.
+var allowedKey = attribute.Key("allowed")
 
 // RemoteAddr derives a key from the remote address of the request's TCP
 // connection, stripping the port so that all connections from one host share
@@ -233,12 +286,20 @@ func (t *Throttle) Allow(key string) bool {
 // available, reporting whether the spend succeeded. If fewer than n tokens
 // are available, nothing is spent and it returns false. A non-positive n
 // spends nothing and returns true.
+//
+// Every call is counted under nexus.throttle.decision with an "allowed"
+// attribute. Note that requests rejected by [Throttle.Middleware] reserve on
+// the buckets directly and do not pass through here; they surface as 429s in
+// the HTTP server metrics instead.
 func (t *Throttle) AllowN(key string, n int) bool {
 	if n <= 0 {
 		return true
 	}
 	now := t.clock()
-	return t.limiter(key, now).AllowN(now, n)
+	ok := t.limiter(key, now).AllowN(now, n)
+	t.decisions.Add(context.Background(), 1,
+		t.attrs, metric.WithAttributes(allowedKey.Bool(ok)))
+	return ok
 }
 
 // Blocked reports whether the given key has exhausted its allowance, along
@@ -272,6 +333,7 @@ func (t *Throttle) Penalize(key string, tokens int) {
 	}
 	now := t.clock()
 	t.limiter(key, now).ReserveN(now, tokens)
+	t.penalties.Add(context.Background(), 1, t.attrs)
 }
 
 // Reset restores the full allowance of the given key, discarding any deficit
