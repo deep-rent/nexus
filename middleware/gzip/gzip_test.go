@@ -19,6 +19,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
 	"testing"
 
 	"github.com/deep-rent/nexus/middleware/gzip"
@@ -224,6 +226,145 @@ func TestMiddleware(t *testing.T) {
 				t.Errorf("body: got %q; want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestBodilessResponses(t *testing.T) {
+	t.Parallel()
+
+	for _, code := range []int{
+		http.StatusNoContent,
+		http.StatusResetContent,
+		http.StatusNotModified,
+	} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			t.Parallel()
+
+			h := gzip.New()(http.HandlerFunc(
+				func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/plain")
+					w.WriteHeader(code)
+				},
+			))
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.Header.Set("Accept-Encoding", "gzip")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+
+			if got, want := w.Code, code; got != want {
+				t.Fatalf("status code: got %d; want %d", got, want)
+			}
+			if got := w.Header().Get("Content-Encoding"); len(got) != 0 {
+				t.Errorf("content-encoding header: got %q; want empty", got)
+			}
+			// No gzip header or footer bytes may leak into the body.
+			if got := w.Body.Len(); got != 0 {
+				t.Errorf("body length: got %d; want 0", got)
+			}
+		})
+	}
+}
+
+func TestHeadRequest(t *testing.T) {
+	t.Parallel()
+
+	h := gzip.New()(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("ok"))
+		},
+	))
+
+	r := httptest.NewRequest(http.MethodHead, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if got := w.Header().Get("Content-Encoding"); len(got) != 0 {
+		t.Errorf("content-encoding header: got %q; want empty", got)
+	}
+}
+
+func TestInformationalResponses(t *testing.T) {
+	t.Parallel()
+
+	const payload = "compressed after early hints"
+
+	// httptest.ResponseRecorder cannot model informational responses, so a
+	// real server is required to verify that a 1xx does not consume the
+	// single WriteHeader latch before the final status arrives.
+	srv := httptest.NewServer(gzip.New()(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusEarlyHints)
+			_, _ = w.Write([]byte(payload))
+		},
+	)))
+	defer srv.Close()
+
+	var hints int
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+			if code == http.StatusEarlyHints {
+				hints++
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(
+		httptrace.WithClientTrace(t.Context(), trace),
+		http.MethodGet,
+		srv.URL,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("building request: should not have returned an error: %v", err)
+	}
+	// Setting the header manually disables the transport's automatic
+	// decompression, exposing the raw gzip body.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: should not have returned an error: %v", err)
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			t.Errorf(
+				"closing body: should not have returned an error: %v",
+				err,
+			)
+		}
+	}()
+
+	if got, want := hints, 1; got != want {
+		t.Errorf("early hints received: got %d; want %d", got, want)
+	}
+	if got, want := res.StatusCode, http.StatusOK; got != want {
+		t.Errorf("status code: got %d; want %d", got, want)
+	}
+	if got, want := res.Header.Get("Content-Encoding"), "gzip"; got != want {
+		t.Errorf("content-encoding header: got %q; want %q", got, want)
+	}
+
+	gzr, err := compress.NewReader(res.Body)
+	if err != nil {
+		t.Fatalf(
+			"opening gzip reader: should not have returned an error: %v",
+			err,
+		)
+	}
+	data, err := io.ReadAll(gzr)
+	if err != nil {
+		t.Fatalf(
+			"reading gzip body: should not have returned an error: %v",
+			err,
+		)
+	}
+	if got, want := string(data), payload; got != want {
+		t.Errorf("body: got %q; want %q", got, want)
 	}
 }
 

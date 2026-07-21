@@ -117,10 +117,25 @@ type interceptor struct {
 // Deleting Content-Length is crucial, as the size of the compressed content is
 // unknown until it is fully written.
 func (w *interceptor) WriteHeader(statusCode int) {
+	// Forward informational (1xx) responses without latching any state; the
+	// final status line and the compression decision are still to come.
+	if statusCode < 200 {
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
+
 	if w.wrote {
 		return
 	}
 	w.wrote = true
+
+	// Responses that must not carry a body would otherwise receive the gzip
+	// header and footer bytes, which the server rejects.
+	if statusCode == http.StatusNoContent ||
+		statusCode == http.StatusResetContent ||
+		statusCode == http.StatusNotModified {
+		w.skip = true
+	}
 
 	if w.ResponseWriter.Header().Get("Content-Encoding") != "" {
 		w.skip = true
@@ -241,8 +256,10 @@ func New(opts ...Option) middleware.Pipe {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip if the client doesn't accept gzip compression.
-			if !header.Accepts(r.Header.Get("Accept-Encoding"), "gzip") ||
+			// Skip HEAD requests (no body to compress) and clients that do
+			// not accept gzip compression.
+			if r.Method == http.MethodHead ||
+				!header.Accepts(r.Header.Get("Accept-Encoding"), "gzip") ||
 				w.Header().Get("Content-Encoding") != "" {
 				next.ServeHTTP(w, r)
 				return
