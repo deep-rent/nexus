@@ -205,3 +205,47 @@ func TestNew_ServiceNameFromEnvironment(t *testing.T) {
 		}
 	}
 }
+
+func TestNew_KeepsResourceAttributesFromEnvironment(t *testing.T) {
+	t.Setenv(
+		"OTEL_RESOURCE_ATTRIBUTES",
+		"service.name=from-resource-env,service.version=1.2.3",
+	)
+
+	spans := &captureExporter{}
+	tel, err := telemetry.New(t.Context(),
+		// Neither WithServiceName nor WithServiceVersion is used, so the
+		// values detected from the environment must survive.
+		telemetry.WithSpanExporter(spans),
+		telemetry.WithMetricReader(sdkmetric.NewManualReader()),
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	_, span := tel.TracerProvider().Tracer("test").Start(t.Context(), "op")
+	span.End()
+
+	if err := tel.Shutdown(context.Background()); err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	got := spans.GetSpans()
+	if len(got) != 1 {
+		t.Fatalf("spans: got %d; want 1", len(got))
+	}
+
+	attrs := make(map[string]string)
+	for _, kv := range got[0].Resource.Attributes() {
+		attrs[string(kv.Key)] = kv.Value.Emit()
+	}
+	if got := attrs["service.name"]; got != "from-resource-env" {
+		t.Errorf(
+			"service.name: got %q; want %q",
+			got, "from-resource-env",
+		)
+	}
+	if got := attrs["service.version"]; got != "1.2.3" {
+		t.Errorf("service.version: got %q; want %q", got, "1.2.3")
+	}
+}

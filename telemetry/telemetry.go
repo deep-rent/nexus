@@ -152,17 +152,23 @@ func New(ctx context.Context, opts ...Option) (*Telemetry, error) {
 		return t, nil
 	}
 
+	// Service attributes are added only when set: WithAttributes outranks
+	// the detectors before it, so an empty value would wipe out a
+	// service.name or service.version provided via OTEL_RESOURCE_ATTRIBUTES.
+	attrs := make([]attribute.KeyValue, 0, len(cfg.attributes)+2)
+	if cfg.service != "" {
+		attrs = append(attrs, semconv.ServiceName(cfg.service))
+	}
+	if cfg.version != "" {
+		attrs = append(attrs, semconv.ServiceVersion(cfg.version))
+	}
+	attrs = append(attrs, cfg.attributes...)
+
 	res, err := resource.New(ctx,
 		resource.WithFromEnv(),
 		resource.WithTelemetrySDK(),
 		resource.WithHost(),
-		resource.WithAttributes(append(
-			[]attribute.KeyValue{
-				semconv.ServiceName(cfg.service),
-				semconv.ServiceVersion(cfg.version),
-			},
-			cfg.attributes...,
-		)...),
+		resource.WithAttributes(attrs...),
 	)
 	if err != nil {
 		return nil, err
