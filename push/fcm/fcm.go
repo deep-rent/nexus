@@ -12,24 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package fcm provides a Firebase Cloud Messaging (FCM) v1 provider.
-//
-// It implements the [push.Sender] interface for delivering remote
-// notifications to Android devices using OAuth 2.0 authentication.
-//
-// # Usage
-//
-// Create a sender by providing the contents of your Google Service Account
-// JSON credentials file.
-//
-//	sender := fcm.New(
-//		fcm.Credentials{
-//			ProjectID:   "my-project",
-//			ClientEmail: "test@my-project.iam.gserviceaccount.com",
-//			PrivateKey:  string(key), // PEM data
-//		},
-//	)
-//	err := sender.Send(ctx, msg)
 package fcm
 
 import (
