@@ -346,6 +346,11 @@ type SecurityConfig struct {
 	STSMaxAge int64
 	// STSIncludeSubdomains adds the "includeSubDomains" directive to HSTS.
 	STSIncludeSubdomains bool
+	// STSPreload adds the "preload" directive to HSTS, signaling consent to
+	// inclusion in browser preload lists. Only set this if the site meets the
+	// requirements of https://hstspreload.org (long max-age, subdomains
+	// included), since removal from the lists is slow.
+	STSPreload bool
 	// FrameOptions sets the X-Frame-Options header (e.g., "DENY",
 	// "SAMEORIGIN"). If empty, the header is not set.
 	FrameOptions string
@@ -366,20 +371,27 @@ type SecurityConfig struct {
 	CrossOriginEmbedderPolicy string
 	// CrossOriginResourcePolicy sets the Cross-Origin-Resource-Policy header.
 	CrossOriginResourcePolicy string
+	// PermittedCrossDomainPolicies sets the X-Permitted-Cross-Domain-Policies
+	// header, which restricts Adobe cross-domain policy files. Recommended:
+	// "none". If empty, the header is not set.
+	PermittedCrossDomainPolicies string
 }
 
 // DefaultSecurityConfig provides a baseline configuration.
 //
-// It enables HSTS for 1 year, disables MIME sniffing, and protects against
-// clickjacking by denying framing.
+// It enables HSTS for 1 year, disables MIME sniffing, protects against
+// clickjacking by denying framing, suppresses the Referer header, and locks
+// down cross-origin isolation and Adobe cross-domain policies.
 var DefaultSecurityConfig = SecurityConfig{
-	STSMaxAge:                 31536000,
-	STSIncludeSubdomains:      true,
-	FrameOptions:              "DENY",
-	NoSniff:                   true,
-	PermissionsPolicy:         "geolocation=(),microphone=(),camera=(),payment=()",
-	CrossOriginOpenerPolicy:   "same-origin",
-	CrossOriginResourcePolicy: "same-origin",
+	STSMaxAge:                    31536000,
+	STSIncludeSubdomains:         true,
+	FrameOptions:                 "DENY",
+	NoSniff:                      true,
+	ReferrerPolicy:               "no-referrer",
+	PermissionsPolicy:            "geolocation=(),microphone=(),camera=(),payment=()",
+	CrossOriginOpenerPolicy:      "same-origin",
+	CrossOriginResourcePolicy:    "same-origin",
+	PermittedCrossDomainPolicies: "none",
 }
 
 // Secure returns a middleware [Pipe] that sets security-related HTTP headers.
@@ -392,6 +404,9 @@ func Secure(cfg SecurityConfig) Pipe {
 		hsts = "max-age=" + strconv.FormatInt(cfg.STSMaxAge, 10)
 		if cfg.STSIncludeSubdomains {
 			hsts += "; includeSubDomains"
+		}
+		if cfg.STSPreload {
+			hsts += "; preload"
 		}
 	}
 
@@ -450,8 +465,13 @@ func Secure(cfg SecurityConfig) Pipe {
 				)
 			}
 
-			// 10. X-Permitted-Cross-Domain-Policies (Hardening for PDF/Flash)
-			h.Set("X-Permitted-Cross-Domain-Policies", "none")
+			// 10. X-Permitted-Cross-Domain-Policies
+			if cfg.PermittedCrossDomainPolicies != "" {
+				h.Set(
+					"X-Permitted-Cross-Domain-Policies",
+					cfg.PermittedCrossDomainPolicies,
+				)
+			}
 
 			next.ServeHTTP(w, r)
 		})

@@ -505,6 +505,10 @@ func TestSecure(t *testing.T) {
 				"DENY",
 			},
 			{
+				"Referrer-Policy",
+				"no-referrer",
+			},
+			{
 				"Permissions-Policy",
 				"geolocation=(),microphone=(),camera=(),payment=()",
 			},
@@ -532,16 +536,18 @@ func TestSecure(t *testing.T) {
 	t.Run("applies custom config", func(t *testing.T) {
 		t.Parallel()
 		cfg := mw.SecurityConfig{
-			STSMaxAge:                 60,
-			STSIncludeSubdomains:      false,
-			FrameOptions:              "SAMEORIGIN",
-			NoSniff:                   true,
-			CSP:                       "default-src 'self'",
-			ReferrerPolicy:            "no-referrer",
-			PermissionsPolicy:         "geolocation=()",
-			CrossOriginOpenerPolicy:   "same-origin-allow-popups",
-			CrossOriginEmbedderPolicy: "require-corp",
-			CrossOriginResourcePolicy: "same-site",
+			STSMaxAge:                    60,
+			STSIncludeSubdomains:         false,
+			STSPreload:                   true,
+			FrameOptions:                 "SAMEORIGIN",
+			NoSniff:                      true,
+			CSP:                          "default-src 'self'",
+			ReferrerPolicy:               "no-referrer",
+			PermissionsPolicy:            "geolocation=()",
+			CrossOriginOpenerPolicy:      "same-origin-allow-popups",
+			CrossOriginEmbedderPolicy:    "require-corp",
+			CrossOriginResourcePolicy:    "same-site",
+			PermittedCrossDomainPolicies: "by-content-type",
 		}
 		h := mw.Secure(cfg)(mockHandler)
 		rr := httptest.NewRecorder()
@@ -552,7 +558,7 @@ func TestSecure(t *testing.T) {
 			key  string
 			want string
 		}{
-			{"Strict-Transport-Security", "max-age=60"},
+			{"Strict-Transport-Security", "max-age=60; preload"},
 			{"X-Frame-Options", "SAMEORIGIN"},
 			{"X-Content-Type-Options", "nosniff"},
 			{"Content-Security-Policy", "default-src 'self'"},
@@ -561,7 +567,7 @@ func TestSecure(t *testing.T) {
 			{"Cross-Origin-Opener-Policy", "same-origin-allow-popups"},
 			{"Cross-Origin-Embedder-Policy", "require-corp"},
 			{"Cross-Origin-Resource-Policy", "same-site"},
-			{"X-Permitted-Cross-Domain-Policies", "none"},
+			{"X-Permitted-Cross-Domain-Policies", "by-content-type"},
 		}
 
 		for _, tt := range tests {
@@ -571,7 +577,7 @@ func TestSecure(t *testing.T) {
 		}
 	})
 
-	t.Run("sets only hardcoded headers on empty config", func(t *testing.T) {
+	t.Run("sets no headers on empty config", func(t *testing.T) {
 		t.Parallel()
 		cfg := mw.SecurityConfig{}
 		h := mw.Secure(cfg)(mockHandler)
@@ -589,17 +595,13 @@ func TestSecure(t *testing.T) {
 			"Cross-Origin-Opener-Policy",
 			"Cross-Origin-Embedder-Policy",
 			"Cross-Origin-Resource-Policy",
+			"X-Permitted-Cross-Domain-Policies",
 		}
 
 		for _, k := range checks {
 			if got := hdr.Get(k); len(got) != 0 {
 				t.Errorf("for header %s: got %q; want empty", k, got)
 			}
-		}
-
-		const key = "X-Permitted-Cross-Domain-Policies"
-		if got, want := hdr.Get(key), "none"; got != want {
-			t.Errorf("for header %q: got %q; want %q", key, got, want)
 		}
 	})
 }
