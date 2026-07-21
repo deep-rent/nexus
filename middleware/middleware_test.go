@@ -350,6 +350,9 @@ func TestLog(t *testing.T) {
 		if want := `status=200`; !strings.Contains(buf.String(), want) {
 			t.Errorf("log: want match for %q", want)
 		}
+		if want := `bytes=2`; !strings.Contains(buf.String(), want) {
+			t.Errorf("log: want match for %q; got %q", want, buf.String())
+		}
 	})
 }
 

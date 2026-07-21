@@ -181,12 +181,21 @@ type interceptor struct {
 	http.ResponseWriter
 	// statusCode is the captured HTTP response code.
 	statusCode int
+	// bytes is the number of body bytes written so far.
+	bytes int64
 }
 
 // WriteHeader captures the status code before calling the original WriteHeader.
 func (i *interceptor) WriteHeader(code int) {
 	i.statusCode = code
 	i.ResponseWriter.WriteHeader(code)
+}
+
+// Write counts the written bytes before delegating to the original Write.
+func (i *interceptor) Write(b []byte) (int, error) {
+	n, err := i.ResponseWriter.Write(b)
+	i.bytes += int64(n)
+	return n, err
 }
 
 // Flush implements [http.Flusher] by delegating to the underlying writer.
@@ -213,16 +222,17 @@ var (
 
 // Log returns a middleware [Pipe] that logs a summary of each HTTP request.
 //
-// It captures the final HTTP status code by wrapping the [http.ResponseWriter].
-// The log entry is generated at the debug level after the request has been
-// handled. It includes the method, URL, status code, duration, and other common
-// attributes. To include a request ID in the log, this middleware should be
-// placed after the [RequestID] middleware in the chain.
+// It captures the final HTTP status code and response size by wrapping the
+// [http.ResponseWriter]. The log entry is generated at the debug level after
+// the request has been handled. It includes the method, URL, status code,
+// response size, duration, and other common attributes. To include a request
+// ID in the log, this middleware should be placed after the [RequestID]
+// middleware in the chain.
 func Log(logger *slog.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			incpt := &interceptor{w, http.StatusOK}
+			incpt := &interceptor{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(incpt, r)
 			logger.Debug(
 				"HTTP request handled",
@@ -232,6 +242,7 @@ func Log(logger *slog.Logger) Pipe {
 				slog.String("remote", r.RemoteAddr),
 				slog.String("user_agent", r.UserAgent()),
 				slog.Int("status", incpt.statusCode),
+				slog.Int64("bytes", incpt.bytes),
 				slog.Duration("duration", time.Since(start)),
 			)
 		})
