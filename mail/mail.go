@@ -12,35 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package mail provides abstractions for sending transactional emails.
-//
-// It defines a generic payload model ([Message]) and a common [Sender]
-// interface for email delivery. This decouples the application's
-// business logic from the underlying mechanism. By default, this package
-// provides a production-ready Twilio SendGrid implementation initialized via
-// [NewSender].
-//
-// # Usage
-//
-// Typically, you initialize a [Sender] at application startup, construct
-// a [Message] using the fluent API, and pass it to the sender.
-//
-// Example:
-//
-//	// 1. Initialize the default SendGrid sender with a custom User-Agent.
-//	sender := mail.NewSender("your-api-key",
-//	  mail.WithUserAgent("MyApp/1.0"))
-//
-//	// 2. Construct the email message.
-//	msg := mail.NewMessage(
-//	  mail.New("no-reply@example.com", "My App"),
-//	  "template-id-123",
-//	  mail.NewRecipient(mail.New("user@example.com", "Alice")).
-//	    AddTemplateData("name", "Alice"),
-//	)
-//
-//	// 3. Dispatch the email.
-//	err = sender.Send(context.Background(), msg)
 package mail
 
 import (
