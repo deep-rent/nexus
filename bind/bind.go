@@ -41,8 +41,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/deep-rent/nexus/bind/tag"
 	"github.com/deep-rent/nexus/pointer"
-	"github.com/deep-rent/nexus/tag"
 )
 
 // Source provides values for a given key. It natively supports returning
