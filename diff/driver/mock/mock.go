@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package mock provides an in-memory implementation of the diff storage
-// contracts for unit testing. It faithfully reproduces the sequence,
-// barrier, and claim semantics of a real driver without requiring a
-// database. Handlers are not safe for concurrent use; drive them from a
-// single goroutine per test.
 package mock
 
 import (
