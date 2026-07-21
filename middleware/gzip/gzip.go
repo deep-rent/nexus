@@ -98,8 +98,6 @@ type interceptor struct {
 	http.ResponseWriter
 	// gz is the active gzip writer for the current response.
 	gz *gzip.Writer
-	// level is the compression level to use.
-	level int
 	// exclude is the list of MIME types to skip.
 	exclude []string
 	// pool is the sync.Pool used for gzip writer reuse.
@@ -274,7 +272,6 @@ func New(opts ...Option) middleware.Pipe {
 			// Create the gzip response writer.
 			gzw := &interceptor{
 				ResponseWriter: w,
-				level:          cfg.level,
 				exclude:        cfg.exclude,
 				pool:           pool,
 			}
