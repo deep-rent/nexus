@@ -12,30 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ascii provides fast, byte-based classification and conversion
-// functions specifically for ASCII characters.
-//
-// It is designed as a lightweight alternative to the standard [unicode] package
-// for cases where only basic ASCII support is required. By focusing strictly on
-// the ASCII range, it avoids the overhead of large Unicode lookup tables,
-// making it suitable for high-performance parsing and validation tasks.
-//
-// Operating on individual bytes rather than decoded runes is not a limitation
-// for ASCII: every ASCII character encodes to a single byte, and in UTF-8 the
-// bytes of a multi-byte rune are all greater than 0x7F, so they are simply
-// reported as non-ASCII rather than being misclassified.
-//
-// # Usage
-//
-// You can use the classification functions to test bytes or conversion
-// functions to shift casing.
-//
-// Example:
-//
-//	c := byte('A')
-//	if ascii.IsUpper(c) {
-//		lower := ascii.Lower(c) // 'a'
-//	}
 package ascii
 
 // Named code points for the ASCII characters that lack a printable symbol,
