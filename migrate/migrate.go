@@ -23,11 +23,6 @@ import (
 	"slices"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/schema"
 )
@@ -187,8 +182,6 @@ type Migrator struct {
 	strict bool
 	// logger is the structured logger for migration events.
 	logger *slog.Logger
-	// tracer records a span per executed migration.
-	tracer trace.Tracer
 }
 
 // Option configures a [Migrator] instance.
@@ -245,22 +238,6 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithTracerProvider sets the provider used to record a span per executed
-// migration. It defaults to the global provider registered with
-// [otel.SetTracerProvider], which is a no-op until an application installs a
-// real one. A nil value is ignored.
-func WithTracerProvider(tp trace.TracerProvider) Option {
-	return func(m *Migrator) {
-		if tp != nil {
-			m.tracer = tp.Tracer(scope)
-		}
-	}
-}
-
-// scope is the instrumentation scope reported for spans emitted by this
-// package.
-const scope = "github.com/deep-rent/nexus/migrate"
-
 // New creates a new [Migrator] instance.
 //
 // It panics if the required dependencies ([Source] and [Driver]) are not
@@ -271,9 +248,6 @@ func New(opts ...Option) *Migrator {
 	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.tracer == nil {
-		m.tracer = otel.GetTracerProvider().Tracer(scope)
 	}
 	if m.source == nil {
 		panic("source is required")
@@ -695,31 +669,8 @@ func (m *Migrator) Version(ctx context.Context) (Record, bool, error) {
 
 // run reads the migration payload and executes it via the driver.
 //
-// If dry run is enabled, it logs the statements and skips execution. Every
-// execution is recorded as a span, so a slow or failing migration is visible
-// in a trace of the deployment it ran in.
-func (m *Migrator) run(ctx context.Context, migration Migration) (err error) {
-	ctx, span := m.tracer.Start(ctx,
-		fmt.Sprintf(
-			"migrate %s %d", migration.Direction, migration.Version,
-		),
-		trace.WithSpanKind(trace.SpanKindInternal),
-		trace.WithAttributes(
-			attribute.Int64("migration.version", migration.Version),
-			attribute.String("migration.direction",
-				migration.Direction.String()),
-			attribute.String("migration.description", migration.Description),
-			attribute.Bool("migration.dry_run", m.dryRun),
-		),
-	)
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "migration failed")
-		}
-		span.End()
-	}()
-
+// If dry run is enabled, it logs the statements and skips execution.
+func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	m.logger.InfoContext(ctx,
 		"Running migration",
 		slog.Int64("version", migration.Version),
@@ -745,7 +696,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) (err error) {
 		return nil
 	}
 
-	err = m.driver.Execute(ctx, ParsedScript{
+	err := m.driver.Execute(ctx, ParsedScript{
 		Version:    migration.Version,
 		Direction:  migration.Direction,
 		Checksum:   migration.Checksum,
