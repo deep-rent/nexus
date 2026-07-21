@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/schema"
+	"github.com/deep-rent/nexus/migrate/schema"
 )
 
 // Direction signals whether a migration is being applied or reverted.

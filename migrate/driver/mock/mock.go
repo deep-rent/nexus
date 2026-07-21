@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/deep-rent/nexus/migrate"
-	"github.com/deep-rent/nexus/schema"
+	"github.com/deep-rent/nexus/migrate/schema"
 )
 
 // Driver is an in-memory implementation of [migrate.Driver].
