@@ -17,6 +17,9 @@ package schedule
 import (
 	"log/slog"
 	"time"
+
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // DefaultRecoveryDelay is the default duration to wait before running a [Tick]
@@ -26,11 +29,13 @@ const DefaultRecoveryDelay = 1 * time.Minute
 
 // config holds the internal settings for the scheduler.
 type config struct {
-	logger   *slog.Logger  // destination for internal logs
-	recovery time.Duration // delay applied after a tick panicked
-	start    time.Duration // delay before the first run of a tick
-	jitter   float64       // fraction of the start delay subject to jitter
-	minimum  time.Duration // floor for the interval a tick asks for
+	logger         *slog.Logger         // destination for internal logs
+	recovery       time.Duration        // delay applied after a tick panicked
+	start          time.Duration        // delay before the first run of a tick
+	jitter         float64              // fraction of the start delay subject to jitter
+	minimum        time.Duration        // floor for the interval a tick asks for
+	tracerProvider trace.TracerProvider // records a span per tick run
+	meterProvider  metric.MeterProvider // records tick durations and panics
 }
 
 // Option is a function that configures the [Scheduler].
@@ -43,6 +48,29 @@ func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger
+		}
+	}
+}
+
+// WithTracerProvider sets the provider used to record a span per tick run.
+// It defaults to the global provider registered with
+// [go.opentelemetry.io/otel.SetTracerProvider], which is a no-op until an
+// application installs a real one. A nil value is ignored.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(c *config) {
+		if tp != nil {
+			c.tracerProvider = tp
+		}
+	}
+}
+
+// WithMeterProvider sets the provider used to record tick durations and
+// panics. It defaults to the global provider registered with
+// [go.opentelemetry.io/otel.SetMeterProvider]. A nil value is ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(c *config) {
+		if mp != nil {
+			c.meterProvider = mp
 		}
 	}
 }
