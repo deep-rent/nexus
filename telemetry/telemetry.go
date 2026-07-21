@@ -68,6 +68,7 @@ import (
 
 	"github.com/deep-rent/nexus/env"
 	"github.com/deep-rent/nexus/log"
+	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -140,6 +141,13 @@ func New(ctx context.Context, opts ...Option) (*Telemetry, error) {
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 		logger.Warn("OpenTelemetry error", log.Err(err))
 	}))
+	// The SDK's internal diagnostics — dropped batches, exporter retries,
+	// misconfiguration warnings — flow through a separate logr logger and
+	// would otherwise be swallowed. The bridge maps logr verbosity onto
+	// slog levels below LevelInfo (warnings at -1, info at -4, debug at
+	// -8), so the chatter stays hidden unless the handler lowers its level
+	// to listen for it.
+	otel.SetLogger(logr.FromSlogHandler(logger.Handler()))
 	otel.SetTextMapPropagator(cfg.propagator)
 
 	if cfg.disabled || e.SDKDisabled {
