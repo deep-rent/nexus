@@ -71,8 +71,8 @@ type Bucket struct {
 // Rates are exponentially weighted moving average rates in events per
 // second, over 1-, 5-, and 15-minute windows, plus the lifetime mean.
 type Rates struct {
-	M1   float64 `json:"m1"`
-	M5   float64 `json:"m5"`
+	M01  float64 `json:"m01"`
+	M05  float64 `json:"m05"`
 	M15  float64 `json:"m15"`
 	Mean float64 `json:"mean"`
 }

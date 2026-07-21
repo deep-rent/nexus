@@ -36,7 +36,7 @@ func TestMeter_Rates(t *testing.T) {
 	now = now.Add(tickInterval)
 
 	rates := m.Rates()
-	if got := rates.M1; math.Abs(got-10) > 1e-9 {
+	if got := rates.M01; math.Abs(got-10) > 1e-9 {
 		t.Errorf("m1 after seed: got %v; want 10", got)
 	}
 	if got := rates.M15; math.Abs(got-10) > 1e-9 {
@@ -49,14 +49,14 @@ func TestMeter_Rates(t *testing.T) {
 	// One idle interval decays the averages toward zero.
 	now = now.Add(tickInterval)
 	rates = m.Rates()
-	want := 10 * (1 - alpha1)
-	if got := rates.M1; math.Abs(got-want) > 1e-9 {
+	want := 10 * (1 - alpha01)
+	if got := rates.M01; math.Abs(got-want) > 1e-9 {
 		t.Errorf("m1 after idle: got %v; want %v", got, want)
 	}
 
 	// The 15-minute window decays slower than the 1-minute window.
-	if rates.M15 <= rates.M1 {
-		t.Errorf("m15 (%v) should exceed m1 (%v)", rates.M15, rates.M1)
+	if rates.M15 <= rates.M01 {
+		t.Errorf("m15 (%v) should exceed m1 (%v)", rates.M15, rates.M01)
 	}
 }
 
@@ -79,9 +79,9 @@ func TestMeter_IdleGap(t *testing.T) {
 	now = now.Add(10 * tickInterval)
 	want := 10.0
 	for range 10 {
-		want = ewma(want, 0, alpha1)
+		want = ewma(want, 0, alpha01)
 	}
-	if got := m.Rates().M1; math.Abs(got-want) > 1e-9 {
+	if got := m.Rates().M01; math.Abs(got-want) > 1e-9 {
 		t.Errorf("m1 after gap: got %v; want %v", got, want)
 	}
 }

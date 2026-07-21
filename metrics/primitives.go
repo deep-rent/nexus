@@ -196,8 +196,8 @@ type Meter struct {
 	started   time.Time     // creation time, for the mean rate
 
 	tick atomic.Int64 // unix nanos of the last rate advance
-	r1   atomicFloat
-	r5   atomicFloat
+	r01  atomicFloat
+	r05  atomicFloat
 	r15  atomicFloat
 	warm atomic.Bool // whether the rates have been seeded
 
@@ -209,8 +209,8 @@ const tickInterval = 5 * time.Second
 
 // Decay factors per tick for the moving averages: 1 - e^(-interval/window).
 var (
-	alpha1  = 1 - math.Exp(-tickInterval.Seconds()/(1*60))
-	alpha5  = 1 - math.Exp(-tickInterval.Seconds()/(5*60))
+	alpha01 = 1 - math.Exp(-tickInterval.Seconds()/(1*60))
+	alpha05 = 1 - math.Exp(-tickInterval.Seconds()/(5*60))
 	alpha15 = 1 - math.Exp(-tickInterval.Seconds()/(15*60))
 )
 
@@ -242,8 +242,8 @@ func (m *Meter) Rates() Rates {
 		mean = float64(m.count.Load()) / elapsed
 	}
 	return Rates{
-		M1:   m.r1.Load(),
-		M5:   m.r5.Load(),
+		M01:  m.r01.Load(),
+		M05:  m.r05.Load(),
 		M15:  m.r15.Load(),
 		Mean: mean,
 	}
@@ -271,16 +271,16 @@ func (m *Meter) advance() {
 
 	if !m.warm.Swap(true) {
 		// The first tick seeds the averages with the observed rate.
-		m.r1.Store(instant)
-		m.r5.Store(instant)
+		m.r01.Store(instant)
+		m.r05.Store(instant)
 		m.r15.Store(instant)
 		ticks--
 		instant = 0
 	}
 
 	for range ticks {
-		m.r1.Store(ewma(m.r1.Load(), instant, alpha1))
-		m.r5.Store(ewma(m.r5.Load(), instant, alpha5))
+		m.r01.Store(ewma(m.r01.Load(), instant, alpha01))
+		m.r05.Store(ewma(m.r05.Load(), instant, alpha05))
 		m.r15.Store(ewma(m.r15.Load(), instant, alpha15))
 		instant = 0 // Only the first interval carries the marks.
 	}
