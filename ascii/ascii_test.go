@@ -26,8 +26,8 @@ func TestConstants(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
-		want rune
+		give byte
+		want byte
 	}{
 		{"NUL", ascii.NUL, 0x00},
 		{"BEL", ascii.BEL, '\a'},
@@ -58,7 +58,7 @@ func TestIsUpper(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"lower bound", 'A', true},
@@ -86,7 +86,7 @@ func TestIsLower(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"lower bound", 'a', true},
@@ -114,7 +114,7 @@ func TestIsDigit(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"lower bound", '0', true},
@@ -140,7 +140,7 @@ func TestIsHex(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"digit", '0', true},
@@ -165,12 +165,12 @@ func TestIsHex(t *testing.T) {
 }
 
 // TestClassificationEquivalence cross-checks the lookup-table classifiers
-// against independent range-based definitions across the entire ASCII range
-// plus a selection of non-ASCII runes, guarding the table against typos.
+// against independent range-based definitions across every byte value,
+// including the non-ASCII range (0x80–0xFF), guarding the table against typos.
 func TestClassificationEquivalence(t *testing.T) {
 	t.Parallel()
 
-	isSpace := func(c rune) bool {
+	isSpace := func(c byte) bool {
 		switch c {
 		case ' ', '\t', '\n', '\v', '\f', '\r':
 			return true
@@ -180,45 +180,40 @@ func TestClassificationEquivalence(t *testing.T) {
 
 	classes := []struct {
 		name string
-		got  func(rune) bool
-		want func(rune) bool
+		got  func(byte) bool
+		want func(byte) bool
 	}{
-		{"IsUpper", ascii.IsUpper, func(c rune) bool { return c >= 'A' && c <= 'Z' }},
-		{"IsLower", ascii.IsLower, func(c rune) bool { return c >= 'a' && c <= 'z' }},
-		{"IsDigit", ascii.IsDigit, func(c rune) bool { return c >= '0' && c <= '9' }},
-		{"IsAlpha", ascii.IsAlpha, func(c rune) bool {
+		{"IsUpper", ascii.IsUpper, func(c byte) bool { return c >= 'A' && c <= 'Z' }},
+		{"IsLower", ascii.IsLower, func(c byte) bool { return c >= 'a' && c <= 'z' }},
+		{"IsDigit", ascii.IsDigit, func(c byte) bool { return c >= '0' && c <= '9' }},
+		{"IsAlpha", ascii.IsAlpha, func(c byte) bool {
 			return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 		}},
-		{"IsAlphaNum", ascii.IsAlphaNum, func(c rune) bool {
+		{"IsAlphaNum", ascii.IsAlphaNum, func(c byte) bool {
 			return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 		}},
-		{"IsHex", ascii.IsHex, func(c rune) bool {
+		{"IsHex", ascii.IsHex, func(c byte) bool {
 			return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 		}},
 		{"IsSpace", ascii.IsSpace, isSpace},
-		{"IsPrint", ascii.IsPrint, func(c rune) bool { return c >= 0x20 && c <= 0x7E }},
-		{"IsControl", ascii.IsControl, func(c rune) bool {
-			return (c >= 0 && c < 0x20) || c == 0x7F
+		{"IsPrint", ascii.IsPrint, func(c byte) bool { return c >= 0x20 && c <= 0x7E }},
+		{"IsControl", ascii.IsControl, func(c byte) bool {
+			return c < 0x20 || c == 0x7F
 		}},
-		{"IsPunct", ascii.IsPunct, func(c rune) bool {
-			return strings.ContainsRune(`!"#%&'()*,-./:;?@[\]_{}`, c)
+		{"IsPunct", ascii.IsPunct, func(c byte) bool {
+			return strings.IndexByte(`!"#%&'()*,-./:;?@[\]_{}`, c) >= 0
 		}},
-		{"IsSymbol", ascii.IsSymbol, func(c rune) bool {
-			return strings.ContainsRune("$+<=>^`|~", c)
+		{"IsSymbol", ascii.IsSymbol, func(c byte) bool {
+			return strings.IndexByte("$+<=>^`|~", c) >= 0
 		}},
-		{"IsGraph", ascii.IsGraph, func(c rune) bool { return c >= 0x21 && c <= 0x7E }},
+		{"IsGraph", ascii.IsGraph, func(c byte) bool { return c >= 0x21 && c <= 0x7E }},
 	}
-
-	runes := make([]rune, 0, 0x88)
-	for c := rune(0); c <= 0x7F; c++ {
-		runes = append(runes, c)
-	}
-	runes = append(runes, 0x80, 0x81, 0xFF, 0x100, 0x7FF, 0xFFFD, 0x1F600)
 
 	for _, cl := range classes {
 		t.Run(cl.name, func(t *testing.T) {
 			t.Parallel()
-			for _, c := range runes {
+			for i := 0; i <= 0xFF; i++ {
+				c := byte(i)
 				if got, want := cl.got(c), cl.want(c); got != want {
 					t.Errorf("%s(%#x) = %v; want %v", cl.name, c, got, want)
 				}
@@ -232,7 +227,7 @@ func TestIsAlpha(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"uppercase", 'G', true},
@@ -257,7 +252,7 @@ func TestIsAlphaNum(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"uppercase", 'G', true},
@@ -282,7 +277,7 @@ func TestIsWord(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"uppercase", 'X', true},
@@ -308,7 +303,7 @@ func TestIsSlug(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"uppercase", 'X', true},
@@ -334,7 +329,7 @@ func TestIsPunct(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"exclamation", '!', true},
@@ -364,7 +359,7 @@ func TestIsSymbol(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"dollar", '$', true},
@@ -394,7 +389,7 @@ func TestIsGraph(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"exclamation", '!', true},
@@ -423,7 +418,7 @@ func TestIsSpace(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"space", ' ', true},
@@ -451,7 +446,7 @@ func TestIsPrint(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"space", ' ', true},
@@ -478,7 +473,7 @@ func TestIsControl(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"null", 0x00, true},
@@ -503,14 +498,14 @@ func TestIsASCII(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
+		give byte
 		want bool
 	}{
 		{"null", 0x00, true},
 		{"letter", 'A', true},
 		{"delete", 0x7F, true},
 		{"above ascii", 0x80, false},
-		{"smiley", '😀', false},
+		{"high byte", 0xFF, false},
 	}
 
 	for _, tt := range tests {
@@ -528,8 +523,8 @@ func TestLower(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
-		want rune
+		give byte
+		want byte
 	}{
 		{"uppercase a", 'A', 'a'},
 		{"uppercase z", 'Z', 'z'},
@@ -553,8 +548,8 @@ func TestUpper(t *testing.T) {
 
 	tests := []struct {
 		name string
-		give rune
-		want rune
+		give byte
+		want byte
 	}{
 		{"lowercase a", 'a', 'A'},
 		{"lowercase z", 'z', 'Z'},
@@ -579,7 +574,7 @@ func TestAll(t *testing.T) {
 	tests := []struct {
 		name string
 		give string
-		fn   func(rune) bool
+		fn   func(byte) bool
 		want bool
 	}{
 		{

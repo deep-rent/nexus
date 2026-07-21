@@ -237,6 +237,6 @@ const Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 // [A-Z], [a-z], [0-9], "-", ".", "_", "~".
 func IsUnreserved(s string) bool { return ascii.All(s, isUnreserved) }
 
-func isUnreserved(c rune) bool {
+func isUnreserved(c byte) bool {
 	return ascii.IsAlphaNum(c) || c == '-' || c == '.' || c == '_' || c == '~'
 }

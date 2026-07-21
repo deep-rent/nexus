@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ascii provides fast, rune-based classification and conversion
+// Package ascii provides fast, byte-based classification and conversion
 // functions specifically for ASCII characters.
 //
 // It is designed as a lightweight alternative to the standard [unicode] package
@@ -20,16 +20,21 @@
 // the ASCII range, it avoids the overhead of large Unicode lookup tables,
 // making it suitable for high-performance parsing and validation tasks.
 //
+// Operating on individual bytes rather than decoded runes is not a limitation
+// for ASCII: every ASCII character encodes to a single byte, and in UTF-8 the
+// bytes of a multi-byte rune are all greater than 0x7F, so they are simply
+// reported as non-ASCII rather than being misclassified.
+//
 // # Usage
 //
-// You can use the classification functions to validate runes or conversion
+// You can use the classification functions to test bytes or conversion
 // functions to shift casing.
 //
 // Example:
 //
-//	r := 'A'
-//	if ascii.IsUpper(r) {
-//		lower := ascii.Lower(r) // 'a'
+//	c := byte('A')
+//	if ascii.IsUpper(c) {
+//		lower := ascii.Lower(c) // 'a'
 //	}
 package ascii
 
@@ -76,92 +81,92 @@ const (
 	DEL = 0x7F //      Delete
 )
 
-// IsUpper reports whether the rune is an uppercase ASCII letter
+// IsUpper reports whether the byte is an uppercase ASCII letter
 // ('A' through 'Z').
-func IsUpper(c rune) bool { return uint32(c) < 0x80 && lookup[c]&upp != 0 }
+func IsUpper(c byte) bool { return lookup[c]&upp != 0 }
 
-// IsLower reports whether the rune is a lowercase ASCII letter
+// IsLower reports whether the byte is a lowercase ASCII letter
 // ('a' through 'z').
-func IsLower(c rune) bool { return uint32(c) < 0x80 && lookup[c]&low != 0 }
+func IsLower(c byte) bool { return lookup[c]&low != 0 }
 
-// IsDigit reports whether the rune is an ASCII decimal digit
+// IsDigit reports whether the byte is an ASCII decimal digit
 // ('0' through '9').
-func IsDigit(c rune) bool { return uint32(c) < 0x80 && lookup[c]&dig != 0 }
+func IsDigit(c byte) bool { return lookup[c]&dig != 0 }
 
-// IsAlpha reports whether the rune is an ASCII letter (uppercase or lowercase).
-func IsAlpha(c rune) bool { return uint32(c) < 0x80 && lookup[c]&letterMask != 0 }
+// IsAlpha reports whether the byte is an ASCII letter (uppercase or lowercase).
+func IsAlpha(c byte) bool { return lookup[c]&letterMask != 0 }
 
-// IsAlphaNum reports whether the rune is an ASCII letter or decimal digit.
-func IsAlphaNum(c rune) bool { return uint32(c) < 0x80 && lookup[c]&alnumMask != 0 }
+// IsAlphaNum reports whether the byte is an ASCII letter or decimal digit.
+func IsAlphaNum(c byte) bool { return lookup[c]&alnumMask != 0 }
 
-// IsHex reports whether the given rune is a hexadecimal character
+// IsHex reports whether the given byte is a hexadecimal character
 // ('0' through '9', 'a' through 'f', or 'A' through 'F').
-func IsHex(c rune) bool { return uint32(c) < 0x80 && lookup[c]&hexMask != 0 }
+func IsHex(c byte) bool { return lookup[c]&hexMask != 0 }
 
-// IsWord reports whether the rune is an ASCII letter, digit, or underscore
+// IsWord reports whether the byte is an ASCII letter, digit, or underscore
 // ('_').
 //
 // This is commonly used for validating variable names or identifiers.
-func IsWord(c rune) bool { return IsAlphaNum(c) || c == '_' }
+func IsWord(c byte) bool { return IsAlphaNum(c) || c == '_' }
 
-// IsSlug reports whether the rune is an ASCII letter, digit, or hyphen ('-').
+// IsSlug reports whether the byte is an ASCII letter, digit, or hyphen ('-').
 //
 // This is commonly used for validating URL path components.
-func IsSlug(c rune) bool { return IsAlphaNum(c) || c == '-' }
+func IsSlug(c byte) bool { return IsAlphaNum(c) || c == '-' }
 
-// IsSpace reports whether the rune is a space character as defined
+// IsSpace reports whether the byte is a space character as defined
 // by ASCII's property: ' ', '\t', '\n', '\v', '\f', '\r'.
-func IsSpace(c rune) bool { return uint32(c) < 0x80 && lookup[c]&isp != 0 }
+func IsSpace(c byte) bool { return lookup[c]&isp != 0 }
 
-// IsPrint reports whether the rune is a printable ASCII character,
+// IsPrint reports whether the byte is a printable ASCII character,
 // defined as any character from space (0x20) to tilde (0x7E).
-func IsPrint(c rune) bool { return uint32(c) < 0x80 && lookup[c]&printMask != 0 }
+func IsPrint(c byte) bool { return lookup[c]&printMask != 0 }
 
-// IsControl reports whether the rune is an ASCII control character, defined as
+// IsControl reports whether the byte is an ASCII control character, defined as
 // any character less than space (0x20) or the delete character (0x7F).
-func IsControl(c rune) bool { return uint32(c) < 0x80 && lookup[c]&ctl != 0 }
+func IsControl(c byte) bool { return lookup[c]&ctl != 0 }
 
-// IsPunct reports whether the rune is an ASCII punctuation character, one of
+// IsPunct reports whether the byte is an ASCII punctuation character, one of
 // !"#%&'()*,-./:;?@[\]_{}.
-func IsPunct(c rune) bool { return uint32(c) < 0x80 && lookup[c]&pun != 0 }
+func IsPunct(c byte) bool { return lookup[c]&pun != 0 }
 
-// IsSymbol reports whether the rune is an ASCII symbol character, one of
+// IsSymbol reports whether the byte is an ASCII symbol character, one of
 // $+<=>^`|~.
-func IsSymbol(c rune) bool { return uint32(c) < 0x80 && lookup[c]&sym != 0 }
+func IsSymbol(c byte) bool { return lookup[c]&sym != 0 }
 
-// IsGraph reports whether the rune has a visible graphic representation,
+// IsGraph reports whether the byte has a visible graphic representation,
 // defined as any printable ASCII character except space
 // ('!' (0x21) through '~' (0x7E)).
-func IsGraph(c rune) bool { return uint32(c) < 0x80 && lookup[c]&graphMask != 0 }
+func IsGraph(c byte) bool { return lookup[c]&graphMask != 0 }
 
-// IsASCII reports whether the rune is a valid ASCII character.
-func IsASCII(c rune) bool { return c <= 0x7F }
+// IsASCII reports whether the byte is a valid ASCII character.
+func IsASCII(c byte) bool { return c <= 0x7F }
 
-// Lower converts an uppercase ASCII rune to lowercase.
+// Lower converts an uppercase ASCII byte to lowercase.
 //
-// If the rune is not an uppercase letter, it is returned unchanged.
-func Lower(c rune) rune {
+// If the byte is not an uppercase letter, it is returned unchanged.
+func Lower(c byte) byte {
 	if c >= 'A' && c <= 'Z' {
 		return c | 0x20
 	}
 	return c
 }
 
-// Upper converts a lowercase ASCII rune to uppercase.
+// Upper converts a lowercase ASCII byte to uppercase.
 //
-// If the rune is not a lowercase letter, it is returned unchanged.
-func Upper(c rune) rune {
+// If the byte is not a lowercase letter, it is returned unchanged.
+func Upper(c byte) byte {
 	if c >= 'a' && c <= 'z' {
 		return c &^ 0x20
 	}
 	return c
 }
 
-// All reports whether every byte in the string, interpreted as a rune,
-// satisfies the given predicate. If the string is empty, it returns true.
-func All(s string, fn func(c rune) bool) bool {
+// All reports whether every byte in the string satisfies the given predicate.
+// If the string is empty, it returns true.
+func All(s string, fn func(c byte) bool) bool {
 	for i := 0; i < len(s); i++ {
-		if !fn(rune(s[i])) {
+		if !fn(s[i]) {
 			return false
 		}
 	}
@@ -280,11 +285,11 @@ const (
 	lhx = low | hex // lowercase hexadecimal digit (a–f)
 )
 
-// lookup maps every ASCII code point to its set of character class bits. The
-// classification functions consult this table after rejecting non-ASCII runes
-// with a range check, which also lets the compiler elide the bounds check on
-// the table access.
-var lookup = [128]uint16{
+// lookup maps every byte to its set of character class bits. Entries for the
+// non-ASCII bytes (0x80–0xFF) are zero, so those bytes belong to no class. The
+// table is indexed by a byte, which is always in range, so the classification
+// functions need neither a bounds check nor a preceding range test.
+var lookup = [256]uint16{
 	/* 00-07  NUL SOH STX ETX EOT ENQ ACK BEL */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
 	/* 08-0F  BS  HT  LF  VT  FF  CR  SO  SI  */ ctl, csp, csp, csp, csp, csp, ctl, ctl,
 	/* 10-17  DLE DC1 DC2 DC3 DC4 NAK SYN ETB */ ctl, ctl, ctl, ctl, ctl, ctl, ctl, ctl,
@@ -301,4 +306,5 @@ var lookup = [128]uint16{
 	/* 68-6F  h   i   j   k   l   m   n   o   */ low, low, low, low, low, low, low, low,
 	/* 70-77  p   q   r   s   t   u   v   w   */ low, low, low, low, low, low, low, low,
 	/* 78-7F  x   y   z   {   |   }   ~   DEL */ low, low, low, pun, sym, pun, sym, ctl,
+	// 0x80–0xFF are non-ASCII; every entry is zero (no class).
 }

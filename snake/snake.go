@@ -56,29 +56,31 @@ func ToLower(s string) string { return transform(s, ascii.Lower) }
 
 // transform is a helper function that performs the actual text conversion.
 //
-// It iterates through the runes of the string s and applies the toCase
+// It iterates through the bytes of the string s and applies the toCase
 // function to each character, while injecting underscores at word boundaries
-// detected by case transitions or acronym detection logic.
-func transform(s string, toCase func(rune) rune) string {
+// detected by case transitions or acronym detection logic. Non-ASCII bytes
+// pass through unchanged, so multi-byte UTF-8 runes are preserved verbatim.
+func transform(s string, toCase func(byte) byte) string {
 	var b strings.Builder
 	b.Grow(len(s) + 5)
-	for i, r := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		// Insert an underscore before a capital letter or digit.
 		if i != 0 {
-			q := rune(s[i-1])
+			q := s[i-1]
 			if (ascii.IsLower(q) &&
 				// Case 1: Lowercase to uppercase/digit transition ("myVar",
 				// "myVar1").
-				(ascii.IsUpper(r) || ascii.IsDigit(r))) ||
+				(ascii.IsUpper(c) || ascii.IsDigit(c))) ||
 				(ascii.IsUpper(q) &&
 					// Case 2: Acronym to new word transition ("MYVar").
-					ascii.IsUpper(r) &&
+					ascii.IsUpper(c) &&
 					i+1 < len(s) &&
-					ascii.IsLower(rune(s[i+1]))) {
-				b.WriteRune('_')
+					ascii.IsLower(s[i+1])) {
+				b.WriteByte('_')
 			}
 		}
-		b.WriteRune(toCase(r))
+		b.WriteByte(toCase(c))
 	}
 	return b.String()
 }

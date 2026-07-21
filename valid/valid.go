@@ -164,7 +164,7 @@ func AlphaNum(s string) bool {
 // ASCII checks if the string contains only ASCII characters.
 // An empty string returns true.
 func ASCII(s string) bool {
-	return ascii.All(s, func(r rune) bool { return r <= '\x7F' })
+	return ascii.All(s, ascii.IsASCII)
 }
 
 // Slug checks if the string is a valid URL slug.
@@ -177,7 +177,7 @@ func Slug(s string) bool {
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if ascii.IsLower(rune(c)) || ascii.IsDigit(rune(c)) {
+		if ascii.IsLower(c) || ascii.IsDigit(c) {
 			continue
 		}
 		if c == '-' {
@@ -314,7 +314,7 @@ func ISSN(s string) bool {
 			continue
 		}
 		c := s[i]
-		if !ascii.IsDigit(rune(c)) {
+		if !ascii.IsDigit(c) {
 			return false
 		}
 		sum += int(c-'0') * weight
@@ -324,7 +324,7 @@ func ISSN(s string) bool {
 	c := s[8]
 	if c == 'X' {
 		sum += 10
-	} else if ascii.IsDigit(rune(c)) {
+	} else if ascii.IsDigit(c) {
 		sum += int(c - '0')
 	} else {
 		return false
@@ -347,7 +347,7 @@ func ISBN10(s string) bool {
 			n++
 			continue
 		}
-		if !ascii.IsDigit(rune(c)) {
+		if !ascii.IsDigit(c) {
 			return false
 		}
 		sum += int(c-'0') * (10 - n)
@@ -366,7 +366,7 @@ func ISBN13(s string) bool {
 		if c == '-' {
 			continue
 		}
-		if !ascii.IsDigit(rune(c)) {
+		if !ascii.IsDigit(c) {
 			return false
 		}
 		v := int(c - '0')
@@ -459,7 +459,7 @@ func Phone(s string) bool {
 		return false
 	}
 	for i := 2; i < len(s); i++ {
-		if !ascii.IsDigit(rune(s[i])) {
+		if !ascii.IsDigit(s[i]) {
 			return false
 		}
 	}
@@ -481,7 +481,7 @@ func IBAN(s string) bool {
 		if c == ' ' {
 			continue
 		}
-		if n >= 34 || !ascii.IsAlphaNum(rune(c)) {
+		if n >= 34 || !ascii.IsAlphaNum(c) {
 			return false
 		}
 		b[n] = c
@@ -492,10 +492,10 @@ func IBAN(s string) bool {
 		return false
 	}
 
-	if !ascii.IsAlpha(rune(b[0])) ||
-		!ascii.IsAlpha(rune(b[1])) ||
-		!ascii.IsDigit(rune(b[2])) ||
-		!ascii.IsDigit(rune(b[3])) {
+	if !ascii.IsAlpha(b[0]) ||
+		!ascii.IsAlpha(b[1]) ||
+		!ascii.IsDigit(b[2]) ||
+		!ascii.IsDigit(b[3]) {
 		return false
 	}
 
@@ -522,12 +522,12 @@ func isHash(s string, n int) bool {
 // (A=10, ..., Z=35) per the ISO 13616 standard for IBANs.
 func mod97(rem int, c byte) int {
 	var n, k int
-	if ascii.IsDigit(rune(c)) {
+	if ascii.IsDigit(c) {
 		n = rem * 10
 		k = int(c - '0')
 	} else {
 		n = rem * 100
-		k = int(ascii.Upper(rune(c)) - 'A' + 10)
+		k = int(ascii.Upper(c) - 'A' + 10)
 	}
 	return (n + k) % 97
 }

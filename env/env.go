@@ -262,7 +262,7 @@ func Expand(s string, opts ...Option) (string, error) {
 			// an include digits.
 			n := 0
 			for j := i + 1; j < len(s); j++ {
-				c := rune(s[j])
+				c := s[j]
 				if ascii.IsAlpha(c) || c == '_' || (n > 0 && ascii.IsDigit(c)) {
 					n++
 				} else {

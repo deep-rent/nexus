@@ -24,7 +24,7 @@ import (
 // suite can be swept over the full ASCII range in one benchmark.
 var benchClasses = []struct {
 	name string
-	fn   func(rune) bool
+	fn   func(byte) bool
 }{
 	{"IsUpper", ascii.IsUpper},
 	{"IsLower", ascii.IsLower},
@@ -45,7 +45,7 @@ func BenchmarkClassify(b *testing.B) {
 		b.Run(cl.name, func(b *testing.B) {
 			var acc bool
 			for i := 0; i < b.N; i++ {
-				acc = cl.fn(rune(i & 0x7F))
+				acc = cl.fn(byte(i))
 			}
 			_ = acc
 		})

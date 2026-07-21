@@ -233,7 +233,7 @@ func (p *postgres) dollar(n int) {
 			end = j
 			break
 		}
-		if !ascii.IsWord(rune(nc)) {
+		if !ascii.IsWord(nc) {
 			break
 		}
 	}
