@@ -12,20 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package transport provides a factory for building robust HTTP clients.
-//
-// It centralizes the configuration of HTTP timeouts, connection pools, and
-// middleware like retry logic and static headers, ensuring standard
-// connection hygiene across all API consumers.
-//
-// # Usage
-//
-// Define the desired timeout and options and build an [http.Client]:
-//
-//	client := transport.NewClient(
-//		0, // Use default timeout
-//		transport.WithDisableKeepAlives(true),
-//	)
 package transport
 
 import (
