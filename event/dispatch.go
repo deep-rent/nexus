@@ -75,7 +75,7 @@ type basicDispatcher[T any] struct {
 }
 
 // dispatch iterates through all handlers and executes them sequentially.
-func (d basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
+func (d *basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
 		deliver(d.logger, d.stats, h.fn, event)
 	}
@@ -83,7 +83,7 @@ func (d basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 
 // wait returns immediately: delivery already finished on the caller's
 // goroutine.
-func (d basicDispatcher[T]) wait() {}
+func (d *basicDispatcher[T]) wait() {}
 
 // asyncDispatcher delivers events concurrently by spawning a goroutine per
 // subscriber.
@@ -109,3 +109,8 @@ func (d *asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 
 // wait blocks until every spawned delivery has returned.
 func (d *asyncDispatcher[T]) wait() { d.wg.Wait() }
+
+var (
+	_ dispatcher[any] = &basicDispatcher[any]{}
+	_ dispatcher[any] = &asyncDispatcher[any]{}
+)

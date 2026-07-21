@@ -103,7 +103,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 
 	var disp dispatcher[T]
 	if cfg.sync {
-		disp = basicDispatcher[T]{
+		disp = &basicDispatcher[T]{
 			logger: cfg.logger,
 			stats:  stats,
 		}
