@@ -41,6 +41,8 @@ func (w *semaphore) Signal() {
 	}
 }
 
+var _ event.WaitStrategy = (*semaphore)(nil)
+
 // Each bus must idle on its own strategy. A shared semaphore lets one bus
 // consume the wakeup meant for another, stranding an event that was already
 // buffered.
