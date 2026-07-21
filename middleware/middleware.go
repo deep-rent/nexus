@@ -62,6 +62,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Pipe is a middleware function.
@@ -196,8 +198,13 @@ func validRequestID(id string) bool {
 // It adds the ID to the response via the "X-Request-ID" header (configurable
 // through [WithRequestIDHeader]) and to the request's context for downstream
 // use. Downstream handlers and other middleware can retrieve the ID using
-// [GetRequestID]. By default a fresh random ID is generated for every
-// request; see [WithTrustClient] for propagating gateway-assigned IDs.
+// [GetRequestID].
+//
+// The ID is chosen with the following precedence: an inbound ID propagated
+// via [WithTrustClient], the ID of the active trace when the request is
+// being recorded by the [Trace] middleware (placing one correlation ID
+// across logs, traces, and the response header), and finally a fresh random
+// ID.
 func RequestID(opts ...RequestIDOption) Pipe {
 	cfg := requestIDConfig{header: DefaultRequestIDHeader}
 	for _, opt := range opts {
@@ -209,6 +216,13 @@ func RequestID(opts ...RequestIDOption) Pipe {
 			if cfg.trustClient {
 				if v := r.Header.Get(cfg.header); validRequestID(v) {
 					id = v
+				}
+			}
+			if id == "" {
+				// A recording span implies a real trace ID; adopting it links
+				// the client-visible request ID to the trace.
+				if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+					id = sc.TraceID().String()
 				}
 			}
 			if id == "" {
@@ -271,6 +285,13 @@ func (i *interceptor) Flush() {
 	if flusher, ok := i.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+// Unwrap exposes the underlying writer, so that
+// [http.NewResponseController] can reach optional interfaces implemented by
+// it.
+func (i *interceptor) Unwrap() http.ResponseWriter {
+	return i.ResponseWriter
 }
 
 // Hijack implements [http.Hijacker] by delegating to the underlying writer.
