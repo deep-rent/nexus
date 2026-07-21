@@ -269,7 +269,15 @@ var (
 // response size, duration, and other common attributes. To include a request
 // ID in the log, this middleware should be placed after the [RequestID]
 // middleware in the chain.
+//
+// If the logger has the debug level disabled, Log returns a pass-through pipe
+// that adds no per-request overhead. Enablement is decided once, when the pipe
+// is built, so a logger whose level is raised to debug at runtime (e.g. via a
+// [slog.LevelVar]) will not begin logging; rebuild the chain to pick that up.
 func Log(logger *slog.Logger) Pipe {
+	if !logger.Enabled(context.Background(), slog.LevelDebug) {
+		return func(next http.Handler) http.Handler { return next }
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
