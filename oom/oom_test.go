@@ -85,25 +85,23 @@ func TestMiddleware_Overloaded(t *testing.T) {
 
 	err := handler.ServeHTTP(e)
 
-	// We expect a router.Error indicating 503.
-	var rErr *router.Error
+	var res *router.Error
 	if err == nil {
 		t.Fatal("expected an error, got nil")
 	}
 
-	rErr, ok := err.(*router.Error)
+	res, ok := err.(*router.Error)
 	if !ok {
 		t.Fatalf("expected *router.Error, got %T: %v", err, err)
 	}
 
-	if exp, act := http.StatusServiceUnavailable, rErr.Status; exp != act {
+	if exp, act := http.StatusServiceUnavailable, res.Status; exp != act {
 		t.Fatalf("expected status %d, got %d", exp, act)
 	}
-	if exp, act := ReasonOverload, rErr.Reason; exp != act {
+	if exp, act := ReasonOverload, res.Reason; exp != act {
 		t.Fatalf("expected reason %s, got %s", exp, act)
 	}
 
-	// Ensure Retry-After header was set.
 	if exp, act := "5", rec.Header().Get("Retry-After"); exp != act {
 		t.Fatalf("expected Retry-After header %s, got %s", exp, act)
 	}
