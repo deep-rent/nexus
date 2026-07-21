@@ -40,7 +40,7 @@
 // time, and then recorded against directly:
 //
 //	requests := metrics.DefaultRegistry.Counter(
-//		"requests_total", metrics.Tag{"route", "/users"},
+//		"requests_total", metrics.T("route", "/users"),
 //	)
 //
 //	func handle() {
@@ -80,6 +80,14 @@ import (
 type Tag struct {
 	Key   string
 	Value string
+}
+
+// T builds a [Tag]. It reads better than a keyed struct literal at call
+// sites, which tend to stack several tags:
+//
+//	reg.Counter("requests_total", metrics.T("route", "/users"))
+func T(key, value string) Tag {
+	return Tag{Key: key, Value: value}
 }
 
 // Kind identifies the type of an instrument.

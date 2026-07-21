@@ -32,13 +32,13 @@ func TestRegistry_ReturnsSameInstrument(t *testing.T) {
 
 	reg := metrics.NewRegistry()
 
-	a := reg.Counter("hits_total", metrics.Tag{"route", "/a"})
-	b := reg.Counter("hits_total", metrics.Tag{"route", "/a"})
+	a := reg.Counter("hits_total", metrics.T("route", "/a"))
+	b := reg.Counter("hits_total", metrics.T("route", "/a"))
 	if a != b {
 		t.Error("same name and tags: got distinct instruments")
 	}
 
-	c := reg.Counter("hits_total", metrics.Tag{"route", "/b"})
+	c := reg.Counter("hits_total", metrics.T("route", "/b"))
 	if a == c {
 		t.Error("different tags: got the same instrument")
 	}
@@ -50,9 +50,9 @@ func TestRegistry_TagOrderIrrelevant(t *testing.T) {
 	reg := metrics.NewRegistry()
 
 	a := reg.Counter("hits_total",
-		metrics.Tag{"method", "GET"}, metrics.Tag{"route", "/a"})
+		metrics.T("method", "GET"), metrics.T("route", "/a"))
 	b := reg.Counter("hits_total",
-		metrics.Tag{"route", "/a"}, metrics.Tag{"method", "GET"})
+		metrics.T("route", "/a"), metrics.T("method", "GET"))
 	if a != b {
 		t.Error("tag order changed identity")
 	}
@@ -213,8 +213,8 @@ func TestSnapshot_Deterministic(t *testing.T) {
 
 	reg := metrics.NewRegistry()
 	reg.Counter("b_total")
-	reg.Counter("a_total", metrics.Tag{"x", "2"})
-	reg.Counter("a_total", metrics.Tag{"x", "1"})
+	reg.Counter("a_total", metrics.T("x", "2"))
+	reg.Counter("a_total", metrics.T("x", "1"))
 
 	snap := reg.Snapshot()
 	var names []string
@@ -231,7 +231,7 @@ func TestHandler(t *testing.T) {
 	t.Parallel()
 
 	reg := metrics.NewRegistry()
-	reg.Counter("requests_total", metrics.Tag{"route", "/users"}).Add(7)
+	reg.Counter("requests_total", metrics.T("route", "/users")).Add(7)
 	reg.Histogram("latency_seconds", nil).Observe(0.02)
 
 	srv := httptest.NewServer(reg.Handler())
