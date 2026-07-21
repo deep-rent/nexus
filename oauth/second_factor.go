@@ -115,7 +115,7 @@ func (s *Server) beginOTPChallenge(
 		Challenge: digest,
 		SubjectID: sub.ID(),
 		Code:      NewDigest(code),
-		ExpiresAt: s.clock().Add(s.otpLifetime).Unix(),
+		ExpiresAt: s.now().Add(s.otpLifetime).Unix(),
 	}); err != nil {
 		return router.ServerError("failed to store challenge", err)
 	}
@@ -197,7 +197,7 @@ func (s *Server) VerifyOTP(e *router.Exchange) error {
 	}
 
 	if ch.Challenge == "" ||
-		(ch.ExpiresAt != 0 && s.clock().Unix() > ch.ExpiresAt) {
+		(ch.ExpiresAt != 0 && s.now().Unix() > ch.ExpiresAt) {
 		s.penalize(otpKey, s.addr(e))
 		return invalid
 	}
@@ -314,7 +314,7 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 	}
 
 	if ch.Challenge == "" ||
-		(ch.ExpiresAt != 0 && s.clock().Unix() > ch.ExpiresAt) {
+		(ch.ExpiresAt != 0 && s.now().Unix() > ch.ExpiresAt) {
 		s.penalize(otpKey, s.addr(e))
 		return invalid
 	}
@@ -381,6 +381,6 @@ func (s *Server) ResendOTP(e *router.Exchange) error {
 	return e.JSON(http.StatusOK, OTPChallengeResponse{
 		Challenge: req.Challenge,
 		Channel:   sf.Channel,
-		ExpiresIn: max(ch.ExpiresAt-s.clock().Unix(), 0),
+		ExpiresIn: max(ch.ExpiresAt-s.now().Unix(), 0),
 	})
 }

@@ -24,9 +24,10 @@ import (
 	"net/http"
 	"time"
 
+	"uuid"
+
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/log"
@@ -259,7 +260,7 @@ func (s *Server) beginWebAuthnCeremony(
 		Ceremony:  ceremony,
 		SubjectID: subjectID,
 		Data:      raw,
-		ExpiresAt: s.clock().Add(s.webauthn.sessionLifetime).Unix(),
+		ExpiresAt: s.now().Add(s.webauthn.sessionLifetime).Unix(),
 	}); err != nil {
 		return router.ServerError("failed to store ceremony session", err)
 	}
@@ -294,7 +295,7 @@ func (s *Server) takeWebAuthnSession(
 
 	if sess.Handle == "" ||
 		sess.Ceremony != ceremony ||
-		(sess.ExpiresAt != 0 && s.clock().Unix() > sess.ExpiresAt) {
+		(sess.ExpiresAt != 0 && s.now().Unix() > sess.ExpiresAt) {
 		return sess, nil, nil
 	}
 

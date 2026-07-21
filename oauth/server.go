@@ -25,7 +25,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/ascii"
@@ -186,7 +185,7 @@ type Server struct {
 	throttle               *throttle.Throttle
 	throttlePenalty        int
 	logger                 *slog.Logger
-	clock                  func() time.Time
+	now                    func() time.Time
 }
 
 // Option customizes a [Server] during construction with [New].
@@ -210,7 +209,7 @@ func WithIdentityProvider(name string, idp IdentityProvider) Option {
 func WithClock(now func() time.Time) Option {
 	return func(s *Server) {
 		if now != nil {
-			s.clock = now
+			s.now = now
 		}
 	}
 }
@@ -367,7 +366,7 @@ func New(cfg Config, opts ...Option) *Server {
 			DefaultThrottlePenalty,
 		),
 		logger: logger,
-		clock:  time.Now,
+		now:    time.Now,
 	}
 
 	for _, opt := range opts {
@@ -396,7 +395,7 @@ func New(cfg Config, opts ...Option) *Server {
 	s.introspector = jwt.NewVerifier[*auth.Claims](
 		s.vault.Keys(),
 		jwt.WithIssuers(s.issuer),
-		jwt.WithClock(s.clock),
+		jwt.WithClock(s.now),
 	)
 
 	return s
@@ -793,7 +792,7 @@ func (s *Server) authenticate(e *router.Exchange) (*Proposal, error) {
 		Client:   client,
 		Sessions: s.sessions,
 		Logger:   s.logger,
-		Now:      s.clock,
+		Now:      s.now,
 		data:     data,
 	}, nil
 }
@@ -1052,7 +1051,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 			SubjectID:           sub.ID(),
 			CodeChallenge:       codeChallenge,
 			CodeChallengeMethod: codeChallengeMethod,
-			ExpiresAt:           s.clock().Add(s.authCodeLifetime).Unix(),
+			ExpiresAt:           s.now().Add(s.authCodeLifetime).Unix(),
 		},
 	); err != nil {
 		return s.serverError("failed to store authorization code",
@@ -1118,7 +1117,7 @@ func (s *Server) token(e *router.Exchange) error {
 		return err
 	}
 
-	now := s.clock()
+	now := s.now()
 	clientID := pro.Client.ID()
 
 	claims := &auth.Claims{
@@ -1324,7 +1323,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 		ClientID:   pro.Client.ID(),
 		Scope:      scope,
 		Status:     DeviceCodeStatusPending,
-		ExpiresAt:  s.clock().Add(s.deviceCodeLifetime).Unix(),
+		ExpiresAt:  s.now().Add(s.deviceCodeLifetime).Unix(),
 		Interval:   interval,
 	}); err != nil {
 		return s.serverError("failed to store device code", err)
@@ -1401,7 +1400,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	}
 
 	if code.DeviceCode == "" ||
-		(code.ExpiresAt != 0 && s.clock().Unix() > code.ExpiresAt) {
+		(code.ExpiresAt != 0 && s.now().Unix() > code.ExpiresAt) {
 		s.penalize(subjectKey, s.addr(e))
 		return &router.Error{
 			Status:      http.StatusNotFound,
