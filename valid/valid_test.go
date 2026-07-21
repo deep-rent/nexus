@@ -16,6 +16,7 @@ package valid_test
 
 import (
 	"testing"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"
