@@ -18,9 +18,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/deep-rent/nexus/throttle"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	"github.com/deep-rent/nexus/throttle"
 )
 
 // throttleCounts collects the named counter grouped by the string form of

@@ -80,13 +80,13 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/time/rate"
-
-	"github.com/deep-rent/nexus/router"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"golang.org/x/time/rate"
+
+	"github.com/deep-rent/nexus/router"
 )
 
 // Default values applied by [New] for the optional [Config] fields.
