@@ -47,7 +47,7 @@ func Middleware(opts ...Option) router.Middleware {
 		interval:   DefaultInterval,
 		fraction:   DefaultThreshold,
 		retryAfter: DefaultRetryAfter,
-		memory:     defaultMemoryProvider,
+		memory:     memory,
 		now:        time.Now,
 	}
 	for _, opt := range opts {

@@ -97,7 +97,8 @@ func WithMemoryProvider(provider func() uint64) Option {
 	}
 }
 
-func defaultMemoryProvider() uint64 {
+// memory reads the current memory in use from the runtime metrics.
+func memory() uint64 {
 	samples := []metrics.Sample{
 		{Name: "/memory/classes/total:bytes"},
 		{Name: "/memory/classes/heap/released:bytes"},
