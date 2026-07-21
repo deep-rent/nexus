@@ -27,30 +27,16 @@ import (
 
 // OverflowMode determines how the bus behaves when the internal buffer is
 // full. An unrecognized value is treated as [Block].
-type OverflowMode int
+type OverflowMode ring.Policy
 
 const (
 	// Block waits until space is available in the buffer.
-	Block OverflowMode = iota
+	Block = OverflowMode(ring.Block)
 	// DropOldest removes the oldest unread event to make room for the new one.
-	DropOldest
+	DropOldest = OverflowMode(ring.DropOldest)
 	// DropNewest discards the incoming event if the buffer is full.
-	DropNewest
+	DropNewest = OverflowMode(ring.DropNewest)
 )
-
-// policy maps the mode onto the overflow policy of the underlying ring
-// buffer. The two are declared separately so that the public API does not
-// depend on an internal package.
-func (m OverflowMode) policy() ring.Policy {
-	switch m {
-	case DropOldest:
-		return ring.DropOldest
-	case DropNewest:
-		return ring.DropNewest
-	default:
-		return ring.Block
-	}
-}
 
 const (
 	// DefaultSize is the default capacity of the internal ring buffer.
@@ -129,7 +115,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	}
 
 	bus := &Bus[T]{
-		evts:  ring.New[T](cfg.size, cfg.mode.policy()),
+		evts:  ring.New[T](cfg.size, ring.Policy(cfg.mode)),
 		disp:  disp,
 		wait:  wait,
 		stats: stats,
