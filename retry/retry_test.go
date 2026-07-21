@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1073,5 +1074,41 @@ func TestWithClock(t *testing.T) {
 	// The hour-long delay exceeds the deadline, so no retry is attempted.
 	if calls != 1 {
 		t.Errorf("calls: got %d; want 1", calls)
+	}
+}
+
+func TestAttemptCount(t *testing.T) {
+	t.Parallel()
+
+	// Outside a retrying transport, no attempt count is recorded.
+	if got := retry.AttemptCount(t.Context()); got != 0 {
+		t.Errorf("count: got %d; want 0", got)
+	}
+
+	var counts []int
+	tr := retry.NewTransport(
+		tripFunc(func(r *http.Request) (*http.Response, error) {
+			counts = append(counts, retry.AttemptCount(r.Context()))
+			return respond(http.StatusServiceUnavailable, newBody("nope")), nil
+		}),
+		retry.WithAttemptLimit(3),
+	)
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "http://example.com", nil,
+	)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("should not have returned an error: %v", err)
+	}
+	defer res.Body.Close()
+
+	// Each attempt observes its own 1-based count.
+	if want := []int{1, 2, 3}; !slices.Equal(counts, want) {
+		t.Errorf("counts: got %v; want %v", counts, want)
 	}
 }

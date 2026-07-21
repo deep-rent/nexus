@@ -114,6 +114,20 @@ func NewTransport(
 	}
 }
 
+// attemptKey carries the 1-based attempt number in a request context.
+type attemptKey struct{}
+
+// AttemptCount reports the 1-based number of the attempt a request is
+// currently on, as recorded by the retrying transport in the request context.
+// It returns 0 if the request is not executing under a retrying transport.
+//
+// Transports layered below the retry transport can use this to annotate
+// per-attempt work, for example to record a resend count on a trace span.
+func AttemptCount(ctx context.Context) int {
+	count, _ := ctx.Value(attemptKey{}).(int)
+	return count
+}
+
 // RoundTrip executes an HTTP transaction, retrying it as directed by the
 // configured [Policy].
 //
@@ -136,10 +150,12 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	rewindable := req.Body == nil || req.GetBody != nil
 
 	for count := 1; ; count++ {
-		attempt := req
+		actx := context.WithValue(ctx, attemptKey{}, count)
+
+		attempt := req.WithContext(actx)
 		if count > 1 {
 			var err error
-			if attempt, err = rewind(req); err != nil {
+			if attempt, err = rewind(actx, req); err != nil {
 				return nil, err
 			}
 		}
@@ -192,10 +208,11 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // rewind clones req for another attempt, obtaining a fresh reader for its
-// body. The original request is left untouched, as required by the
+// body. The clone carries the given context, which holds the current attempt
+// count. The original request is left untouched, as required by the
 // [http.RoundTripper] contract.
-func rewind(req *http.Request) (*http.Request, error) {
-	clone := req.Clone(req.Context())
+func rewind(ctx context.Context, req *http.Request) (*http.Request, error) {
+	clone := req.Clone(ctx)
 	if req.GetBody == nil {
 		return clone, nil
 	}
