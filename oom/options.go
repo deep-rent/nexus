@@ -45,7 +45,7 @@ const (
 )
 
 // WithInterval sets the frequency at which the middleware checks memory usage.
-// Defaults to [DefaultInterval].
+// Nonpositive values will be ignored. Defaults to [DefaultInterval].
 func WithInterval(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
@@ -55,7 +55,8 @@ func WithInterval(d time.Duration) Option {
 }
 
 // WithThreshold sets the fraction of GOMEMLIMIT at which the server begins
-// rejecting requests. Defaults to [DefaultThreshold].
+// rejecting requests. Numbers outside the interval (0,1] will be ignored.
+// Defaults to [DefaultThreshold].
 func WithThreshold(fraction float64) Option {
 	return func(c *config) {
 		if fraction > 0 && fraction <= 1.0 {
@@ -65,7 +66,8 @@ func WithThreshold(fraction float64) Option {
 }
 
 // WithRetryAfter sets the duration clients should wait before retrying when the
-// server sheds load. Defaults to [DefaultRetryAfter].
+// server sheds load. Nonpositive values will be ignored. Defaults to
+// [DefaultRetryAfter].
 func WithRetryAfter(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
@@ -75,7 +77,7 @@ func WithRetryAfter(d time.Duration) Option {
 }
 
 // WithClock overrides the function used to get the current time. It is
-// primarily useful for testing. Defaults to [time.Now].
+// primarily useful for testing. Defaults to [time.Now] if left as nil.
 func WithClock(now func() time.Time) Option {
 	return func(c *config) {
 		if now != nil {
