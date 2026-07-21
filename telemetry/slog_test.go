@@ -28,8 +28,8 @@ import (
 func TestLogHandler(t *testing.T) {
 	t.Parallel()
 
-	newLogger := func(buf *bytes.Buffer) *slog.Logger {
-		return slog.New(telemetry.NewLogHandler(
+	create := func(buf *bytes.Buffer) *slog.Logger {
+		return slog.New(telemetry.Wrap(
 			slog.NewJSONHandler(buf, nil),
 		))
 	}
@@ -53,7 +53,7 @@ func TestLogHandler(t *testing.T) {
 		defer span.End()
 
 		var buf bytes.Buffer
-		newLogger(&buf).InfoContext(ctx, "hello")
+		create(&buf).InfoContext(ctx, "hello")
 
 		rec := decode(t, &buf)
 		sc := span.SpanContext()
@@ -69,7 +69,7 @@ func TestLogHandler(t *testing.T) {
 		t.Parallel()
 
 		var buf bytes.Buffer
-		newLogger(&buf).InfoContext(t.Context(), "hello")
+		create(&buf).InfoContext(t.Context(), "hello")
 
 		rec := decode(t, &buf)
 		if _, ok := rec[telemetry.TraceIDKey]; ok {
@@ -92,7 +92,7 @@ func TestLogHandler(t *testing.T) {
 		defer span.End()
 
 		var buf bytes.Buffer
-		newLogger(&buf).With(slog.String("k", "v")).InfoContext(ctx, "hello")
+		create(&buf).With(slog.String("k", "v")).InfoContext(ctx, "hello")
 
 		rec := decode(t, &buf)
 		if _, ok := rec[telemetry.TraceIDKey]; !ok {

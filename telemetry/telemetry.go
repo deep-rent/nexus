@@ -83,9 +83,9 @@ import (
 	tnoop "go.opentelemetry.io/otel/trace/noop"
 )
 
-// envConfig carries the OTEL_* settings implemented by this package rather
+// environment carries the OTEL_* settings implemented by this package rather
 // than by the SDK itself.
-type envConfig struct {
+type environment struct {
 	// SDKDisabled turns New into a no-op, per the OpenTelemetry
 	// specification's OTEL_SDK_DISABLED.
 	SDKDisabled bool `env:"SDK_DISABLED"`
@@ -126,12 +126,12 @@ func New(ctx context.Context, opts ...Option) (*Telemetry, error) {
 		opt(&cfg)
 	}
 
-	var ec envConfig
-	if err := env.Unmarshal(&ec, env.WithPrefix("OTEL_")); err != nil {
+	var e environment
+	if err := env.Unmarshal(&e, env.WithPrefix("OTEL_")); err != nil {
 		return nil, err
 	}
-	if ec.ServiceName != "" {
-		cfg.service = ec.ServiceName
+	if e.ServiceName != "" {
+		cfg.service = e.ServiceName
 	}
 
 	// Failures inside the SDK surface asynchronously; routing them through
@@ -142,7 +142,7 @@ func New(ctx context.Context, opts ...Option) (*Telemetry, error) {
 	}))
 	otel.SetTextMapPropagator(cfg.propagator)
 
-	if cfg.disabled || ec.SDKDisabled {
+	if cfg.disabled || e.SDKDisabled {
 		t := &Telemetry{
 			tracerProvider: tnoop.NewTracerProvider(),
 			meterProvider:  mnoop.NewMeterProvider(),
@@ -196,6 +196,9 @@ func New(ctx context.Context, opts ...Option) (*Telemetry, error) {
 		}
 		reader = sdkmetric.NewPeriodicReader(metricExporter)
 	}
+
+	otel.SetTracerProvider(t.tracerProvider)
+
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(reader),
 		sdkmetric.WithResource(res),
@@ -203,7 +206,6 @@ func New(ctx context.Context, opts ...Option) (*Telemetry, error) {
 	t.meterProvider = meterProvider
 	t.shutdown = append(t.shutdown, meterProvider.Shutdown)
 
-	otel.SetTracerProvider(t.tracerProvider)
 	otel.SetMeterProvider(t.meterProvider)
 
 	return t, nil
