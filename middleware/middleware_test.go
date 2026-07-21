@@ -190,29 +190,114 @@ func TestRecover(t *testing.T) {
 
 func TestRequestID(t *testing.T) {
 	t.Parallel()
-	var captured string
-	trap := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		captured = mw.GetRequestID(r.Context())
-		w.WriteHeader(http.StatusOK)
+
+	trap := func(captured *string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*captured = mw.GetRequestID(r.Context())
+			w.WriteHeader(http.StatusOK)
+		})
+	}
+
+	t.Run("generates fresh id", func(t *testing.T) {
+		t.Parallel()
+		var captured string
+		h := mw.RequestID()(trap(&captured))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		id := rr.Header().Get("X-Request-ID")
+		if len(id) == 0 {
+			t.Fatal("request id header is empty")
+		}
+		if got, want := len(id), 32; got != want {
+			t.Errorf("id length: got %d; want %d", got, want)
+		}
+		if len(captured) == 0 {
+			t.Fatal("request id in context is empty")
+		}
+		if id != captured {
+			t.Errorf("header id: got %q; want %q", id, captured)
+		}
 	})
 
-	h := mw.RequestID()(trap)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	t.Run("ignores inbound id by default", func(t *testing.T) {
+		t.Parallel()
+		var captured string
+		h := mw.RequestID()(trap(&captured))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-Request-ID", "client-id")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
 
-	id := rr.Header().Get("X-Request-ID")
-	if len(id) == 0 {
-		t.Fatal("request id header is empty")
-	}
-	if got, want := len(id), 32; got != want {
-		t.Errorf("id length: got %d; want %d", got, want)
-	}
-	if len(captured) == 0 {
-		t.Fatal("request id in context is empty")
-	}
-	if id != captured {
-		t.Errorf("header id: got %q; want %q", id, captured)
-	}
+		if captured == "client-id" {
+			t.Error("client-supplied id was trusted without opt-in")
+		}
+	})
+
+	t.Run("trusts valid inbound id", func(t *testing.T) {
+		t.Parallel()
+		var captured string
+		h := mw.RequestID(mw.WithTrustClient(true))(trap(&captured))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-Request-ID", "gateway-id.1")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+
+		if got, want := captured, "gateway-id.1"; got != want {
+			t.Errorf("context id: got %q; want %q", got, want)
+		}
+		if got := rr.Header().Get("X-Request-ID"); got != "gateway-id.1" {
+			t.Errorf("header id: got %q; want %q", got, "gateway-id.1")
+		}
+	})
+
+	t.Run("rejects malformed inbound id", func(t *testing.T) {
+		t.Parallel()
+		tests := []string{
+			"",
+			"bad id with spaces",
+			"log\ninjection",
+			strings.Repeat("a", 65),
+		}
+		for _, give := range tests {
+			var captured string
+			h := mw.RequestID(mw.WithTrustClient(true))(trap(&captured))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("X-Request-ID", give)
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+
+			if captured == give {
+				t.Errorf("malformed id %q was trusted", give)
+			}
+			if len(captured) != 32 {
+				t.Errorf(
+					"for %q: got id length %d; want generated 32",
+					give, len(captured),
+				)
+			}
+		}
+	})
+
+	t.Run("custom header", func(t *testing.T) {
+		t.Parallel()
+		var captured string
+		h := mw.RequestID(
+			mw.WithRequestIDHeader("Trace-ID"),
+			mw.WithTrustClient(true),
+		)(trap(&captured))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Trace-ID", "abc123")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+
+		if got, want := captured, "abc123"; got != want {
+			t.Errorf("context id: got %q; want %q", got, want)
+		}
+		if got, want := rr.Header().Get("Trace-ID"), "abc123"; got != want {
+			t.Errorf("header id: got %q; want %q", got, want)
+		}
+	})
 }
 
 func TestGetSetRequestID(t *testing.T) {

@@ -132,20 +132,93 @@ type contextKey struct{}
 // context.
 var requestIDKey contextKey
 
+// DefaultRequestIDHeader is the header used to transport the request ID
+// unless overridden via [WithRequestIDHeader].
+const DefaultRequestIDHeader = "X-Request-ID"
+
+// requestIDConfig holds the configuration for the [RequestID] middleware.
+type requestIDConfig struct {
+	// header is the name of the request and response ID header.
+	header string
+	// trustClient reuses an inbound ID instead of generating a fresh one.
+	trustClient bool
+}
+
+// RequestIDOption configures the [RequestID] middleware.
+type RequestIDOption func(*requestIDConfig)
+
+// WithRequestIDHeader overrides the header used to transport the request ID.
+//
+// Empty string values are ignored, keeping [DefaultRequestIDHeader].
+func WithRequestIDHeader(name string) RequestIDOption {
+	return func(c *requestIDConfig) {
+		if name != "" {
+			c.header = name
+		}
+	}
+}
+
+// WithTrustClient reuses a request ID supplied by the client.
+//
+// When enabled and the inbound request carries a syntactically valid ID in
+// the configured header, that ID is propagated instead of generating a new
+// one. This allows traces to span multiple services behind a gateway that
+// assigns IDs. Only enable this behind infrastructure you control: the value
+// is attacker-supplied otherwise, so IDs are capped at 64 characters and
+// restricted to ASCII letters, digits, and "+-=/._" before being trusted.
+func WithTrustClient(trust bool) RequestIDOption {
+	return func(c *requestIDConfig) {
+		c.trustClient = trust
+	}
+}
+
+// validRequestID reports whether an inbound ID is safe to propagate.
+func validRequestID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case strings.IndexByte("+-=/._", c) != -1:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // RequestID returns a middleware [Pipe] that injects a unique ID into each
 // request.
 //
-// It adds the ID to the response via the "X-Request-ID" header and to the
-// request's context for downstream use. Downstream handlers and other
-// middleware can retrieve the ID using [GetRequestID].
-func RequestID() Pipe {
+// It adds the ID to the response via the "X-Request-ID" header (configurable
+// through [WithRequestIDHeader]) and to the request's context for downstream
+// use. Downstream handlers and other middleware can retrieve the ID using
+// [GetRequestID]. By default a fresh random ID is generated for every
+// request; see [WithTrustClient] for propagating gateway-assigned IDs.
+func RequestID(opts ...RequestIDOption) Pipe {
+	cfg := requestIDConfig{header: DefaultRequestIDHeader}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Note: crypto/rand.Read is guaranteed not to fail.
-			b := make([]byte, 16)
-			_, _ = rand.Read(b)
-			id := hex.EncodeToString(b)
-			w.Header().Set("X-Request-ID", id)
+			id := ""
+			if cfg.trustClient {
+				if v := r.Header.Get(cfg.header); validRequestID(v) {
+					id = v
+				}
+			}
+			if id == "" {
+				// Note: crypto/rand.Read is guaranteed not to fail.
+				b := make([]byte, 16)
+				_, _ = rand.Read(b)
+				id = hex.EncodeToString(b)
+			}
+			w.Header().Set(cfg.header, id)
 			next.ServeHTTP(w, r.WithContext(SetRequestID(r.Context(), id)))
 		})
 	}
