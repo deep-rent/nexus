@@ -21,8 +21,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/deep-rent/nexus/telemetry"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/deep-rent/nexus/telemetry"
 )
 
 func TestLogHandler(t *testing.T) {

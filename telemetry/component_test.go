@@ -19,8 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/app"
 	"go.opentelemetry.io/otel"
+
+	"github.com/deep-rent/nexus/app"
 )
 
 func TestComponent_FlushesOnShutdown(t *testing.T) {

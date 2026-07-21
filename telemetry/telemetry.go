@@ -66,8 +66,6 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/deep-rent/nexus/env"
-	"github.com/deep-rent/nexus/log"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -82,6 +80,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 	tnoop "go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/deep-rent/nexus/env"
+	"github.com/deep-rent/nexus/log"
 )
 
 // environment carries the OTEL_* settings implemented by this package rather

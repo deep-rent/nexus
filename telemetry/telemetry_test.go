@@ -19,12 +19,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/deep-rent/nexus/telemetry"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/deep-rent/nexus/telemetry"
 )
 
 // captureExporter is a span exporter that retains everything it receives,
