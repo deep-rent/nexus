@@ -19,8 +19,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/deep-rent/nexus/backoff"
 	"go.opentelemetry.io/otel/metric"
+
+	"github.com/deep-rent/nexus/backoff"
 )
 
 const (

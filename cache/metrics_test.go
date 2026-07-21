@@ -20,10 +20,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/deep-rent/nexus/cache"
-	"github.com/deep-rent/nexus/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	"github.com/deep-rent/nexus/cache"
+	"github.com/deep-rent/nexus/log"
 )
 
 // refreshCounts collects the nexus.cache.refresh counter grouped by outcome.

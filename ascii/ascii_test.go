@@ -164,58 +164,56 @@ func TestIsHex(t *testing.T) {
 	}
 }
 
-// TestClassificationEquivalence cross-checks the lookup-table classifiers
-// against independent range-based definitions across every byte value,
-// including the non-ASCII range (0x80–0xFF), guarding the table against typos.
+// TestClassificationEquivalence cross-checks each classifier against an
+// explicit alphabet of every character it should accept. Sweeping all 256 byte
+// values against these alphabets (including the non-ASCII range 0x80–0xFF)
+// guards the lookup table against typos.
 func TestClassificationEquivalence(t *testing.T) {
 	t.Parallel()
 
-	isSpace := func(c byte) bool {
-		switch c {
-		case ' ', '\t', '\n', '\v', '\f', '\r':
-			return true
-		}
-		return false
-	}
+	const (
+		upper     = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		lower     = "abcdefghijklmnopqrstuvwxyz"
+		digit     = "0123456789"
+		hexDig    = digit + "abcdef" + "ABCDEF"
+		punct     = `!"#%&'()*,-./:;?@[\]_{}`
+		symbol    = "$+<=>^`|~"
+		space     = " \t\n\v\f\r"
+		graph     = upper + lower + digit + punct + symbol // 0x21–0x7E
+		printable = graph + " "                            // 0x20–0x7E
+		// Control characters: the C0 set (0x00–0x1F) and DEL (0x7F).
+		control = "\x00\x01\x02\x03\x04\x05\x06\a\b\t\n\v\f\r\x0e\x0f" +
+			"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f" +
+			"\x7f"
+	)
 
 	classes := []struct {
-		name string
-		got  func(byte) bool
-		want func(byte) bool
+		name  string
+		got   func(byte) bool
+		valid string // every character the classifier must accept
 	}{
-		{"IsUpper", ascii.IsUpper, func(c byte) bool { return c >= 'A' && c <= 'Z' }},
-		{"IsLower", ascii.IsLower, func(c byte) bool { return c >= 'a' && c <= 'z' }},
-		{"IsDigit", ascii.IsDigit, func(c byte) bool { return c >= '0' && c <= '9' }},
-		{"IsAlpha", ascii.IsAlpha, func(c byte) bool {
-			return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-		}},
-		{"IsAlphaNum", ascii.IsAlphaNum, func(c byte) bool {
-			return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-		}},
-		{"IsHex", ascii.IsHex, func(c byte) bool {
-			return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-		}},
-		{"IsSpace", ascii.IsSpace, isSpace},
-		{"IsPrint", ascii.IsPrint, func(c byte) bool { return c >= 0x20 && c <= 0x7E }},
-		{"IsControl", ascii.IsControl, func(c byte) bool {
-			return c < 0x20 || c == 0x7F
-		}},
-		{"IsPunct", ascii.IsPunct, func(c byte) bool {
-			return strings.IndexByte(`!"#%&'()*,-./:;?@[\]_{}`, c) >= 0
-		}},
-		{"IsSymbol", ascii.IsSymbol, func(c byte) bool {
-			return strings.IndexByte("$+<=>^`|~", c) >= 0
-		}},
-		{"IsGraph", ascii.IsGraph, func(c byte) bool { return c >= 0x21 && c <= 0x7E }},
+		{"IsUpper", ascii.IsUpper, upper},
+		{"IsLower", ascii.IsLower, lower},
+		{"IsDigit", ascii.IsDigit, digit},
+		{"IsAlpha", ascii.IsAlpha, upper + lower},
+		{"IsAlphaNum", ascii.IsAlphaNum, upper + lower + digit},
+		{"IsHex", ascii.IsHex, hexDig},
+		{"IsSpace", ascii.IsSpace, space},
+		{"IsPrint", ascii.IsPrint, printable},
+		{"IsControl", ascii.IsControl, control},
+		{"IsPunct", ascii.IsPunct, punct},
+		{"IsSymbol", ascii.IsSymbol, symbol},
+		{"IsGraph", ascii.IsGraph, graph},
 	}
 
-	for _, cl := range classes {
-		t.Run(cl.name, func(t *testing.T) {
+	for _, c := range classes {
+		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			for i := 0; i <= 0xFF; i++ {
-				c := byte(i)
-				if got, want := cl.got(c), cl.want(c); got != want {
-					t.Errorf("%s(%#x) = %v; want %v", cl.name, c, got, want)
+				b := byte(i)
+				want := strings.IndexByte(c.valid, b) >= 0
+				if got := c.got(b); got != want {
+					t.Errorf("%s(%#x) = %v; want %v", c.name, b, got, want)
 				}
 			}
 		})
