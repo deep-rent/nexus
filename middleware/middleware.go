@@ -221,7 +221,9 @@ func RequestID(opts ...RequestIDOption) Pipe {
 			if id == "" {
 				// A recording span implies a real trace ID; adopting it links
 				// the client-visible request ID to the trace.
-				if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+				if sc := trace.SpanContextFromContext(
+					r.Context(),
+				); sc.IsValid() {
 					id = sc.TraceID().String()
 				}
 			}

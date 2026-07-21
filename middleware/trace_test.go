@@ -21,7 +21,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	mw "github.com/deep-rent/nexus/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -30,6 +29,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	mw "github.com/deep-rent/nexus/middleware"
 )
 
 // tracing bundles a recording tracer provider, a manual metric reader, and
@@ -302,7 +303,11 @@ func TestTrace_EndsSpanOnPanic(t *testing.T) {
 
 	// Recover outside Trace still converts the re-raised panic into a 500.
 	if got := res.Code; got != http.StatusInternalServerError {
-		t.Errorf("response: got %d; want %d", got, http.StatusInternalServerError)
+		t.Errorf(
+			"response: got %d; want %d",
+			got,
+			http.StatusInternalServerError,
+		)
 	}
 
 	spans := tr.spans.Ended()
