@@ -12,26 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package google implements "Sign in with Google" as an
-// [oauth.IdentityProvider].
-//
-// The provider drives the OIDC Authorization Code flow against Google's
-// endpoints: it redirects the user-agent to Google's consent screen,
-// exchanges the returned authorization code for an ID token, and verifies
-// that token against Google's published JWKS.
-//
-// # Usage
-//
-//	p := google.New(google.Config{
-//	  ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-//	  ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-//	  RedirectURI:  "https://id.example.com/oauth/callback/google",
-//	})
-//
-//	// Keep Google's signing keys fresh in the background.
-//	scheduler.Dispatch(p.Keys())
-//
-//	s := oauth.New(cfg, oauth.WithIdentityProvider("google", p))
 package google
 
 import (
