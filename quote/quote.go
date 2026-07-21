@@ -84,9 +84,6 @@ func Double(s string) string { return Wrap(s, '"') }
 // Single wraps a string in single quotes using [Wrap].
 func Single(s string) string { return Wrap(s, '\'') }
 
-// Is checks if the given rune is a single or double quote character.
-func Is(c rune) bool { return c == '"' || c == '\'' }
-
 // Escape safely quotes a SQL identifier: embedded double quotes are doubled
 // and the result is wrapped in double quotes using [Double].
 func Escape(s string) string {

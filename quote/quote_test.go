@@ -283,29 +283,3 @@ func TestLiteral(t *testing.T) {
 		})
 	}
 }
-
-func TestIs(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		give rune
-		want bool
-	}{
-		{"double quote", '"', true},
-		{"single quote", '\'', true},
-		{"backtick", '`', false},
-		{"letter", 'a', false},
-		{"space", ' ', false},
-		{"null rune", '\x00', false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := quote.Is(tt.give); got != tt.want {
-				t.Errorf("got %v; want %v", got, tt.want)
-			}
-		})
-	}
-}
