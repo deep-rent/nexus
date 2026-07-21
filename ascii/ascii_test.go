@@ -20,6 +20,38 @@ import (
 	"github.com/deep-rent/nexus/ascii"
 )
 
+func TestConstants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want rune
+	}{
+		{"NUL", ascii.NUL, 0x00},
+		{"BEL", ascii.BEL, '\a'},
+		{"BS", ascii.BS, '\b'},
+		{"HT", ascii.HT, '\t'},
+		{"LF", ascii.LF, '\n'},
+		{"VT", ascii.VT, '\v'},
+		{"FF", ascii.FF, '\f'},
+		{"CR", ascii.CR, '\r'},
+		{"ESC", ascii.ESC, 0x1B},
+		{"US", ascii.US, 0x1F},
+		{"SP", ascii.SP, ' '},
+		{"DEL", ascii.DEL, 0x7F},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := tt.give, tt.want; got != want {
+				t.Errorf("got %#x; want %#x", got, want)
+			}
+		})
+	}
+}
+
 func TestIsUpper(t *testing.T) {
 	t.Parallel()
 

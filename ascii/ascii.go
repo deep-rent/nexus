@@ -33,6 +33,49 @@
 //	}
 package ascii
 
+// Named code points for the ASCII characters that lack a printable symbol,
+// covering the C0 control set (0x00–0x1F), the space character (0x20), and
+// the delete character (0x7F).
+//
+// The constants are untyped, so they can be used interchangeably as a [rune]
+// or a [byte].
+const (
+	NUL = 0x00 // '\0' Null
+	SOH = 0x01 //      Start of Heading
+	STX = 0x02 //      Start of Text
+	ETX = 0x03 //      End of Text
+	EOT = 0x04 //      End of Transmission
+	ENQ = 0x05 //      Enquiry
+	ACK = 0x06 //      Acknowledgement
+	BEL = 0x07 // '\a' Bell
+	BS  = 0x08 // '\b' Backspace
+	HT  = 0x09 // '\t' Horizontal Tab
+	LF  = 0x0A // '\n' Line Feed
+	VT  = 0x0B // '\v' Vertical Tab
+	FF  = 0x0C // '\f' Form Feed
+	CR  = 0x0D // '\r' Carriage Return
+	SO  = 0x0E //      Shift Out
+	SI  = 0x0F //      Shift In
+	DLE = 0x10 //      Data Link Escape
+	DC1 = 0x11 //      Device Control 1
+	DC2 = 0x12 //      Device Control 2
+	DC3 = 0x13 //      Device Control 3
+	DC4 = 0x14 //      Device Control 4
+	NAK = 0x15 //      Negative Acknowledgement
+	SYN = 0x16 //      Synchronous Idle
+	ETB = 0x17 //      End of Transmission Block
+	CAN = 0x18 //      Cancel
+	EM  = 0x19 //      End of Medium
+	SUB = 0x1A //      Substitute
+	ESC = 0x1B // '\e' Escape
+	FS  = 0x1C //      File Separator
+	GS  = 0x1D //      Group Separator
+	RS  = 0x1E //      Record Separator
+	US  = 0x1F //      Unit Separator
+	SP  = 0x20 //      Space
+	DEL = 0x7F //      Delete
+)
+
 // IsUpper reports whether the rune is an uppercase ASCII letter
 // ('A' through 'Z').
 func IsUpper(c rune) bool { return c >= 'A' && c <= 'Z' }
