@@ -12,36 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package check provides a collection of standard health check constructors for
-// common infrastructure dependencies.
-//
-// It includes implementations for TCP connectivity, HTTP responsiveness, DNS
-// resolution, and database pings. These functions return a [health.CheckFunc]
-// that can be registered with a [health.Monitor] to automate dependency
-// monitoring.
-//
-// # Usage
-//
-// The constructors in this package are designed to be passed directly into the
-// Attach method of a [health.Monitor].
-//
-// Example:
-//
-//	monitor := health.NewMonitor()
-//
-//	// Check a Redis instance via TCP
-//	monitor.Attach(
-//		"redis",
-//		2*time.Second,
-//		check.TCP("localhost:6379", 1*time.Second),
-//	)
-//
-//	// Check an external API with a custom HTTP client
-//	monitor.Attach(
-//		"stripe",
-//		10*time.Second,
-//		check.HTTP("https://api.stripe.com/health", check.WithClient(client)),
-//	)
 package check
 
 import (
