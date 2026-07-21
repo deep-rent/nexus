@@ -98,8 +98,8 @@ type config struct {
 	disableCompression     bool
 	headers                []header.Header
 	retry                  []retry.Option
-	trace                  bool
-	traceOpts              []TraceOption
+	metrics                bool
+	metricsOpts            []MetricsOption
 	maxIdleConns           int
 	maxIdleConnsPerHost    int
 	maxConnsPerHost        int
@@ -279,16 +279,15 @@ func WithRetry(opts ...retry.Option) Option {
 	return func(c *config) { c.retry = append(c.retry, opts...) }
 }
 
-// WithTrace enables OpenTelemetry client instrumentation; see
-// [NewTraceTransport] for what is recorded.
+// WithMetrics enables client request measurement; see [NewMetricsTransport]
+// for what is recorded.
 //
-// The tracing layer sits below the retry and header layers, so every retry
-// attempt is captured as its own client span carrying the final headers of
-// the request.
-func WithTrace(opts ...TraceOption) Option {
+// The measuring layer sits below the retry and header layers, so every
+// retry attempt is captured as its own observation.
+func WithMetrics(opts ...MetricsOption) Option {
 	return func(c *config) {
-		c.trace = true
-		c.traceOpts = append(c.traceOpts, opts...)
+		c.metrics = true
+		c.metricsOpts = append(c.metricsOpts, opts...)
 	}
 }
 
@@ -391,10 +390,10 @@ func New(opts ...Option) http.RoundTripper {
 	// intermediate responses observed by the retry transport.
 	t = Limit(t, cfg.maxResponseBytes)
 
-	// The tracing layer sits below retry and header, so that each attempt is
-	// recorded as its own span carrying the final request headers.
-	if cfg.trace {
-		t = NewTraceTransport(t, cfg.traceOpts...)
+	// The measuring layer sits below retry and header, so that each attempt
+	// is recorded as its own observation.
+	if cfg.metrics {
+		t = NewMetricsTransport(t, cfg.metricsOpts...)
 	}
 
 	// Add headers if any.
