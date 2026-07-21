@@ -19,6 +19,7 @@ import (
 	"time"
 )
 
+// config holds the configuration options for the OOM middleware.
 type config struct {
 	interval   time.Duration
 	fraction   float64
@@ -39,8 +40,8 @@ const (
 	// rejecting requests.
 	DefaultThreshold = 0.90
 
-	// DefaultRetryAfter is the default duration clients are asked to wait before
-	// retrying, sent in the Retry-After header.
+	// DefaultRetryAfter is the default duration clients are asked to wait
+	// before retrying, sent in the Retry-After header.
 	DefaultRetryAfter = 5 * time.Second
 )
 
