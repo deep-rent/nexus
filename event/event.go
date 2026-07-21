@@ -55,6 +55,7 @@ import (
 	"sync/atomic"
 
 	"github.com/deep-rent/nexus/ring"
+	"go.opentelemetry.io/otel"
 )
 
 // OverflowMode determines how the bus behaves when the internal buffer is
@@ -115,6 +116,8 @@ type Bus[T any] struct {
 	id uint64
 	// wg tracks the lifecycle of the background processor goroutine.
 	wg sync.WaitGroup
+	// stats counts published and dropped events.
+	stats *counters
 }
 
 // NewBus initializes a [Bus] with the provided options.
@@ -133,6 +136,10 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	if cfg.logger == nil {
 		cfg.logger = slog.Default()
 	}
+	if cfg.meterProvider == nil {
+		cfg.meterProvider = otel.GetMeterProvider()
+	}
+	stats := newCounters(cfg.meterProvider, cfg.name)
 
 	// Every bus idles on its own strategy, so that a stateful one cannot be
 	// shared by the buses a broker creates.
@@ -145,17 +152,20 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	if cfg.sync {
 		disp = basicDispatcher[T]{
 			logger: cfg.logger,
+			stats:  stats,
 		}
 	} else {
 		disp = &asyncDispatcher[T]{
 			logger: cfg.logger,
+			stats:  stats,
 		}
 	}
 
 	bus := &Bus[T]{
-		evts: ring.New[T](cfg.size, cfg.mode.policy()),
-		disp: disp,
-		wait: wait,
+		evts:  ring.New[T](cfg.size, cfg.mode.policy()),
+		disp:  disp,
+		wait:  wait,
+		stats: stats,
 	}
 
 	// Seed the atomic pointer with an empty slice to avoid nil pointer panics
@@ -230,6 +240,7 @@ func (b *Bus[T]) Publish(event T) bool {
 
 	// Guard against publishing to a stopped bus.
 	if b.closed.Load() {
+		b.stats.add(b.stats.dropped)
 		return false
 	}
 
@@ -237,8 +248,10 @@ func (b *Bus[T]) Publish(event T) bool {
 	if b.evts.Push(event) {
 		// Awaken the processor if it happens to be snoozing.
 		b.wait.Signal()
+		b.stats.add(b.stats.published)
 		return true
 	}
+	b.stats.add(b.stats.dropped)
 	return false
 }
 

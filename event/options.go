@@ -16,6 +16,8 @@ package event
 
 import (
 	"log/slog"
+
+	"go.opentelemetry.io/otel/metric"
 )
 
 type Option func(*config)
@@ -33,6 +35,10 @@ type config struct {
 	wait func() WaitStrategy
 	// logger is used for reporting errors and panics.
 	logger *slog.Logger
+	// meterProvider records the bus counters.
+	meterProvider metric.MeterProvider
+	// name distinguishes bus instances in the recorded metrics.
+	name string
 }
 
 // WithSize sets the buffer capacity (rounded up to the nearest power of 2).
@@ -104,5 +110,27 @@ func WithLogger(logger *slog.Logger) Option {
 		if logger != nil {
 			o.logger = logger
 		}
+	}
+}
+
+// WithMeterProvider sets the provider used to record the bus counters:
+// nexus.event.published, nexus.event.dropped, nexus.event.delivered, and
+// nexus.event.panic. It defaults to the global provider registered with
+// [go.opentelemetry.io/otel.SetMeterProvider], which is a no-op until an
+// application installs a real one. A nil value is ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(o *config) {
+		if mp != nil {
+			o.meterProvider = mp
+		}
+	}
+}
+
+// WithName sets the value of the "bus" attribute on the recorded counters,
+// keeping multiple buses apart in a telemetry backend. A [Broker] names every
+// bus it creates after its topic, overriding this option.
+func WithName(name string) Option {
+	return func(o *config) {
+		o.name = name
 	}
 }

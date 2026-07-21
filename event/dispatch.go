@@ -42,8 +42,14 @@ type dispatcher[T any] interface {
 
 // deliver invokes a single subscriber, isolating the call so that a panic in
 // one subscriber neither reaches the background processor nor keeps the
-// remaining subscribers from being notified.
-func deliver[T any](logger *slog.Logger, fn Subscriber[T], event T) {
+// remaining subscribers from being notified. Completed deliveries and panics
+// are counted separately.
+func deliver[T any](
+	logger *slog.Logger,
+	stats *counters,
+	fn Subscriber[T],
+	event T,
+) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(
@@ -51,7 +57,10 @@ func deliver[T any](logger *slog.Logger, fn Subscriber[T], event T) {
 				slog.Any("panic", r),
 				slog.String("stack", string(debug.Stack())),
 			)
+			stats.add(stats.panics)
+			return
 		}
+		stats.add(stats.delivered)
 	}()
 	fn(event)
 }
@@ -61,12 +70,14 @@ func deliver[T any](logger *slog.Logger, fn Subscriber[T], event T) {
 type basicDispatcher[T any] struct {
 	// logger records any panics triggered by a subscriber function.
 	logger *slog.Logger
+	// stats counts deliveries and panics.
+	stats *counters
 }
 
 // dispatch iterates through all handlers and executes them sequentially.
 func (d basicDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 	for _, h := range handlers {
-		deliver(d.logger, h.fn, event)
+		deliver(d.logger, d.stats, h.fn, event)
 	}
 }
 
@@ -79,6 +90,8 @@ func (d basicDispatcher[T]) wait() {}
 type asyncDispatcher[T any] struct {
 	// logger records any panics triggered by a subscriber function.
 	logger *slog.Logger
+	// stats counts deliveries and panics.
+	stats *counters
 	// wg tracks deliveries that have been started but not yet completed.
 	wg sync.WaitGroup
 }
@@ -89,7 +102,7 @@ func (d *asyncDispatcher[T]) dispatch(event T, handlers []handler[T]) {
 		d.wg.Add(1)
 		go func(f Subscriber[T]) {
 			defer d.wg.Done()
-			deliver(d.logger, f, event)
+			deliver(d.logger, d.stats, f, event)
 		}(h.fn)
 	}
 }

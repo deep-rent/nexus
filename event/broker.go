@@ -16,6 +16,7 @@ package event
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -84,8 +85,9 @@ func Topic[T any](b *Broker, name string) *Bus[T] {
 		return closedBus[T]()
 	}
 
-	// Create and store the new typed bus.
-	bus := NewBus[T](b.opts...)
+	// Create and store the new typed bus, named after its topic so that the
+	// recorded metrics tell the broker's buses apart.
+	bus := NewBus[T](append(slices.Clone(b.opts), WithName(name))...)
 	b.buses[name] = bus
 
 	return bus
