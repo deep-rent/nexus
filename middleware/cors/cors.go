@@ -141,7 +141,9 @@ func WithExposedHeaders(headers ...string) Option {
 // When used as part of a response to a preflight request, it indicates that the
 // actual request can include cookies and other user credentials. This option
 // defaults to false. Note that browsers require a specific origin (not a
-// wildcard) in the Access-Control-Allow-Origin header when this is enabled.
+// wildcard) in the Access-Control-Allow-Origin header when this is enabled;
+// consequently, [New] panics if credentials are enabled without an explicit
+// origin whitelist configured via [WithAllowedOrigins].
 func WithAllowCredentials(allow bool) Option {
 	return func(c *config) {
 		c.allowCredentials = allow
@@ -170,10 +172,18 @@ func WithMaxAge(d time.Duration) Option {
 // response. For actual requests, it adds the necessary CORS headers to the
 // response before passing control to the next handler. Non-CORS requests are
 // passed through without modification.
+//
+// It panics if credentials are enabled without an explicit origin whitelist:
+// reflecting arbitrary origins alongside Access-Control-Allow-Credentials
+// would let any website perform authenticated requests on behalf of visiting
+// users and read the responses.
 func New(opts ...Option) middleware.Pipe {
 	cfg := config{}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+	if cfg.allowCredentials && cfg.allowedOrigins == nil {
+		panic("cors: credentials require explicit allowed origins")
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

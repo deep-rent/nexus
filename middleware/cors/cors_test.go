@@ -25,6 +25,46 @@ import (
 	"github.com/deep-rent/nexus/middleware/cors"
 )
 
+func TestNew_PanicsOnCredentialsWithoutOrigins(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no origins", func(t *testing.T) {
+		t.Parallel()
+		defer func() {
+			if recover() == nil {
+				t.Error("should have panicked")
+			}
+		}()
+		cors.New(cors.WithAllowCredentials(true))
+	})
+
+	t.Run("wildcard origin", func(t *testing.T) {
+		t.Parallel()
+		defer func() {
+			if recover() == nil {
+				t.Error("should have panicked")
+			}
+		}()
+		cors.New(
+			cors.WithAllowCredentials(true),
+			cors.WithAllowedOrigins("*"),
+		)
+	})
+
+	t.Run("explicit origins are fine", func(t *testing.T) {
+		t.Parallel()
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("should not have panicked: %v", r)
+			}
+		}()
+		cors.New(
+			cors.WithAllowCredentials(true),
+			cors.WithAllowedOrigins("http://a.com"),
+		)
+	})
+}
+
 func TestMiddleware(t *testing.T) {
 	t.Parallel()
 
