@@ -64,11 +64,16 @@ func NewMetricsTransport(
 	next http.RoundTripper,
 	opts ...MetricsOption,
 ) http.RoundTripper {
-	cfg := metricsConfig{registry: metrics.DefaultRegistry}
+	cfg := metricsConfig{
+		registry: metrics.DefaultRegistry,
+	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return &metricsTransport{next: next, registry: cfg.registry}
+	return &metricsTransport{
+		next:     next,
+		registry: cfg.registry,
+	}
 }
 
 // RoundTrip executes a single HTTP transaction and records its duration.
