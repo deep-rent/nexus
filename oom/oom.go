@@ -33,14 +33,15 @@ const ReasonOverload = "server_overload"
 // status when the application is about to run out of memory.
 //
 // It determines the limit from the active GOMEMLIMIT (via
-// [debug.SetMemoryLimit]). If no limit is set, the middleware acts as a no-op.
-// Otherwise, it monitors memory usage inline and sheds load when the active
-// heap size exceeds the configured threshold fraction.
+// [debug.SetMemoryLimit]). If no limit is set, it returns nil, which
+// [router.Chain] skips entirely. Otherwise, it monitors memory usage inline and
+// sheds load when the active heap size exceeds the configured threshold
+// fraction.
 func Middleware(opts ...Option) router.Middleware {
 	limit := debug.SetMemoryLimit(-1)
 	if limit <= 0 || limit == math.MaxInt64 {
-		// No memory limit set, act as a no-op.
-		return func(next router.Handler) router.Handler { return next }
+		// No memory limit set: return nil so router.Chain skips it entirely.
+		return nil
 	}
 
 	cfg := config{

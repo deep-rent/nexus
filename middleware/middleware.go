@@ -51,6 +51,14 @@ func Chain(h http.Handler, pipes ...Pipe) http.Handler {
 	return h
 }
 
+// Passthrough is a no-op [Pipe] that returns the next handler unchanged.
+//
+// A no-op factory signals "no middleware" by returning nil, which [Chain] (and
+// the router's Adapt) skip. Passthrough is instead a directly-callable
+// identity, for callers that build a chain conditionally or need a safe pipe to
+// invoke without a nil check.
+func Passthrough(next http.Handler) http.Handler { return next }
+
 // Recover produces a middleware [Pipe] that catches panics in downstream
 // handlers.
 //
@@ -270,13 +278,15 @@ var (
 // ID in the log, this middleware should be placed after the [RequestID]
 // middleware in the chain.
 //
-// If the logger has the debug level disabled, Log returns a pass-through pipe
-// that adds no per-request overhead. Enablement is decided once, when the pipe
-// is built, so a logger whose level is raised to debug at runtime (e.g. via a
+// If the logger has the debug level disabled, Log returns nil, which [Chain]
+// (and the router's Adapt) skip entirely, so a disabled logger adds no chaining
+// or per-request overhead. Enablement is decided once, when the pipe is built,
+// so
+// a logger whose level is raised to debug at runtime (e.g. via a
 // [slog.LevelVar]) will not begin logging; rebuild the chain to pick that up.
 func Log(logger *slog.Logger) Pipe {
 	if !logger.Enabled(context.Background(), slog.LevelDebug) {
-		return func(next http.Handler) http.Handler { return next }
+		return nil
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

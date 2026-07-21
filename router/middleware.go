@@ -47,6 +47,14 @@ func Chain(h Handler, mws ...Middleware) Handler {
 	return h
 }
 
+// Passthrough is a no-op [Middleware] that returns the next handler unchanged.
+//
+// A no-op factory signals "no middleware" by returning nil, which [Chain]
+// skips. Passthrough is instead a directly-callable identity, for callers that
+// build a chain conditionally or need a safe middleware to invoke without a nil
+// check.
+func Passthrough(next Handler) Handler { return next }
+
 // Wrap converts a standard [http.Handler] into a router [Handler].
 func Wrap(h http.Handler) Handler {
 	return HandlerFunc(func(e *Exchange) error {
@@ -60,7 +68,15 @@ func Wrap(h http.Handler) Handler {
 // This bridges low-level HTTP transport middlewares into the router's
 // ecosystem. It ensuring that any modifications made to the request or response
 // writer by the transport middleware are preserved.
+//
+// A nil pipe means "no middleware": Adapt returns nil so that [Chain] skips it,
+// rather than wrapping it into a middleware that does per-request work for
+// nothing. This lets no-op pipe factories (e.g. [middleware.Log] with debug
+// disabled) collapse away instead of adding an idle layer to the router chain.
 func Adapt(pipe middleware.Pipe) Middleware {
+	if pipe == nil {
+		return nil
+	}
 	return func(next Handler) Handler {
 		return HandlerFunc(func(e *Exchange) error {
 			var nextErr error

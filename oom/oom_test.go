@@ -32,26 +32,10 @@ func TestMiddleware_NoLimit(t *testing.T) {
 		_ = debug.SetMemoryLimit(prev)
 	}()
 
-	mw := Middleware()
-
-	handler := mw(router.HandlerFunc(func(e *router.Exchange) error {
-		e.W.WriteHeader(http.StatusOK)
-		return nil
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	e := &router.Exchange{
-		R: req,
-		W: router.NewResponseWriter(rec),
-	}
-
-	err := handler.ServeHTTP(e)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if exp, act := http.StatusOK, rec.Code; exp != act {
-		t.Fatalf("expected status %d, got %d", exp, act)
+	// With no memory limit, the factory returns nil so that router.Chain
+	// skips it entirely rather than adding an idle layer.
+	if mw := Middleware(); mw != nil {
+		t.Fatal("expected nil middleware when no limit is set")
 	}
 }
 
