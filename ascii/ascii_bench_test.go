@@ -60,9 +60,9 @@ func BenchmarkEqualFold(b *testing.B) {
 	// Fold benchText against an all-uppercase copy: the strings are equal under
 	// EqualFold, so every byte is compared (the worst case).
 	upper := ascii.ToUpper(benchText)
-	b.ResetTimer()
+
 	var acc bool
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		acc = ascii.EqualFold(benchText, upper)
 	}
 	_ = acc
