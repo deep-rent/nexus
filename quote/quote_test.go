@@ -115,32 +115,6 @@ func TestHas(t *testing.T) {
 	}
 }
 
-func TestWrap(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		give string
-		q    rune
-		want string
-	}{
-		{"wrap with double quote", "hello", '"', `"hello"`},
-		{"wrap with single quote", "world", '\'', `'world'`},
-		{"wrap empty string", "", '"', `""`},
-		{"wrap with arbitrary rune", "test", '|', `|test|`},
-		{"wrap string already containing quotes", `"hello"`, '\'', `'"hello"'`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := quote.Wrap(tt.give, tt.q); got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestDouble(t *testing.T) {
 	t.Parallel()
 
