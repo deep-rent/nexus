@@ -21,19 +21,18 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/deep-rent/nexus/jitter"
+	"github.com/deep-rent/nexus/metrics"
 )
 
-// scope is the instrumentation scope reported for spans and metrics emitted
-// by this package.
-const scope = "github.com/deep-rent/nexus/schedule"
+// Names of the metrics recorded by a [Scheduler], both tagged with the tick
+// name given via [Named].
+const (
+	// TickDuration is the histogram of tick run durations in seconds.
+	TickDuration = "schedule_tick_duration_seconds"
+	// TickPanics counts tick runs that panicked.
+	TickPanics = "schedule_tick_panics_total"
+)
 
 // Tick represents a unit of work that can be scheduled to run repeatedly.
 type Tick interface {
@@ -92,9 +91,9 @@ func Every(d time.Duration, task Task) Tick {
 	})
 }
 
-// Named attaches a name to a [Tick]. The scheduler uses it as the span name
-// and metric attribute when recording the tick's runs, so unrelated jobs on
-// one scheduler stay distinguishable in a telemetry backend:
+// Named attaches a name to a [Tick]. The scheduler uses it as the metric
+// tag when recording the tick's runs, so unrelated jobs on one scheduler
+// stay distinguishable:
 //
 //	scheduler.Dispatch(schedule.Named(
 //		"cache-refresh",
@@ -164,32 +163,12 @@ type Scheduler interface {
 // Cancelling this context will also cause the scheduler to shut down.
 func New(ctx context.Context, opts ...Option) Scheduler {
 	cfg := config{
-		logger:         slog.Default(),
-		recovery:       DefaultRecoveryDelay,
-		tracerProvider: otel.GetTracerProvider(),
-		meterProvider:  otel.GetMeterProvider(),
+		logger:   slog.Default(),
+		recovery: DefaultRecoveryDelay,
+		registry: metrics.DefaultRegistry,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
-	}
-
-	meter := cfg.meterProvider.Meter(scope)
-	duration, err := meter.Float64Histogram(
-		"nexus.schedule.tick.duration",
-		metric.WithDescription("Duration of scheduled tick runs."),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		otel.Handle(err)
-		duration, _ = noop.NewMeterProvider().Meter(scope).Float64Histogram("")
-	}
-	panics, err := meter.Int64Counter(
-		"nexus.schedule.tick.panic",
-		metric.WithDescription("Number of tick runs that panicked."),
-	)
-	if err != nil {
-		otel.Handle(err)
-		panics, _ = noop.NewMeterProvider().Meter(scope).Int64Counter("")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -201,25 +180,21 @@ func New(ctx context.Context, opts ...Option) Scheduler {
 		minimum:  cfg.minimum,
 		start:    cfg.start,
 		jitter:   jitter.New(cfg.jitter, nil),
-		tracer:   cfg.tracerProvider.Tracer(scope),
-		duration: duration,
-		panics:   panics,
+		registry: cfg.registry,
 	}
 }
 
 // scheduler is the concrete implementation of the [Scheduler] interface.
 type scheduler struct {
-	ctx      context.Context         // internal lifecycle context
-	cancel   context.CancelFunc      // stops all dispatched goroutines
-	logger   *slog.Logger            // destination for internal logs
-	recovery time.Duration           // delay applied after a tick panicked
-	minimum  time.Duration           // floor for the interval a tick asks for
-	start    time.Duration           // delay before the first run of a tick
-	jitter   *jitter.Jitter          // scatters the start delay
-	tracer   trace.Tracer            // records a span per tick run
-	duration metric.Float64Histogram // measures tick run durations
-	panics   metric.Int64Counter     // counts tick runs that panicked
-	wg       sync.WaitGroup          // tracks active task goroutines
+	ctx      context.Context    // internal lifecycle context
+	cancel   context.CancelFunc // stops all dispatched goroutines
+	logger   *slog.Logger       // destination for internal logs
+	recovery time.Duration      // delay applied after a tick panicked
+	minimum  time.Duration      // floor for the interval a tick asks for
+	start    time.Duration      // delay before the first run of a tick
+	jitter   *jitter.Jitter     // scatters the start delay
+	registry *metrics.Registry  // records tick durations and panics
+	wg       sync.WaitGroup     // tracks active task goroutines
 
 	mu     sync.Mutex // guards closed against a concurrent Dispatch
 	closed bool       // whether Shutdown has been called
@@ -283,21 +258,13 @@ func (s *scheduler) delay() time.Duration {
 // down the process, so a panicking tick is reported and rescheduled after the
 // recovery delay rather than being propagated.
 //
-// Each run is recorded as a root span — a tick has no inbound request to
-// inherit a trace from — so that any instrumented work the tick performs,
-// such as HTTP calls through a traced transport, nests under it.
+// Each run lands in the [TickDuration] histogram, and a panic additionally
+// increments [TickPanics]; both carry the tick's name as a tag.
 func (s *scheduler) run(
 	ctx context.Context,
 	tick Tick,
 ) (d time.Duration) {
 	name := tickName(tick)
-	attrs := metric.WithAttributes(attribute.String("tick", name))
-
-	ctx, span := s.tracer.Start(
-		ctx, name,
-		trace.WithNewRoot(),
-		trace.WithSpanKind(trace.SpanKindInternal),
-	)
 	start := time.Now()
 
 	defer func() {
@@ -309,11 +276,10 @@ func (s *scheduler) run(
 				slog.String("stack", string(debug.Stack())),
 			)
 			d = s.recovery
-			span.SetStatus(codes.Error, "panic")
-			s.panics.Add(ctx, 1, attrs)
+			s.registry.Counter(TickPanics, metrics.T("tick", name)).Inc()
 		}
-		s.duration.Record(ctx, time.Since(start).Seconds(), attrs)
-		span.End()
+		s.registry.Histogram(TickDuration, nil, metrics.T("tick", name)).
+			Observe(time.Since(start).Seconds())
 	}()
 
 	return tick.Run(ctx)
