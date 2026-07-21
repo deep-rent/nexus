@@ -15,8 +15,10 @@
 package gzip_test
 
 import (
+	"bufio"
 	compress "compress/gzip"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
@@ -226,6 +228,110 @@ func TestMiddleware(t *testing.T) {
 				t.Errorf("body: got %q; want %q", got, want)
 			}
 		})
+	}
+}
+
+// hijackableRecorder extends the standard recorder with a fake Hijack.
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	conn, _ := net.Pipe()
+	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	return conn, rw, nil
+}
+
+func TestHijack(t *testing.T) {
+	t.Parallel()
+
+	t.Run("delegates and suppresses footer", func(t *testing.T) {
+		t.Parallel()
+		h := gzip.New()(http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Errorf(
+						"hijack: should not have returned an error: %v",
+						err,
+					)
+					return
+				}
+				if err := conn.Close(); err != nil {
+					t.Errorf(
+						"closing conn: should not have returned an error: %v",
+						err,
+					)
+				}
+			},
+		))
+
+		rec := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		h.ServeHTTP(rec, r)
+
+		if !rec.hijacked {
+			t.Error("hijack was not delegated to the underlying writer")
+		}
+		// After a hijack the middleware must not append gzip framing to the
+		// recorded response.
+		if got := rec.Body.Len(); got != 0 {
+			t.Errorf("body length: got %d; want 0", got)
+		}
+	})
+
+	t.Run("error when unsupported", func(t *testing.T) {
+		t.Parallel()
+		h := gzip.New()(http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				if _, _, err := w.(http.Hijacker).Hijack(); err == nil {
+					t.Error("should have returned an error")
+				}
+			},
+		))
+
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	})
+}
+
+func TestInvalidCompressionLevel(t *testing.T) {
+	t.Parallel()
+
+	// Out-of-range levels fall back to the default and must still produce a
+	// valid gzip stream.
+	h := gzip.New(gzip.WithCompressionLevel(42))(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("payload"))
+		},
+	))
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	gzr, err := compress.NewReader(w.Body)
+	if err != nil {
+		t.Fatalf(
+			"opening gzip reader: should not have returned an error: %v",
+			err,
+		)
+	}
+	data, err := io.ReadAll(gzr)
+	if err != nil {
+		t.Fatalf(
+			"reading gzip body: should not have returned an error: %v",
+			err,
+		)
+	}
+	if got, want := string(data), "payload"; got != want {
+		t.Errorf("body: got %q; want %q", got, want)
 	}
 }
 

@@ -130,6 +130,20 @@ func TestMiddleware(t *testing.T) {
 			wantNextCalled: true,
 		},
 		{
+			name: "explicit wildcard behaves like default",
+			opts: []cors.Option{
+				cors.WithAllowedOrigins("http://a.com", "*"),
+			},
+			reqMethod:      http.MethodGet,
+			reqHeaders:     map[string]string{"Origin": "http://b.com"},
+			wantStatusCode: http.StatusOK,
+			wantResHeaders: map[string]string{
+				"Access-Control-Allow-Origin": "*",
+				"Vary":                        "Origin",
+			},
+			wantNextCalled: true,
+		},
+		{
 			name:           "actual request with default settings",
 			opts:           nil,
 			reqMethod:      http.MethodGet,

@@ -220,6 +220,22 @@ func TestRequestID(t *testing.T) {
 		}
 	})
 
+	t.Run("generates distinct ids", func(t *testing.T) {
+		t.Parallel()
+		var captured string
+		h := mw.RequestID()(trap(&captured))
+
+		seen := make(map[string]bool)
+		for range 8 {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+			if seen[captured] {
+				t.Fatalf("duplicate request id generated: %q", captured)
+			}
+			seen[captured] = true
+		}
+	})
+
 	t.Run("ignores inbound id by default", func(t *testing.T) {
 		t.Parallel()
 		var captured string
