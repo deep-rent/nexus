@@ -12,25 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package apns provides an Apple Push Notification service (APNs) provider.
-//
-// It implements the [push.Sender] interface for delivering remote
-// notifications to Apple devices using HTTP/2 and JWT authentication.
-//
-// # Usage
-//
-// Create a sender by providing your ES256 key ID, Apple team ID, and the
-// PEM-encoded PKCS#8 private key contents.
-//
-//	sender := apns.New(
-//		apns.Credentials{
-//			KeyID:      "4F92S8D7W1",
-//			TeamID:     "8M349Z7F2A",
-//			PrivateKey: key, // PEM format
-//		},
-//		apns.WithBaseURL(apns.SandboxBaseURL),
-//	)
-//	err := sender.Send(ctx, msg)
 package apns
 
 import (
