@@ -12,16 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package oidc provides OpenID Connect client utilities shared by external
-// [oauth.IdentityProvider] integrations.
-//
-// It contains the protocol primitives common to all OIDC relying parties:
-// a lenient [IDToken] claims structure that tolerates provider quirks
-// (polymorphic audiences via [jwt.Audience], stringified booleans), and a
-// token endpoint [Exchange] helper that swaps an authorization code for an
-// [oauth.TokenResponse].
-//
-// Concrete providers built on top of this package live under oauth/social.
 package oidc
 
 import (
