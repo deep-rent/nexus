@@ -219,7 +219,15 @@ func (c *Collector) fetch(
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			c.logger.WarnContext(
+				ctx,
+				"Failed to close response body",
+				log.Err(err),
+			)
+		}
+	}()
 
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d", res.StatusCode)
