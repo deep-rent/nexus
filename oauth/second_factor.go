@@ -71,10 +71,10 @@ const (
 func WithOTPChannel(name SecondFactorChannel, ch otp.Channel) Option {
 	return func(s *Server) {
 		if name == "" {
-			panic("OTP channel name is required")
+			panic("channel name is required")
 		}
 		if ch == nil {
-			panic("OTP channel is required")
+			panic("channel is required")
 		}
 		s.otpChannels[name] = ch
 	}
