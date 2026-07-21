@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -56,21 +55,20 @@ func Middleware(opts ...Option) router.Middleware {
 
 	threshold := uint64(float64(limit) * cfg.fraction)
 	var overloaded atomic.Bool
-	var mu sync.Mutex
-	var last time.Time
+	var last atomic.Int64 // unix nanos of the most recent sample
 
 	after := strconv.Itoa(int(math.Ceil(cfg.retryAfter.Seconds())))
 
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
-			if cfg.now().Sub(last) > cfg.interval {
-				if mu.TryLock() {
-					if cfg.now().Sub(last) > cfg.interval {
-						overloaded.Store(cfg.memory() >= threshold)
-						last = cfg.now()
-					}
-					mu.Unlock()
-				}
+			// Sample at most once per interval. The CompareAndSwap claims the
+			// sampling slot for exactly one goroutine; concurrent requests read
+			// the last recorded verdict from overloaded.
+			now := cfg.now()
+			prev := last.Load()
+			if now.Sub(time.Unix(0, prev)) > cfg.interval &&
+				last.CompareAndSwap(prev, now.UnixNano()) {
+				overloaded.Store(cfg.memory() >= threshold)
 			}
 
 			if overloaded.Load() {
