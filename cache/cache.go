@@ -88,6 +88,7 @@ import (
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/schedule"
 	"github.com/deep-rent/nexus/transport"
+	"go.opentelemetry.io/otel"
 )
 
 // Mapper is a function that parses a response's raw response body into the
@@ -163,6 +164,10 @@ func NewController[T any](
 	// A ceiling below the floor would make the clamp order-dependent.
 	cfg.maxInterval = max(cfg.maxInterval, cfg.minInterval)
 
+	if cfg.meterProvider == nil {
+		cfg.meterProvider = otel.GetMeterProvider()
+	}
+
 	if cfg.backoff == nil {
 		// Retries escalate up to the regular refresh interval, so a resource
 		// that stays broken is not polled more often than a healthy one.
@@ -182,6 +187,7 @@ func NewController[T any](
 		jitter:      jitter.New(cfg.jitter, nil),
 		logger:      cfg.logger,
 		now:         cfg.now,
+		stats:       newStats(cfg.meterProvider, url),
 		readyChan:   make(chan struct{}),
 	}
 }
@@ -197,6 +203,7 @@ type controller[T any] struct {
 	jitter      *jitter.Jitter   // scatters the refresh interval
 	logger      *slog.Logger     // destination for internal logs
 	now         func() time.Time // clock used to interpret date headers
+	stats       stats            // counts refresh cycles by outcome
 
 	readyOnce sync.Once     // ensures the ready channel is closed only once
 	readyChan chan struct{} // closed upon the first successful fetch
@@ -242,7 +249,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 				log.Err(err),
 			)
 		}
-		return c.retry()
+		return c.retry(ctx)
 	}
 	defer c.close(res)
 
@@ -258,7 +265,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 			"Received an unexpected HTTP status code",
 			slog.Int("status", code),
 		)
-		return c.retry()
+		return c.retry(ctx)
 	}
 }
 
@@ -302,13 +309,14 @@ func (c *controller[T]) unchanged(
 		c.mu.Lock()
 		c.etag, c.lastModified = "", ""
 		c.mu.Unlock()
-		return c.retry()
+		return c.retry(ctx)
 	}
 
 	c.logger.DebugContext(ctx,
 		"Resource unchanged",
 		slog.String("etag", etag),
 	)
+	c.stats.count(ctx, c.stats.unchanged)
 	return c.refresh(res.Header)
 }
 
@@ -323,7 +331,7 @@ func (c *controller[T]) update(
 			"Failed to read response body",
 			log.Err(err),
 		)
-		return c.retry()
+		return c.retry(ctx)
 	}
 
 	resource, err := c.mapper(&Response{
@@ -336,7 +344,7 @@ func (c *controller[T]) update(
 			"Couldn't parse response body",
 			log.Err(err),
 		)
-		return c.retry()
+		return c.retry(ctx)
 	}
 
 	c.mu.Lock()
@@ -348,6 +356,7 @@ func (c *controller[T]) update(
 	c.mu.Unlock()
 
 	c.logger.InfoContext(ctx, "Resource updated successfully")
+	c.stats.count(ctx, c.stats.updated)
 
 	// Signalled only once a value is actually available, so that consumers
 	// blocked on Ready are guaranteed a hit from Get.
@@ -379,15 +388,19 @@ func (c *controller[T]) refresh(h http.Header) time.Duration {
 }
 
 // retry records a failed refresh and returns the delay before the next
-// attempt, which grows with the number of consecutive failures.
-func (c *controller[T]) retry() time.Duration {
+// attempt, which grows with the number of consecutive failures. It is the
+// single sink for every failure path, so it also counts the cycle as an
+// error.
+func (c *controller[T]) retry(ctx context.Context) time.Duration {
+	c.stats.count(ctx, c.stats.failed)
+
 	c.mu.Lock()
 	c.failures++
 	n := c.failures
 	c.mu.Unlock()
 
 	d := c.backoff.Delay(n)
-	c.logger.Debug(
+	c.logger.DebugContext(ctx,
 		"Scheduling a retry",
 		slog.Int("failures", n),
 		slog.Duration("delay", d),
