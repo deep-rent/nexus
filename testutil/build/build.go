@@ -14,22 +14,7 @@
 
 // Package build provides test helpers for compiling Go binaries.
 //
-// Package build offers utilities for compiling Go source code during tests. It
-// ensures that build artifacts are isolated and automatically cleaned up after
-// the tests finish by leveraging the testing framework's temporary directory
-// management.
-//
-// # Usage
-//
-// Call the [Binary] function within a test to compile a target program.
-//
-// Example:
-//
-//	func TestIntegration(t *testing.T) {
-//	    exe := build.Binary(t, "./cmd/app", "app-bin")
-//	    cmd := exec.Command(exe)
-//	    // ... run and test the binary ...
-//	}
+
 package build
 
 import (
