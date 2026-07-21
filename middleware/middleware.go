@@ -137,17 +137,13 @@ var requestIDKey contextKey
 //
 // It adds the ID to the response via the "X-Request-ID" header and to the
 // request's context for downstream use. Downstream handlers and other
-// middleware can retrieve the ID using [GetRequestID]. If a unique ID cannot be
-// generated from the random source, this middleware does nothing and passes
-// the request to the next handler.
+// middleware can retrieve the ID using [GetRequestID].
 func RequestID() Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Note: crypto/rand.Read is guaranteed not to fail.
 			b := make([]byte, 16)
-			if _, err := rand.Read(b); err != nil {
-				next.ServeHTTP(w, r)
-				return
-			}
+			_, _ = rand.Read(b)
 			id := hex.EncodeToString(b)
 			w.Header().Set("X-Request-ID", id)
 			next.ServeHTTP(w, r.WithContext(SetRequestID(r.Context(), id)))
