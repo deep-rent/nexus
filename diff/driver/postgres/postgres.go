@@ -15,39 +15,6 @@
 // Explicitly allow SQL string concatenation:
 // #nosec G202
 
-// Package postgres provides the PostgreSQL reference driver for the diff
-// synchronization engine.
-//
-// The [Store] implements the shared transactional machinery of
-// [diff.Store]: sequencing, advisory locking, mutation deduplication, and
-// tombstone retention. Models are backed by declarative [Table] handlers
-// created with [NewTable], and the reserved "share" model is served by the
-// built-in [Store.Shares] handler.
-//
-// # Usage
-//
-// Initialize the store with an existing [*sql.DB] connection and register
-// one table per model.
-//
-// Example:
-//
-//	store := postgres.New(db)
-//
-//	assets := postgres.NewTable(store, "asset", "assets")
-//	files := postgres.NewTable(store, "file", "files",
-//	    postgres.WithParent("assets", "asset_id"))
-//
-//	reg := diff.NewRegistry[*sql.Tx]()
-//	reg.Register[Asset]("asset", assets, diff.Root())
-//	reg.Register[File]("file", files, diff.Owner("asset", "asset_id"))
-//	reg.RegisterShares(store.Shares())
-//
-//	engine := diff.New(store, reg)
-//
-// The bookkeeping objects (and the document tables) are owned by the
-// application: provision them through your own schema migrations before
-// serving. The SQL files under migrations/ document the expected shape of
-// the bookkeeping objects and serve as reference material.
 package postgres
 
 import (
