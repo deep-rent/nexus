@@ -28,7 +28,7 @@ import (
 
 	"github.com/deep-rent/nexus/diff"
 	"github.com/deep-rent/nexus/diff/driver/mock"
-	"github.com/deep-rent/nexus/hlc"
+	"github.com/deep-rent/nexus/diff/hlc"
 	"github.com/deep-rent/nexus/valid"
 )
 

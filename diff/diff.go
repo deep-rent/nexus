@@ -21,7 +21,7 @@ import (
 
 	"uuid"
 
-	"github.com/deep-rent/nexus/hlc"
+	"github.com/deep-rent/nexus/diff/hlc"
 )
 
 // Scope is the authorization boundary of a single sync call: the

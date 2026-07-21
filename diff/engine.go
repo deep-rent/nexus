@@ -26,7 +26,7 @@ import (
 
 	"uuid"
 
-	"github.com/deep-rent/nexus/hlc"
+	"github.com/deep-rent/nexus/diff/hlc"
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/valid"
 )

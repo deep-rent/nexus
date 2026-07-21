@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/deep-rent/nexus/diff"
-	"github.com/deep-rent/nexus/hlc"
+	"github.com/deep-rent/nexus/diff/hlc"
 	"github.com/deep-rent/nexus/valid"
 )
 
