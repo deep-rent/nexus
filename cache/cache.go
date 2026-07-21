@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/backoff"
+	"github.com/deep-rent/nexus/backoff/jitter"
 	"github.com/deep-rent/nexus/header"
-	"github.com/deep-rent/nexus/jitter"
 	"github.com/deep-rent/nexus/log"
 	"github.com/deep-rent/nexus/metrics"
 	"github.com/deep-rent/nexus/schedule"

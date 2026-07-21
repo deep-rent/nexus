@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deep-rent/nexus/jitter"
+	"github.com/deep-rent/nexus/backoff/jitter"
 	"github.com/deep-rent/nexus/metrics"
 )
 
