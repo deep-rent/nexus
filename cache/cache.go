@@ -23,12 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel"
-
 	"github.com/deep-rent/nexus/backoff"
 	"github.com/deep-rent/nexus/header"
 	"github.com/deep-rent/nexus/jitter"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/metrics"
 	"github.com/deep-rent/nexus/schedule"
 	"github.com/deep-rent/nexus/transport"
 )
@@ -106,8 +105,8 @@ func NewController[T any](
 	// A ceiling below the floor would make the clamp order-dependent.
 	cfg.maxInterval = max(cfg.maxInterval, cfg.minInterval)
 
-	if cfg.meterProvider == nil {
-		cfg.meterProvider = otel.GetMeterProvider()
+	if cfg.registry == nil {
+		cfg.registry = metrics.DefaultRegistry
 	}
 
 	if cfg.backoff == nil {
@@ -129,7 +128,7 @@ func NewController[T any](
 		jitter:      jitter.New(cfg.jitter, nil),
 		logger:      cfg.logger,
 		now:         cfg.now,
-		stats:       newStats(cfg.meterProvider, url),
+		stats:       newStats(cfg.registry, url),
 		readyChan:   make(chan struct{}),
 	}
 }
@@ -258,7 +257,7 @@ func (c *controller[T]) unchanged(
 		"Resource unchanged",
 		slog.String("etag", etag),
 	)
-	c.stats.count(ctx, c.stats.unchanged)
+	c.stats.unchanged.Inc()
 	return c.refresh(res.Header)
 }
 
@@ -298,7 +297,7 @@ func (c *controller[T]) update(
 	c.mu.Unlock()
 
 	c.logger.InfoContext(ctx, "Resource updated successfully")
-	c.stats.count(ctx, c.stats.updated)
+	c.stats.updated.Inc()
 
 	// Signalled only once a value is actually available, so that consumers
 	// blocked on Ready are guaranteed a hit from Get.
@@ -334,7 +333,7 @@ func (c *controller[T]) refresh(h http.Header) time.Duration {
 // single sink for every failure path, so it also counts the cycle as an
 // error.
 func (c *controller[T]) retry(ctx context.Context) time.Duration {
-	c.stats.count(ctx, c.stats.failed)
+	c.stats.failed.Inc()
 
 	c.mu.Lock()
 	c.failures++

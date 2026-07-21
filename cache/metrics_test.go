@@ -15,46 +15,28 @@
 package cache_test
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
-
 	"github.com/deep-rent/nexus/cache"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/metrics"
 )
 
-// refreshCounts collects the nexus.cache.refresh counter grouped by outcome.
+// refreshCounts collects the refresh counter grouped by outcome.
 func refreshCounts(
 	t *testing.T,
-	reader *sdkmetric.ManualReader,
-) map[string]int64 {
+	reg *metrics.Registry,
+) map[string]uint64 {
 	t.Helper()
 
-	var rm metricdata.ResourceMetrics
-	if err := reader.Collect(context.Background(), &rm); err != nil {
-		t.Fatalf("collecting metrics: %v", err)
-	}
-
-	counts := make(map[string]int64)
-	for _, scope := range rm.ScopeMetrics {
-		for _, m := range scope.Metrics {
-			if m.Name != "nexus.cache.refresh" {
-				continue
-			}
-			sum, ok := m.Data.(metricdata.Sum[int64])
-			if !ok {
-				t.Fatalf("unexpected data type %T", m.Data)
-			}
-			for _, dp := range sum.DataPoints {
-				if v, ok := dp.Attributes.Value("outcome"); ok {
-					counts[v.Emit()] += dp.Value
-				}
-			}
+	counts := make(map[string]uint64)
+	for _, s := range reg.Snapshot().Metrics {
+		if s.Name != cache.Refreshes {
+			continue
 		}
+		counts[s.Tags["outcome"]] += uint64(s.Value)
 	}
 	return counts
 }
@@ -80,23 +62,20 @@ func TestController_CountsRefreshOutcomes(t *testing.T) {
 	))
 	defer srv.Close()
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
-
+	reg := metrics.NewRegistry()
 	c := cache.NewController(
 		srv.URL,
 		func(r *cache.Response) (string, error) { return string(r.Body), nil },
 		cache.WithClient(srv.Client()),
 		cache.WithLogger(log.Silent()),
-		cache.WithMeterProvider(mp),
+		cache.WithRegistry(reg),
 	)
 
 	for range 3 {
 		c.Run(t.Context())
 	}
 
-	counts := refreshCounts(t, reader)
+	counts := refreshCounts(t, reg)
 	if got := counts["updated"]; got != 1 {
 		t.Errorf("updated: got %d; want 1", got)
 	}

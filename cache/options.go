@@ -19,9 +19,8 @@ import (
 	"net/http"
 	"time"
 
-	"go.opentelemetry.io/otel/metric"
-
 	"github.com/deep-rent/nexus/backoff"
+	"github.com/deep-rent/nexus/metrics"
 )
 
 const (
@@ -45,7 +44,7 @@ type config struct {
 	client      *http.Client     // HTTP client used for fetching
 	now         func() time.Time // clock used to interpret date headers
 
-	meterProvider metric.MeterProvider // records the refresh counter
+	registry *metrics.Registry // records the refresh counter
 }
 
 // Option is a function that configures the cache [Controller].
@@ -133,16 +132,14 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithMeterProvider sets the provider used to record the
-// "nexus.cache.refresh" counter, which counts refresh cycles by outcome
-// ("updated", "unchanged", or "error") per resource URL. It defaults to the
-// global provider registered with [go.opentelemetry.io/otel.SetMeterProvider],
-// which is a no-op until an application installs a real one. A nil value is
+// WithRegistry sets the registry receiving the [Refreshes] counter, which
+// counts refresh cycles by outcome ("updated", "unchanged", or "error") per
+// resource URL. It defaults to [metrics.DefaultRegistry]. A nil value is
 // ignored.
-func WithMeterProvider(mp metric.MeterProvider) Option {
+func WithRegistry(reg *metrics.Registry) Option {
 	return func(c *config) {
-		if mp != nil {
-			c.meterProvider = mp
+		if reg != nil {
+			c.registry = reg
 		}
 	}
 }
