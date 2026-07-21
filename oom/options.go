@@ -20,9 +20,10 @@ import (
 )
 
 type config struct {
-	interval time.Duration
-	fraction float64
-	memory   func() uint64
+	interval   time.Duration
+	fraction   float64
+	retryAfter time.Duration
+	memory     func() uint64
 }
 
 // Option configures the OOM middleware.
@@ -36,6 +37,10 @@ const (
 	// DefaultThreshold is the fraction of GOMEMLIMIT at which the server begins
 	// rejecting requests.
 	DefaultThreshold = 0.90
+
+	// DefaultRetryAfter is the default duration clients are asked to wait before
+	// retrying, sent in the Retry-After header.
+	DefaultRetryAfter = 5 * time.Second
 )
 
 // WithInterval sets the frequency at which the middleware checks memory usage.
@@ -54,6 +59,16 @@ func WithThreshold(fraction float64) Option {
 	return func(c *config) {
 		if fraction > 0 && fraction <= 1.0 {
 			c.fraction = fraction
+		}
+	}
+}
+
+// WithRetryAfter sets the duration clients should wait before retrying when the
+// server sheds load. Defaults to [DefaultRetryAfter].
+func WithRetryAfter(d time.Duration) Option {
+	return func(c *config) {
+		if d > 0 {
+			c.retryAfter = d
 		}
 	}
 }

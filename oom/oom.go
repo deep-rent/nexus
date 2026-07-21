@@ -18,6 +18,8 @@ import (
 	"math"
 	"net/http"
 	"runtime/debug"
+	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,8 +35,8 @@ const ReasonOverload = "server_overload"
 //
 // It determines the limit from the active GOMEMLIMIT (via
 // [debug.SetMemoryLimit]). If no limit is set, the middleware acts as a no-op.
-// Otherwise, it starts a background goroutine to monitor memory usage and sheds
-// load when the active heap size exceeds the configured threshold fraction.
+// Otherwise, it monitors memory usage inline and sheds load when the active
+// heap size exceeds the configured threshold fraction.
 func Middleware(opts ...Option) router.Middleware {
 	limit := debug.SetMemoryLimit(-1)
 	if limit <= 0 || limit == math.MaxInt64 {
@@ -42,31 +44,37 @@ func Middleware(opts ...Option) router.Middleware {
 	}
 
 	cfg := config{
-		interval: DefaultInterval,
-		fraction: DefaultThreshold,
-		memory:   defaultMemoryProvider,
+		interval:   DefaultInterval,
+		fraction:   DefaultThreshold,
+		retryAfter: DefaultRetryAfter,
+		memory:     defaultMemoryProvider,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
 	threshold := uint64(float64(limit) * cfg.fraction)
-	var lastCheck atomic.Int64
 	var overloaded atomic.Bool
+	var mu sync.Mutex
+	var lastCheck time.Time
+
+	// Pre-format the Retry-After header string.
+	retrySeconds := strconv.Itoa(int(math.Ceil(cfg.retryAfter.Seconds())))
 
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
-			now := time.Now().UnixNano()
-			last := lastCheck.Load()
-
-			if now-last > int64(cfg.interval) {
-				if lastCheck.CompareAndSwap(last, now) {
-					overloaded.Store(cfg.memory() >= threshold)
+			if time.Since(lastCheck) > cfg.interval {
+				if mu.TryLock() {
+					if time.Since(lastCheck) > cfg.interval {
+						overloaded.Store(cfg.memory() >= threshold)
+						lastCheck = time.Now()
+					}
+					mu.Unlock()
 				}
 			}
 
 			if overloaded.Load() {
-				e.W.Header().Set("Retry-After", "5")
+				e.W.Header().Set("Retry-After", retrySeconds)
 				return router.Fail(
 					http.StatusServiceUnavailable,
 					ReasonOverload,
