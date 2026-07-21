@@ -24,6 +24,7 @@ type config struct {
 	fraction   float64
 	retryAfter time.Duration
 	memory     func() uint64
+	now        func() time.Time
 }
 
 // Option configures the OOM middleware.
@@ -69,6 +70,16 @@ func WithRetryAfter(d time.Duration) Option {
 	return func(c *config) {
 		if d > 0 {
 			c.retryAfter = d
+		}
+	}
+}
+
+// WithClock overrides the function used to get the current time. It is
+// primarily useful for testing. Defaults to [time.Now].
+func WithClock(now func() time.Time) Option {
+	return func(c *config) {
+		if now != nil {
+			c.now = now
 		}
 	}
 }

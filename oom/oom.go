@@ -48,6 +48,7 @@ func Middleware(opts ...Option) router.Middleware {
 		fraction:   DefaultThreshold,
 		retryAfter: DefaultRetryAfter,
 		memory:     defaultMemoryProvider,
+		now:        time.Now,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -56,25 +57,24 @@ func Middleware(opts ...Option) router.Middleware {
 	threshold := uint64(float64(limit) * cfg.fraction)
 	var overloaded atomic.Bool
 	var mu sync.Mutex
-	var lastCheck time.Time
+	var last time.Time
 
-	// Pre-format the Retry-After header string.
-	retrySeconds := strconv.Itoa(int(math.Ceil(cfg.retryAfter.Seconds())))
+	after := strconv.Itoa(int(math.Ceil(cfg.retryAfter.Seconds())))
 
 	return func(next router.Handler) router.Handler {
 		return router.HandlerFunc(func(e *router.Exchange) error {
-			if time.Since(lastCheck) > cfg.interval {
+			if cfg.now().Sub(last) > cfg.interval {
 				if mu.TryLock() {
-					if time.Since(lastCheck) > cfg.interval {
+					if cfg.now().Sub(last) > cfg.interval {
 						overloaded.Store(cfg.memory() >= threshold)
-						lastCheck = time.Now()
+						last = cfg.now()
 					}
 					mu.Unlock()
 				}
 			}
 
 			if overloaded.Load() {
-				e.W.Header().Set("Retry-After", retrySeconds)
+				e.W.Header().Set("Retry-After", after)
 				return router.Fail(
 					http.StatusServiceUnavailable,
 					ReasonOverload,
