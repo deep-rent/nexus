@@ -35,6 +35,9 @@ var benchClasses = []struct {
 	{"IsSpace", ascii.IsSpace},
 	{"IsPrint", ascii.IsPrint},
 	{"IsControl", ascii.IsControl},
+	{"IsPunct", ascii.IsPunct},
+	{"IsSymbol", ascii.IsSymbol},
+	{"IsGraph", ascii.IsGraph},
 }
 
 func BenchmarkClassify(b *testing.B) {

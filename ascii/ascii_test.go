@@ -15,6 +15,7 @@
 package ascii_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/deep-rent/nexus/ascii"
@@ -199,6 +200,13 @@ func TestClassificationEquivalence(t *testing.T) {
 		{"IsControl", ascii.IsControl, func(c rune) bool {
 			return (c >= 0 && c < 0x20) || c == 0x7F
 		}},
+		{"IsPunct", ascii.IsPunct, func(c rune) bool {
+			return strings.ContainsRune(`!"#%&'()*,-./:;?@[\]_{}`, c)
+		}},
+		{"IsSymbol", ascii.IsSymbol, func(c rune) bool {
+			return strings.ContainsRune("$+<=>^`|~", c)
+		}},
+		{"IsGraph", ascii.IsGraph, func(c rune) bool { return c >= 0x21 && c <= 0x7E }},
 	}
 
 	runes := make([]rune, 0, 0x88)
@@ -315,6 +323,95 @@ func TestIsSlug(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got, want := ascii.IsSlug(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIsPunct(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"exclamation", '!', true},
+		{"at", '@', true},
+		{"underscore", '_', true},
+		{"backslash", '\\', true},
+		{"brace", '{', true},
+		{"dollar symbol", '$', false},
+		{"tilde symbol", '~', false},
+		{"letter", 'a', false},
+		{"digit", '5', false},
+		{"space", ' ', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsPunct(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIsSymbol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"dollar", '$', true},
+		{"plus", '+', true},
+		{"equals", '=', true},
+		{"caret", '^', true},
+		{"backtick", '`', true},
+		{"pipe", '|', true},
+		{"tilde", '~', true},
+		{"exclamation punct", '!', false},
+		{"letter", 'a', false},
+		{"digit", '5', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsSymbol(tt.give), tt.want; got != want {
+				t.Errorf("got %v; want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIsGraph(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		give rune
+		want bool
+	}{
+		{"exclamation", '!', true},
+		{"tilde", '~', true},
+		{"letter", 'A', true},
+		{"digit", '5', true},
+		{"symbol", '$', true},
+		{"space", ' ', false},
+		{"tab", '\t', false},
+		{"delete", 0x7F, false},
+		{"above ascii", 0x80, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := ascii.IsGraph(tt.give), tt.want; got != want {
 				t.Errorf("got %v; want %v", got, want)
 			}
 		})

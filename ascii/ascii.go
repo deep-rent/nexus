@@ -121,6 +121,19 @@ func IsPrint(c rune) bool { return uint32(c) < 0x80 && lookup[c]&printMask != 0 
 // any character less than space (0x20) or the delete character (0x7F).
 func IsControl(c rune) bool { return uint32(c) < 0x80 && lookup[c]&ctl != 0 }
 
+// IsPunct reports whether the rune is an ASCII punctuation character, one of
+// !"#%&'()*,-./:;?@[\]_{}.
+func IsPunct(c rune) bool { return uint32(c) < 0x80 && lookup[c]&pun != 0 }
+
+// IsSymbol reports whether the rune is an ASCII symbol character, one of
+// $+<=>^`|~.
+func IsSymbol(c rune) bool { return uint32(c) < 0x80 && lookup[c]&sym != 0 }
+
+// IsGraph reports whether the rune has a visible graphic representation,
+// defined as any printable ASCII character except space
+// ('!' (0x21) through '~' (0x7E)).
+func IsGraph(c rune) bool { return uint32(c) < 0x80 && lookup[c]&graphMask != 0 }
+
 // IsASCII reports whether the rune is a valid ASCII character.
 func IsASCII(c rune) bool { return c <= 0x7F }
 
@@ -252,10 +265,11 @@ const (
 
 // Class masks combining the individual character class bits.
 const (
-	letterMask = upp | low                         // IsAlpha
-	alnumMask  = upp | low | dig                   // IsAlphaNum
-	hexMask    = dig | hex                         // IsHex
-	printMask  = upp | low | dig | pun | sym | spc // IsPrint
+	letterMask = upp | low                   // IsAlpha
+	alnumMask  = upp | low | dig             // IsAlphaNum
+	hexMask    = dig | hex                   // IsHex
+	graphMask  = upp | low | dig | pun | sym // IsGraph
+	printMask  = graphMask | spc             // IsPrint
 )
 
 // Convenience combinations used when building the lookup table.
