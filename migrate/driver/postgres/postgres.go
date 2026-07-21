@@ -16,26 +16,6 @@
 // values are passed as bind parameters:
 //gosec:disable G202 -- identifiers are escaped, values are parameterized
 
-// Package postgres provides a PostgreSQL-specific driver for the migrate
-// package.
-//
-// It executes database migrations, manages the state of applied migrations,
-// and ensures concurrent safety using PostgreSQL advisory locks. The driver
-// supports configurable schema and table names for state tracking, structured
-// logging, and transactional execution of migration scripts.
-//
-// # Usage
-//
-// Initialize the driver with an existing [*sql.DB] connection and optional
-// configuration functions.
-//
-// Example:
-//
-//	db, _ := sql.Open("postgres", "postgres://user:pass@localhost:5432/db")
-//	drv := postgres.New(db,
-//	    postgres.WithSchema("public"),
-//	    postgres.WithTable("migrations"),
-//	)
 package postgres
 
 import (
