@@ -18,7 +18,6 @@ import (
 	"math"
 	"net/http"
 	"runtime/debug"
-	"runtime/metrics"
 	"sync/atomic"
 	"time"
 
@@ -67,6 +66,7 @@ func Middleware(opts ...Option) router.Middleware {
 			}
 
 			if overloaded.Load() {
+				e.W.Header().Set("Retry-After", "5")
 				return router.Fail(
 					http.StatusServiceUnavailable,
 					ReasonOverload,
