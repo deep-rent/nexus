@@ -12,24 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package snake provides functions for converting strings between camelCase and
-// snake_case formats.
-//
-// It handles transitions between lowercase letters, uppercase letters, and
-// digits to produce idiomatic snake_case or SCREAMING_SNAKE_CASE strings. The
-// implementation is specifically tuned for ASCII character sets and manages
-// acronyms by detecting transitions from sequences of uppercase letters to a
-// new word.
-//
-// # Usage
-//
-// Use [ToLower] for standard snake_case and [ToUpper] for constant-style
-// uppercase snake_case.
-//
-// Example:
-//
-//	low := snake.ToLower("JSONData") // "json_data"
-//	up  := snake.ToUpper("myVariable") // "MY_VARIABLE"
 package snake
 
 import (
