@@ -34,6 +34,7 @@ import (
 // graceful shutdown of the entire application.
 type Component func(ctx context.Context) error
 
+// Context keys for component-scoped values.
 type (
 	loggerKey  struct{}
 	timeoutKey struct{}
