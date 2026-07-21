@@ -14,16 +14,22 @@
 
 // Package gzip provides an HTTP middleware for compressing response bodies.
 //
-// Package gzip provides an HTTP middleware for compressing response bodies
-// using the gzip algorithm. It automatically adds the "Content-Encoding: gzip"
-// header and compresses the payload for clients that support it (indicated by
-// the "Accept-Encoding" request header).
+// It compresses response payloads with the gzip algorithm for clients that
+// support it (indicated by the "Accept-Encoding" request header) and
+// automatically adds the "Content-Encoding: gzip" header. Responses that
+// already carry a Content-Encoding, bodiless statuses (204, 205, 304), and
+// HEAD requests are passed through untouched, and MIME types on the
+// exclusion list (media, fonts, and archives by default) are skipped.
 //
 // # Usage
 //
-// The middleware is designed to be efficient. It pools [gzip.Writer] instances
-// to reduce memory allocations and gracefully skips compression for responses
-// that already have a "Content-Encoding" header set.
+// The middleware is designed to be efficient. It pools [gzip.Writer]
+// instances to reduce memory allocations.
+//
+// Handlers should set Content-Type before the first write: the compression
+// decision is made when the headers are written, and without an explicit
+// type the standard library would sniff the compressed bytes and mislabel
+// the response.
 //
 // Example:
 //
@@ -36,7 +42,7 @@
 //	// Create a gzip middleware pipe with the highest level of compression.
 //	pipe := gzip.New(
 //	  gzip.WithCompressionLevel(gzip.BestCompression),
-//	  gzip.WithExcludeMimeTypes("text/*", "application/font-woff"),
+//	  gzip.WithExcludeMimeTypes("application/vnd.apache.parquet"),
 //	)
 //
 //	// Apply the middleware as one of the first layers.

@@ -14,10 +14,14 @@
 
 // Package cors provides a configurable CORS middleware for http.Handlers.
 //
-// Package cors provides a configurable CORS (Cross-Origin Resource Sharing)
-// middleware for [http.Handler] instances. It automatically handles preflight
-// (OPTIONS) requests and injects the appropriate CORS headers into responses
-// for actual requests.
+// It implements Cross-Origin Resource Sharing for [http.Handler] instances:
+// preflight (OPTIONS) requests are handled and terminated automatically, and
+// the appropriate CORS headers are injected into responses for actual
+// requests.
+//
+// Requests without an Origin header, and requests from origins outside the
+// configured whitelist, pass through to the next handler without CORS
+// headers; the browser then blocks cross-origin access on the client side.
 //
 // # Usage
 //
@@ -84,6 +88,11 @@ type Option func(*config)
 // credentials are enabled via [WithAllowCredentials], browsers forbid a
 // wildcard origin, and this middleware will dynamically reflect the request's
 // Origin header if it is in the allowed list.
+//
+// Origins are compared byte-for-byte against the browser-supplied Origin
+// header, so list them exactly as browsers serialize them: lowercase scheme
+// and host, no trailing slash, and no port for scheme defaults (e.g.
+// "https://app.example.com" or "http://localhost:3000").
 func WithAllowedOrigins(origins ...string) Option {
 	return func(c *config) {
 		if len(origins) != 0 && !slices.Contains(origins, wildcard) {

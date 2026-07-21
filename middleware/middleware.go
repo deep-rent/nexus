@@ -15,10 +15,9 @@
 // Package middleware provides a standard approach for HTTP transport
 // middleware.
 //
-// Package middleware provides a standard approach for chaining and composing
-// HTTP transport middleware. This package focuses on low-level HTTP operations
-// (like logging, CORS, and compression) that operate directly on
-// [http.Handler].
+// It offers primitives for chaining and composing HTTP transport middleware,
+// focusing on low-level HTTP operations (like logging, CORS, and compression)
+// that operate directly on [http.Handler].
 //
 // For higher-level business logic that requires structured error handling and
 // API contexts, see the Middleware definitions in the router package. The
@@ -439,12 +438,12 @@ func Secure(cfg SecurityConfig) Pipe {
 				h.Set("Referrer-Policy", cfg.ReferrerPolicy)
 			}
 
-			// 6. Permissions-Policy (New)
+			// 6. Permissions-Policy
 			if cfg.PermissionsPolicy != "" {
 				h.Set("Permissions-Policy", cfg.PermissionsPolicy)
 			}
 
-			// 7. Cross-Origin-Opener-Policy (New)
+			// 7. Cross-Origin-Opener-Policy
 			if cfg.CrossOriginOpenerPolicy != "" {
 				h.Set("Cross-Origin-Opener-Policy", cfg.CrossOriginOpenerPolicy)
 			}
