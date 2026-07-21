@@ -20,9 +20,9 @@ import (
 	"github.com/deep-rent/nexus/ascii"
 )
 
-// benchClasses pairs each classification function with a label so the whole
-// suite can be swept over the full ASCII range in one benchmark.
-var benchClasses = []struct {
+// classes pairs each classification function with a label so the whole suite
+// can be swept over the full ASCII range in one benchmark.
+var classes = []struct {
 	name string
 	fn   func(byte) bool
 }{
@@ -41,11 +41,71 @@ var benchClasses = []struct {
 }
 
 func BenchmarkClassify(b *testing.B) {
-	for _, cl := range benchClasses {
+	for _, cl := range classes {
 		b.Run(cl.name, func(b *testing.B) {
 			var acc bool
 			for i := 0; i < b.N; i++ {
 				acc = cl.fn(byte(i))
+			}
+			_ = acc
+		})
+	}
+}
+
+// benchText is a representative mixed-case ASCII string for the string-level
+// benchmarks.
+const benchText = "The Quick Brown Fox Jumps Over The Lazy Dog! 0123456789"
+
+func BenchmarkEqualFold(b *testing.B) {
+	// Fold benchText against an all-uppercase copy: the strings are equal under
+	// EqualFold, so every byte is compared (the worst case).
+	upper := ascii.ToUpper(benchText)
+	b.ResetTimer()
+	var acc bool
+	for i := 0; i < b.N; i++ {
+		acc = ascii.EqualFold(benchText, upper)
+	}
+	_ = acc
+}
+
+func BenchmarkToLower(b *testing.B) {
+	// "convert" allocates and rewrites; "nop" takes the fast path that returns
+	// the input unchanged when it already contains no uppercase letters.
+	lower := ascii.ToLower(benchText)
+	benches := []struct {
+		name string
+		give string
+	}{
+		{"convert", benchText},
+		{"nop", lower},
+	}
+	for _, bb := range benches {
+		b.Run(bb.name, func(b *testing.B) {
+			var acc string
+			for i := 0; i < b.N; i++ {
+				acc = ascii.ToLower(bb.give)
+			}
+			_ = acc
+		})
+	}
+}
+
+func BenchmarkToUpper(b *testing.B) {
+	// "convert" allocates and rewrites; "nop" takes the fast path that returns
+	// the input unchanged when it already contains no lowercase letters.
+	upper := ascii.ToUpper(benchText)
+	benches := []struct {
+		name string
+		give string
+	}{
+		{"convert", benchText},
+		{"nop", upper},
+	}
+	for _, bb := range benches {
+		b.Run(bb.name, func(b *testing.B) {
+			var acc string
+			for i := 0; i < b.N; i++ {
+				acc = ascii.ToUpper(bb.give)
 			}
 			_ = acc
 		})
