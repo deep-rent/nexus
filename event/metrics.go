@@ -15,70 +15,41 @@
 package event
 
 import (
-	"context"
-
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
+	"github.com/deep-rent/nexus/metrics"
 )
 
-// scope is the instrumentation scope reported for metrics emitted by this
-// package.
-const scope = "github.com/deep-rent/nexus/event"
+// Names of the counters recorded by a [Bus], all tagged with the bus name
+// set via [WithName].
+const (
+	// BusPublished counts events accepted by the bus.
+	BusPublished = "event_published_total"
+	// BusDropped counts events rejected because the bus was full or closed.
+	// Note that under [DropOldest], the ring buffer evicts the displaced
+	// event silently, so such evictions do not show up here; only rejected
+	// publishes do.
+	BusDropped = "event_dropped_total"
+	// BusDelivered counts completed subscriber deliveries.
+	BusDelivered = "event_delivered_total"
+	// BusPanics counts subscriber deliveries that panicked.
+	BusPanics = "event_panics_total"
+)
 
-// counters bundles the bus metrics. Events carry no context, so recording
-// uses the background context; the bus name set via [WithName] is what keeps
-// instances distinguishable.
-//
-// Note that under [DropOldest], the ring buffer evicts the displaced event
-// silently, so such evictions do not show up in the dropped counter; only
-// rejected publishes do.
+// counters bundles the bus counters, resolved once at construction so the
+// publish and delivery hot paths touch nothing but atomics.
 type counters struct {
-	attrs     metric.MeasurementOption
-	published metric.Int64Counter
-	dropped   metric.Int64Counter
-	delivered metric.Int64Counter
-	panics    metric.Int64Counter
+	published *metrics.Counter
+	dropped   *metrics.Counter
+	delivered *metrics.Counter
+	panics    *metrics.Counter
 }
 
-// newCounters builds the bus counters from the given provider.
-func newCounters(mp metric.MeterProvider, name string) *counters {
-	meter := mp.Meter(scope)
-	count := func(instrument, description string) metric.Int64Counter {
-		counter, err := meter.Int64Counter(
-			instrument,
-			metric.WithDescription(description),
-		)
-		if err != nil {
-			otel.Handle(err)
-			counter, _ = noop.NewMeterProvider().Meter(scope).Int64Counter("")
-		}
-		return counter
-	}
+// newCounters resolves the bus counters from the given registry.
+func newCounters(reg *metrics.Registry, name string) *counters {
+	tag := metrics.T("bus", name)
 	return &counters{
-		attrs: metric.WithAttributes(attribute.String("bus", name)),
-		published: count(
-			"nexus.event.published",
-			"Number of events accepted by the bus.",
-		),
-		dropped: count(
-			"nexus.event.dropped",
-			"Number of events rejected because the bus was full or closed.",
-		),
-		delivered: count(
-			"nexus.event.delivered",
-			"Number of completed subscriber deliveries.",
-		),
-		panics: count(
-			"nexus.event.panic",
-			"Number of subscriber deliveries that panicked.",
-		),
+		published: reg.Counter(BusPublished, tag),
+		dropped:   reg.Counter(BusDropped, tag),
+		delivered: reg.Counter(BusDelivered, tag),
+		panics:    reg.Counter(BusPanics, tag),
 	}
-}
-
-// add increments a counter by one. Counter values are monotonic sums, so the
-// background context carries no information worth threading through.
-func (c *counters) add(counter metric.Int64Counter) {
-	counter.Add(context.Background(), 1, c.attrs)
 }

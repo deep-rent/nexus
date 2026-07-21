@@ -17,7 +17,7 @@ package event
 import (
 	"log/slog"
 
-	"go.opentelemetry.io/otel/metric"
+	"github.com/deep-rent/nexus/metrics"
 )
 
 type Option func(*config)
@@ -35,8 +35,8 @@ type config struct {
 	wait func() WaitStrategy
 	// logger is used for reporting errors and panics.
 	logger *slog.Logger
-	// meterProvider records the bus counters.
-	meterProvider metric.MeterProvider
+	// registry records the bus counters.
+	registry *metrics.Registry
 	// name distinguishes bus instances in the recorded metrics.
 	name string
 }
@@ -113,15 +113,13 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithMeterProvider sets the provider used to record the bus counters:
-// nexus.event.published, nexus.event.dropped, nexus.event.delivered, and
-// nexus.event.panic. It defaults to the global provider registered with
-// [go.opentelemetry.io/otel.SetMeterProvider], which is a no-op until an
-// application installs a real one. A nil value is ignored.
-func WithMeterProvider(mp metric.MeterProvider) Option {
+// WithRegistry sets the registry receiving the bus counters [BusPublished],
+// [BusDropped], [BusDelivered], and [BusPanics]. It defaults to
+// [metrics.DefaultRegistry]. A nil value is ignored.
+func WithRegistry(reg *metrics.Registry) Option {
 	return func(o *config) {
-		if mp != nil {
-			o.meterProvider = mp
+		if reg != nil {
+			o.registry = reg
 		}
 	}
 }

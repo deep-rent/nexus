@@ -15,46 +15,28 @@
 package event_test
 
 import (
-	"context"
 	"testing"
-
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/deep-rent/nexus/event"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/metrics"
 )
 
-// counterValue sums the data points of the named counter, returning the bus
-// attribute alongside.
+// counterValue returns the value of the named counter along with its bus
+// tag; both are zero-valued if the counter was never recorded.
 func counterValue(
 	t *testing.T,
-	reader *sdkmetric.ManualReader,
+	reg *metrics.Registry,
 	name string,
-) (total int64, bus string) {
+) (total uint64, bus string) {
 	t.Helper()
 
-	var rm metricdata.ResourceMetrics
-	if err := reader.Collect(context.Background(), &rm); err != nil {
-		t.Fatalf("collecting metrics: %v", err)
-	}
-
-	for _, scope := range rm.ScopeMetrics {
-		for _, m := range scope.Metrics {
-			if m.Name != name {
-				continue
-			}
-			sum, ok := m.Data.(metricdata.Sum[int64])
-			if !ok {
-				t.Fatalf("unexpected data type %T", m.Data)
-			}
-			for _, dp := range sum.DataPoints {
-				total += dp.Value
-				if v, ok := dp.Attributes.Value("bus"); ok {
-					bus = v.Emit()
-				}
-			}
+	for _, s := range reg.Snapshot().Metrics {
+		if s.Name != name {
+			continue
 		}
+		total += uint64(s.Value)
+		bus = s.Tags["bus"]
 	}
 	return total, bus
 }
@@ -62,12 +44,9 @@ func counterValue(
 func TestBus_CountsPublishAndDelivery(t *testing.T) {
 	t.Parallel()
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
-
+	reg := metrics.NewRegistry()
 	bus := event.NewBus[int](
-		event.WithMeterProvider(mp),
+		event.WithRegistry(reg),
 		event.WithName("orders"),
 		event.WithSyncDispatch(),
 	)
@@ -86,15 +65,15 @@ func TestBus_CountsPublishAndDelivery(t *testing.T) {
 		t.Fatalf("deliveries: got %d; want 3", seen)
 	}
 
-	published, name := counterValue(t, reader, "nexus.event.published")
+	published, name := counterValue(t, reg, event.BusPublished)
 	if published != 3 {
 		t.Errorf("published: got %d; want 3", published)
 	}
 	if name != "orders" {
-		t.Errorf("bus attribute: got %q; want %q", name, "orders")
+		t.Errorf("bus tag: got %q; want %q", name, "orders")
 	}
 
-	delivered, _ := counterValue(t, reader, "nexus.event.delivered")
+	delivered, _ := counterValue(t, reg, event.BusDelivered)
 	if delivered != 3 {
 		t.Errorf("delivered: got %d; want 3", delivered)
 	}
@@ -103,7 +82,7 @@ func TestBus_CountsPublishAndDelivery(t *testing.T) {
 	if bus.Publish(4) {
 		t.Error("publish after close: got true; want false")
 	}
-	dropped, _ := counterValue(t, reader, "nexus.event.dropped")
+	dropped, _ := counterValue(t, reg, event.BusDropped)
 	if dropped != 1 {
 		t.Errorf("dropped: got %d; want 1", dropped)
 	}
@@ -112,12 +91,9 @@ func TestBus_CountsPublishAndDelivery(t *testing.T) {
 func TestBus_CountsSubscriberPanics(t *testing.T) {
 	t.Parallel()
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
-
+	reg := metrics.NewRegistry()
 	bus := event.NewBus[int](
-		event.WithMeterProvider(mp),
+		event.WithRegistry(reg),
 		event.WithLogger(log.Silent()),
 		event.WithSyncDispatch(),
 	)
@@ -129,11 +105,11 @@ func TestBus_CountsSubscriberPanics(t *testing.T) {
 	}
 	bus.Close()
 
-	panics, _ := counterValue(t, reader, "nexus.event.panic")
+	panics, _ := counterValue(t, reg, event.BusPanics)
 	if panics != 1 {
 		t.Errorf("panics: got %d; want 1", panics)
 	}
-	delivered, _ := counterValue(t, reader, "nexus.event.delivered")
+	delivered, _ := counterValue(t, reg, event.BusDelivered)
 	if delivered != 0 {
 		t.Errorf("delivered: got %d; want 0", delivered)
 	}
@@ -142,11 +118,8 @@ func TestBus_CountsSubscriberPanics(t *testing.T) {
 func TestBroker_NamesBusesAfterTopics(t *testing.T) {
 	t.Parallel()
 
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
-
-	broker := event.NewBroker(event.WithMeterProvider(mp))
+	reg := metrics.NewRegistry()
+	broker := event.NewBroker(event.WithRegistry(reg))
 	bus := event.Topic[string](broker, "invoices")
 
 	if !bus.Publish("total") {
@@ -154,11 +127,11 @@ func TestBroker_NamesBusesAfterTopics(t *testing.T) {
 	}
 	broker.Close()
 
-	published, name := counterValue(t, reader, "nexus.event.published")
+	published, name := counterValue(t, reg, event.BusPublished)
 	if published != 1 {
 		t.Errorf("published: got %d; want 1", published)
 	}
 	if name != "invoices" {
-		t.Errorf("bus attribute: got %q; want %q", name, "invoices")
+		t.Errorf("bus tag: got %q; want %q", name, "invoices")
 	}
 }

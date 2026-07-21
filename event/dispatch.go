@@ -57,10 +57,10 @@ func deliver[T any](
 				slog.Any("panic", r),
 				slog.String("stack", string(debug.Stack())),
 			)
-			stats.add(stats.panics)
+			stats.panics.Inc()
 			return
 		}
-		stats.add(stats.delivered)
+		stats.delivered.Inc()
 	}()
 	fn(event)
 }

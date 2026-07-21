@@ -20,8 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"go.opentelemetry.io/otel"
-
+	"github.com/deep-rent/nexus/metrics"
 	"github.com/deep-rent/nexus/ring"
 )
 
@@ -89,10 +88,10 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	if cfg.logger == nil {
 		cfg.logger = slog.Default()
 	}
-	if cfg.meterProvider == nil {
-		cfg.meterProvider = otel.GetMeterProvider()
+	if cfg.registry == nil {
+		cfg.registry = metrics.DefaultRegistry
 	}
-	stats := newCounters(cfg.meterProvider, cfg.name)
+	stats := newCounters(cfg.registry, cfg.name)
 
 	// Every bus idles on its own strategy, so that a stateful one cannot be
 	// shared by the buses a broker creates.
@@ -193,7 +192,7 @@ func (b *Bus[T]) Publish(event T) bool {
 
 	// Guard against publishing to a stopped bus.
 	if b.closed.Load() {
-		b.stats.add(b.stats.dropped)
+		b.stats.dropped.Inc()
 		return false
 	}
 
@@ -201,10 +200,10 @@ func (b *Bus[T]) Publish(event T) bool {
 	if b.evts.Push(event) {
 		// Awaken the processor if it happens to be snoozing.
 		b.wait.Signal()
-		b.stats.add(b.stats.published)
+		b.stats.published.Inc()
 		return true
 	}
-	b.stats.add(b.stats.dropped)
+	b.stats.dropped.Inc()
 	return false
 }
 
