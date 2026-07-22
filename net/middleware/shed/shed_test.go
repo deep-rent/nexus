@@ -157,13 +157,11 @@ func TestNew_ConcurrentSampling(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 64 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := handler.ServeHTTP(newExchange()); err != nil {
 				t.Errorf("unexpected load shedding below threshold: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

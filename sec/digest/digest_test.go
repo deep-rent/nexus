@@ -211,13 +211,11 @@ func TestHasherConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	bad := make(chan string, goroutines)
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if got := h.String(input); got != want {
 				bad <- got
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(bad)
