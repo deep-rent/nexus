@@ -1,0 +1,580 @@
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package iam
+
+import (
+	"context"
+	"encoding/json/jsontext"
+	"uuid"
+
+	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sec/iam/idp"
+	"github.com/deep-rent/nexus/sec/iam/oauth"
+)
+
+// Subject represents an authenticated resource owner, typically a user.
+//
+// Implementations wrap the primary key and permission set. They are managed
+// via [SubjectStore].
+type Subject interface {
+	// ID returns the unique identifier for the subject.
+	ID() uuid.UUID
+	// Username returns the unique, human-readable identifier the subject
+	// logs in with (e.g., an email address or handle). It labels the
+	// subject's account in contexts where the raw UUID would be meaningless
+	// to humans, such as the account picker of a passkey ceremony.
+	Username() string
+	// Roles returns the list of roles assigned to the subject, used to populate
+	// the roles claim in access tokens.
+	Roles() []string
+}
+
+// Channel is the client-facing description of an enrolled [otp.Method],
+// returned in a login flow prompt so a client can present a channel picker. It
+// never carries a secret or a raw destination.
+type Channel struct {
+	// ID is the stable identifier used to select this method on resend.
+	ID string `json:"id"`
+	// Label is an optional human-facing hint, such as a masked address or phone
+	// number.
+	Label string `json:"label,omitzero"`
+}
+
+// SubjectStore provides data access and authentication for resource owners.
+//
+// It is used by the [Server] to authenticate subjects during the login flow
+// and to resolve identities during authorization and token issuance.
+type SubjectStore interface {
+	// Authenticate validates subject credentials.
+	//
+	// If credentials are valid, it must return the subject and nil.
+	// If authentication fails (e.g., wrong password), it must return nil and
+	// nil. It should return an error only if the underlying storage lookup
+	// fails.
+	//
+	// Implementations should not hand-roll password verification; the
+	// [github.com/deep-rent/nexus/sec/pass] package stores self-describing
+	// JSON records and resolves the hashing algorithm dynamically. Verify
+	// the password and, while the plaintext is still at hand, transparently
+	// upgrade hashes that predate the current hashing configuration:
+	//
+	//	func (s *store) Authenticate(
+	//	  ctx context.Context,
+	//	  username, password string,
+	//	) (iam.Subject, error) {
+	//	  sub, record, err := s.lookup(ctx, username)
+	//	  if err != nil || sub == nil {
+	//	    return nil, err
+	//	  }
+	//	  ok, err := s.hasher.Verify(record, password)
+	//	  if err != nil || !ok {
+	//	    return nil, err // nil, nil on a wrong password
+	//	  }
+	//	  // The password is proven; converge its stored hash to the
+	//	  // strongest configuration without a mass reset.
+	//	  if stale, _ := s.hasher.Outdated(record); stale {
+	//	    if record, err = s.hasher.Hash(password); err == nil {
+	//	      s.updateRecord(ctx, sub.ID(), record)
+	//	    }
+	//	  }
+	//	  return sub, nil
+	//	}
+	Authenticate(
+		ctx context.Context,
+		username, password string,
+	) (Subject, error)
+	// GetWebAuthnCredentials retrieves all passkey credentials registered
+	// by the subject. An enrolled subject typically owns a handful; a
+	// subject without any yields an empty slice.
+	//
+	// It should return an error only if the storage lookup fails.
+	//
+	// The WebAuthn store methods are only consulted when the server was
+	// constructed with [WithWebAuthn]; implementations backing servers
+	// without passkey support may simply return zero values.
+	GetWebAuthnCredentials(
+		ctx context.Context,
+		subjectID uuid.UUID,
+	) ([]WebAuthnCredential, error)
+	// CreateWebAuthnCredential stores a newly registered passkey credential
+	// for the subject. The name is an optional human-readable label chosen
+	// by the subject (e.g., "MacBook Touch ID"); implementations may ignore
+	// it. Credentials are opaque records: implementations should persist
+	// them as-is (e.g., as a JSON blob keyed by [WebAuthnCredential.ID])
+	// and must not modify them.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateWebAuthnCredential(
+		ctx context.Context,
+		subjectID uuid.UUID,
+		name string,
+		credential WebAuthnCredential,
+	) error
+	// UpdateWebAuthnCredential replaces a stored passkey credential, keyed
+	// by [WebAuthnCredential.ID] and the owning subject. The [Server] calls
+	// it after every successful assertion to persist the updated signature
+	// counter and backup flags, which future assertions are validated
+	// against. Updating an absent credential is a no-op.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateWebAuthnCredential(
+		ctx context.Context,
+		subjectID uuid.UUID,
+		credential WebAuthnCredential,
+	) error
+	// GetSubject retrieves a subject by their unique ID.
+	//
+	// If the user is found, it must return the subject and nil.
+	// If the user is not found, it must return nil and nil.
+	// It should return an error only if the storage lookup fails.
+	GetSubject(ctx context.Context, id uuid.UUID) (Subject, error)
+	// GetSubjectByUsername resolves a subject by their username without
+	// verifying any credential.
+	//
+	// If the user is found, it must return the subject and nil.
+	// If the user is not found, it must return nil, nil. It should return an
+	// error only if the storage lookup fails.
+	//
+	// The method is only consulted when passwordless login is enabled via
+	// [WithPasswordless]; other servers may return nil, nil. Because it
+	// identifies a subject without authenticating them, callers must treat the
+	// result as a claim proven only once the login flow completes.
+	GetSubjectByUsername(ctx context.Context, username string) (Subject, error)
+	// GetSubjectByExternalID retrieves a subject linked to an external
+	// identity provider.
+	//
+	// This is used for social login flows. If no local subject is linked to
+	// the external ID, it returns nil, nil (allowing for Just-In-Time
+	// provisioning if the implementation chooses to do so).
+	GetSubjectByExternalID(
+		ctx context.Context,
+		provider string, identity idp.Claimant,
+	) (Subject, error)
+	// GetSubjectBySession retrieves the authenticated subject via their
+	// session key.
+	//
+	// If the session is valid, it must return the subject and nil.
+	// If the session is missing, invalid, or expired, it must return nil and
+	// nil. It should return an error only if the storage lookup fails.
+	GetSubjectBySession(ctx context.Context, key string) (Subject, error)
+	// CreateSession stores the session mapping for the authenticated user.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateSession(ctx context.Context, key string, subjectID uuid.UUID) error
+	// DeleteSession removes the session mapping associated with the key.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteSession(ctx context.Context, key string) error
+}
+
+// OTPChallenge holds the state of a pending two-factor login: a password
+// that has been verified but still awaits confirmation by a one-time
+// password.
+//
+// The challenge is the client's handle for the pending login; the code is
+// the secret delivered to the subject over the side channel. Both are
+// digested before they reach the store. Challenges are short-lived (a few
+// minutes) and must be deleted after a single successful confirmation.
+//
+// A short numeric code is guessable by brute force, and its digest is
+// equally brute-forceable offline, so the digest is defense in depth rather
+// than protection: the effective safeguards are the expiry, the attempt
+// counter, and the server's throttling.
+type OTPChallenge struct {
+	// Challenge is the digest of the high-entropy handle issued to the
+	// client. The plaintext value never reaches the store.
+	Challenge oauth.Digest `json:"challenge"`
+	// SubjectID identifies the resource owner whose password has already
+	// been verified.
+	SubjectID uuid.UUID `json:"subject_id"`
+	// Code is the digest of the one-time password delivered to the subject.
+	// The plaintext value never reaches the store. It is replaced when the
+	// code is resent.
+	Code oauth.Digest `json:"code"`
+	// Attempts counts the failed confirmation attempts made against this
+	// challenge. The [Server] refuses further attempts once the configured
+	// maximum is reached.
+	Attempts int `json:"attempts,omitzero"`
+	// Resends counts how many times the code has been redelivered. The
+	// [Server] refuses further resends once the configured maximum is
+	// reached.
+	Resends int `json:"resends,omitzero"`
+	// ExpiresAt defines when this challenge expires, as a UNIX timestamp in
+	// seconds. Resending a code does not extend the expiry.
+	ExpiresAt int64 `json:"expires_at"`
+}
+
+// WebAuthnCeremony distinguishes the two kinds of WebAuthn ceremonies whose
+// state is tracked by a [WebAuthnSession].
+type WebAuthnCeremony string
+
+const (
+	// WebAuthnCeremonyRegistration marks the session of a credential
+	// registration (attestation) ceremony.
+	WebAuthnCeremonyRegistration WebAuthnCeremony = "registration"
+	// WebAuthnCeremonyLogin marks the session of an authentication
+	// (assertion) ceremony.
+	WebAuthnCeremonyLogin WebAuthnCeremony = "login"
+)
+
+// WebAuthnSession holds the server-side state of a WebAuthn ceremony
+// between its begin and finish steps, most importantly the challenge the
+// authenticator response must answer.
+//
+// The handle is the client's reference to the pending ceremony; the
+// serialized ceremony state is produced and consumed by the server and is
+// opaque to the store. Sessions are short-lived and must be deleted after a
+// single finish attempt, successful or not.
+type WebAuthnSession struct {
+	// Handle is the digest of the high-entropy handle issued to the client.
+	// The plaintext value never reaches the store.
+	Handle oauth.Digest `json:"handle"`
+	// Ceremony states which kind of ceremony this session belongs to. A
+	// session begun for one ceremony cannot finish another.
+	Ceremony WebAuthnCeremony `json:"ceremony"`
+	// SubjectID identifies the authenticated subject who began a
+	// registration ceremony. It remains the zero UUID for login ceremonies,
+	// where the subject is only discovered from the assertion itself.
+	SubjectID uuid.UUID `json:"subject_id,omitzero"`
+	// Data carries the serialized ceremony state. Implementations must
+	// persist it verbatim.
+	Data []byte `json:"data"`
+	// ExpiresAt defines when this session expires, as a UNIX timestamp in
+	// seconds.
+	ExpiresAt int64 `json:"expires_at"`
+}
+
+// SessionStore abstracts the persistence layer for ephemeral authorization
+// artifacts.
+//
+// Beyond the token-issuance artifacts of the embedded [oauth.TokenStore], it
+// covers the login machinery: OTP challenges, WebAuthn ceremony sessions,
+// device trust records, and multi-step login flows. These artifacts usually
+// have a limited TTL.
+//
+// All artifacts are keyed by their [oauth.Digest]; the [Server] hashes
+// plaintext values before every store interaction. Implementations therefore
+// never handle bearer secrets and can persist digests directly as primary
+// keys.
+type SessionStore interface {
+	oauth.TokenStore
+
+	// GetOTPChallenge retrieves a pending two-factor login challenge by its
+	// digest.
+	//
+	// If found, it must return the data and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetOTPChallenge(
+		ctx context.Context,
+		challenge oauth.Digest,
+	) (OTPChallenge, error)
+	// CreateOTPChallenge stores a new two-factor login challenge.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateOTPChallenge(ctx context.Context, data OTPChallenge) error
+	// UpdateOTPChallenge replaces the stored state of a challenge, keyed by
+	// [OTPChallenge.Challenge]. It is used to record failed attempts and
+	// code resends.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateOTPChallenge(ctx context.Context, data OTPChallenge) error
+	// DeleteOTPChallenge removes a challenge by its digest and reports
+	// whether it was present. Like [oauth.TokenStore.DeleteAuthCode], the
+	// deletion and the report must be atomic so that concurrent confirmation
+	// attempts cannot both succeed.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteOTPChallenge(ctx context.Context, challenge oauth.Digest) (bool, error)
+	// GetWebAuthnSession retrieves a pending WebAuthn ceremony session by
+	// its digest.
+	//
+	// If found, it must return the data and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetWebAuthnSession(
+		ctx context.Context,
+		handle oauth.Digest,
+	) (WebAuthnSession, error)
+	// CreateWebAuthnSession stores a new WebAuthn ceremony session.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateWebAuthnSession(ctx context.Context, data WebAuthnSession) error
+	// DeleteWebAuthnSession removes a session by its digest and reports
+	// whether it was present. Like [oauth.TokenStore.DeleteAuthCode], the
+	// deletion and the report must be atomic so that concurrent finish
+	// attempts cannot both succeed.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteWebAuthnSession(ctx context.Context, handle oauth.Digest) (bool, error)
+	// GetTrustedDevice retrieves a remember-me device trust record by the
+	// digest of its token.
+	//
+	// If found, it must return the record and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetTrustedDevice(
+		ctx context.Context,
+		token oauth.Digest,
+	) (TrustedDevice, error)
+	// CreateTrustedDevice stores a new device trust record.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateTrustedDevice(ctx context.Context, data TrustedDevice) error
+	// DeleteTrustedDevice removes a device trust record by the digest of its
+	// token and reports whether it was present.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteTrustedDevice(ctx context.Context, token oauth.Digest) (bool, error)
+	// DeleteTrustedDevicesForSubject removes every device trust record enrolled
+	// by the given subject. It backs a "sign out everywhere" or a
+	// credential-change revocation, and is a no-op when the subject trusts no
+	// devices.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteTrustedDevicesForSubject(
+		ctx context.Context,
+		subjectID uuid.UUID,
+	) error
+	// GetFlowTransaction retrieves an in-progress login flow by the digest of
+	// its handle.
+	//
+	// If found, it must return the transaction and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetFlowTransaction(
+		ctx context.Context,
+		handle oauth.Digest,
+	) (FlowTransaction, error)
+	// CreateFlowTransaction stores a new in-progress login flow.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateFlowTransaction(ctx context.Context, data FlowTransaction) error
+	// UpdateFlowTransaction replaces the stored state of a flow, keyed by
+	// [FlowTransaction.Handle]. It records completed steps as the login
+	// advances.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateFlowTransaction(ctx context.Context, data FlowTransaction) error
+	// DeleteFlowTransaction removes a flow by the digest of its handle and
+	// reports whether it was present. Like [oauth.TokenStore.DeleteAuthCode],
+	// the deletion and the report must be atomic so that concurrent
+	// completions cannot both establish a session.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteFlowTransaction(ctx context.Context, handle oauth.Digest) (bool, error)
+}
+
+// LoginRequest represents the payload for the resource owner login endpoint.
+//
+// It is consumed by [Server.Login] to authenticate a resource owner and
+// initiate a secure session via the [SubjectStore.Authenticate] method.
+type LoginRequest struct {
+	// Username is the unique identifier (e.g., an email address or handle)
+	// used by the resource owner to authenticate. This value is passed to
+	// [SubjectStore.Authenticate] to resolve the [Subject].
+	Username string `json:"username"`
+	// Password is the secret credential provided by the resource owner.
+	// It is used to verify the identity of the user during the login process.
+	Password string `json:"password"`
+	// Remember asks the server to remember the login: it persists the session
+	// beyond the browser session and, on a device that completes any required
+	// factors, trusts the device so later logins may skip them.
+	Remember bool `json:"remember,omitzero"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *LoginRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("username", r.Username)
+	v.NotEmpty("password", r.Password)
+}
+
+var _ valid.Validatable = (*LoginRequest)(nil)
+
+// IdentifyRequest represents the payload for the passwordless login endpoint.
+//
+// It is consumed by [Server.Identify] to start a passwordless login: the
+// subject is identified by username (without a credential) and the login flow
+// then authenticates them through its factors.
+type IdentifyRequest struct {
+	// Username identifies the resource owner. It is not a credential; the flow
+	// factors prove control of the account.
+	Username string `json:"username"`
+	// Remember asks the server to remember the login once the flow completes,
+	// as in [LoginRequest].
+	Remember bool `json:"remember,omitzero"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *IdentifyRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("username", r.Username)
+}
+
+var _ valid.Validatable = (*IdentifyRequest)(nil)
+
+// FlowResponse is the payload returned by the login, continue, and action
+// endpoints when a login requires a further authentication step.
+//
+// Instead of a session, the client receives a flow handle and a description of
+// the active step. It must satisfy the step and confirm via
+// [Server.Continue], or drive an out-of-band action (such as resending a code)
+// via [Server.Action], carrying the same handle throughout.
+type FlowResponse struct {
+	// Handle is the opaque handle identifying the pending login. It is required
+	// to continue or act on the flow.
+	Handle string `json:"handle"`
+	// Step is the identifier of the active step (e.g. "otp").
+	Step string `json:"step"`
+	// Prompt is the step-specific data the client needs to satisfy the step,
+	// such as the available delivery channels and a code's remaining lifetime.
+	// It is omitted when the step needs no such data.
+	Prompt any `json:"prompt,omitzero"`
+}
+
+// ContinueRequest represents the payload for the login continue endpoint.
+//
+// It is consumed by [Server.Continue] to satisfy the active step of a pending
+// login with the credential the resource owner supplied. The active step reads
+// whichever field it expects: a code-based step (such as a one-time password)
+// reads Code, while an assertion-based step (such as WebAuthn) reads Credential.
+type ContinueRequest struct {
+	// Handle is the flow handle returned by the login endpoint.
+	Handle string `json:"handle"`
+	// Code is the credential for a code-based step, such as a one-time
+	// password.
+	Code string `json:"code,omitzero"`
+	// Credential is the structured credential for an assertion-based step,
+	// such as a JSON-encoded WebAuthn assertion.
+	Credential jsontext.Value `json:"credential,omitzero"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *ContinueRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("handle", r.Handle)
+}
+
+var _ valid.Validatable = (*ContinueRequest)(nil)
+
+// ActionRequest represents the payload for the login action endpoint.
+//
+// It is consumed by [Server.Action] to drive an out-of-band operation on the
+// active step of a pending login, such as resending a one-time password or
+// switching the delivery channel.
+type ActionRequest struct {
+	// Handle is the flow handle returned by the login endpoint.
+	Handle string `json:"handle"`
+	// Action names the operation to run (e.g. [ActionResend]).
+	Action string `json:"action"`
+	// Channel optionally selects a different delivery channel (by
+	// [Channel.ID]) for actions that support it, such as a resend.
+	Channel string `json:"channel,omitzero"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *ActionRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("handle", r.Handle)
+	v.NotEmpty("action", r.Action)
+}
+
+var _ valid.Validatable = (*ActionRequest)(nil)
+
+const (
+	// DeviceVerificationApprove signals that the resource owner approves the
+	// pending device authorization request.
+	DeviceVerificationApprove = "approve"
+	// DeviceVerificationDeny signals that the resource owner rejects the
+	// pending device authorization request.
+	DeviceVerificationDeny = "deny"
+)
+
+// DeviceVerificationRequest represents the payload for the device
+// verification endpoint (RFC 8628 Section 3.3).
+//
+// It is consumed by [Server.DeviceVerify] to let an authenticated resource
+// owner approve or deny a pending device authorization request identified by
+// its user code.
+type DeviceVerificationRequest struct {
+	// UserCode is the code displayed on the device, entered by the resource
+	// owner. Case and embedded whitespace are ignored.
+	UserCode string `json:"user_code"`
+	// Action is either [DeviceVerificationApprove] or
+	// [DeviceVerificationDeny].
+	Action string `json:"action"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *DeviceVerificationRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("user_code", r.UserCode)
+	v.Whitelist(
+		"action",
+		r.Action,
+		DeviceVerificationApprove,
+		DeviceVerificationDeny,
+	)
+}
+
+var _ valid.Validatable = (*DeviceVerificationRequest)(nil)
+
+// Path constants define the specific endpoints managed by the [Server].
+const (
+	PathAuthorize               = "/authorize"
+	PathDeviceAuthorization     = "/device_authorization"
+	PathDeviceVerify            = "/device"
+	PathExternalCallback        = "/callback/{provider}"
+	PathExternalLogin           = "/login/{provider}"
+	PathIntrospect              = "/introspect"
+	PathKeySet                  = "/jwks.json"
+	PathLogin                   = "/login"
+	PathLoginIdentify           = "/login/identify"
+	PathLoginContinue           = "/login/continue"
+	PathLoginAction             = "/login/action"
+	PathLogout                  = "/logout"
+	PathRevoke                  = "/revoke"
+	PathToken                   = "/token"
+	PathWebAuthnLogin           = "/webauthn/login"
+	PathWebAuthnLoginOptions    = "/webauthn/login/options"
+	PathWebAuthnRegister        = "/webauthn/register"
+	PathWebAuthnRegisterOptions = "/webauthn/register/options"
+	PathWellKnown               = "/.well-known/oauth-authorization-server"
+)
+
+// Key namespaces keep the identifier spaces disjoint within the single
+// [throttle.Throttle] the server shares across every axis it limits, so that
+// a client ID can never share a bucket with a username, a one-time code, or a
+// network address.
+const (
+	scopeAddr   = "addr:"
+	scopeClient = "client:"
+	scopeUser   = "user:"
+	scopeCode   = "code:"
+	scopeOTP    = "otp:"
+)
+
+// Token generation defaults. Every opaque bearer artifact is drawn from one
+// [nonce.Generator]; user codes are drawn from one [nonce.Sampler].
+const (
+	// NonceSize is the byte length of an opaque bearer artifact. 32 bytes yield
+	// 256 bits of entropy and a 43-character base64url string.
+	NonceSize = 32
+
+	// UserCodeAlphabet is the character set for user codes, as recommended by
+	// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
+	// prevent accidental words) and visually ambiguous characters.
+	UserCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
+
+	// UserCodeLength is the number of characters sampled for a user code,
+	// rendered as two dash-separated groups (XXXX-XXXX).
+	UserCodeLength = 8
+)
