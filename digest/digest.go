@@ -20,22 +20,22 @@ import (
 	"encoding/base64"
 )
 
-// String computes the SHA-256 fingerprint of a string value, encoded as an
-// unpadded base64url string.
+// String computes the SHA-256 fingerprint of a string value, returning its
+// 43-character, unpadded base64url representation.
 func String(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// Bytes computes the SHA-256 fingerprint of a byte slice, encoded as an
-// unpadded base64url string.
+// Bytes computes the SHA-256 fingerprint of a byte slice, returning its
+// 43-character, unpadded base64url representation.
 func Bytes(value []byte) string {
 	sum := sha256.Sum256(value)
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// Equal performs a constant-time comparison between two digest strings to
-// prevent timing side-channel attacks.
+// Equal performs a constant-time comparison between two digest strings using
+// [subtle.ConstantTimeCompare] to prevent timing side-channel attacks.
 func Equal(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

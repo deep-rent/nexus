@@ -29,10 +29,10 @@ func TestString(t *testing.T) {
 	d1 := digest.String(input)
 
 	sum := sha256.Sum256([]byte(input))
-	expected := base64.RawURLEncoding.EncodeToString(sum[:])
+	exp := base64.RawURLEncoding.EncodeToString(sum[:])
 
-	if d1 != expected {
-		t.Fatalf("expected digest %s, got %s", expected, d1)
+	if d1 != exp {
+		t.Fatalf("expected digest %s, got %s", exp, d1)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestBytes(t *testing.T) {
 	d2 := digest.String("secret-auth-token-12345")
 
 	if d1 != d2 {
-		t.Fatalf("expected Bytes and String digests to match, got %s vs %s", d1, d2)
+		t.Fatalf("expected digests to match, got %s vs %s", d1, d2)
 	}
 }
 
@@ -56,10 +56,10 @@ func TestEqual(t *testing.T) {
 	d3 := digest.String("token-B")
 
 	if !digest.Equal(d1, d2) {
-		t.Fatal("expected Equal to return true for identical digests")
+		t.Fatal("expected true for identical digests")
 	}
 
 	if digest.Equal(d1, d3) {
-		t.Fatal("expected Equal to return false for different digests")
+		t.Fatal("expected false for different digests")
 	}
 }
