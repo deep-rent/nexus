@@ -26,47 +26,24 @@ import (
 
 func TestVerifier(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name    string
-		length  int
-		wantErr error
-	}{
-		{"valid min length", pkce.MinVerifierLength, nil},
-		{"valid mid length", 80, nil},
-		{"valid max length", pkce.MaxVerifierLength, nil},
-		{
-			"invalid too short",
-			pkce.MinVerifierLength - 1,
-			pkce.ErrInvalidLength,
-		},
-		{"invalid too long", pkce.MaxVerifierLength + 1, pkce.ErrInvalidLength},
-	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := pkce.Verifier(t.Context(), tt.length)
-			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("error: got %v; want %v", err, tt.wantErr)
-				return
-			}
-			if err != nil {
-				return
-			}
-			if len(got) != tt.length {
-				t.Errorf("got length %d; want %d", len(got), tt.length)
-			}
-			if !pkce.IsUnreserved(got) {
-				t.Errorf("should not contain reserved characters: %q", got)
-			}
-		})
+	verifier, err := pkce.Verifier(t.Context())
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+		return
+	}
+	if exp, act := pkce.DefaultVerifierLength, len(verifier); exp != act {
+		t.Errorf("got length %d; want %d", act, exp)
+	}
+	if !pkce.IsUnreserved(verifier) {
+		t.Errorf("should not contain reserved characters: %q", verifier)
 	}
 }
 
 func TestChallenge(t *testing.T) {
 	t.Parallel()
-	validVerifier := strings.Repeat("a", pkce.MinVerifierLength)
-	invalidVerifier := validVerifier + "!"
+	valid := strings.Repeat("a", pkce.MinVerifierLength)
+	invalid := valid + "!"
 
 	tests := []struct {
 		name     string
@@ -84,21 +61,21 @@ func TestChallenge(t *testing.T) {
 		},
 		{
 			name:     "valid plain",
-			verifier: validVerifier,
+			verifier: valid,
 			method:   pkce.MethodPlain,
-			want:     validVerifier,
+			want:     valid,
 			wantErr:  nil,
 		},
 		{
 			name:     "invalid method",
-			verifier: validVerifier,
+			verifier: valid,
 			method:   "invalid",
 			want:     "",
 			wantErr:  pkce.ErrUnsupportedMethod,
 		},
 		{
 			name:     "invalid characters",
-			verifier: invalidVerifier,
+			verifier: invalid,
 			method:   pkce.MethodS256,
 			want:     "",
 			wantErr:  pkce.ErrInvalidVerifier,
@@ -166,7 +143,7 @@ func TestVerify(t *testing.T) {
 }
 
 func BenchmarkVerify(b *testing.B) {
-	v, _ := pkce.Verifier(b.Context(), 128)
+	v, _ := pkce.Verifier(b.Context())
 	c, _ := pkce.Challenge(v, pkce.MethodS256)
 
 	for b.Loop() {
@@ -176,7 +153,7 @@ func BenchmarkVerify(b *testing.B) {
 
 func BenchmarkVerifier(b *testing.B) {
 	for b.Loop() {
-		_, _ = pkce.Verifier(b.Context(), 128)
+		_, _ = pkce.Verifier(b.Context())
 	}
 }
 

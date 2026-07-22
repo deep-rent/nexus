@@ -618,7 +618,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	env := newTestEnv(t)
 	cookie := env.login()
 
-	verifier, err := pkce.Verifier(t.Context(), 64)
+	verifier, err := pkce.Verifier(t.Context())
 	if err != nil {
 		t.Fatalf("failed to generate verifier: %v", err)
 	}

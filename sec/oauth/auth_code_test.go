@@ -30,7 +30,7 @@ func TestAuthCodeGrant(t *testing.T) {
 	clientID := uuid.New()
 	subjectID := uuid.New()
 
-	verifier, err := pkce.Verifier(t.Context(), 64)
+	verifier, err := pkce.Verifier(t.Context())
 	if err != nil {
 		t.Fatalf("failed to generate verifier: %v", err)
 	}

@@ -42,6 +42,9 @@ const (
 	// MaxVerifierLength is the maximum allowed length for a code verifier per
 	// RFC 7636 (128 characters).
 	MaxVerifierLength = 128
+	// DefaultVerifierLength is the length for a code verifier generated
+	// by [Verifier].
+	DefaultVerifierLength = 96
 )
 
 var (
@@ -69,18 +72,31 @@ func Supports(method string) bool {
 	return method == MethodS256 || method == MethodPlain
 }
 
-// Verifier creates a cryptographically secure random string to serve as a PKCE
-// code verifier. The length parameter determines the number of characters in
-// the resulting string, which must be between [MinVerifierLength] and
-// [MaxVerifierLength]. A context is required for the underlying random number
-// generator.
+// Alphabet is the set of unreserved characters allowed in a PKCE code verifier,
+// as defined in RFC 7636 Section 4.1.
+const Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+
+// isUnreserved reports whether the given string contains only unreserved ASCII
+// characters.
 //
-// Characters are sampled uniformly from [Alphabet] via a [nonce.Sampler].
-func Verifier(ctx context.Context, length int) (string, error) {
-	if length < MinVerifierLength || length > MaxVerifierLength {
-		return "", ErrInvalidLength
-	}
-	return nonce.NewSampler(nil, Alphabet, length).Draw(ctx)
+// According to RFC 7636 Section 4.1, unreserved characters are:
+// [A-Z], [a-z], [0-9], "-", ".", "_", "~".
+func IsUnreserved(s string) bool { return ascii.All(s, isUnreserved) }
+
+func isUnreserved(c byte) bool {
+	return ascii.IsAlphaNum(c) || c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+// verifier is a global nonce sampler for generating code verifiers.
+var verifier = nonce.NewSampler(nil, Alphabet, DefaultVerifierLength)
+
+// Verifier creates a cryptographically secure random string to serve as a PKCE
+// code verifier.
+//
+// The resulting string contains [DefaultVerifierLength] characters, sampled
+// uniformly from [Alphabet] via a [nonce.Sampler].
+func Verifier(ctx context.Context) (string, error) {
+	return verifier.Draw(ctx)
 }
 
 // Challenge computes a code challenge from a given code verifier and challenge
@@ -147,19 +163,4 @@ func Verify(verifier, challenge, method string) bool {
 	default:
 		return false
 	}
-}
-
-// Alphabet is the set of unreserved characters allowed in a PKCE code verifier,
-// as defined in RFC 7636 Section 4.1.
-const Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-
-// isUnreserved reports whether the given string contains only unreserved ASCII
-// characters.
-//
-// According to RFC 7636 Section 4.1, unreserved characters are:
-// [A-Z], [a-z], [0-9], "-", ".", "_", "~".
-func IsUnreserved(s string) bool { return ascii.All(s, isUnreserved) }
-
-func isUnreserved(c byte) bool {
-	return ascii.IsAlphaNum(c) || c == '-' || c == '.' || c == '_' || c == '~'
 }
