@@ -24,7 +24,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/dat/diff"
@@ -285,16 +284,6 @@ func versionIDs(vs []diff.Version) []uuid.UUID {
 	return out
 }
 
-func expectPanic(t *testing.T, name string, fn func()) {
-	t.Helper()
-	defer func() {
-		if recover() == nil {
-			t.Errorf("%s: should have panicked", name)
-		}
-	}()
-	fn()
-}
-
 func TestNewTable_Panics(t *testing.T) {
 	// No live database connection is needed to exercise registration.
 	db, err := sql.Open("pgx", "postgres://user:pass@localhost:5432/db")
@@ -303,22 +292,36 @@ func TestNewTable_Panics(t *testing.T) {
 	}
 	s := postgres.New(db)
 
-	expectPanic(t, "nil store", func() {
+	expect := func(t *testing.T, name string, fn func()) {
+		t.Helper()
+		defer func() {
+			if recover() == nil {
+				t.Errorf("%s: should have panicked", name)
+			}
+		}()
+		fn()
+	}
+
+	expect(t, "nil store", func() {
 		postgres.NewTable(nil, "asset", "assets")
 	})
-	expectPanic(t, "empty model", func() {
+
+	expect(t, "empty model", func() {
 		postgres.NewTable(s, "", "assets")
 	})
-	expectPanic(t, "empty table", func() {
+
+	expect(t, "empty table", func() {
 		postgres.NewTable(s, "asset", "")
 	})
-	expectPanic(t, "unknown parent", func() {
+
+	expect(t, "unknown parent", func() {
 		postgres.NewTable(s, "file", "files",
 			postgres.WithParent("missing", "asset_id"))
 	})
 
 	postgres.NewTable(s, "asset", "assets")
-	expectPanic(t, "duplicate table", func() {
+
+	expect(t, "duplicate table", func() {
 		postgres.NewTable(s, "asset2", "assets")
 	})
 }
