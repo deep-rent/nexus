@@ -182,6 +182,19 @@ func (s *fakeSubjectStore) GetSubject(
 	return nil, nil
 }
 
+func (s *fakeSubjectStore) GetSubjectByUsername(
+	_ context.Context,
+	username string,
+) (Subject, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if sub, ok := s.subjects[s.usernames[username]]; ok {
+		return sub, nil
+	}
+	return nil, nil
+}
+
 func (s *fakeSubjectStore) GetSubjectByExternalID(
 	_ context.Context,
 	provider string,

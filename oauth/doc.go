@@ -103,6 +103,13 @@
 // skip factors; revoke that trust on a credential change with
 // [Server.RevokeTrustedDevices].
 //
+// With [WithPasswordless], the same planner also backs a passwordless login
+// ([Server.Identify]): the subject is identified by username and the flow's
+// factors — rather than a password — authenticate them. The planner's chain
+// must therefore be sufficient authentication on its own; passwordless login
+// ignores device trust and refuses a zero-factor plan, so a username can never
+// establish a session by itself.
+//
 // # Passkeys
 //
 // WebAuthn passkeys are supported both as a first-party web login and as a

@@ -248,6 +248,80 @@ func TestFlowEndpoints_AbsentWithoutFlow(t *testing.T) {
 	}
 }
 
+func TestPasswordless_Login(t *testing.T) {
+	t.Parallel()
+	env := newFlowEnv(t, WithPasswordless())
+
+	// Identify by username alone; the flow's OTP factor authenticates.
+	w := postJSON(env.testEnv, PathLoginIdentify, `{"username":"alice"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("identify: got %d; want 200: %s", w.Code, w.Body)
+	}
+	if sessionCookie(w) != nil {
+		t.Fatal("no session before the flow completes")
+	}
+	res := decodeJSON[FlowResponse](t, w)
+	if res.Step != "otp" {
+		t.Fatalf("got step %q; want otp", res.Step)
+	}
+	if len(env.sms.codes) != 1 {
+		t.Fatalf("got %d codes; want 1", len(env.sms.codes))
+	}
+
+	w = postJSON(env.testEnv, PathLoginContinue, fmt.Sprintf(
+		`{"handle":%q,"code":%q}`, res.Handle, env.sms.last(t),
+	))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("continue: got %d; want 204: %s", w.Code, w.Body)
+	}
+	if sessionCookie(w) == nil {
+		t.Error("missing session cookie after passwordless login")
+	}
+}
+
+func TestPasswordless_UnknownUser(t *testing.T) {
+	t.Parallel()
+	env := newFlowEnv(t, WithPasswordless())
+
+	w := postJSON(env.testEnv, PathLoginIdentify, `{"username":"nobody"}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d; want %d", w.Code, http.StatusUnauthorized)
+	}
+	if len(env.sms.codes) != 0 {
+		t.Error("no code should be delivered for an unknown username")
+	}
+}
+
+func TestPasswordless_AbsentWithoutOptIn(t *testing.T) {
+	t.Parallel()
+	env := newFlowEnv(t) // WithFlow but not WithPasswordless
+
+	w := postJSON(env.testEnv, PathLoginIdentify, `{"username":"alice"}`)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("got %d; want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestPasswordless_RefusesZeroFactor(t *testing.T) {
+	t.Parallel()
+	// A planner that yields no factors must never authenticate on a username
+	// alone.
+	empty := func(
+		_ context.Context, _ Subject, _ Device, _ Steps,
+	) ([]flow.Step, error) {
+		return nil, nil
+	}
+	env := newTestEnv(t, WithFlow(empty), WithPasswordless())
+
+	w := postJSON(env, PathLoginIdentify, `{"username":"alice"}`)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d; want %d", w.Code, http.StatusInternalServerError)
+	}
+	if len(env.subjects.sessions) != 0 {
+		t.Error("a zero-factor passwordless login must not create a session")
+	}
+}
+
 func TestFlowThrottle_LocksOutPerHandle(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1_752_000_000, 0)

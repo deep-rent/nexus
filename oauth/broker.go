@@ -120,6 +120,87 @@ func (s *Server) Login(e *router.Exchange) error {
 	})
 }
 
+// Identify starts a passwordless login: it identifies the subject by username
+// and hands off to the login flow's factors to authenticate them.
+//
+// It expects an [IdentifyRequest] with a username. When the subject exists and
+// the planner yields at least one factor, it responds 200 with a
+// [FlowResponse]; the client then satisfies the factors via [Server.Continue]
+// exactly as after a password login. Unlike the password login, it ignores any
+// device trust — a passwordless login always walks its full factor chain — and
+// it refuses to complete when the planner yields no factor, so a username alone
+// can never establish a session.
+//
+// Every call is rate limited per username and address, because a successful
+// call delivers a code (an email or SMS) and so has a cost. The endpoint is
+// username-keyed and distinguishes a known from an unknown username by its
+// response; a deployment that must not reveal which usernames exist should
+// front it with an additional control such as a CAPTCHA or a strict global
+// limit.
+func (s *Server) Identify(e *router.Exchange) error {
+	if s.flow == nil || !s.passwordless {
+		e.Status(http.StatusNotFound)
+		return nil
+	}
+
+	var req IdentifyRequest
+	if err := e.BindJSON(&req); err != nil {
+		return err
+	}
+
+	userKey := scopeUser + strings.ToLower(req.Username)
+	if s.throttled(e, userKey) {
+		return &router.Error{
+			Status:      http.StatusTooManyRequests,
+			Reason:      router.ReasonRateLimit,
+			Description: "too many attempts; try again later",
+		}
+	}
+	// Each identify triggers a factor delivery, so charge the throttle on every
+	// call — success included — to bound code-send spam per username and
+	// address.
+	s.penalize(userKey, s.addr(e))
+
+	sub, err := s.subjects.GetSubjectByUsername(e.Context(), req.Username)
+	if err != nil {
+		return router.ServerError("failed to lookup subject", err)
+	}
+	if sub == nil {
+		return &router.Error{
+			Status:      http.StatusUnauthorized,
+			Reason:      router.ReasonValidationFailed,
+			Description: "invalid credentials",
+		}
+	}
+
+	// Passwordless login ignores device trust: the flow must fully
+	// authenticate, so the planner runs against an untrusted device.
+	steps, err := s.planner(e.Context(), sub, Device{}, Steps{s})
+	if err != nil {
+		return router.ServerError("failed to plan login", err)
+	}
+	if len(steps) == 0 {
+		// A passwordless login with no factor would authenticate on a username
+		// alone; refuse rather than establish a session.
+		return router.ServerError("passwordless login has no factor",
+			fmt.Errorf("planner yielded no steps for %s", sub.ID()),
+		)
+	}
+
+	handle, res, err := s.flow.Begin(
+		e.Context(), sub.ID().String(), req.Remember, steps,
+	)
+	if err != nil {
+		return router.ServerError("failed to begin login", err)
+	}
+	// steps is non-empty, so the flow prompts rather than completing.
+	return e.JSON(http.StatusOK, FlowResponse{
+		Handle: handle,
+		Step:   res.Prompt.Step,
+		Prompt: res.Prompt.Payload,
+	})
+}
+
 // Continue satisfies the active step of a pending multi-step login and advances
 // it, establishing the session once every step is complete.
 //

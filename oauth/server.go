@@ -198,6 +198,7 @@ type Server struct {
 	generateTrustToken        TokenGeneratorFn
 	verificationURI           string
 	planner                   Planner
+	passwordless              bool
 	otpOpts                   []otp.Option
 	flow                      *flow.Coordinator
 	otp                       *otp.Challenger
@@ -299,6 +300,20 @@ func WithFlow(planner Planner, opts ...otp.Option) Option {
 		s.planner = planner
 		s.otpOpts = append(s.otpOpts, opts...)
 	}
+}
+
+// WithPasswordless additionally enables passwordless login, in which a subject
+// is identified by username alone and the flow's factors — rather than a
+// password — authenticate them. It requires [WithFlow] and registers the
+// [Server.Identify] endpoint.
+//
+// The same [Planner] serves both entries, so its chain must be sufficient
+// authentication on its own; passwordless login ignores device trust and
+// refuses to establish a session when the planner yields no factors, so it can
+// never authenticate on a username alone. See [Server.Identify] for the
+// enumeration considerations of exposing a username-keyed endpoint.
+func WithPasswordless() Option {
+	return func(s *Server) { s.passwordless = true }
 }
 
 // WithWebAuthnHandleGenerator overrides [GenerateWebAuthnHandle].
@@ -421,6 +436,10 @@ func New(cfg Config, opts ...Option) *Server {
 		)
 	}
 
+	if s.passwordless && s.planner == nil {
+		panic("WithPasswordless requires WithFlow")
+	}
+
 	// The login engines are built only after all options are applied, so they
 	// observe the final clock and logger. The OTP challenge lifetime doubles as
 	// the flow lifetime, so a code stays live for as long as the login it backs.
@@ -512,6 +531,13 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 	r.HandleFunc(http.MethodPost+" "+prefix+PathLogout, s.Logout)
 
 	if s.flow != nil {
+		if s.passwordless {
+			r.HandleFunc(
+				http.MethodPost+" "+prefix+PathLoginIdentify,
+				s.Identify,
+				guarded...,
+			)
+		}
 		r.HandleFunc(
 			http.MethodPost+" "+prefix+PathLoginContinue,
 			s.Continue,

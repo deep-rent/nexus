@@ -223,6 +223,18 @@ type SubjectStore interface {
 	// If the user is not found, it must return nil and nil.
 	// It should return an error only if the storage lookup fails.
 	GetSubject(ctx context.Context, id uuid.UUID) (Subject, error)
+	// GetSubjectByUsername resolves a subject by their username without
+	// verifying any credential.
+	//
+	// If the user is found, it must return the subject and nil.
+	// If the user is not found, it must return nil and nil. It should return an
+	// error only if the storage lookup fails.
+	//
+	// The method is only consulted when passwordless login is enabled via
+	// [WithPasswordless]; other servers may return nil, nil. Because it
+	// identifies a subject without authenticating them, callers must treat the
+	// result as a claim proven only once the login flow completes.
+	GetSubjectByUsername(ctx context.Context, username string) (Subject, error)
 	// GetSubjectByExternalID retrieves a subject linked to an external
 	// identity provider.
 	//
@@ -889,6 +901,27 @@ func (r *LoginRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*LoginRequest)(nil)
 
+// IdentifyRequest represents the payload for the passwordless login endpoint.
+//
+// It is consumed by [Server.Identify] to start a passwordless login: the
+// subject is identified by username (without a credential) and the login flow
+// then authenticates them through its factors.
+type IdentifyRequest struct {
+	// Username identifies the resource owner. It is not a credential; the flow
+	// factors prove control of the account.
+	Username string `json:"username"`
+	// Remember asks the server to remember the login once the flow completes,
+	// as in [LoginRequest].
+	Remember bool `json:"remember,omitzero"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *IdentifyRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("username", r.Username)
+}
+
+var _ valid.Validatable = (*IdentifyRequest)(nil)
+
 // FlowResponse is the payload returned by the login, continue, and action
 // endpoints when a login requires a further authentication step.
 //
@@ -1002,6 +1035,7 @@ const (
 	PathIntrospect              = "/introspect"
 	PathKeySet                  = "/jwks.json"
 	PathLogin                   = "/login"
+	PathLoginIdentify           = "/login/identify"
 	PathLoginContinue           = "/login/continue"
 	PathLoginAction             = "/login/action"
 	PathLogout                  = "/logout"
