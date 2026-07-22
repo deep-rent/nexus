@@ -97,11 +97,19 @@ func TestString(t *testing.T) {
 		}
 	}
 
-	if _, err := nonce.String(0, "ab"); !errors.Is(err, nonce.ErrInvalidSize) {
+	if _, err := nonce.String(0, "abc"); !errors.Is(err, nonce.ErrInvalidSize) {
 		t.Fatalf("expected invalid size error, got %v", err)
 	}
 
-	if _, err := nonce.String(1, ""); !errors.Is(err, nonce.ErrEmptyAlphabet) {
-		t.Fatalf("expected empty alphabet error, got %v", err)
+	small := strings.Repeat("A", nonce.MinAlphabetSize-1)
+	if _, err := nonce.String(1, small); !errors.Is(err,
+		nonce.ErrAlphabetTooSmall) {
+		t.Fatalf("expected alphabet too small error, got %v", err)
+	}
+
+	large := strings.Repeat("A", nonce.MaxAlphabetSize+1)
+	if _, err := nonce.String(1, large); !errors.Is(err,
+		nonce.ErrAlphabetTooLarge) {
+		t.Fatalf("expected alphabet too large error, got %v", err)
 	}
 }

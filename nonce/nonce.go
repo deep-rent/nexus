@@ -19,14 +19,36 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
+)
+
+const (
+	// MinAlphabetSize is the minimum number of unique characters required in a
+	// custom alphabet for [String].
+	MinAlphabetSize = 2
+
+	// MaxAlphabetSize is the maximum number of unique characters allowed in a
+	// custom alphabet for [String].
+	MaxAlphabetSize = 256
 )
 
 var (
-	// ErrInvalidSize is returned when a nonpositive size is specified.
+	// ErrInvalidSize signals that a nonpositive size has been provided.
 	ErrInvalidSize = errors.New("size must be positive")
 
-	// ErrEmptyAlphabet is returned when an empty alphabet is specified.
-	ErrEmptyAlphabet = errors.New("alphabet must not be empty")
+	// ErrAlphabetTooSmall is returned when an alphabet contains fewer than
+	// [MinAlphabetSize] characters.
+	ErrAlphabetTooSmall = fmt.Errorf(
+		"alphabet must contain at least %d characters",
+		MinAlphabetSize,
+	)
+
+	// ErrAlphabetTooLarge is returned when an alphabet exceeds
+	// [MaxAlphabetSize] characters.
+	ErrAlphabetTooLarge = fmt.Errorf(
+		"alphabet must contain at most %d characters",
+		MaxAlphabetSize,
+	)
 )
 
 // Bytes reads n cryptographically secure random bytes from [crypto/rand].
@@ -72,21 +94,29 @@ func Hex(n int) (string, error) {
 // String draws random bytes from [crypto/rand] and maps them uniformly onto
 // the provided character alphabet using unbiased rejection sampling.
 //
-// It is commonly used to generate human-readable PINs, user codes, or short
-// verification tokens. It returns [ErrInvalidSize] if n is less than or equal
-// to 0, or [ErrEmptyAlphabet] if the alphabet string is empty.
+// It is UTF-8 safe and operates on Unicode runes, allowing custom alphabets to
+// contain multi-byte characters. It is commonly used to generate
+// human-readable PINs, user codes, or short verification tokens. It returns
+// [ErrInvalidSize] if n is less than or equal to 0, [ErrAlphabetTooSmall] if
+// the alphabet contains fewer than [MinAlphabetSize] characters, or
+// [ErrAlphabetTooLarge] if the alphabet contains more than [MaxAlphabetSize]
+// characters.
 func String(n int, alphabet string) (string, error) {
 	if n <= 0 {
 		return "", ErrInvalidSize
 	}
 	runes := []rune(alphabet)
 	N := len(runes)
-	if N == 0 {
-		return "", ErrEmptyAlphabet
+
+	switch {
+	case N < MinAlphabetSize:
+		return "", ErrAlphabetTooSmall
+	case N > MaxAlphabetSize:
+		return "", ErrAlphabetTooLarge
 	}
 
 	// Calculate upper bound for unbiased rejection sampling.
-	lim := 256 - (256 % N)
+	lim := MaxAlphabetSize - (MaxAlphabetSize % N)
 	out := make([]rune, n)
 	filled := 0
 
