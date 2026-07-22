@@ -168,6 +168,35 @@ func TestEqual(t *testing.T) {
 	}
 }
 
+func TestMatch(t *testing.T) {
+	t.Parallel()
+
+	h := digest.New(nil)
+	const secret = "raw-bearer-token"
+	stored := h.String(secret)
+
+	tests := []struct {
+		name   string
+		value  string
+		digest string
+		want   bool
+	}{
+		{"correct value", secret, stored, true},
+		{"wrong value", "other-token", stored, false},
+		{"empty digest", secret, "", false},
+		{"garbage digest", secret, "not-a-digest", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := h.Match(tt.value, tt.digest); got != tt.want {
+				t.Fatalf("Match(%q, %q) = %v, want %v",
+					tt.value, tt.digest, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestHasherConcurrent exercises a single hasher from many goroutines; run with
 // -race, it guards the concurrency-safety claim.
 func TestHasherConcurrent(t *testing.T) {

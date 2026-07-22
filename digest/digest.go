@@ -64,8 +64,8 @@ func New(algorithm Algorithm) *Hasher {
 // characters long.
 func (h *Hasher) Bytes(value []byte) string {
 	sum := h.algorithm()
-	// hash.Hash.Write is documented never to return an error.
-	sum.Write(value)
+	// This call is documented never to return an error.
+	_, _ = sum.Write(value)
 	return base64.RawURLEncoding.EncodeToString(sum.Sum(nil))
 }
 
@@ -73,6 +73,17 @@ func (h *Hasher) Bytes(value []byte) string {
 // bytes of a string; see [Hasher.Bytes].
 func (h *Hasher) String(value string) string {
 	return h.Bytes([]byte(value))
+}
+
+// Match reports whether value fingerprints to digest under this hasher. It
+// hashes value with [Hasher.String] and compares the result against digest in
+// constant time via [Equal].
+//
+// Match is the verification counterpart to String: fingerprint a secret once
+// and store it, then check a candidate with Match rather than comparing digests
+// with ==, which compares in variable time and leaks how much matched.
+func (h *Hasher) Match(value, digest string) bool {
+	return Equal(h.String(value), digest)
 }
 
 // DefaultHasher fingerprints values with [DefaultAlgorithm]. It is a
