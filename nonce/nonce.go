@@ -69,8 +69,8 @@ func Hex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// String draws n random bytes from [crypto/rand] and maps each byte uniformly
-// onto the provided character alphabet.
+// String draws random bytes from [crypto/rand] and maps them uniformly onto
+// the provided character alphabet using unbiased rejection sampling.
 //
 // It is commonly used to generate human-readable PINs, user codes, or short
 // verification tokens. It returns [ErrInvalidSize] if n is less than or equal
@@ -79,16 +79,33 @@ func String(n int, alphabet string) (string, error) {
 	if n <= 0 {
 		return "", ErrInvalidSize
 	}
-	if len(alphabet) == 0 {
+	runes := []rune(alphabet)
+	N := len(runes)
+	if N == 0 {
 		return "", ErrEmptyAlphabet
 	}
-	b, err := Bytes(n)
-	if err != nil {
-		return "", err
-	}
-	out := make([]byte, n)
-	for i, val := range b {
-		out[i] = alphabet[int(val)%len(alphabet)]
+
+	// Calculate upper bound for unbiased rejection sampling.
+	lim := 256 - (256 % N)
+	out := make([]rune, n)
+	filled := 0
+
+	b := make([]byte, n+(n/4)+4)
+
+	for filled < n {
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		for _, w := range b {
+			v := int(w)
+			if v < lim {
+				out[filled] = runes[v%N]
+				filled++
+				if filled == n {
+					break
+				}
+			}
+		}
 	}
 	return string(out), nil
 }
