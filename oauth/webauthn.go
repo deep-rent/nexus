@@ -248,7 +248,7 @@ func (s *Server) beginWebAuthnCeremony(
 	options any,
 	data *webauthn.SessionData,
 ) error {
-	handle, err := s.generateWebAuthnHandle(e.Context())
+	handle, err := s.nonce.Draw(e.Context())
 	if err != nil {
 		return router.ServerError("failed to generate handle", err)
 	}

@@ -57,8 +57,8 @@
 //
 // # Security
 //
-// Codes from [Generate] are drawn from crypto/rand with rejection sampling, so
-// every code of a given length is equally likely. A short numeric code carries
+// Codes from [Generate] are sampled uniformly from a [nonce.Sampler], so every
+// code of a given length is equally likely. A short numeric code carries
 // little entropy by design (a 6-digit code has one million values): it is
 // guessable by brute force unless the verifier enforces a short lifetime, a
 // strict attempt limit, and rate limiting. The [Challenger] enforces the first

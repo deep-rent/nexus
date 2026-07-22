@@ -16,6 +16,7 @@ package oauth
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -30,6 +31,7 @@ import (
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/jose/jwt"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/nonce"
 	"github.com/deep-rent/nexus/oauth/flow"
 	"github.com/deep-rent/nexus/oauth/otp"
 	"github.com/deep-rent/nexus/oauth/pkce"
@@ -188,14 +190,9 @@ type Server struct {
 	realm                     string
 	loginTerminalURI          string
 	loginRedirectURI          string
-	generateSessionKey        TokenGeneratorFn
-	generateAuthCode          TokenGeneratorFn
-	generateRefreshToken      TokenGeneratorFn
-	generateDeviceCode        TokenGeneratorFn
-	generateUserCode          TokenGeneratorFn
-	generateState             TokenGeneratorFn
-	generateWebAuthnHandle    TokenGeneratorFn
-	generateTrustToken        TokenGeneratorFn
+	nonceSource               nonce.Source
+	nonce                     *nonce.Generator
+	userCodes                 *nonce.Sampler
 	verificationURI           string
 	planner                   Planner
 	passwordless              bool
@@ -237,43 +234,22 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// WithSessionKeyGenerator overrides [GenerateSessionKey].
-func WithSessionKeyGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateSessionKey = fn }
-}
-
-// WithTrustTokenGenerator overrides [GenerateTrustToken].
-func WithTrustTokenGenerator(fn TokenGeneratorFn) Option {
+// WithNonceSource sets the entropy source for every opaque bearer artifact the
+// server mints — session keys, authorization codes, refresh tokens, device and
+// user codes, state parameters, WebAuthn handles, and device trust tokens — all
+// of which are drawn from a single [nonce.Generator] (a [nonce.Sampler] for user
+// codes). It defaults to [nonce.DefaultSource] (crypto/rand); provide a
+// deterministic source for testing or a hardware/remote source in specialized
+// deployments. A nil source is ignored.
+//
+// It does not affect the one-time password steps of a login flow, whose
+// generators are configured through [WithFlow].
+func WithNonceSource(src nonce.Source) Option {
 	return func(s *Server) {
-		if fn != nil {
-			s.generateTrustToken = fn
+		if src != nil {
+			s.nonceSource = src
 		}
 	}
-}
-
-// WithAuthCodeGenerator overrides [GenerateAuthCode].
-func WithAuthCodeGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateAuthCode = fn }
-}
-
-// WithRefreshTokenGenerator overrides [GenerateRefreshToken].
-func WithRefreshTokenGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateRefreshToken = fn }
-}
-
-// WithDeviceCodeGenerator overrides [GenerateDeviceCode].
-func WithDeviceCodeGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateDeviceCode = fn }
-}
-
-// WithUserCodeGenerator overrides [GenerateUserCode].
-func WithUserCodeGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateUserCode = fn }
-}
-
-// WithStateGenerator overrides [GenerateState].
-func WithStateGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateState = fn }
 }
 
 // WithFlow enables multi-step logins driven by the given [Planner].
@@ -314,11 +290,6 @@ func WithFlow(planner Planner, opts ...otp.Option) Option {
 // enumeration considerations of exposing a username-keyed endpoint.
 func WithPasswordless() Option {
 	return func(s *Server) { s.passwordless = true }
-}
-
-// WithWebAuthnHandleGenerator overrides [GenerateWebAuthnHandle].
-func WithWebAuthnHandleGenerator(fn TokenGeneratorFn) Option {
-	return func(s *Server) { s.generateWebAuthnHandle = fn }
 }
 
 // New assembles a [Server] from the given configuration and options.
@@ -403,19 +374,11 @@ func New(cfg Config, opts ...Option) *Server {
 			cfg.TrustedDeviceLifetime,
 			DefaultTrustedDeviceLifetime,
 		),
-		realm:                  cmp.Or(cfg.Realm, DefaultRealm),
-		loginTerminalURI:       cfg.LoginTerminalURI,
-		loginRedirectURI:       cfg.LoginRedirectURI,
-		verificationURI:        cfg.VerificationURI,
-		generateSessionKey:     GenerateSessionKey,
-		generateAuthCode:       GenerateAuthCode,
-		generateRefreshToken:   GenerateRefreshToken,
-		generateDeviceCode:     GenerateDeviceCode,
-		generateUserCode:       GenerateUserCode,
-		generateState:          GenerateState,
-		generateWebAuthnHandle: GenerateWebAuthnHandle,
-		generateTrustToken:     GenerateTrustToken,
-		throttle:               cfg.Throttle,
+		realm:            cmp.Or(cfg.Realm, DefaultRealm),
+		loginTerminalURI: cfg.LoginTerminalURI,
+		loginRedirectURI: cfg.LoginRedirectURI,
+		verificationURI:  cfg.VerificationURI,
+		throttle:         cfg.Throttle,
 		throttlePenalty: cmp.Or(
 			cfg.ThrottlePenalty,
 			DefaultThrottlePenalty,
@@ -439,6 +402,13 @@ func New(cfg Config, opts ...Option) *Server {
 	if s.passwordless && s.planner == nil {
 		panic("WithPasswordless requires WithFlow")
 	}
+
+	// Every opaque bearer artifact is drawn from one generator, and every user
+	// code from one sampler, both fed by the configured source (crypto/rand by
+	// default). They are built after the options so they observe the final
+	// source.
+	s.nonce = nonce.NewGenerator(s.nonceSource, nonceSize)
+	s.userCodes = nonce.NewSampler(s.nonceSource, userCodeAlphabet, userCodeLength)
 
 	// The login engines are built only after all options are applied, so they
 	// observe the final clock and logger. The OTP challenge lifetime doubles as
@@ -1129,7 +1099,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 		)
 	}
 
-	code, err := s.generateAuthCode(e.Context())
+	code, err := s.nonce.Draw(e.Context())
 	if err != nil {
 		return s.serverError("failed to generate authorization code",
 			err,
@@ -1273,7 +1243,7 @@ func (s *Server) token(e *router.Exchange) error {
 	if iss.Refreshable &&
 		s.Supports(GrantTypeRefreshToken) &&
 		pro.Client.CanUseGrant(GrantTypeRefreshToken) {
-		token, err := s.generateRefreshToken(e.Context())
+		token, err := s.nonce.Draw(e.Context())
 		if err != nil {
 			return s.serverError("failed to generate refresh token",
 				err,
@@ -1395,14 +1365,14 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	deviceCode, err := s.generateDeviceCode(e.Context())
+	deviceCode, err := s.nonce.Draw(e.Context())
 	if err != nil {
 		return s.serverError("failed to generate device code",
 			err,
 		)
 	}
 
-	userCode, err := s.generateUserCode(e.Context())
+	userCode, err := s.newUserCode(e.Context())
 	if err != nil {
 		return s.serverError("failed to generate user code", err)
 	}
@@ -1530,12 +1500,21 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	return nil
 }
 
+// newUserCode draws a user code and renders it in the canonical XXXX-XXXX
+// format: two dash-separated groups sampled from [userCodeAlphabet].
+func (s *Server) newUserCode(ctx context.Context) (string, error) {
+	raw, err := s.userCodes.Draw(ctx)
+	if err != nil {
+		return "", err
+	}
+	return raw[:4] + "-" + raw[4:], nil
+}
+
 // normalizeUserCode canonicalizes a user code: embedded whitespace is
 // stripped, letters are uppercased, and a missing hyphen is re-inserted for
-// the default XXXX-XXXX format produced by [GenerateUserCode]. It is applied
-// both when storing the code digest and when looking up user input, so
-// custom generators work as long as their output is stable under this
-// canonicalization.
+// the XXXX-XXXX format produced by [Server.newUserCode]. It is applied both
+// when storing the code digest and when looking up user input, so a user who
+// omits the hyphen or varies the case still matches.
 func normalizeUserCode(code string) string {
 	code = ascii.ToUpper(strings.Join(strings.Fields(code), ""))
 	if !strings.Contains(code, "-") && len(code) == 8 {

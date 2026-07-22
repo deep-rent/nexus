@@ -16,15 +16,12 @@ package otp
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
-	"encoding/hex"
 	"log/slog"
 	"time"
 
+	"github.com/deep-rent/nexus/digest"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/nonce"
 )
 
 // Default policy values applied by [New] when the corresponding option is not
@@ -191,8 +188,8 @@ func WithClock(now func() time.Time) Option {
 }
 
 // WithHandleGenerator overrides the source of client-facing challenge handles.
-// A nil function is ignored. The default draws 32 random bytes from
-// crypto/rand.
+// A nil function is ignored. The default draws a 256-bit token from
+// [nonce.DefaultGenerator].
 func WithHandleGenerator(fn func() (string, error)) Option {
 	return func(c *Challenger) {
 		if fn != nil {
@@ -287,8 +284,8 @@ func (c *Challenger) Start(
 	}
 
 	ch := Challenge{
-		ID:        hashValue(handle),
-		Code:      hashValue(code),
+		ID:        digest.DefaultHasher.String(handle),
+		Code:      digest.DefaultHasher.String(code),
 		Owner:     owner,
 		Purpose:   purpose,
 		MethodID:  m.ID,
@@ -319,7 +316,7 @@ func (c *Challenger) Verify(
 	ctx context.Context,
 	purpose, handle, code string,
 ) (Outcome, error) {
-	id := hashValue(handle)
+	id := digest.DefaultHasher.String(handle)
 
 	ch, found, err := c.store.Get(ctx, id)
 	if err != nil {
@@ -342,10 +339,9 @@ func (c *Challenger) Verify(
 		return Outcome{}, err
 	}
 
-	if subtle.ConstantTimeCompare(
-		[]byte(hashValue(code)),
-		[]byte(ch.Code),
-	) == 0 {
+	// Match hashes the submitted code and compares it against the stored digest
+	// in constant time.
+	if !digest.DefaultHasher.Match(code, ch.Code) {
 		return Outcome{Status: StatusWrongCode}, nil
 	}
 
@@ -374,7 +370,7 @@ func (c *Challenger) Resend(
 	purpose, handle string,
 	m Method,
 ) (Outcome, error) {
-	id := hashValue(handle)
+	id := digest.DefaultHasher.String(handle)
 
 	ch, found, err := c.store.Get(ctx, id)
 	if err != nil {
@@ -393,7 +389,7 @@ func (c *Challenger) Resend(
 		return Outcome{}, err
 	}
 
-	ch.Code = hashValue(code)
+	ch.Code = digest.DefaultHasher.String(code)
 	ch.Resends++
 	ch.MethodID = m.ID
 	if err := c.store.Update(ctx, ch); err != nil {
@@ -419,7 +415,7 @@ func (c *Challenger) Peek(
 	ctx context.Context,
 	purpose, handle string,
 ) (owner string, ok bool, err error) {
-	ch, found, err := c.store.Get(ctx, hashValue(handle))
+	ch, found, err := c.store.Get(ctx, digest.DefaultHasher.String(handle))
 	if err != nil {
 		return "", false, err
 	}
@@ -436,7 +432,7 @@ func (c *Challenger) Cancel(
 	ctx context.Context,
 	handle string,
 ) (bool, error) {
-	return c.store.Delete(ctx, hashValue(handle))
+	return c.store.Delete(ctx, digest.DefaultHasher.String(handle))
 }
 
 // expired reports whether the challenge has passed its expiry.
@@ -452,22 +448,7 @@ func (c *Challenger) deleteBestEffort(ctx context.Context, id, what string) {
 	}
 }
 
-// randomHandle draws a 256-bit random handle from crypto/rand.
+// randomHandle draws a 256-bit random handle from [nonce.DefaultGenerator].
 func randomHandle() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// hashValue reduces a handle or code to a digest for storage and comparison.
-// The scheme need only be internally consistent, as the engine both writes and
-// reads its own digests; a random 256-bit input makes SHA-256 preimage
-// resistance sufficient. It uses unpadded base64url — the same encoding oauth
-// applies to its other bearer digests — so a [Store] backed by that datastore
-// sees a familiar key format.
-func hashValue(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	return nonce.DefaultGenerator.Draw(context.Background())
 }

@@ -16,15 +16,13 @@ package flow
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/deep-rent/nexus/digest"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/nonce"
 )
 
 // DefaultLifetime is the validity period of a login transaction applied by
@@ -108,8 +106,8 @@ func WithClock(now func() time.Time) Option {
 }
 
 // WithHandleGenerator overrides the source of client-facing transaction
-// handles. A nil function is ignored. The default draws 32 random bytes from
-// crypto/rand.
+// handles. A nil function is ignored. The default draws a 256-bit token from
+// [nonce.DefaultGenerator].
 func WithHandleGenerator(fn func() (string, error)) Option {
 	return func(c *Coordinator) {
 		if fn != nil {
@@ -177,7 +175,7 @@ func (c *Coordinator) Begin(
 	}
 
 	t := Transaction{
-		ID:        hashValue(handle),
+		ID:        digest.DefaultHasher.String(handle),
 		Owner:     owner,
 		Remember:  remember,
 		ExpiresAt: c.now().Add(c.lifetime).Unix(),
@@ -211,7 +209,7 @@ func (c *Coordinator) Continue(
 	plan Plan,
 	in Input,
 ) (Result, error) {
-	id := hashValue(handle)
+	id := digest.DefaultHasher.String(handle)
 
 	t, found, err := c.store.Get(ctx, id)
 	if err != nil {
@@ -280,7 +278,7 @@ func (c *Coordinator) Act(
 	plan Plan,
 	a Action,
 ) (Result, error) {
-	id := hashValue(handle)
+	id := digest.DefaultHasher.String(handle)
 
 	t, found, err := c.store.Get(ctx, id)
 	if err != nil {
@@ -393,19 +391,7 @@ func validatePlan(steps []Step) error {
 	return nil
 }
 
-// randomHandle draws a 256-bit random handle from crypto/rand.
+// randomHandle draws a 256-bit random handle from [nonce.DefaultGenerator].
 func randomHandle() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// hashValue reduces a handle to a digest for storage. It uses unpadded
-// base64url — the same encoding oauth applies to its other bearer digests — so
-// a [Store] backed by that datastore sees a familiar key format.
-func hashValue(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	return nonce.DefaultGenerator.Draw(context.Background())
 }

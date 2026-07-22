@@ -417,7 +417,7 @@ func (s *Server) readTrustCookie(e *router.Exchange) string {
 // [Config.RememberedSessionLifetime]; otherwise it is a browser-session cookie
 // that lapses when the user-agent closes.
 func (s *Server) session(e *router.Exchange, sub Subject, remember bool) error {
-	key, err := s.generateSessionKey(e.Context())
+	key, err := s.nonce.Draw(e.Context())
 	if err != nil {
 		return router.ServerError("failed to generate session key",
 			err,
@@ -480,7 +480,7 @@ func (s *Server) ExternalLogin(e *router.Exchange) error {
 		return nil
 	}
 
-	state, err := s.generateState(e.Context())
+	state, err := s.nonce.Draw(e.Context())
 	if err != nil {
 		return router.ServerError("failed to generate state", err)
 	}
