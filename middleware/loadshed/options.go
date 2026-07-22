@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oom
+package loadshed
 
 import (
 	"runtime/metrics"
 	"time"
 )
 
-// config holds the configuration options for the OOM middleware.
+// config holds the configuration options for the loadshed middleware.
 type config struct {
 	interval   time.Duration
 	fraction   float64
@@ -28,7 +28,7 @@ type config struct {
 	now        func() time.Time
 }
 
-// Option configures the OOM middleware.
+// Option configures the loadshed middleware.
 type Option func(*config)
 
 const (
@@ -108,8 +108,5 @@ func memory() uint64 {
 	total := samples[0].Value.Uint64()
 	released := samples[1].Value.Uint64()
 
-	if total > released {
-		return total - released
-	}
-	return 0
+	return max(0, total-released)
 }

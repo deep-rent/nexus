@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package oom provides a middleware to protect the application from
-// out-of-memory crashes.
+// Package loadshed provides a middleware to protect the application from
+// out-of-memory crashes by shedding load when memory usage approaches
+// GOMEMLIMIT.
 //
 // It samples the application's memory usage inline as requests arrive, at most
 // once per configured interval, and sheds load by rejecting incoming HTTP
@@ -28,6 +29,6 @@
 // limit is set, the middleware acts as a no-op.
 //
 //	r := router.New(
-//		router.WithMiddleware(oom.Middleware()),
+//		router.WithMiddleware(loadshed.New()),
 //	)
-package oom
+package loadshed
