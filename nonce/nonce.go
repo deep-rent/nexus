@@ -20,9 +20,8 @@ import (
 	"encoding/hex"
 )
 
-const defaultBytes = 32
-
-// Bytes generates n cryptographically secure random bytes from crypto/rand.
+// Bytes reads n cryptographically secure random bytes from [crypto/rand].
+// If n is less than or equal to 0, it returns a nil slice and no error.
 func Bytes(n int) ([]byte, error) {
 	if n <= 0 {
 		return nil, nil
@@ -34,12 +33,15 @@ func Bytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-// Opaque generates a high-entropy, base64url-encoded string suitable for use as
-// a secure token. Drawing 32 bytes (default) yields a 43-character string.
-func Opaque(bytesLen ...int) (string, error) {
-	n := defaultBytes
-	if len(bytesLen) > 0 && bytesLen[0] > 0 {
-		n = bytesLen[0]
+// Opaque draws n random bytes from [crypto/rand] and returns them encoded as an
+// unpadded base64url string.
+//
+// The output is safe for inclusion in URLs, HTTP headers, and JSON payloads.
+// Drawing 32 bytes of entropy produces a 43-character string. If n is less
+// than or equal to 0, it returns an empty string and no error.
+func Opaque(n int) (string, error) {
+	if n <= 0 {
+		return "", nil
 	}
 	b, err := Bytes(n)
 	if err != nil {
@@ -48,12 +50,14 @@ func Opaque(bytesLen ...int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// Hex generates a high-entropy, hex-encoded random string. Drawing 32 bytes
-// (default) yields a 64-character hex string.
-func Hex(bytesLen ...int) (string, error) {
-	n := defaultBytes
-	if len(bytesLen) > 0 && bytesLen[0] > 0 {
-		n = bytesLen[0]
+// Hex draws n random bytes from [crypto/rand] and returns them encoded as a
+// lowercase hexadecimal string.
+//
+// Drawing 32 bytes of entropy produces a 64-character hex string. If n is less
+// than or equal to 0, it returns an empty string and no error.
+func Hex(n int) (string, error) {
+	if n <= 0 {
+		return "", nil
 	}
 	b, err := Bytes(n)
 	if err != nil {
@@ -62,8 +66,12 @@ func Hex(bytesLen ...int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// String generates a random string of length n drawn uniformly from an
-// alphabet.
+// String draws n random bytes from [crypto/rand] and maps each byte uniformly
+// onto the provided character alphabet.
+//
+// It is commonly used to generate human-readable PINs, user codes, or short
+// verification tokens. If n is less than or equal to 0 or alphabet is empty, it
+// returns an empty string and no error.
 func String(n int, alphabet string) (string, error) {
 	if n <= 0 || len(alphabet) == 0 {
 		return "", nil

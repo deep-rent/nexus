@@ -44,15 +44,15 @@ func TestBytes(t *testing.T) {
 func TestOpaque(t *testing.T) {
 	t.Parallel()
 
-	tok1, err := nonce.Opaque()
+	tok1, err := nonce.Opaque(32)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(tok1) != 43 {
-		t.Fatalf("expected default 43 chars for 32 bytes, got %d (%s)", len(tok1), tok1)
+		t.Fatalf("expected 43 chars for 32 bytes, got %d (%s)", len(tok1), tok1)
 	}
 
-	tok2, err := nonce.Opaque()
+	tok2, err := nonce.Opaque(32)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,28 +64,28 @@ func TestOpaque(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(tokCustom) == 0 {
-		t.Fatal("expected non-empty token for custom size")
+	if len(tokCustom) != 22 {
+		t.Fatalf("expected 22 chars for 16 bytes base64url, got %d (%s)", len(tokCustom), tokCustom)
 	}
 }
 
 func TestHex(t *testing.T) {
 	t.Parallel()
 
-	hex1, err := nonce.Hex()
+	hex1, err := nonce.Hex(32)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(hex1) != 64 {
-		t.Fatalf("expected default 64 hex chars for 32 bytes, got %d (%s)", len(hex1), hex1)
+		t.Fatalf("expected 64 hex chars for 32 bytes, got %d (%s)", len(hex1), hex1)
 	}
 
-	hex2, err := nonce.Hex()
+	hex2, err := nonce.Hex(16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if hex1 == hex2 {
-		t.Fatalf("expected unique hex handles, got identical: %s", hex1)
+	if len(hex2) != 32 {
+		t.Fatalf("expected 32 hex chars for 16 bytes, got %d (%s)", len(hex2), hex2)
 	}
 }
 

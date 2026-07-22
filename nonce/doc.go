@@ -12,6 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package nonce provides cryptographically secure random token, handle, and
-// string generation utilities using [crypto/rand].
+// Package nonce offers high-entropy random token, handle, and string
+// generation utilities backed by the system's cryptographically secure random
+// number generator.
+//
+// # Usage
+//
+// Generate an opaque bearer token and a hex handle:
+//
+//	tok, err := nonce.Opaque(32) // 32 bytes of entropy (43 base64url chars)
+//	hex, err := nonce.Hex(32)    // 32 bytes of entropy (64 hex chars)
+//
+// Generate a 6-digit numeric verification PIN:
+//
+//	pin, err := nonce.String(6, "0123456789")
 package nonce
