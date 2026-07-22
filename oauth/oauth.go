@@ -19,12 +19,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json/jsontext"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/valid"
@@ -124,37 +124,15 @@ type Subject interface {
 	Roles() []string
 }
 
-// SecondFactorChannel names the side channel over which a one-time
-// password is delivered during a two-factor login. Channels are registered
-// under such names via [WithOTPChannel]; any name is valid as long as
-// enrollments and registrations agree on it.
-type SecondFactorChannel string
-
-const (
-	// SecondFactorChannelSMS is the conventional name for a channel that
-	// delivers one-time passwords as text messages.
-	SecondFactorChannelSMS SecondFactorChannel = "sms"
-	// SecondFactorChannelEmail is the conventional name for a channel that
-	// delivers one-time passwords via email.
-	SecondFactorChannelEmail SecondFactorChannel = "email"
-)
-
-// SecondFactor describes a subject's enrolled second authentication factor.
-//
-// It is returned by [SubjectStore.GetSecondFactor] and consumed by the
-// [Server] to decide whether a password login must be confirmed with a
-// one-time password, and where to deliver it. Enrollment itself (capturing
-// and verifying the destination) is application concern and happens outside
-// this package.
-type SecondFactor struct {
-	// Channel selects the delivery mechanism for one-time passwords. It
-	// must match the name of a channel registered via [WithOTPChannel].
-	Channel SecondFactorChannel
-	// Destination is the channel-specific address of the subject: a phone
-	// number in E.164 format for [SecondFactorChannelSMS], an email
-	// address for [SecondFactorChannelEmail], or whatever a custom channel
-	// expects.
-	Destination string
+// Channel is the client-facing description of an enrolled [otp.Method],
+// returned in a login flow prompt so a client can present a channel picker. It
+// never carries a secret or a raw destination.
+type Channel struct {
+	// ID is the stable identifier used to select this method on resend.
+	ID string `json:"id"`
+	// Label is an optional human-facing hint, such as a masked address or phone
+	// number.
+	Label string `json:"label,omitzero"`
 }
 
 // SubjectStore provides data access and authentication for resource owners.
@@ -200,21 +178,6 @@ type SubjectStore interface {
 		ctx context.Context,
 		username, password string,
 	) (Subject, error)
-	// GetSecondFactor retrieves the second authentication factor enrolled
-	// by the subject.
-	//
-	// If the subject has enrolled a second factor, it must return the
-	// factor and nil. If the subject is not enrolled (password alone
-	// completes the login), it must return nil and nil. It should return an
-	// error only if the storage lookup fails.
-	//
-	// The method is only consulted when the server was constructed with
-	// [WithOTPChannel]; implementations backing servers without two-factor
-	// support may simply return nil, nil.
-	GetSecondFactor(
-		ctx context.Context,
-		subjectID uuid.UUID,
-	) (*SecondFactor, error)
 	// GetWebAuthnCredentials retrieves all passkey credentials registered
 	// by the subject. An enrolled subject typically owns a handful; a
 	// subject without any yields an empty slice.
@@ -260,6 +223,18 @@ type SubjectStore interface {
 	// If the user is not found, it must return nil and nil.
 	// It should return an error only if the storage lookup fails.
 	GetSubject(ctx context.Context, id uuid.UUID) (Subject, error)
+	// GetSubjectByUsername resolves a subject by their username without
+	// verifying any credential.
+	//
+	// If the user is found, it must return the subject and nil.
+	// If the user is not found, it must return nil and nil. It should return an
+	// error only if the storage lookup fails.
+	//
+	// The method is only consulted when passwordless login is enabled via
+	// [WithPasswordless]; other servers may return nil, nil. Because it
+	// identifies a subject without authenticating them, callers must treat the
+	// result as a claim proven only once the login flow completes.
+	GetSubjectByUsername(ctx context.Context, username string) (Subject, error)
 	// GetSubjectByExternalID retrieves a subject linked to an external
 	// identity provider.
 	//
@@ -616,6 +591,59 @@ type SessionStore interface {
 	//
 	// It should return an error only if the removal operation fails.
 	DeleteWebAuthnSession(ctx context.Context, handle Digest) (bool, error)
+	// GetTrustedDevice retrieves a remember-me device trust record by the
+	// digest of its token.
+	//
+	// If found, it must return the record and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetTrustedDevice(ctx context.Context, token Digest) (TrustedDevice, error)
+	// CreateTrustedDevice stores a new device trust record.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateTrustedDevice(ctx context.Context, data TrustedDevice) error
+	// DeleteTrustedDevice removes a device trust record by the digest of its
+	// token and reports whether it was present.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteTrustedDevice(ctx context.Context, token Digest) (bool, error)
+	// DeleteTrustedDevicesForSubject removes every device trust record enrolled
+	// by the given subject. It backs a "sign out everywhere" or a
+	// credential-change revocation, and is a no-op when the subject trusts no
+	// devices.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteTrustedDevicesForSubject(
+		ctx context.Context,
+		subjectID uuid.UUID,
+	) error
+	// GetFlowTransaction retrieves an in-progress login flow by the digest of
+	// its handle.
+	//
+	// If found, it must return the transaction and nil.
+	// If not found or expired, it must return an empty value and nil.
+	// It should return an error only if the storage lookup fails.
+	GetFlowTransaction(
+		ctx context.Context,
+		handle Digest,
+	) (FlowTransaction, error)
+	// CreateFlowTransaction stores a new in-progress login flow.
+	//
+	// It should return an error only if the persistence operation fails.
+	CreateFlowTransaction(ctx context.Context, data FlowTransaction) error
+	// UpdateFlowTransaction replaces the stored state of a flow, keyed by
+	// [FlowTransaction.Handle]. It records completed steps as the login
+	// advances.
+	//
+	// It should return an error only if the persistence operation fails.
+	UpdateFlowTransaction(ctx context.Context, data FlowTransaction) error
+	// DeleteFlowTransaction removes a flow by the digest of its handle and
+	// reports whether it was present. Like [DeleteAuthCode], the deletion and
+	// the report must be atomic so that concurrent completions cannot both
+	// establish a session.
+	//
+	// It should return an error only if the removal operation fails.
+	DeleteFlowTransaction(ctx context.Context, handle Digest) (bool, error)
 }
 
 const (
@@ -859,6 +887,10 @@ type LoginRequest struct {
 	// Password is the secret credential provided by the resource owner.
 	// It is used to verify the identity of the user during the login process.
 	Password string `json:"password"`
+	// Remember asks the server to remember the login: it persists the session
+	// beyond the browser session and, on a device that completes any required
+	// factors, trusts the device so later logins may skip them.
+	Remember bool `json:"remember,omitzero"`
 }
 
 // Validate implements the [valid.Validatable] interface.
@@ -869,58 +901,92 @@ func (r *LoginRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*LoginRequest)(nil)
 
-// OTPChallengeResponse is the payload returned by the login endpoint when
-// the authenticated subject has a second factor enrolled, and by the resend
-// endpoint after a code has been redelivered.
+// IdentifyRequest represents the payload for the passwordless login endpoint.
 //
-// Instead of a session, the client receives a challenge handle. It must
-// prompt the resource owner for the one-time password delivered over the
-// indicated channel and confirm the login via [Server.VerifyOTP].
-type OTPChallengeResponse struct {
-	// Challenge is the opaque handle identifying the pending login. It is
-	// required to confirm or resend the one-time password.
-	Challenge string `json:"challenge"`
-	// Channel names the side channel the one-time password was sent over.
-	Channel SecondFactorChannel `json:"channel"`
-	// ExpiresIn is the remaining lifetime of the challenge in seconds.
-	ExpiresIn int64 `json:"expires_in"`
-}
-
-// OTPVerificationRequest represents the payload for the OTP verification
-// endpoint.
-//
-// It is consumed by [Server.VerifyOTP] to confirm a pending two-factor
-// login with the one-time password delivered to the resource owner.
-type OTPVerificationRequest struct {
-	// Challenge is the handle returned by the login endpoint.
-	Challenge string `json:"challenge"`
-	// Code is the one-time password received over the side channel.
-	Code string `json:"code"`
+// It is consumed by [Server.Identify] to start a passwordless login: the
+// subject is identified by username (without a credential) and the login flow
+// then authenticates them through its factors.
+type IdentifyRequest struct {
+	// Username identifies the resource owner. It is not a credential; the flow
+	// factors prove control of the account.
+	Username string `json:"username"`
+	// Remember asks the server to remember the login once the flow completes,
+	// as in [LoginRequest].
+	Remember bool `json:"remember,omitzero"`
 }
 
 // Validate implements the [valid.Validatable] interface.
-func (r *OTPVerificationRequest) Validate(v *valid.Validator) {
-	v.NotEmpty("challenge", r.Challenge)
-	v.NotEmpty("code", r.Code)
+func (r *IdentifyRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("username", r.Username)
 }
 
-var _ valid.Validatable = (*OTPVerificationRequest)(nil)
+var _ valid.Validatable = (*IdentifyRequest)(nil)
 
-// OTPResendRequest represents the payload for the OTP resend endpoint.
+// FlowResponse is the payload returned by the login, continue, and action
+// endpoints when a login requires a further authentication step.
 //
-// It is consumed by [Server.ResendOTP] to redeliver the one-time password
-// for a pending two-factor login.
-type OTPResendRequest struct {
-	// Challenge is the handle returned by the login endpoint.
-	Challenge string `json:"challenge"`
+// Instead of a session, the client receives a flow handle and a description of
+// the active step. It must satisfy the step and confirm via
+// [Server.Continue], or drive an out-of-band action (such as resending a code)
+// via [Server.Action], carrying the same handle throughout.
+type FlowResponse struct {
+	// Handle is the opaque handle identifying the pending login. It is required
+	// to continue or act on the flow.
+	Handle string `json:"handle"`
+	// Step is the identifier of the active step (e.g. "otp").
+	Step string `json:"step"`
+	// Prompt is the step-specific data the client needs to satisfy the step,
+	// such as the available delivery channels and a code's remaining lifetime.
+	// It is omitted when the step needs no such data.
+	Prompt any `json:"prompt,omitzero"`
+}
+
+// ContinueRequest represents the payload for the login continue endpoint.
+//
+// It is consumed by [Server.Continue] to satisfy the active step of a pending
+// login with the credential the resource owner supplied. The active step reads
+// whichever field it expects: a code-based step (such as a one-time password)
+// reads Code, while an assertion-based step (such as WebAuthn) reads Credential.
+type ContinueRequest struct {
+	// Handle is the flow handle returned by the login endpoint.
+	Handle string `json:"handle"`
+	// Code is the credential for a code-based step, such as a one-time
+	// password.
+	Code string `json:"code,omitzero"`
+	// Credential is the structured credential for an assertion-based step,
+	// such as a JSON-encoded WebAuthn assertion.
+	Credential jsontext.Value `json:"credential,omitzero"`
 }
 
 // Validate implements the [valid.Validatable] interface.
-func (r *OTPResendRequest) Validate(v *valid.Validator) {
-	v.NotEmpty("challenge", r.Challenge)
+func (r *ContinueRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("handle", r.Handle)
 }
 
-var _ valid.Validatable = (*OTPResendRequest)(nil)
+var _ valid.Validatable = (*ContinueRequest)(nil)
+
+// ActionRequest represents the payload for the login action endpoint.
+//
+// It is consumed by [Server.Action] to drive an out-of-band operation on the
+// active step of a pending login, such as resending a one-time password or
+// switching the delivery channel.
+type ActionRequest struct {
+	// Handle is the flow handle returned by the login endpoint.
+	Handle string `json:"handle"`
+	// Action names the operation to run (e.g. [ActionResend]).
+	Action string `json:"action"`
+	// Channel optionally selects a different delivery channel (by
+	// [Channel.ID]) for actions that support it, such as a resend.
+	Channel string `json:"channel,omitzero"`
+}
+
+// Validate implements the [valid.Validatable] interface.
+func (r *ActionRequest) Validate(v *valid.Validator) {
+	v.NotEmpty("handle", r.Handle)
+	v.NotEmpty("action", r.Action)
+}
+
+var _ valid.Validatable = (*ActionRequest)(nil)
 
 const (
 	// DeviceVerificationApprove signals that the resource owner approves the
@@ -969,8 +1035,9 @@ const (
 	PathIntrospect              = "/introspect"
 	PathKeySet                  = "/jwks.json"
 	PathLogin                   = "/login"
-	PathLoginOTP                = "/login/otp"
-	PathLoginOTPResend          = "/login/otp/resend"
+	PathLoginIdentify           = "/login/identify"
+	PathLoginContinue           = "/login/continue"
+	PathLoginAction             = "/login/action"
 	PathLogout                  = "/logout"
 	PathRevoke                  = "/revoke"
 	PathToken                   = "/token"
@@ -1170,15 +1237,15 @@ func GenerateState(context.Context) (string, error) {
 	return opaque()
 }
 
-// GenerateOTPChallenge returns a random 43-character, base64url-encoded
-// string for use as the handle of a pending two-factor login.
-func GenerateOTPChallenge(context.Context) (string, error) {
-	return opaque()
-}
-
 // GenerateWebAuthnHandle returns a random 43-character, base64url-encoded
 // string for use as the handle of a pending WebAuthn ceremony.
 func GenerateWebAuthnHandle(context.Context) (string, error) {
+	return opaque()
+}
+
+// GenerateTrustToken returns a random 43-character, base64url-encoded string
+// for use as a remember-me device trust token.
+func GenerateTrustToken(context.Context) (string, error) {
 	return opaque()
 }
 

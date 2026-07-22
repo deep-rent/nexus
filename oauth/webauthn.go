@@ -21,15 +21,18 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	"uuid"
+
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"uuid"
 
 	"github.com/deep-rent/nexus/auth"
 	"github.com/deep-rent/nexus/log"
+	"github.com/deep-rent/nexus/oauth/flow"
 	"github.com/deep-rent/nexus/router"
 	"github.com/deep-rent/nexus/valid"
 )
@@ -79,8 +82,9 @@ type webAuthnSupport struct {
 // (native apps bypassing browser redirects).
 //
 // Registered credentials are required to be discoverable (resident keys)
-// with user verification, so a passkey login is inherently multi-factor and
-// does not go through the [WithOTPChannel] OTP flow.
+// with user verification, so a passkey login is inherently multi-factor. The
+// dedicated login endpoints stand alone; a passkey can additionally serve as a
+// step-up factor within a [WithFlow] login via [Steps.WebAuthn].
 //
 // It panics if the configuration is rejected by the underlying WebAuthn
 // implementation, since relying party settings are startup configuration.
@@ -249,18 +253,9 @@ func (s *Server) beginWebAuthnCeremony(
 		return router.ServerError("failed to generate handle", err)
 	}
 
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return router.ServerError("failed to serialize ceremony state", err)
-	}
-
-	if err := s.sessions.CreateWebAuthnSession(e.Context(), WebAuthnSession{
-		Handle:    NewDigest(handle),
-		Ceremony:  ceremony,
-		SubjectID: subjectID,
-		Data:      raw,
-		ExpiresAt: s.clock().Add(s.webauthn.sessionLifetime).Unix(),
-	}); err != nil {
+	if err := s.storeWebAuthnSession(
+		e.Context(), handle, ceremony, subjectID, data,
+	); err != nil {
 		return router.ServerError("failed to store ceremony session", err)
 	}
 
@@ -268,6 +263,29 @@ func (s *Server) beginWebAuthnCeremony(
 		Handle:    handle,
 		ExpiresIn: int64(s.webauthn.sessionLifetime.Seconds()),
 		Options:   options,
+	})
+}
+
+// storeWebAuthnSession persists ceremony state under the digest of the given
+// handle. It is shared by the ceremony endpoints and the WebAuthn login step,
+// which supplies a handle derived from the outer flow handle.
+func (s *Server) storeWebAuthnSession(
+	ctx context.Context,
+	handle string,
+	ceremony WebAuthnCeremony,
+	subjectID uuid.UUID,
+	data *webauthn.SessionData,
+) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return s.sessions.CreateWebAuthnSession(ctx, WebAuthnSession{
+		Handle:    NewDigest(handle),
+		Ceremony:  ceremony,
+		SubjectID: subjectID,
+		Data:      raw,
+		ExpiresAt: s.now().Add(s.webauthn.sessionLifetime).Unix(),
 	})
 }
 
@@ -294,7 +312,7 @@ func (s *Server) takeWebAuthnSession(
 
 	if sess.Handle == "" ||
 		sess.Ceremony != ceremony ||
-		(sess.ExpiresAt != 0 && s.clock().Unix() > sess.ExpiresAt) {
+		(sess.ExpiresAt != 0 && s.now().Unix() > sess.ExpiresAt) {
 		return sess, nil, nil
 	}
 
@@ -622,7 +640,7 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 		}
 	}
 
-	if err := s.establishSession(e, sub); err != nil {
+	if err := s.session(e, sub, false); err != nil {
 		return err
 	}
 
@@ -727,4 +745,119 @@ func (g *webAuthnGrant) Authorize(
 		Scope:       scope,
 		Refreshable: true,
 	}, nil
+}
+
+// webAuthnPrompt is the client-facing prompt a WebAuthn step returns: the
+// assertion options the authenticator signs and the ceremony's lifetime.
+type webAuthnPrompt struct {
+	// Options are the WebAuthn assertion options for the authenticator.
+	Options any `json:"options"`
+	// ExpiresIn is the remaining lifetime of the ceremony in seconds.
+	ExpiresIn int64 `json:"expires_in"`
+}
+
+// webAuthnStep is a [flow.Step] that confirms the login's subject with a
+// passkey assertion.
+type webAuthnStep struct {
+	id string
+	s  *Server
+}
+
+var _ flow.Step = (*webAuthnStep)(nil)
+
+// ID implements [flow.Step].
+func (w *webAuthnStep) ID() string { return w.id }
+
+// handle derives the per-step ceremony handle from the outer flow handle. The
+// flow handle is high-entropy, so the derived value is too.
+func (w *webAuthnStep) handle(flowHandle string) string {
+	return flowHandle + ":" + w.id
+}
+
+// Begin implements [flow.Step]: it starts a discoverable-login ceremony keyed
+// on the derived handle and returns the assertion options to sign.
+func (w *webAuthnStep) Begin(
+	ctx context.Context,
+	_ *flow.Transaction,
+	handle string,
+) (any, error) {
+	assertion, data, err := w.s.webauthn.handle.BeginDiscoverableLogin(
+		webauthn.WithUserVerification(protocol.VerificationRequired),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := w.s.storeWebAuthnSession(
+		ctx, w.handle(handle), WebAuthnCeremonyLogin, uuid.Nil(), data,
+	); err != nil {
+		return nil, err
+	}
+	return webAuthnPrompt{
+		Options:   assertion,
+		ExpiresIn: int64(w.s.webauthn.sessionLifetime.Seconds()),
+	}, nil
+}
+
+// Verify implements [flow.Step]: it claims the ceremony, verifies the
+// assertion, and requires the asserted subject to match the login's subject.
+//
+// A WebAuthn challenge is single use, so a failed or mismatched assertion burns
+// the ceremony and fails the step (the client restarts the login) rather than
+// retrying against a spent challenge.
+func (w *webAuthnStep) Verify(
+	ctx context.Context,
+	t *flow.Transaction,
+	handle string,
+	in flow.Input,
+) (flow.Verdict, error) {
+	_, data, err := w.s.takeWebAuthnSession(
+		ctx, w.handle(handle), WebAuthnCeremonyLogin,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if data == nil {
+		return flow.VerdictFail, nil
+	}
+
+	sub, reject, fail := w.s.verifyWebAuthnAssertion(ctx, data, in.Raw)
+	if fail != nil {
+		return 0, fail
+	}
+	if reject != nil {
+		return flow.VerdictFail, nil
+	}
+	// The passkey must belong to the subject the login already identified, so a
+	// valid assertion for another account cannot complete this login.
+	if sub.ID().String() != t.Owner {
+		return flow.VerdictFail, nil
+	}
+	return flow.VerdictOK, nil
+}
+
+// Act implements [flow.Step]: a WebAuthn ceremony supports no out-of-band
+// actions.
+func (w *webAuthnStep) Act(
+	_ context.Context,
+	_ *flow.Transaction,
+	_ string,
+	_ flow.Action,
+) (any, error) {
+	return nil, fmt.Errorf("%w: webauthn step supports no actions", flow.ErrRejected)
+}
+
+// WebAuthn returns a [flow.Step] that confirms the login's subject with a
+// passkey assertion. It is intended as a step-up factor after the subject is
+// identified; the presented passkey must belong to that subject.
+//
+// It panics if id is empty or passkey support is not enabled via
+// [WithWebAuthn].
+func (b Steps) WebAuthn(id string) flow.Step {
+	if id == "" {
+		panic("step ID is required")
+	}
+	if b.s.webauthn == nil {
+		panic("webauthn support is not enabled")
+	}
+	return &webAuthnStep{id: id, s: b.s}
 }

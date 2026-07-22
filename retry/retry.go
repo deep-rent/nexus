@@ -156,7 +156,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return res, err
 		}
 
-		t.discard(res)
+		t.discard(ctx, res)
 		t.log(ctx, count, delay, req, res, err)
 
 		if err := backoff.Wait(ctx, delay); err != nil {
@@ -199,7 +199,7 @@ func (t *transport) delay(count int, res *http.Response) time.Duration {
 // underlying connection to be reused. Reading is bounded: a body that exceeds
 // the limit is closed without being consumed, which costs a connection but
 // keeps a large error page from stalling the retry loop.
-func (t *transport) discard(res *http.Response) {
+func (t *transport) discard(ctx context.Context, res *http.Response) {
 	if res == nil || res.Body == nil {
 		return
 	}
@@ -215,7 +215,8 @@ func (t *transport) discard(res *http.Response) {
 				log.Err(err),
 			)
 		case n > t.drain:
-			t.logger.Debug(
+			t.logger.DebugContext(
+				ctx,
 				"Abandoned response body exceeds the drain limit",
 				slog.Int64("limit", t.drain),
 			)

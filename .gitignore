@@ -11,7 +11,6 @@ $RECYCLE.BIN/
 Thumbs.db
 UserInterfaceState.xcuserstate
 
-# Visual Studio Code
 .vscode/*
 !.vscode/*.code-snippets
 !.vscode/extensions.json
@@ -20,8 +19,7 @@ UserInterfaceState.xcuserstate
 !.vscode/tasks.json
 .history/
 *.vsix
-
-# Cursor
+.claude/
 .cursor/*
 
 # Go

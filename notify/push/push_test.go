@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/log"
-	"github.com/deep-rent/nexus/push"
+	"github.com/deep-rent/nexus/notify/push"
 )
 
 func TestMessage_Validate(t *testing.T) {

@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/push"
-	"github.com/deep-rent/nexus/push/apns"
+	"github.com/deep-rent/nexus/notify/push"
+	"github.com/deep-rent/nexus/notify/push/apns"
 	"github.com/deep-rent/nexus/sign"
 )
 

@@ -147,8 +147,8 @@ func Decode(data []byte) (Signer, error) {
 // Encode encodes a cryptographic private key into a standard PKCS8 PEM
 // formatted byte sequence. It accepts standard library private keys (e.g.,
 // [*rsa.PrivateKey], [*ecdsa.PrivateKey], [ed25519.PrivateKey],
-// [*crypto/mldsa.PrivateKey]) or context-aware [Signer] wrappers returned
-// by this package.
+// [*mldsa.PrivateKey], and [*eddsa.PrivateKey]) or context-aware [Signer]
+// wrappers returned by this package.
 func Encode(key any) ([]byte, error) {
 	if w, ok := key.(*ctxWrapper); ok {
 		key = w.signer

@@ -69,20 +69,17 @@ func Has(s string) bool {
 	return false
 }
 
-// Wrap surrounds the given string with the specified quote character.
+// Double surrounds the given string with double quotes.
 //
 // Note: It does not escape existing quotes inside the string. It essentially
-// performs a simple concatenation of the quote rune and the content.
-func Wrap(s string, q rune) string {
-	r := string(q)
-	return r + s + r
-}
+// performs a simple concatenation of the quote and the content.
+func Double(s string) string { return `"` + s + `"` }
 
-// Double wraps a string in double quotes using [Wrap].
-func Double(s string) string { return Wrap(s, '"') }
-
-// Single wraps a string in single quotes using [Wrap].
-func Single(s string) string { return Wrap(s, '\'') }
+// Single surrounds the given string with single quotes.
+//
+// Note: It does not escape existing quotes inside the string. It essentially
+// performs a simple concatenation of the quote and the content.
+func Single(s string) string { return "'" + s + "'" }
 
 // Escape safely quotes a SQL identifier: embedded double quotes are doubled
 // and the result is wrapped in double quotes using [Double].

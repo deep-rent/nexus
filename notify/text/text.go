@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sms
+package text
 
 import (
 	"context"
@@ -92,12 +92,30 @@ type Message struct {
 }
 
 // NewMessage creates a new [Message] with the required fields.
+//
+// To and From are Twilio addresses: bare E.164 numbers are delivered as SMS,
+// while numbers wrapped by [WhatsApp] are delivered over WhatsApp. Both ends
+// must use the same channel.
 func NewMessage(to, from, body string) *Message {
 	return &Message{
 		To:   to,
 		From: from,
 		Body: body,
 	}
+}
+
+// WhatsAppPrefix is the scheme Twilio uses to address WhatsApp endpoints.
+const WhatsAppPrefix = "whatsapp:"
+
+// WhatsApp wraps an E.164 phone number as a Twilio WhatsApp address, so that a
+// [Message] using it for both To and From is delivered over WhatsApp instead
+// of SMS. A number that already carries the [WhatsAppPrefix] is returned
+// unchanged.
+func WhatsApp(number string) string {
+	if strings.HasPrefix(number, WhatsAppPrefix) {
+		return number
+	}
+	return WhatsAppPrefix + number
 }
 
 // Validate checks if the [Message] has the minimum required fields for sending.

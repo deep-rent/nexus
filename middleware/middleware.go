@@ -293,7 +293,8 @@ func Log(logger *slog.Logger) Pipe {
 			start := time.Now()
 			incpt := &interceptor{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(incpt, r)
-			logger.Debug(
+			logger.DebugContext(
+				r.Context(),
 				"HTTP request handled",
 				slog.String("id", GetRequestID(r.Context())),
 				slog.String("method", r.Method),

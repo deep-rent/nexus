@@ -12,26 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sms provides abstractions for sending SMS messages via Twilio.
+// Package text provides abstractions for sending text messages via Twilio,
+// over both SMS and WhatsApp.
 //
 // It defines a generic payload model ([Message]) and a common [Sender]
-// interface for SMS delivery, decoupling business logic from the underlying
-// mechanism.
+// interface, decoupling business logic from the underlying mechanism.
+//
+// # SMS and WhatsApp
+//
+// The channel is selected entirely by the address format of a message's To and
+// From fields, matching Twilio's convention: a bare E.164 number (e.g.
+// "+15558675309") is delivered as an SMS, while a number wrapped by [WhatsApp]
+// (e.g. "whatsapp:+15558675309") is delivered over WhatsApp. The two ends of a
+// message must use the same channel.
 //
 // # Usage
 //
 // Create messages with [NewMessage] and dispatch them through your concrete
 // [Sender] implementation.
 //
-//	msg := sms.NewMessage(
+//	msg := text.NewMessage(
 //		"+15558675309",
 //		"+15551234567",
 //		"Your verification code is 123456.",
 //	)
 //
-//	sender := sms.NewSender(
+//	sender := text.NewSender(
 //	  "twilio_sid",
 //	  "twilio_auth_token",
 //	)
 //	err := sender.Send(ctx, msg)
-package sms
+//
+// The same sender delivers over WhatsApp when both numbers are wrapped:
+//
+//	msg := text.NewMessage(
+//		text.WhatsApp("+15558675309"),
+//		text.WhatsApp("+15551234567"),
+//		"Your verification code is 123456.",
+//	)
+package text
