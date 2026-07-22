@@ -24,8 +24,8 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sec/digest"
 )
 
 // GrantType defines the various flows for obtaining an access token.
@@ -1203,16 +1203,16 @@ func matchSegment(s, pattern string) bool {
 // Token generation defaults. Every opaque bearer artifact is drawn from one
 // [nonce.Generator]; user codes are drawn from one [nonce.Sampler].
 const (
-	// nonceSize is the byte length of an opaque bearer artifact. 32 bytes yield
+	// NonceSize is the byte length of an opaque bearer artifact. 32 bytes yield
 	// 256 bits of entropy and a 43-character base64url string.
-	nonceSize = 32
+	NonceSize = 32
 
-	// userCodeAlphabet is the character set for user codes, as recommended by
+	// UserCodeAlphabet is the character set for user codes, as recommended by
 	// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
 	// prevent accidental words) and visually ambiguous characters.
-	userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
+	UserCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
 
-	// userCodeLength is the number of characters sampled for a user code,
+	// UserCodeLength is the number of characters sampled for a user code,
 	// rendered as two dash-separated groups (XXXX-XXXX).
-	userCodeLength = 8
+	UserCodeLength = 8
 )

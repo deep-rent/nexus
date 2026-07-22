@@ -1111,7 +1111,7 @@ func TestNewUserCode(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
 		pattern := regexp.MustCompile(
-			`^[` + userCodeAlphabet + `]{4}-[` + userCodeAlphabet + `]{4}$`,
+			`^[` + UserCodeAlphabet + `]{4}-[` + UserCodeAlphabet + `]{4}$`,
 		)
 		for range 100 {
 			code, err := env.server.newUserCode(t.Context())

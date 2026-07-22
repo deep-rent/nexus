@@ -27,17 +27,17 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/deep-rent/nexus/std/ascii"
+	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/net/throttle"
 	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sec/oauth/flow"
 	"github.com/deep-rent/nexus/sec/oauth/otp"
 	"github.com/deep-rent/nexus/sec/oauth/pkce"
-	"github.com/deep-rent/nexus/net/router"
-	"github.com/deep-rent/nexus/net/throttle"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/std/ascii"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Default values applied by [New] for optional [Config] fields.
@@ -407,8 +407,13 @@ func New(cfg Config, opts ...Option) *Server {
 	// code from one sampler, both fed by the configured source (crypto/rand by
 	// default). They are built after the options so they observe the final
 	// source.
-	s.nonce = nonce.NewGenerator(s.nonceSource, nonceSize)
-	s.userCodes = nonce.NewSampler(s.nonceSource, userCodeAlphabet, userCodeLength)
+	s.nonce = nonce.NewGenerator(s.nonceSource, NonceSize)
+
+	s.userCodes = nonce.NewSampler(
+		s.nonceSource,
+		UserCodeAlphabet,
+		UserCodeLength,
+	)
 
 	// The login engines are built only after all options are applied, so they
 	// observe the final clock and logger. The OTP challenge lifetime doubles as
