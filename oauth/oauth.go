@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json/jsontext"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -910,18 +911,23 @@ type FlowResponse struct {
 // ContinueRequest represents the payload for the login continue endpoint.
 //
 // It is consumed by [Server.Continue] to satisfy the active step of a pending
-// login with the credential the resource owner supplied.
+// login with the credential the resource owner supplied. The active step reads
+// whichever field it expects: a code-based step (such as a one-time password)
+// reads Code, while an assertion-based step (such as WebAuthn) reads Credential.
 type ContinueRequest struct {
 	// Handle is the flow handle returned by the login endpoint.
 	Handle string `json:"handle"`
-	// Code is the credential for the active step, such as a one-time password.
-	Code string `json:"code"`
+	// Code is the credential for a code-based step, such as a one-time
+	// password.
+	Code string `json:"code,omitzero"`
+	// Credential is the structured credential for an assertion-based step,
+	// such as a JSON-encoded WebAuthn assertion.
+	Credential jsontext.Value `json:"credential,omitzero"`
 }
 
 // Validate implements the [valid.Validatable] interface.
 func (r *ContinueRequest) Validate(v *valid.Validator) {
 	v.NotEmpty("handle", r.Handle)
-	v.NotEmpty("code", r.Code)
 }
 
 var _ valid.Validatable = (*ContinueRequest)(nil)

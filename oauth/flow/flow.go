@@ -48,8 +48,12 @@ const (
 
 // Input carries a client's submission for the active [Step].
 type Input struct {
-	// Value is the primary credential, such as a one-time password.
+	// Value is the primary credential when it is a simple string, such as a
+	// one-time password.
 	Value string
+	// Raw is a structured credential payload for steps whose input is not a
+	// simple string, such as a WebAuthn assertion.
+	Raw []byte
 	// Extra holds optional additional fields for steps that need more than a
 	// single value.
 	Extra map[string]string

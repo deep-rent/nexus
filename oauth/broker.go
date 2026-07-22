@@ -152,7 +152,7 @@ func (s *Server) Continue(e *router.Exchange) error {
 		e.Context(),
 		req.Handle,
 		s.plan(s.readTrustCookie(e)),
-		flow.Input{Value: req.Code},
+		flow.Input{Value: req.Code, Raw: []byte(req.Credential)},
 	)
 	if err != nil {
 		return router.ServerError("failed to continue login", err)
