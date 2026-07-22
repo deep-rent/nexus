@@ -15,7 +15,7 @@
 // Package oauth defines the wire-level vocabulary of the OAuth 2.0
 // authorization framework: grant types, the [Grant] contract and its
 // [Proposal]/[Issuance] exchange, RFC 6749 error codes, the request and
-// response payloads of the token machinery, and the digest-keyed [TokenStore]
+// response payloads of the token machinery, and the digest-keyed [TokenStores]
 // persistence contract for authorization codes, refresh tokens, and device
 // codes.
 //
@@ -30,7 +30,7 @@
 //
 // Every bearer artifact — authorization code, refresh token, device code, or
 // user code — is fingerprinted as a [Digest] before it crosses the
-// [TokenStore] boundary, so store implementations never see plaintext
+// [TokenStores] boundary, so store implementations never see plaintext
 // secrets. Grants obtain digests via [Proposal.Digest], which honors the
 // hasher the authorization server was configured with.
 package oauth

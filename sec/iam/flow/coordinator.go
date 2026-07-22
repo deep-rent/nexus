@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sys/log"
 )
@@ -35,39 +36,25 @@ const DefaultLifetime = 10 * time.Minute
 // and each step keeps its own state elsewhere.
 type Transaction struct {
 	// ID is the digest of the client-facing handle and the storage key.
-	ID string
+	ID string `json:"id"`
 	// Owner is an opaque reference to the authenticated subject, carried
 	// through to [Result.Owner] on completion.
-	Owner string
+	Owner string `json:"owner"`
 	// Completed lists the IDs of the steps finished so far, in order.
-	Completed []string
+	Completed []string `json:"completed,omitzero"`
 	// Remember records whether the client asked to be remembered, carried
 	// through to [Result.Remember] on completion.
-	Remember bool
+	Remember bool `json:"remember,omitzero"`
 	// ExpiresAt is the expiry of the whole login as a Unix timestamp in
 	// seconds.
-	ExpiresAt int64
+	ExpiresAt int64 `json:"expires_at"`
 }
 
-// Store persists login transactions keyed by [Transaction.ID].
-//
-// Implementations are expected to be safe for concurrent use and to honor the
-// provided context. Delete must be atomic and report whether this call removed
-// the transaction; the engine relies on that to establish a login exactly once
-// under concurrent completions.
-type Store interface {
-	// Create persists a new transaction.
-	Create(ctx context.Context, t Transaction) error
-	// Get returns the transaction with the given ID. found is false when none
-	// exists (including after expiry-driven cleanup); the error is reserved for
-	// storage failures.
-	Get(ctx context.Context, id string) (t Transaction, found bool, err error)
-	// Update persists changes to an existing transaction, keyed by its ID.
-	Update(ctx context.Context, t Transaction) error
-	// Delete removes the transaction with the given ID, reporting whether it
-	// existed and was removed by this call.
-	Delete(ctx context.Context, id string) (deleted bool, err error)
-}
+// Store persists login transactions keyed by [Transaction.ID]. See
+// [artifact.Store] for the storage contract, notably the atomic deletion the
+// engine relies on to establish a login exactly once under concurrent
+// completions.
+type Store = artifact.Store[string, Transaction]
 
 // Coordinator drives multi-step logins over a [Store]. It is transport-agnostic
 // and does not throttle, leaving those to the caller, which maps the returned

@@ -17,70 +17,43 @@ package otp_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
-// memStore is an in-memory [otp.Store] for tests.
+// memStore is an in-memory [otp.Store] for tests: an [artifact.Map] with
+// per-method fault flags.
 type memStore struct {
-	mu         sync.Mutex
-	items      map[string]otp.Challenge
+	*artifact.Map[string, otp.Challenge]
 	failCreate bool
 	failGet    bool
 }
 
 func newMemStore() *memStore {
-	return &memStore{items: make(map[string]otp.Challenge)}
+	return &memStore{
+		Map: artifact.NewMap(func(c otp.Challenge) string { return c.ID }),
+	}
 }
 
-func (s *memStore) Create(_ context.Context, c otp.Challenge) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *memStore) Create(ctx context.Context, c otp.Challenge) error {
 	if s.failCreate {
 		return errors.New("create failed")
 	}
-	s.items[c.ID] = c
-	return nil
+	return s.Map.Create(ctx, c)
 }
 
 func (s *memStore) Get(
-	_ context.Context, id string,
+	ctx context.Context, id string,
 ) (otp.Challenge, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.failGet {
 		return otp.Challenge{}, false, errors.New("get failed")
 	}
-	c, ok := s.items[id]
-	return c, ok, nil
-}
-
-func (s *memStore) Update(_ context.Context, c otp.Challenge) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.items[c.ID] = c
-	return nil
-}
-
-func (s *memStore) Delete(_ context.Context, id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.items[id]; !ok {
-		return false, nil
-	}
-	delete(s.items, id)
-	return true, nil
-}
-
-func (s *memStore) len() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.items)
+	return s.Map.Get(ctx, id)
 }
 
 // capture is a Deliverer that records the last delivered code and can be made
@@ -175,8 +148,8 @@ func TestChallenger_BeginVerify(t *testing.T) {
 	if cap.sent != 1 {
 		t.Fatalf("code not delivered exactly once (got %d)", cap.sent)
 	}
-	if store.len() != 1 {
-		t.Fatalf("got %d stored challenges; want 1", store.len())
+	if store.Len() != 1 {
+		t.Fatalf("got %d stored challenges; want 1", store.Len())
 	}
 
 	out, err := c.Verify(t.Context(), purpose, handle, cap.code)
@@ -189,8 +162,8 @@ func TestChallenger_BeginVerify(t *testing.T) {
 	if out.Owner != "user-1" {
 		t.Errorf("got owner %q; want %q", out.Owner, "user-1")
 	}
-	if store.len() != 0 {
-		t.Errorf("challenge not consumed on success (store has %d)", store.len())
+	if store.Len() != 0 {
+		t.Errorf("challenge not consumed on success (store has %d)", store.Len())
 	}
 }
 
@@ -214,7 +187,7 @@ func TestChallenger_Verify_WrongCode(t *testing.T) {
 		t.Errorf("got status %v; want WrongCode", out.Status)
 	}
 	// A wrong guess must not consume the challenge.
-	if store.len() != 1 {
+	if store.Len() != 1 {
 		t.Errorf("wrong guess consumed the challenge")
 	}
 }
@@ -312,8 +285,8 @@ func TestChallenger_Verify_BurnsAfterMaxAttempts(t *testing.T) {
 	if out.Status != otp.StatusInvalid {
 		t.Errorf("got status %v; want Invalid", out.Status)
 	}
-	if store.len() != 0 {
-		t.Errorf("burned challenge not deleted (store has %d)", store.len())
+	if store.Len() != 0 {
+		t.Errorf("burned challenge not deleted (store has %d)", store.Len())
 	}
 }
 
@@ -353,8 +326,8 @@ func TestChallenger_Begin_DeliveryFailureCleansUp(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("got %v; want boom", err)
 	}
-	if store.len() != 0 {
-		t.Errorf("undeliverable challenge left behind (store has %d)", store.len())
+	if store.Len() != 0 {
+		t.Errorf("undeliverable challenge left behind (store has %d)", store.Len())
 	}
 }
 
@@ -506,7 +479,7 @@ func TestChallenger_Cancel(t *testing.T) {
 	if !deleted {
 		t.Error("Cancel reported no deletion for a live challenge")
 	}
-	if store.len() != 0 {
+	if store.Len() != 0 {
 		t.Error("Cancel did not remove the challenge")
 	}
 	// Cancelling again is a no-op.

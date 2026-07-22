@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sys/log"
 )
@@ -78,46 +79,31 @@ func (o Outcome) OK() bool { return o.Status == StatusOK }
 // codes or handles.
 type Challenge struct {
 	// ID is the digest of the client-facing handle and the storage key.
-	ID string
+	ID string `json:"id"`
 	// Code is the digest of the current one-time password.
-	Code string
+	Code string `json:"code"`
 	// Owner is an opaque reference to whoever the challenge authenticates
 	// (e.g. a subject ID). It is returned verbatim on successful verification.
-	Owner string
+	Owner string `json:"owner"`
 	// Purpose namespaces distinct flows (e.g. "2fa", "verify:email") so that a
 	// handle minted for one flow cannot complete another.
-	Purpose string
+	Purpose string `json:"purpose"`
 	// MethodID records the [Method] that last delivered the code, so a resend
 	// can default to the same channel.
-	MethodID string
+	MethodID string `json:"method_id,omitzero"`
 	// ExpiresAt is the expiry as a Unix timestamp in seconds. A resend does not
 	// extend it.
-	ExpiresAt int64
+	ExpiresAt int64 `json:"expires_at"`
 	// Attempts is the number of confirmations tried so far.
-	Attempts int
+	Attempts int `json:"attempts,omitzero"`
 	// Resends is the number of times the code has been redelivered.
-	Resends int
+	Resends int `json:"resends,omitzero"`
 }
 
-// Store persists pending challenges keyed by [Challenge.ID].
-//
-// Implementations are expected to be safe for concurrent use and to honor the
-// provided context. Deletion must be atomic and report whether this call was
-// the one that removed the challenge; the engine relies on that to enforce
-// single use under concurrent confirmations.
-type Store interface {
-	// Create persists a new challenge.
-	Create(ctx context.Context, c Challenge) error
-	// Get returns the challenge with the given ID. found is false when no such
-	// challenge exists (including after expiry-driven cleanup); the returned
-	// error is reserved for storage failures.
-	Get(ctx context.Context, id string) (c Challenge, found bool, err error)
-	// Update persists changes to an existing challenge, keyed by its ID.
-	Update(ctx context.Context, c Challenge) error
-	// Delete removes the challenge with the given ID, reporting whether it
-	// existed and was removed by this call.
-	Delete(ctx context.Context, id string) (deleted bool, err error)
-}
+// Store persists pending challenges keyed by [Challenge.ID]. See
+// [artifact.Store] for the storage contract, notably the atomic deletion the
+// engine relies on to enforce single use under concurrent confirmations.
+type Store = artifact.Store[string, Challenge]
 
 // Challenger runs the lifecycle of one-time password challenges — minting,
 // delivering, verifying, and resending them — over a [Store]. It is

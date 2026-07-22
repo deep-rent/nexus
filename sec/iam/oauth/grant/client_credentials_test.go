@@ -72,7 +72,7 @@ func TestClientCredentialsGrant(t *testing.T) {
 				data.Set("scope", tt.scope)
 			}
 
-			pro := newProposal(client, newFakeTokenStore(), data, now)
+			pro := newProposal(client, newFakeTokens(), data, now)
 			iss, err := ClientCredentials().Authorize(t.Context(), pro)
 
 			if tt.wantCode != "" {

@@ -70,7 +70,7 @@ func (g authCode) Authorize(
 	digest := pro.Digest(code)
 
 	// Retrieve the authorization code state from the session store.
-	c, err := pro.Sessions.GetAuthCode(ctx, digest)
+	c, found, err := pro.Tokens.AuthCodes.Get(ctx, digest)
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,
@@ -81,7 +81,7 @@ func (g authCode) Authorize(
 	}
 
 	// Ensure the code exists.
-	if c.Code == "" {
+	if !found {
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,
 			Code:        oauth.ErrorCodeInvalidGrant,
@@ -93,7 +93,7 @@ func (g authCode) Authorize(
 	// past this point intentionally burns the code. If the code was already
 	// gone, a concurrent request won the race and this one must not issue
 	// tokens.
-	deleted, err := pro.Sessions.DeleteAuthCode(ctx, digest)
+	deleted, err := pro.Tokens.AuthCodes.Delete(ctx, digest)
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,

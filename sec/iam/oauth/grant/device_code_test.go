@@ -142,16 +142,19 @@ func TestDeviceCodeGrant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			store := newFakeTokenStore()
+			store := newFakeTokens()
 			if tt.seed {
-				store.deviceCodes[tt.code.DeviceCode] = tt.code
+				seed(t, store.deviceCodes, tt.code)
 			}
 
 			pro := newProposal(client, store, tt.data, now)
 			iss, err := DeviceCode().Authorize(t.Context(), pro)
 
 			if tt.wantDelete {
-				if _, ok := store.deviceCodes[newDigest("device-1")]; ok {
+				if _, found, _ := store.deviceCodes.Get(
+					t.Context(),
+					newDigest("device-1"),
+				); found {
 					t.Error("device code should have been deleted")
 				}
 			}
@@ -186,8 +189,8 @@ func TestDeviceCodeGrant(t *testing.T) {
 	t.Run("pending poll records timestamp", func(t *testing.T) {
 		t.Parallel()
 
-		store := newFakeTokenStore()
-		store.deviceCodes[newDigest("device-1")] = code(oauth.DeviceCodeStatusPending)
+		store := newFakeTokens()
+		seed(t, store.deviceCodes, code(oauth.DeviceCodeStatusPending))
 
 		pro := newProposal(client, store, form, now)
 		_, err := DeviceCode().Authorize(t.Context(), pro)
@@ -199,7 +202,8 @@ func TestDeviceCodeGrant(t *testing.T) {
 			)
 		}
 
-		if got := store.deviceCodes[newDigest("device-1")].LastPolledAt; got != now.Unix() {
+		dc, _, _ := store.deviceCodes.Get(t.Context(), newDigest("device-1"))
+		if got := dc.LastPolledAt; got != now.Unix() {
 			t.Errorf("got last polled at %d; want %d", got, now.Unix())
 		}
 

@@ -60,7 +60,7 @@ func (g deviceCode) Authorize(
 	// The store only ever sees the digest of the code.
 	digest := pro.Digest(code)
 
-	c, err := pro.Sessions.GetDeviceCode(ctx, digest)
+	c, found, err := pro.Tokens.DeviceCodes.Get(ctx, digest)
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,
@@ -70,7 +70,7 @@ func (g deviceCode) Authorize(
 		}
 	}
 
-	if c.DeviceCode == "" {
+	if !found {
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,
 			Code:        oauth.ErrorCodeInvalidGrant,
@@ -90,7 +90,7 @@ func (g deviceCode) Authorize(
 
 	// Expired codes are of no further use; remove them as a best effort.
 	if c.ExpiresAt != 0 && now > c.ExpiresAt {
-		if _, err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
+		if _, err := pro.Tokens.DeviceCodes.Delete(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired device code",
@@ -119,7 +119,7 @@ func (g deviceCode) Authorize(
 	case oauth.DeviceCodeStatusPending:
 		// TouchDeviceCode only records the poll time, so a concurrent
 		// approval via the verification endpoint can never be overwritten.
-		if err := pro.Sessions.TouchDeviceCode(ctx, digest, now); err != nil {
+		if err := pro.Tokens.DeviceCodes.Touch(ctx, digest, now); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to record device code poll",
@@ -133,7 +133,7 @@ func (g deviceCode) Authorize(
 		}
 	case oauth.DeviceCodeStatusDenied:
 		// The decision is final; remove the code as a best effort.
-		if _, err := pro.Sessions.DeleteDeviceCode(ctx, digest); err != nil {
+		if _, err := pro.Tokens.DeviceCodes.Delete(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete denied device code",
@@ -159,7 +159,7 @@ func (g deviceCode) Authorize(
 	// Delete the code immediately upon successful authorization to prevent
 	// reuse. If the code was already gone, a concurrent redemption won the
 	// race and this request must not issue tokens.
-	deleted, err := pro.Sessions.DeleteDeviceCode(ctx, digest)
+	deleted, err := pro.Tokens.DeviceCodes.Delete(ctx, digest)
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,

@@ -23,6 +23,7 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 )
 
 // GrantType defines the various flows for obtaining an access token.
@@ -108,10 +109,10 @@ type ClientStore interface {
 // token, device code, user code, OTP challenge, or one-time password), encoded
 // as an unpadded base64url string.
 //
-// The authorization server hashes every artifact before it crosses the
-// [TokenStore] boundary, so implementations never see plaintext bearer
-// secrets: a leaked datastore cannot be replayed against the server.
-// Implementations should treat digests as opaque keys and persist them as-is.
+// The authorization server hashes every artifact before it crosses a store
+// boundary, so implementations never see plaintext bearer secrets: a leaked
+// datastore cannot be replayed against the server. Implementations should
+// treat digests as opaque keys and persist them as-is.
 type Digest string
 
 // AuthCode holds the temporary state bound to an authorization code.
@@ -215,91 +216,44 @@ type DeviceCode struct {
 	LastPolledAt int64 `json:"last_polled_at,omitzero"`
 }
 
-// TokenStore abstracts the persistence layer for the ephemeral artifacts of
-// token issuance: authorization codes, refresh tokens, and device codes.
-//
-// All artifacts are keyed by their [Digest]; the authorization server hashes
-// plaintext values before every store interaction. Implementations therefore
-// never handle bearer secrets and can persist digests directly as primary
-// keys. These artifacts usually have a limited TTL.
-type TokenStore interface {
-	// GetAuthCode retrieves an authorization code by its digest.
-	//
-	// If found, it must return the data and nil.
-	// If not found or expired, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetAuthCode(ctx context.Context, code Digest) (AuthCode, error)
-	// CreateAuthCode stores a new authorization code.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateAuthCode(ctx context.Context, data AuthCode) error
-	// DeleteAuthCode removes an authorization code and reports whether it
-	// was present. The authorization server relies on the returned flag to
-	// enforce single use under concurrent redemption attempts, so
-	// implementations must delete and report atomically (e.g., SQL
-	// "DELETE ... RETURNING" or a Redis DEL count).
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteAuthCode(ctx context.Context, code Digest) (bool, error)
-	// GetRefreshToken retrieves a refresh token by its digest.
-	//
-	// If found, it must return the data and nil.
-	// If not found or expired, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetRefreshToken(ctx context.Context, token Digest) (RefreshToken, error)
-	// CreateRefreshToken stores a new refresh token.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateRefreshToken(ctx context.Context, data RefreshToken) error
-	// DeleteRefreshToken removes a refresh token (e.g., during revocation or
-	// rotation) and reports whether it was present. Like [DeleteAuthCode],
-	// the deletion and the report must be atomic so that concurrent rotation
-	// attempts cannot both succeed.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteRefreshToken(ctx context.Context, token Digest) (bool, error)
-	// GetDeviceCode retrieves a device code by its digest.
-	//
-	// If found, it must return the data and nil.
-	// If not found, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetDeviceCode(ctx context.Context, code Digest) (DeviceCode, error)
-	// GetDeviceCodeByUserCode retrieves a device code by the digest of its
-	// associated user code. It is used by the verification endpoint where the
-	// resource owner enters the user code displayed on the device.
-	//
-	// If found, it must return the data and nil.
-	// If not found, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetDeviceCodeByUserCode(
+// DeviceCodeStore persists device authorization requests. Beyond the generic
+// [artifact.Store] lifecycle it carries the two operations specific to the
+// Device Authorization Grant.
+type DeviceCodeStore interface {
+	artifact.Store[Digest, DeviceCode]
+
+	// GetByUserCode retrieves a device code by the digest of its associated
+	// user code. It is used by the verification endpoint where the resource
+	// owner enters the user code displayed on the device. found is false
+	// when no such code exists; the error is reserved for storage failures.
+	GetByUserCode(
 		ctx context.Context,
 		userCode Digest,
-	) (DeviceCode, error)
-	// CreateDeviceCode stores a new device code.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateDeviceCode(ctx context.Context, data DeviceCode) error
-	// UpdateDeviceCode replaces the stored state of a device code, keyed by
-	// [DeviceCode.DeviceCode]. It is used to record status transitions
-	// performed by the verification endpoint.
-	//
-	// It should return an error only if the persistence operation fails.
-	UpdateDeviceCode(ctx context.Context, data DeviceCode) error
-	// TouchDeviceCode records a client polling attempt by updating only
+	) (v DeviceCode, found bool, err error)
+	// Touch records a client polling attempt by updating only
 	// [DeviceCode.LastPolledAt] for the given code. It is deliberately
-	// separate from [UpdateDeviceCode] so that concurrent polling can never
-	// overwrite a status transition performed by the verification endpoint.
-	// Touching an absent code is a no-op.
+	// separate from Update so that concurrent polling can never overwrite a
+	// status transition performed by the verification endpoint. Touching an
+	// absent code is a no-op.
 	//
 	// It should return an error only if the persistence operation fails.
-	TouchDeviceCode(ctx context.Context, code Digest, lastPolledAt int64) error
-	// DeleteDeviceCode removes a device code by its digest and reports
-	// whether it was present. Like [DeleteAuthCode], the deletion and the
-	// report must be atomic so that concurrent redemption attempts cannot
-	// both succeed.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteDeviceCode(ctx context.Context, code Digest) (bool, error)
+	Touch(ctx context.Context, code Digest, lastPolledAt int64) error
+}
+
+// TokenStores bundles the persistence backends for the ephemeral artifacts
+// of token issuance. All records are keyed by their [Digest]; see
+// [artifact.Store] for the contract, notably the atomic deletion that
+// enforces single use of codes and rotation of refresh tokens under
+// concurrent redemption.
+type TokenStores struct {
+	// AuthCodes persists authorization codes, keyed by [AuthCode.Code].
+	AuthCodes artifact.Store[Digest, AuthCode]
+	// RefreshTokens persists refresh tokens, keyed by [RefreshToken.Token].
+	RefreshTokens artifact.Store[Digest, RefreshToken]
+	// DeviceCodes persists device authorization requests, keyed by
+	// [DeviceCode.DeviceCode]. It may be nil when the Device Authorization
+	// Grant is not offered.
+	DeviceCodes DeviceCodeStore
 }
 
 const (
@@ -372,9 +326,9 @@ func (e Error) Error() string {
 type Proposal struct {
 	// Client is the authenticated entity making the request (read-only).
 	Client Client
-	// Sessions provides access to the [TokenStore] for managing
-	// authorization codes and refresh tokens.
-	Sessions TokenStore
+	// Tokens provides access to the [TokenStores] for managing authorization
+	// codes, refresh tokens, and device codes.
+	Tokens TokenStores
 	// Logger provides a context-aware logger for the grant handler.
 	Logger *slog.Logger
 	// Now returns the current time. Grants must use it instead of [time.Now]
@@ -395,7 +349,7 @@ type Proposal struct {
 // and a nil now to [time.Now].
 func NewProposal(
 	client Client,
-	sessions TokenStore,
+	tokens TokenStores,
 	form url.Values,
 	hasher *digest.Hasher,
 	logger *slog.Logger,
@@ -411,12 +365,12 @@ func NewProposal(
 		now = time.Now
 	}
 	return &Proposal{
-		Client:   client,
-		Sessions: sessions,
-		Logger:   logger,
-		Now:      now,
-		hasher:   hasher,
-		data:     form,
+		Client: client,
+		Tokens: tokens,
+		Logger: logger,
+		Now:    now,
+		hasher: hasher,
+		data:   form,
 	}
 }
 

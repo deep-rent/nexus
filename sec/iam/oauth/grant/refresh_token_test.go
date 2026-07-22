@@ -119,9 +119,9 @@ func TestRefreshTokenGrant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			store := newFakeTokenStore()
+			store := newFakeTokens()
 			if tt.seed {
-				store.refreshTokens[tt.token.Token] = tt.token
+				seed(t, store.refreshTokens, tt.token)
 			}
 
 			pro := newProposal(client, store, tt.data, now)
@@ -151,7 +151,10 @@ func TestRefreshTokenGrant(t *testing.T) {
 			if !iss.Refreshable {
 				t.Error("issuance should be refreshable")
 			}
-			if _, ok := store.refreshTokens[newDigest("token-1")]; ok {
+			if _, found, _ := store.refreshTokens.Get(
+				t.Context(),
+				newDigest("token-1"),
+			); found {
 				t.Error("refresh token should have been rotated out")
 			}
 		})
@@ -160,8 +163,8 @@ func TestRefreshTokenGrant(t *testing.T) {
 	t.Run("rotation prevents reuse", func(t *testing.T) {
 		t.Parallel()
 
-		store := newFakeTokenStore()
-		store.refreshTokens[newDigest("token-1")] = token()
+		store := newFakeTokens()
+		seed(t, store.refreshTokens, token())
 
 		data := url.Values{"refresh_token": {"token-1"}}
 

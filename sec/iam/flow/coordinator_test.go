@@ -17,61 +17,19 @@ package flow_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/flow"
 )
 
 // memStore is an in-memory [flow.Store] for tests.
-type memStore struct {
-	mu    sync.Mutex
-	items map[string]flow.Transaction
-}
+type memStore = artifact.Map[string, flow.Transaction]
 
 func newMemStore() *memStore {
-	return &memStore{items: make(map[string]flow.Transaction)}
-}
-
-func (s *memStore) Create(_ context.Context, t flow.Transaction) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.items[t.ID] = t
-	return nil
-}
-
-func (s *memStore) Get(
-	_ context.Context, id string,
-) (flow.Transaction, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	t, ok := s.items[id]
-	return t, ok, nil
-}
-
-func (s *memStore) Update(_ context.Context, t flow.Transaction) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.items[t.ID] = t
-	return nil
-}
-
-func (s *memStore) Delete(_ context.Context, id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.items[id]; !ok {
-		return false, nil
-	}
-	delete(s.items, id)
-	return true, nil
-}
-
-func (s *memStore) len() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.items)
+	return artifact.NewMap(func(t flow.Transaction) string { return t.ID })
 }
 
 // fakeStep is a configurable [flow.Step] recording its calls.
@@ -151,7 +109,7 @@ func TestBegin_EmptyPlanCompletesImmediately(t *testing.T) {
 	if res.Owner != "user-1" || !res.Remember {
 		t.Errorf("got owner=%q remember=%v; want user-1/true", res.Owner, res.Remember)
 	}
-	if store.len() != 0 {
+	if store.Len() != 0 {
 		t.Error("no transaction should be minted for an empty plan")
 	}
 }
@@ -178,8 +136,8 @@ func TestBeginContinue_SingleStep(t *testing.T) {
 	if step.begins != 1 {
 		t.Errorf("step begun %d times; want 1", step.begins)
 	}
-	if store.len() != 1 {
-		t.Fatalf("got %d transactions; want 1", store.len())
+	if store.Len() != 1 {
+		t.Fatalf("got %d transactions; want 1", store.Len())
 	}
 
 	res, err = c.Continue(t.Context(), handle, planOf(step), code)
@@ -192,7 +150,7 @@ func TestBeginContinue_SingleStep(t *testing.T) {
 	if res.Owner != "user-1" {
 		t.Errorf("got owner %q; want user-1", res.Owner)
 	}
-	if store.len() != 0 {
+	if store.Len() != 0 {
 		t.Error("transaction should be consumed on completion")
 	}
 }
@@ -253,7 +211,7 @@ func TestContinue_WrongInputStaysLive(t *testing.T) {
 	if res.Status != flow.StatusWrongInput {
 		t.Errorf("got status %v; want WrongInput", res.Status)
 	}
-	if store.len() != 1 {
+	if store.Len() != 1 {
 		t.Error("a wrong input must not consume the transaction")
 	}
 
@@ -286,7 +244,7 @@ func TestContinue_StepFailAborts(t *testing.T) {
 	if res.Status != flow.StatusInvalid {
 		t.Errorf("got status %v; want Invalid", res.Status)
 	}
-	if store.len() != 0 {
+	if store.Len() != 0 {
 		t.Error("a failed step must abort and delete the transaction")
 	}
 }
@@ -472,7 +430,7 @@ func TestContinue_AdvanceFailureAborts(t *testing.T) {
 	); err == nil {
 		t.Error("expected the advance failure to surface as an error")
 	}
-	if store.len() != 0 {
+	if store.Len() != 0 {
 		t.Error("an unadvanceable transaction should be deleted")
 	}
 }
@@ -488,7 +446,7 @@ func TestBegin_ActivationFailureCleansUp(t *testing.T) {
 	); err == nil {
 		t.Error("expected the activation failure to surface as an error")
 	}
-	if store.len() != 0 {
+	if store.Len() != 0 {
 		t.Error("an unstartable transaction should be deleted")
 	}
 }

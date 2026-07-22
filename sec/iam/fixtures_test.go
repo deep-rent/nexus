@@ -22,9 +22,15 @@ import (
 	"slices"
 	"time"
 
+	"testing"
+
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
+	"github.com/deep-rent/nexus/sec/iam/flow"
 	"github.com/deep-rent/nexus/sec/iam/idp"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/sec/iam/otp"
+	"github.com/deep-rent/nexus/sec/iam/trust"
 	"uuid"
 )
 
@@ -255,345 +261,143 @@ func (s *fakeSubjectStore) DeleteSession(_ context.Context, key string) error {
 
 var _ SubjectStore = (*fakeSubjectStore)(nil)
 
-// fakeSessionStore is an in-memory [SessionStore].
-type fakeSessionStore struct {
-	authCodes     map[oauth.Digest]oauth.AuthCode
-	refreshTokens map[oauth.Digest]oauth.RefreshToken
-	deviceCodes   map[oauth.Digest]oauth.DeviceCode
-	otpChallenges map[oauth.Digest]OTPChallenge
-	// webAuthnSessions maps handle digests to pending ceremony sessions.
-	webAuthnSessions map[oauth.Digest]WebAuthnSession
-	// trustedDevices maps token digests to remember-me device trust records.
-	trustedDevices map[oauth.Digest]TrustedDevice
-	// flowTransactions maps handle digests to in-progress login flows.
-	flowTransactions map[oauth.Digest]FlowTransaction
-	err              error
+// fakeDeviceCodeStore is an in-memory [oauth.DeviceCodeStore]: an
+// [artifact.Map] extended by the user-code lookup and the poll timestamp
+// update.
+type fakeDeviceCodeStore struct {
+	*artifact.Map[oauth.Digest, oauth.DeviceCode]
 }
 
-func newFakeSessionStore() *fakeSessionStore {
-	return &fakeSessionStore{
-		authCodes:     make(map[oauth.Digest]oauth.AuthCode),
-		refreshTokens: make(map[oauth.Digest]oauth.RefreshToken),
-		deviceCodes:   make(map[oauth.Digest]oauth.DeviceCode),
-		otpChallenges: make(map[oauth.Digest]OTPChallenge),
-		webAuthnSessions: make(
-			map[oauth.Digest]WebAuthnSession,
-		),
-		trustedDevices:   make(map[oauth.Digest]TrustedDevice),
-		flowTransactions: make(map[oauth.Digest]FlowTransaction),
-	}
-}
-
-func (s *fakeSessionStore) GetFlowTransaction(
-	_ context.Context,
-	handle oauth.Digest,
-) (FlowTransaction, error) {
-	if s.err != nil {
-		return FlowTransaction{}, s.err
-	}
-	return s.flowTransactions[handle], nil
-}
-
-func (s *fakeSessionStore) CreateFlowTransaction(
-	_ context.Context,
-	data FlowTransaction,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.flowTransactions[data.Handle] = data
-	return nil
-}
-
-func (s *fakeSessionStore) UpdateFlowTransaction(
-	_ context.Context,
-	data FlowTransaction,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.flowTransactions[data.Handle] = data
-	return nil
-}
-
-func (s *fakeSessionStore) DeleteFlowTransaction(
-	_ context.Context,
-	handle oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.flowTransactions[handle]
-	delete(s.flowTransactions, handle)
-	return ok, nil
-}
-
-func (s *fakeSessionStore) GetTrustedDevice(
-	_ context.Context,
-	token oauth.Digest,
-) (TrustedDevice, error) {
-	if s.err != nil {
-		return TrustedDevice{}, s.err
-	}
-	return s.trustedDevices[token], nil
-}
-
-func (s *fakeSessionStore) CreateTrustedDevice(
-	_ context.Context,
-	data TrustedDevice,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.trustedDevices[data.Token] = data
-	return nil
-}
-
-func (s *fakeSessionStore) DeleteTrustedDevice(
-	_ context.Context,
-	token oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.trustedDevices[token]
-	delete(s.trustedDevices, token)
-	return ok, nil
-}
-
-func (s *fakeSessionStore) DeleteTrustedDevicesForSubject(
-	_ context.Context,
-	subjectID uuid.UUID,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	for k, v := range s.trustedDevices {
-		if v.SubjectID == subjectID {
-			delete(s.trustedDevices, k)
-		}
-	}
-	return nil
-}
-
-func (s *fakeSessionStore) GetWebAuthnSession(
-	_ context.Context,
-	handle oauth.Digest,
-) (WebAuthnSession, error) {
-	if s.err != nil {
-		return WebAuthnSession{}, s.err
-	}
-	return s.webAuthnSessions[handle], nil
-}
-
-func (s *fakeSessionStore) CreateWebAuthnSession(
-	_ context.Context,
-	data WebAuthnSession,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.webAuthnSessions[data.Handle] = data
-	return nil
-}
-
-func (s *fakeSessionStore) DeleteWebAuthnSession(
-	_ context.Context,
-	handle oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.webAuthnSessions[handle]
-	delete(s.webAuthnSessions, handle)
-	return ok, nil
-}
-
-func (s *fakeSessionStore) GetAuthCode(
-	_ context.Context,
-	code oauth.Digest,
-) (oauth.AuthCode, error) {
-	if s.err != nil {
-		return oauth.AuthCode{}, s.err
-	}
-	return s.authCodes[code], nil
-}
-
-func (s *fakeSessionStore) CreateAuthCode(
-	_ context.Context,
-	data oauth.AuthCode,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.authCodes[data.Code] = data
-	return nil
-}
-
-func (s *fakeSessionStore) DeleteAuthCode(
-	_ context.Context,
-	code oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.authCodes[code]
-	delete(s.authCodes, code)
-	return ok, nil
-}
-
-func (s *fakeSessionStore) GetRefreshToken(
-	_ context.Context,
-	token oauth.Digest,
-) (oauth.RefreshToken, error) {
-	if s.err != nil {
-		return oauth.RefreshToken{}, s.err
-	}
-	return s.refreshTokens[token], nil
-}
-
-func (s *fakeSessionStore) CreateRefreshToken(
-	_ context.Context,
-	data oauth.RefreshToken,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.refreshTokens[data.Token] = data
-	return nil
-}
-
-func (s *fakeSessionStore) DeleteRefreshToken(
-	_ context.Context,
-	token oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.refreshTokens[token]
-	delete(s.refreshTokens, token)
-	return ok, nil
-}
-
-func (s *fakeSessionStore) GetDeviceCode(
-	_ context.Context,
-	code oauth.Digest,
-) (oauth.DeviceCode, error) {
-	if s.err != nil {
-		return oauth.DeviceCode{}, s.err
-	}
-	return s.deviceCodes[code], nil
-}
-
-func (s *fakeSessionStore) GetDeviceCodeByUserCode(
-	_ context.Context,
+func (s *fakeDeviceCodeStore) GetByUserCode(
+	ctx context.Context,
 	userCode oauth.Digest,
-) (oauth.DeviceCode, error) {
-	if s.err != nil {
-		return oauth.DeviceCode{}, s.err
+) (oauth.DeviceCode, bool, error) {
+	if s.Err != nil {
+		return oauth.DeviceCode{}, false, s.Err
 	}
-	for _, c := range s.deviceCodes {
+	var (
+		match oauth.DeviceCode
+		found bool
+	)
+	s.Range(func(_ oauth.Digest, c oauth.DeviceCode) bool {
 		if c.UserCode == userCode {
-			return c, nil
+			match, found = c, true
+			return false
 		}
-	}
-	return oauth.DeviceCode{}, nil
+		return true
+	})
+	return match, found, nil
 }
 
-func (s *fakeSessionStore) CreateDeviceCode(
-	_ context.Context,
-	data oauth.DeviceCode,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.deviceCodes[data.DeviceCode] = data
-	return nil
-}
-
-func (s *fakeSessionStore) UpdateDeviceCode(
-	_ context.Context,
-	data oauth.DeviceCode,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.deviceCodes[data.DeviceCode] = data
-	return nil
-}
-
-func (s *fakeSessionStore) TouchDeviceCode(
-	_ context.Context,
+func (s *fakeDeviceCodeStore) Touch(
+	ctx context.Context,
 	code oauth.Digest,
 	lastPolledAt int64,
 ) error {
-	if s.err != nil {
-		return s.err
+	c, found, err := s.Get(ctx, code)
+	if err != nil || !found {
+		return err
 	}
-	if c, ok := s.deviceCodes[code]; ok {
-		c.LastPolledAt = lastPolledAt
-		s.deviceCodes[code] = c
-	}
-	return nil
+	c.LastPolledAt = lastPolledAt
+	return s.Update(ctx, c)
 }
 
-func (s *fakeSessionStore) DeleteDeviceCode(
-	_ context.Context,
-	code oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.deviceCodes[code]
-	delete(s.deviceCodes, code)
-	return ok, nil
+var _ oauth.DeviceCodeStore = (*fakeDeviceCodeStore)(nil)
+
+// fakeTrustStore is an in-memory [trust.Store]: an [artifact.Map] extended by
+// the owner-scoped bulk deletion.
+type fakeTrustStore struct {
+	*artifact.Map[string, trust.Record]
 }
 
-func (s *fakeSessionStore) GetOTPChallenge(
-	_ context.Context,
-	challenge oauth.Digest,
-) (OTPChallenge, error) {
-	if s.err != nil {
-		return OTPChallenge{}, s.err
-	}
-	return s.otpChallenges[challenge], nil
-}
-
-func (s *fakeSessionStore) CreateOTPChallenge(
-	_ context.Context,
-	data OTPChallenge,
+func (s *fakeTrustStore) DeleteForOwner(
+	ctx context.Context,
+	owner string,
 ) error {
-	if s.err != nil {
-		return s.err
+	if s.Err != nil {
+		return s.Err
 	}
-	s.otpChallenges[data.Challenge] = data
+	s.Range(func(id string, r trust.Record) bool {
+		if r.Owner == owner {
+			_, _ = s.Delete(ctx, id)
+		}
+		return true
+	})
 	return nil
 }
 
-func (s *fakeSessionStore) UpdateOTPChallenge(
-	_ context.Context,
-	data OTPChallenge,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.otpChallenges[data.Challenge] = data
-	return nil
+var _ trust.Store = (*fakeTrustStore)(nil)
+
+// fakeStores bundles Map-backed [Stores] with typed handles for seeding and
+// peeking.
+type fakeStores struct {
+	Stores
+	authCodes     *artifact.Map[oauth.Digest, oauth.AuthCode]
+	refreshTokens *artifact.Map[oauth.Digest, oauth.RefreshToken]
+	deviceCodes   *fakeDeviceCodeStore
+	challenges    *artifact.Map[string, otp.Challenge]
+	flows         *artifact.Map[string, flow.Transaction]
+	trust         *fakeTrustStore
+	ceremonies    *artifact.Map[oauth.Digest, WebAuthnSession]
 }
 
-func (s *fakeSessionStore) DeleteOTPChallenge(
-	_ context.Context,
-	challenge oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
+func newFakeStores() *fakeStores {
+	s := &fakeStores{
+		authCodes: artifact.NewMap(
+			func(c oauth.AuthCode) oauth.Digest { return c.Code },
+		),
+		refreshTokens: artifact.NewMap(
+			func(r oauth.RefreshToken) oauth.Digest { return r.Token },
+		),
+		deviceCodes: &fakeDeviceCodeStore{Map: artifact.NewMap(
+			func(c oauth.DeviceCode) oauth.Digest { return c.DeviceCode },
+		)},
+		challenges: artifact.NewMap(
+			func(c otp.Challenge) string { return c.ID },
+		),
+		flows: artifact.NewMap(
+			func(t flow.Transaction) string { return t.ID },
+		),
+		trust: &fakeTrustStore{Map: artifact.NewMap(
+			func(r trust.Record) string { return r.ID },
+		)},
+		ceremonies: artifact.NewMap(
+			func(c WebAuthnSession) oauth.Digest { return c.Handle },
+		),
 	}
-	_, ok := s.otpChallenges[challenge]
-	delete(s.otpChallenges, challenge)
-	return ok, nil
+	s.Stores = Stores{
+		TokenStores: oauth.TokenStores{
+			AuthCodes:     s.authCodes,
+			RefreshTokens: s.refreshTokens,
+			DeviceCodes:   s.deviceCodes,
+		},
+		Challenges: s.challenges,
+		Flows:      s.flows,
+		Trust:      s.trust,
+		Ceremonies: s.ceremonies,
+	}
+	return s
 }
 
-var _ SessionStore = (*fakeSessionStore)(nil)
+// setErr makes every store fail with the given error, emulating a datastore
+// outage.
+func (s *fakeStores) setErr(err error) {
+	s.authCodes.Err = err
+	s.refreshTokens.Err = err
+	s.deviceCodes.Err = err
+	s.challenges.Err = err
+	s.flows.Err = err
+	s.trust.Err = err
+	s.ceremonies.Err = err
+}
+
+// seed inserts a record into the store, failing the test on error.
+func seed[K ~string, V any](t *testing.T, s artifact.Store[K, V], v V) {
+	t.Helper()
+	if err := s.Create(t.Context(), v); err != nil {
+		t.Fatalf("failed to seed store: %v", err)
+	}
+}
 
 // discardLogger returns a logger that drops all records.
 func discardLogger() *slog.Logger {
@@ -603,13 +407,13 @@ func discardLogger() *slog.Logger {
 // newProposal assembles an [oauth.Proposal] for direct grant testing.
 func newProposal(
 	c oauth.Client,
-	sessions SessionStore,
+	tokens oauth.TokenStores,
 	data url.Values,
 	now time.Time,
 ) *oauth.Proposal {
 	return oauth.NewProposal(
 		c,
-		sessions,
+		tokens,
 		data,
 		nil,
 		discardLogger(),

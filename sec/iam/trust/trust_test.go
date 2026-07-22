@@ -21,56 +21,32 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 )
 
-// fakeStore is an in-memory [trust.Store].
+// fakeStore is an in-memory [trust.Store]: an [artifact.Map] extended by the
+// owner-scoped bulk deletion.
 type fakeStore struct {
-	records map[string]trust.Record
-	err     error
+	*artifact.Map[string, trust.Record]
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{records: make(map[string]trust.Record)}
+	return &fakeStore{
+		Map: artifact.NewMap(func(r trust.Record) string { return r.ID }),
+	}
 }
 
-func (s *fakeStore) Create(_ context.Context, r trust.Record) error {
-	if s.err != nil {
-		return s.err
+func (s *fakeStore) DeleteForOwner(ctx context.Context, owner string) error {
+	if s.Err != nil {
+		return s.Err
 	}
-	s.records[r.ID] = r
-	return nil
-}
-
-func (s *fakeStore) Get(
-	_ context.Context,
-	id string,
-) (trust.Record, bool, error) {
-	if s.err != nil {
-		return trust.Record{}, false, s.err
-	}
-	r, ok := s.records[id]
-	return r, ok, nil
-}
-
-func (s *fakeStore) Delete(_ context.Context, id string) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.records[id]
-	delete(s.records, id)
-	return ok, nil
-}
-
-func (s *fakeStore) DeleteForOwner(_ context.Context, owner string) error {
-	if s.err != nil {
-		return s.err
-	}
-	for id, r := range s.records {
+	s.Range(func(id string, r trust.Record) bool {
 		if r.Owner == owner {
-			delete(s.records, id)
+			_, _ = s.Delete(ctx, id)
 		}
-	}
+		return true
+	})
 	return nil
 }
 
@@ -111,11 +87,14 @@ func TestManager_IssueAndCheck(t *testing.T) {
 	}
 
 	// The store must never see the plaintext token.
-	if _, ok := e.store.records[token]; ok {
+	if _, found, _ := e.store.Get(t.Context(), token); found {
 		t.Error("plaintext token used as storage key")
 	}
-	r, ok := e.store.records[digest.DefaultHasher.String(token)]
-	if !ok {
+	r, found, _ := e.store.Get(
+		t.Context(),
+		digest.DefaultHasher.String(token),
+	)
+	if !found {
 		t.Fatal("record not stored under the token digest")
 	}
 	if r.Owner != "alice" || r.Label != "iPhone" {
@@ -272,7 +251,7 @@ func TestManager_StorageErrors(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 
-	e.store.err = boom
+	e.store.Err = boom
 
 	if _, err := e.manager.Issue(t.Context(), "alice", ""); !errors.Is(err, boom) {
 		t.Errorf("Issue: got %v; want the storage error", err)
@@ -298,7 +277,7 @@ func TestManager_CustomHasher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if _, ok := e.store.records[hasher.String(token)]; !ok {
+	if _, found, _ := e.store.Get(t.Context(), hasher.String(token)); !found {
 		t.Error("record not keyed by the injected hasher's digest")
 	}
 }

@@ -260,7 +260,7 @@ func TestWebAuthnRegistration(t *testing.T) {
 		if !slices.Equal(creds[0].ID, env.cred.ID) {
 			t.Error("stored credential ID does not match the authenticator")
 		}
-		if len(env.sessions.webAuthnSessions) != 0 {
+		if env.stores.ceremonies.Len() != 0 {
 			t.Error("ceremony session should have been deleted")
 		}
 	})

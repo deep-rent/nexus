@@ -280,7 +280,7 @@ func (s *Server) storeWebAuthnSession(
 	if err != nil {
 		return err
 	}
-	return s.sessions.CreateWebAuthnSession(ctx, WebAuthnSession{
+	return s.stores.Ceremonies.Create(ctx, WebAuthnSession{
 		Handle:    s.digest(handle),
 		Ceremony:  ceremony,
 		SubjectID: subjectID,
@@ -305,18 +305,18 @@ func (s *Server) takeWebAuthnSession(
 ) (WebAuthnSession, *webauthn.SessionData, error) {
 	digest := s.digest(handle)
 
-	sess, err := s.sessions.GetWebAuthnSession(ctx, digest)
+	sess, found, err := s.stores.Ceremonies.Get(ctx, digest)
 	if err != nil {
 		return sess, nil, err
 	}
 
-	if sess.Handle == "" ||
+	if !found ||
 		sess.Ceremony != ceremony ||
 		(sess.ExpiresAt != 0 && s.now().Unix() > sess.ExpiresAt) {
 		return sess, nil, nil
 	}
 
-	deleted, err := s.sessions.DeleteWebAuthnSession(ctx, digest)
+	deleted, err := s.stores.Ceremonies.Delete(ctx, digest)
 	if err != nil {
 		return sess, nil, err
 	}

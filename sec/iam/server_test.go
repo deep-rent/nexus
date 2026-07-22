@@ -56,7 +56,7 @@ type testEnv struct {
 	vault    vault.Vault
 	clients  *fakeClientStore
 	subjects *fakeSubjectStore
-	sessions *fakeSessionStore
+	stores   *fakeStores
 	client   *fakeClient // confidential default client
 	public   *fakeClient // public client without a secret
 	subject  *fakeSubject
@@ -114,12 +114,12 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 	env.subjects.passwords["alice"] = "wonderland"
 	env.subjects.usernames["alice"] = env.subject.id
 
-	env.sessions = newFakeSessionStore()
+	env.stores = newFakeStores()
 
 	cfg := Config{
 		Vault:            v,
 		Clients:          env.clients,
-		Sessions:         env.sessions,
+		Stores:           env.stores.Stores,
 		Subjects:         env.subjects,
 		Issuer:           testIssuer,
 		LoginTerminalURI: "https://app.example.com/login",
@@ -232,7 +232,7 @@ func TestNewValidation(t *testing.T) {
 	valid := Config{
 		Vault:    vault.New([]jwk.KeyPair{key}, rotor.Sequential),
 		Clients:  &fakeClientStore{},
-		Sessions: newFakeSessionStore(),
+		Stores:   newFakeStores().Stores,
 		Subjects: newFakeSubjectStore(),
 		Issuer:   testIssuer,
 	}
@@ -251,8 +251,12 @@ func TestNewValidation(t *testing.T) {
 			mutate: func(c *Config) { c.Clients = nil },
 		},
 		{
-			name:   "missing sessions",
-			mutate: func(c *Config) { c.Sessions = nil },
+			name:   "missing auth code store",
+			mutate: func(c *Config) { c.Stores.AuthCodes = nil },
+		},
+		{
+			name:   "missing refresh token store",
+			mutate: func(c *Config) { c.Stores.RefreshTokens = nil },
 		},
 		{
 			name:   "missing subjects",
@@ -383,13 +387,13 @@ func TestRefreshScopePreserved(t *testing.T) {
 	t.Parallel()
 
 	env := newTestEnv(t)
-	env.sessions.refreshTokens[newDigest("rt-1")] = oauth.RefreshToken{
+	seed(t, env.stores.refreshTokens, oauth.RefreshToken{
 		Token:     newDigest("rt-1"),
 		ClientID:  env.client.id,
 		SubjectID: env.subject.id,
 		Scope:     "read write",
 		ExpiresAt: env.now.Add(time.Hour).Unix(),
-	}
+	})
 
 	// RFC 6749 Section 6: narrowing applies to the issued access token only;
 	// the rotated refresh token must keep the original grant scope.
@@ -408,7 +412,10 @@ func TestRefreshScopePreserved(t *testing.T) {
 		t.Errorf("got access token scope %q; want %q", res.Scope, "read")
 	}
 
-	stored, ok := env.sessions.refreshTokens[newDigest(res.RefreshToken)]
+	stored, ok, _ := env.stores.refreshTokens.Get(
+		t.Context(),
+		newDigest(res.RefreshToken),
+	)
 	if !ok {
 		t.Fatal("rotated refresh token should have been stored")
 	}
@@ -880,11 +887,11 @@ func TestRevoke(t *testing.T) {
 	t.Run("own token", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.refreshTokens[newDigest("token-1")] = oauth.RefreshToken{
+		seed(t, env.stores.refreshTokens, oauth.RefreshToken{
 			Token:     newDigest("token-1"),
 			ClientID:  env.client.id,
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
-		}
+		})
 
 		w := env.postForm(PathRevoke, url.Values{
 			"token": {"token-1"},
@@ -893,7 +900,10 @@ func TestRevoke(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
 		}
-		if _, ok := env.sessions.refreshTokens[newDigest("token-1")]; ok {
+		if _, found, _ := env.stores.refreshTokens.Get(
+			t.Context(),
+			newDigest("token-1"),
+		); found {
 			t.Error("refresh token should have been revoked")
 		}
 	})
@@ -901,11 +911,11 @@ func TestRevoke(t *testing.T) {
 	t.Run("foreign token", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.refreshTokens[newDigest("token-2")] = oauth.RefreshToken{
+		seed(t, env.stores.refreshTokens, oauth.RefreshToken{
 			Token:     newDigest("token-2"),
 			ClientID:  uuid.New(), // some other client
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
-		}
+		})
 
 		w := env.postForm(PathRevoke, url.Values{
 			"token": {"token-2"},
@@ -915,7 +925,10 @@ func TestRevoke(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusOK)
 		}
-		if _, ok := env.sessions.refreshTokens[newDigest("token-2")]; !ok {
+		if _, found, _ := env.stores.refreshTokens.Get(
+			t.Context(),
+			newDigest("token-2"),
+		); !found {
 			t.Error("foreign refresh token should not have been revoked")
 		}
 	})
@@ -995,7 +1008,10 @@ func TestDeviceFlow(t *testing.T) {
 		)
 	}
 
-	stored := env.sessions.deviceCodes[newDigest(res.DeviceCode)]
+	stored, _, _ := env.stores.deviceCodes.Get(
+		t.Context(),
+		newDigest(res.DeviceCode),
+	)
 	if stored.Status != oauth.DeviceCodeStatusAuthorized {
 		t.Fatalf(
 			"got status %q; want %q",
@@ -1020,7 +1036,10 @@ func TestDeviceFlow(t *testing.T) {
 	if claims.Sub != env.subject.id.String() {
 		t.Errorf("got sub %v; want %v", claims.Sub, env.subject.id)
 	}
-	if _, ok := env.sessions.deviceCodes[newDigest(res.DeviceCode)]; ok {
+	if _, found, _ := env.stores.deviceCodes.Get(
+		t.Context(),
+		newDigest(res.DeviceCode),
+	); found {
 		t.Error("device code should have been deleted after issuance")
 	}
 }
@@ -1072,13 +1091,13 @@ func TestDeviceVerifyErrors(t *testing.T) {
 	t.Run("already decided", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.deviceCodes[newDigest("device-1")] = oauth.DeviceCode{
+		seed(t, env.stores.deviceCodes, oauth.DeviceCode{
 			DeviceCode: newDigest("device-1"),
 			UserCode:   newDigest("BCDF-GHJK"),
 			ClientID:   env.client.id,
 			Status:     oauth.DeviceCodeStatusAuthorized,
 			ExpiresAt:  env.now.Add(10 * time.Minute).Unix(),
-		}
+		})
 
 		w := verify(
 			env,
@@ -1202,7 +1221,7 @@ func TestInternalFailures(t *testing.T) {
 	t.Run("session store failure during exchange", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
-		env.sessions.err = errors.New("db down")
+		env.stores.setErr(errors.New("db down"))
 
 		w := env.postForm(PathToken, url.Values{
 			"grant_type":    {string(oauth.GrantTypeRefreshToken)},
@@ -1236,13 +1255,13 @@ func TestInternalFailures(t *testing.T) {
 	t.Run("refresh token generation failure", func(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t, WithNonceSource(failingSource{}))
-		env.sessions.refreshTokens[newDigest("rt-1")] = oauth.RefreshToken{
+		seed(t, env.stores.refreshTokens, oauth.RefreshToken{
 			Token:     newDigest("rt-1"),
 			ClientID:  env.client.id,
 			SubjectID: env.subject.id,
 			Scope:     "read",
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
-		}
+		})
 
 		w := env.postForm(PathToken, url.Values{
 			"grant_type":    {string(oauth.GrantTypeRefreshToken)},

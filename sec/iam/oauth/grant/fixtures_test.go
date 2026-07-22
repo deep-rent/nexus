@@ -24,6 +24,9 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"testing"
+
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 )
 
@@ -48,163 +51,85 @@ func (c *fakeClient) CanUseScope(scope string) bool {
 
 var _ oauth.Client = (*fakeClient)(nil)
 
-// fakeTokenStore is an in-memory [oauth.TokenStore].
-type fakeTokenStore struct {
-	authCodes     map[oauth.Digest]oauth.AuthCode
-	refreshTokens map[oauth.Digest]oauth.RefreshToken
-	deviceCodes   map[oauth.Digest]oauth.DeviceCode
-	err           error
+// fakeDeviceCodeStore is an in-memory [oauth.DeviceCodeStore]: an
+// [artifact.Map] extended by the user-code lookup and the poll timestamp
+// update.
+type fakeDeviceCodeStore struct {
+	*artifact.Map[oauth.Digest, oauth.DeviceCode]
 }
 
-func newFakeTokenStore() *fakeTokenStore {
-	return &fakeTokenStore{
-		authCodes:     make(map[oauth.Digest]oauth.AuthCode),
-		refreshTokens: make(map[oauth.Digest]oauth.RefreshToken),
-		deviceCodes:   make(map[oauth.Digest]oauth.DeviceCode),
-	}
-}
-
-func (s *fakeTokenStore) GetAuthCode(
-	_ context.Context,
-	code oauth.Digest,
-) (oauth.AuthCode, error) {
-	if s.err != nil {
-		return oauth.AuthCode{}, s.err
-	}
-	return s.authCodes[code], nil
-}
-
-func (s *fakeTokenStore) CreateAuthCode(
-	_ context.Context,
-	data oauth.AuthCode,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.authCodes[data.Code] = data
-	return nil
-}
-
-func (s *fakeTokenStore) DeleteAuthCode(
-	_ context.Context,
-	code oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.authCodes[code]
-	delete(s.authCodes, code)
-	return ok, nil
-}
-
-func (s *fakeTokenStore) GetRefreshToken(
-	_ context.Context,
-	token oauth.Digest,
-) (oauth.RefreshToken, error) {
-	if s.err != nil {
-		return oauth.RefreshToken{}, s.err
-	}
-	return s.refreshTokens[token], nil
-}
-
-func (s *fakeTokenStore) CreateRefreshToken(
-	_ context.Context,
-	data oauth.RefreshToken,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.refreshTokens[data.Token] = data
-	return nil
-}
-
-func (s *fakeTokenStore) DeleteRefreshToken(
-	_ context.Context,
-	token oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.refreshTokens[token]
-	delete(s.refreshTokens, token)
-	return ok, nil
-}
-
-func (s *fakeTokenStore) GetDeviceCode(
-	_ context.Context,
-	code oauth.Digest,
-) (oauth.DeviceCode, error) {
-	if s.err != nil {
-		return oauth.DeviceCode{}, s.err
-	}
-	return s.deviceCodes[code], nil
-}
-
-func (s *fakeTokenStore) GetDeviceCodeByUserCode(
-	_ context.Context,
+func (s *fakeDeviceCodeStore) GetByUserCode(
+	ctx context.Context,
 	userCode oauth.Digest,
-) (oauth.DeviceCode, error) {
-	if s.err != nil {
-		return oauth.DeviceCode{}, s.err
+) (oauth.DeviceCode, bool, error) {
+	if s.Err != nil {
+		return oauth.DeviceCode{}, false, s.Err
 	}
-	for _, c := range s.deviceCodes {
+	var (
+		match oauth.DeviceCode
+		found bool
+	)
+	s.Range(func(_ oauth.Digest, c oauth.DeviceCode) bool {
 		if c.UserCode == userCode {
-			return c, nil
+			match, found = c, true
+			return false
 		}
-	}
-	return oauth.DeviceCode{}, nil
+		return true
+	})
+	return match, found, nil
 }
 
-func (s *fakeTokenStore) CreateDeviceCode(
-	_ context.Context,
-	data oauth.DeviceCode,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.deviceCodes[data.DeviceCode] = data
-	return nil
-}
-
-func (s *fakeTokenStore) UpdateDeviceCode(
-	_ context.Context,
-	data oauth.DeviceCode,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.deviceCodes[data.DeviceCode] = data
-	return nil
-}
-
-func (s *fakeTokenStore) TouchDeviceCode(
-	_ context.Context,
+func (s *fakeDeviceCodeStore) Touch(
+	ctx context.Context,
 	code oauth.Digest,
 	lastPolledAt int64,
 ) error {
-	if s.err != nil {
-		return s.err
+	c, found, err := s.Get(ctx, code)
+	if err != nil || !found {
+		return err
 	}
-	if c, ok := s.deviceCodes[code]; ok {
-		c.LastPolledAt = lastPolledAt
-		s.deviceCodes[code] = c
-	}
-	return nil
+	c.LastPolledAt = lastPolledAt
+	return s.Update(ctx, c)
 }
 
-func (s *fakeTokenStore) DeleteDeviceCode(
-	_ context.Context,
-	code oauth.Digest,
-) (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-	_, ok := s.deviceCodes[code]
-	delete(s.deviceCodes, code)
-	return ok, nil
+var _ oauth.DeviceCodeStore = (*fakeDeviceCodeStore)(nil)
+
+// fakeTokens bundles Map-backed [oauth.TokenStores] with typed handles for
+// seeding and peeking.
+type fakeTokens struct {
+	oauth.TokenStores
+	authCodes     *artifact.Map[oauth.Digest, oauth.AuthCode]
+	refreshTokens *artifact.Map[oauth.Digest, oauth.RefreshToken]
+	deviceCodes   *fakeDeviceCodeStore
 }
 
-var _ oauth.TokenStore = (*fakeTokenStore)(nil)
+func newFakeTokens() *fakeTokens {
+	t := &fakeTokens{
+		authCodes: artifact.NewMap(
+			func(c oauth.AuthCode) oauth.Digest { return c.Code },
+		),
+		refreshTokens: artifact.NewMap(
+			func(r oauth.RefreshToken) oauth.Digest { return r.Token },
+		),
+		deviceCodes: &fakeDeviceCodeStore{Map: artifact.NewMap(
+			func(c oauth.DeviceCode) oauth.Digest { return c.DeviceCode },
+		)},
+	}
+	t.TokenStores = oauth.TokenStores{
+		AuthCodes:     t.authCodes,
+		RefreshTokens: t.refreshTokens,
+		DeviceCodes:   t.deviceCodes,
+	}
+	return t
+}
+
+// seed inserts a record into the store, failing the test on error.
+func seed[K ~string, V any](t *testing.T, s artifact.Store[K, V], v V) {
+	t.Helper()
+	if err := s.Create(t.Context(), v); err != nil {
+		t.Fatalf("failed to seed store: %v", err)
+	}
+}
 
 // discardLogger returns a logger that drops all records.
 func discardLogger() *slog.Logger {
@@ -214,13 +139,13 @@ func discardLogger() *slog.Logger {
 // newProposal assembles an [oauth.Proposal] for direct grant testing.
 func newProposal(
 	c oauth.Client,
-	sessions oauth.TokenStore,
+	tokens *fakeTokens,
 	data url.Values,
 	now time.Time,
 ) *oauth.Proposal {
 	return oauth.NewProposal(
 		c,
-		sessions,
+		tokens.TokenStores,
 		data,
 		nil,
 		discardLogger(),

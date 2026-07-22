@@ -21,15 +21,15 @@
 //
 // The core of the package is the [Server], which manages the lifecycle of
 // authorization requests, token issuance, and resource owner sessions. It
-// relies on a set of interfaces ([oauth.ClientStore], [SubjectStore],
-// [SessionStore]) that must be implemented to bridge the library with the
-// underlying database or persistence layer.
+// relies on the [oauth.ClientStore] and [SubjectStore] interfaces and the
+// [Stores] bundle of [artifact.Store] backends, which must be implemented to
+// bridge the library with the underlying database or persistence layer.
 //
 // The protocol machinery is layered into subpackages:
 //
 //   - [github.com/deep-rent/nexus/sec/iam/oauth] defines the OAuth 2.0
 //     vocabulary: grant types, the [oauth.Grant] contract, error codes,
-//     response payloads, and the digest-keyed [oauth.TokenStore].
+//     response payloads, and the digest-keyed [oauth.TokenStores].
 //   - [github.com/deep-rent/nexus/sec/iam/oauth/grant] provides the standard
 //     grant implementations registered via [WithGrant].
 //   - [github.com/deep-rent/nexus/sec/iam/oauth/pkce] implements RFC 7636.
@@ -38,8 +38,10 @@
 //     OIDC client utilities in its subpackages.
 //   - [github.com/deep-rent/nexus/sec/iam/flow], [github.com/deep-rent/nexus/sec/iam/otp],
 //     and [github.com/deep-rent/nexus/sec/iam/trust] are transport-agnostic
-//     engines for multi-step logins, one-time passwords, and device trust;
-//     the server composes them over adapters onto its [SessionStore].
+//     engines for multi-step logins, one-time passwords, and device trust,
+//     each persisting through its own digest-keyed store; the generic
+//     [artifact.Store] contract they share lives in
+//     [github.com/deep-rent/nexus/sec/iam/artifact].
 //
 // The resource-server counterpart — verifying the issued JWTs and guarding
 // routes by roles and scopes — is [github.com/deep-rent/nexus/sec/auth].
@@ -55,7 +57,7 @@
 //	cfg := iam.Config{
 //	  Vault:            myVault,
 //	  Clients:          myClientStore,
-//	  Sessions:         mySessionStore,
+//	  Stores:           myStores,
 //	  Subjects:         mySubjectStore,
 //	  Issuer:           "https://id.example.com",
 //	  LoginTerminalURI: "https://app.example.com/login",
@@ -115,7 +117,7 @@
 //	)
 //
 // When the client sets the remember flag at login, a completed login persists
-// the session and trusts the device (see [TrustedDevice]) so later logins may
+// the session and trusts the device (see [trust.Record]) so later logins may
 // skip factors; revoke that trust on a credential change with
 // [Server.RevokeTrustedDevices].
 //
@@ -159,5 +161,5 @@
 // Deployments must provide the remaining protections that fall outside this
 // package: serve all endpoints over TLS (cookies are marked secure), and
 // back the store interfaces with implementations that honor the atomicity
-// and TTL contracts documented on [SessionStore].
+// and TTL contracts documented on [artifact.Store].
 package iam

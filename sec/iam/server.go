@@ -89,8 +89,10 @@ type Config struct {
 	Vault vault.Vault
 	// Clients bridges the server to the client registry. Required.
 	Clients oauth.ClientStore
-	// Sessions persists ephemeral authorization artifacts. Required.
-	Sessions SessionStore
+	// Stores bundles the persistence backends for ephemeral artifacts.
+	// The embedded token stores are always required; the login stores are
+	// required by the options that use them (see [Stores]).
+	Stores Stores
 	// Subjects authenticates and resolves resource owners. Required.
 	Subjects SubjectStore
 	// Issuer is the canonical HTTPS URL of this authorization server. It is
@@ -179,7 +181,7 @@ type Server struct {
 	idps                      map[string]idp.Provider
 	vault                     vault.Vault
 	clients                   oauth.ClientStore
-	sessions                  SessionStore
+	stores                    Stores
 	subjects                  SubjectStore
 	introspector              jwt.Verifier[*auth.Claims]
 	issuer                    string
@@ -286,8 +288,9 @@ func WithNonceSource(src nonce.Source) Option {
 // [Server.Mount] registers the continue and action endpoints only when this
 // option is present.
 //
-// Flow transactions and one-time password challenges are persisted through the
-// server's [SessionStore]. The OTP steps are tuned via the OTP-prefixed fields
+// Flow transactions and one-time password challenges are persisted through
+// [Stores.Flows] and [Stores.Challenges]. The OTP steps are tuned via the
+// OTP-prefixed fields
 // of [Config]; pass [otp.Option] values such as [otp.WithCodeSampler] or
 // [otp.WithHandleGenerator] to override the generators. It panics if planner is
 // nil, since that is a startup configuration error.
@@ -327,8 +330,10 @@ func New(cfg Config, opts ...Option) *Server {
 		panic("vault is required")
 	case cfg.Clients == nil:
 		panic("clients is required")
-	case cfg.Sessions == nil:
-		panic("sessions is required")
+	case cfg.Stores.AuthCodes == nil:
+		panic("auth code store is required")
+	case cfg.Stores.RefreshTokens == nil:
+		panic("refresh token store is required")
 	case cfg.Subjects == nil:
 		panic("subjects is required")
 	case cfg.Issuer == "":
@@ -354,7 +359,7 @@ func New(cfg Config, opts ...Option) *Server {
 		idps:     make(map[string]idp.Provider),
 		vault:    cfg.Vault,
 		clients:  cfg.Clients,
-		sessions: cfg.Sessions,
+		stores:   cfg.Stores,
 		subjects: cfg.Subjects,
 		issuer:   cfg.Issuer,
 		sessionCookieName: cmp.Or(
@@ -427,6 +432,19 @@ func New(cfg Config, opts ...Option) *Server {
 		panic("WithPasswordless requires WithFlow")
 	}
 
+	switch {
+	case s.planner != nil && s.stores.Challenges == nil:
+		panic("WithFlow requires Stores.Challenges")
+	case s.planner != nil && s.stores.Flows == nil:
+		panic("WithFlow requires Stores.Flows")
+	case s.planner != nil && s.stores.Trust == nil:
+		panic("WithFlow requires Stores.Trust")
+	case s.webauthn != nil && s.stores.Ceremonies == nil:
+		panic("WithWebAuthn requires Stores.Ceremonies")
+	case s.verificationURI != "" && s.stores.DeviceCodes == nil:
+		panic("Config.VerificationURI requires Stores.DeviceCodes")
+	}
+
 	// Every opaque bearer artifact is drawn from one generator, and every user
 	// code from one sampler, both fed by the configured source (crypto/rand by
 	// default). They are built after the options so they observe the final
@@ -440,14 +458,17 @@ func New(cfg Config, opts ...Option) *Server {
 	)
 
 	// The device trust engine shares the server's nonce generator, hasher,
-	// and clock, and persists through the trustStore adapter.
-	s.trust = trust.New(
-		trustStore{sessions: s.sessions},
-		trust.WithLifetime(s.trustedDeviceLifetime),
-		trust.WithHasher(s.hasher),
-		trust.WithGenerator(s.nonce),
-		trust.WithClock(s.now),
-	)
+	// and clock. It is built only when a trust store is configured; servers
+	// without one simply treat every device as untrusted.
+	if s.stores.Trust != nil {
+		s.trust = trust.New(
+			s.stores.Trust,
+			trust.WithLifetime(s.trustedDeviceLifetime),
+			trust.WithHasher(s.hasher),
+			trust.WithGenerator(s.nonce),
+			trust.WithClock(s.now),
+		)
+	}
 
 	// The login engines are built only after all options are applied, so they
 	// observe the final clock, hasher, and logger. The OTP challenge lifetime
@@ -457,7 +478,7 @@ func New(cfg Config, opts ...Option) *Server {
 	if s.planner != nil {
 		lifetime := cmp.Or(cfg.OTPLifetime, DefaultOTPLifetime)
 		s.otp = otp.New(
-			otpStore{sessions: s.sessions, purpose: purposeLogin},
+			s.stores.Challenges,
 			append([]otp.Option{
 				otp.WithCodeSampler(nonce.NewSampler(
 					nil,
@@ -477,7 +498,7 @@ func New(cfg Config, opts ...Option) *Server {
 			}, s.otpOpts...)...,
 		)
 		s.flow = flow.New(
-			flowStore{sessions: s.sessions},
+			s.stores.Flows,
 			flow.WithLifetime(lifetime),
 			flow.WithHasher(s.hasher),
 			flow.WithClock(s.now),
@@ -893,7 +914,7 @@ func (s *Server) authenticate(e *router.Exchange) (*oauth.Proposal, error) {
 
 	return oauth.NewProposal(
 		client,
-		s.sessions,
+		s.stores.TokenStores,
 		data,
 		s.hasher,
 		s.logger,
@@ -1164,7 +1185,7 @@ func (s *Server) authorize(e *router.Exchange) error {
 		}
 	}
 
-	if err := s.sessions.CreateAuthCode(
+	if err := s.stores.AuthCodes.Create(
 		e.Context(),
 		oauth.AuthCode{
 			Code:                s.digest(code),
@@ -1327,7 +1348,7 @@ func (s *Server) token(e *router.Exchange) error {
 			}
 		}
 
-		if err := s.sessions.CreateRefreshToken(e.Context(), oauth.RefreshToken{
+		if err := s.stores.RefreshTokens.Create(e.Context(), oauth.RefreshToken{
 			Token:     s.digest(token),
 			ClientID:  clientID,
 			SubjectID: iss.Subject,
@@ -1352,8 +1373,8 @@ func (s *Server) token(e *router.Exchange) error {
 //
 // It allows clients to signal that a previously obtained refresh token is no
 // longer needed. The handler authenticates the client and, if the provided
-// token is a valid refresh token belonging to that client, removes it from the
-// [SessionStore].
+// token is a valid refresh token belonging to that client, removes it from
+// [Stores.RefreshTokens].
 func (s *Server) Revoke(e *router.Exchange) error {
 	return s.wrap(e, s.revoke)
 }
@@ -1378,7 +1399,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 	digest := s.digest(token)
 
 	// Validate token ownership before revocation per RFC 7009 Section 2.1
-	r, err := s.sessions.GetRefreshToken(e.Context(), digest)
+	r, found, err := s.stores.RefreshTokens.Get(e.Context(), digest)
 	if err != nil {
 		return &oauth.Error{
 			Status:      http.StatusInternalServerError,
@@ -1387,13 +1408,13 @@ func (s *Server) revoke(e *router.Exchange) error {
 			Cause:       err,
 		}
 	}
-	if r.Token == "" || r.ClientID != pro.Client.ID() {
+	if !found || r.ClientID != pro.Client.ID() {
 		// Token not found or belongs to another client. Return 200 OK.
 		e.Status(http.StatusOK)
 		return nil
 	}
 
-	if _, err := s.sessions.DeleteRefreshToken(
+	if _, err := s.stores.RefreshTokens.Delete(
 		e.Context(),
 		digest,
 	); err != nil {
@@ -1475,7 +1496,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 	// The user code is digested in its canonical form so that the lookup in
 	// DeviceVerify (which normalizes user input the same way) always
 	// matches, regardless of the generator's output format.
-	if err := s.sessions.CreateDeviceCode(e.Context(), oauth.DeviceCode{
+	if err := s.stores.DeviceCodes.Create(e.Context(), oauth.DeviceCode{
 		DeviceCode: s.digest(deviceCode),
 		UserCode:   s.digest(normalizeUserCode(userCode)),
 		ClientID:   pro.Client.ID(),
@@ -1557,7 +1578,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 		}
 	}
 
-	code, err := s.sessions.GetDeviceCodeByUserCode(
+	code, found, err := s.stores.DeviceCodes.GetByUserCode(
 		e.Context(),
 		s.digest(normalizeUserCode(req.UserCode)),
 	)
@@ -1567,7 +1588,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 		)
 	}
 
-	if code.DeviceCode == "" ||
+	if !found ||
 		(code.ExpiresAt != 0 && s.now().Unix() > code.ExpiresAt) {
 		s.penalize(subjectKey, s.addr(e))
 		return &router.Error{
@@ -1592,7 +1613,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 		code.Status = oauth.DeviceCodeStatusDenied
 	}
 
-	if err := s.sessions.UpdateDeviceCode(e.Context(), code); err != nil {
+	if err := s.stores.DeviceCodes.Update(e.Context(), code); err != nil {
 		return router.ServerError("failed to update device code",
 			err,
 		)

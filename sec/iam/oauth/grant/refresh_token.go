@@ -59,7 +59,7 @@ func (g refreshToken) Authorize(
 	digest := pro.Digest(token)
 
 	// Retrieve the refresh token details from the session store.
-	r, err := pro.Sessions.GetRefreshToken(ctx, digest)
+	r, found, err := pro.Tokens.RefreshTokens.Get(ctx, digest)
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,
@@ -70,7 +70,7 @@ func (g refreshToken) Authorize(
 	}
 
 	// Ensure the token exists.
-	if r.Token == "" {
+	if !found {
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,
 			Code:        oauth.ErrorCodeInvalidGrant,
@@ -81,7 +81,7 @@ func (g refreshToken) Authorize(
 	// Enforce expiry locally in addition to the store's TTL contract. An
 	// expired token is removed as a best effort.
 	if r.ExpiresAt != 0 && pro.Now().Unix() > r.ExpiresAt {
-		if _, err := pro.Sessions.DeleteRefreshToken(ctx, digest); err != nil {
+		if _, err := pro.Tokens.RefreshTokens.Delete(ctx, digest); err != nil {
 			pro.Logger.ErrorContext(
 				ctx,
 				"Failed to delete expired refresh token",
@@ -125,7 +125,7 @@ func (g refreshToken) Authorize(
 	// New tokens are issued by the authorization server later in the
 	// pipeline. If the token was already gone, a concurrent rotation won the
 	// race and this request must not issue tokens.
-	deleted, err := pro.Sessions.DeleteRefreshToken(ctx, digest)
+	deleted, err := pro.Tokens.RefreshTokens.Delete(ctx, digest)
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,

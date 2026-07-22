@@ -20,8 +20,12 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
+	"github.com/deep-rent/nexus/sec/iam/flow"
 	"github.com/deep-rent/nexus/sec/iam/idp"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/sec/iam/otp"
+	"github.com/deep-rent/nexus/sec/iam/trust"
 )
 
 // Subject represents an authenticated resource owner, typically a user.
@@ -179,43 +183,6 @@ type SubjectStore interface {
 	DeleteSession(ctx context.Context, key string) error
 }
 
-// OTPChallenge holds the state of a pending two-factor login: a password
-// that has been verified but still awaits confirmation by a one-time
-// password.
-//
-// The challenge is the client's handle for the pending login; the code is
-// the secret delivered to the subject over the side channel. Both are
-// digested before they reach the store. Challenges are short-lived (a few
-// minutes) and must be deleted after a single successful confirmation.
-//
-// A short numeric code is guessable by brute force, and its digest is
-// equally brute-forceable offline, so the digest is defense in depth rather
-// than protection: the effective safeguards are the expiry, the attempt
-// counter, and the server's throttling.
-type OTPChallenge struct {
-	// Challenge is the digest of the high-entropy handle issued to the
-	// client. The plaintext value never reaches the store.
-	Challenge oauth.Digest `json:"challenge"`
-	// SubjectID identifies the resource owner whose password has already
-	// been verified.
-	SubjectID uuid.UUID `json:"subject_id"`
-	// Code is the digest of the one-time password delivered to the subject.
-	// The plaintext value never reaches the store. It is replaced when the
-	// code is resent.
-	Code oauth.Digest `json:"code"`
-	// Attempts counts the failed confirmation attempts made against this
-	// challenge. The [Server] refuses further attempts once the configured
-	// maximum is reached.
-	Attempts int `json:"attempts,omitzero"`
-	// Resends counts how many times the code has been redelivered. The
-	// [Server] refuses further resends once the configured maximum is
-	// reached.
-	Resends int `json:"resends,omitzero"`
-	// ExpiresAt defines when this challenge expires, as a UNIX timestamp in
-	// seconds. Resending a code does not extend the expiry.
-	ExpiresAt int64 `json:"expires_at"`
-}
-
 // WebAuthnCeremony distinguishes the two kinds of WebAuthn ceremonies whose
 // state is tracked by a [WebAuthnSession].
 type WebAuthnCeremony string
@@ -256,125 +223,32 @@ type WebAuthnSession struct {
 	ExpiresAt int64 `json:"expires_at"`
 }
 
-// SessionStore abstracts the persistence layer for ephemeral authorization
-// artifacts.
+// Stores bundles the persistence backends for every ephemeral artifact the
+// [Server] manages. The token-issuance stores are embedded as
+// [oauth.TokenStores]; the rest back the login machinery: one-time password
+// challenges, login flow transactions, device trust records, and WebAuthn
+// ceremony sessions.
 //
-// Beyond the token-issuance artifacts of the embedded [oauth.TokenStore], it
-// covers the login machinery: OTP challenges, WebAuthn ceremony sessions,
-// device trust records, and multi-step login flows. These artifacts usually
-// have a limited TTL.
-//
-// All artifacts are keyed by their [oauth.Digest]; the [Server] hashes
-// plaintext values before every store interaction. Implementations therefore
-// never handle bearer secrets and can persist digests directly as primary
-// keys.
-type SessionStore interface {
-	oauth.TokenStore
+// All records are keyed by digests — the server hashes every bearer secret
+// before it crosses a store boundary — and follow the [artifact.Store]
+// contract. A single generic backend can therefore be instantiated per
+// artifact type; the stores enabled by the server's options must be non-nil
+// (see [New]).
+type Stores struct {
+	oauth.TokenStores
 
-	// GetOTPChallenge retrieves a pending two-factor login challenge by its
-	// digest.
-	//
-	// If found, it must return the data and nil.
-	// If not found or expired, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetOTPChallenge(
-		ctx context.Context,
-		challenge oauth.Digest,
-	) (OTPChallenge, error)
-	// CreateOTPChallenge stores a new two-factor login challenge.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateOTPChallenge(ctx context.Context, data OTPChallenge) error
-	// UpdateOTPChallenge replaces the stored state of a challenge, keyed by
-	// [OTPChallenge.Challenge]. It is used to record failed attempts and
-	// code resends.
-	//
-	// It should return an error only if the persistence operation fails.
-	UpdateOTPChallenge(ctx context.Context, data OTPChallenge) error
-	// DeleteOTPChallenge removes a challenge by its digest and reports
-	// whether it was present. Like [oauth.TokenStore.DeleteAuthCode], the
-	// deletion and the report must be atomic so that concurrent confirmation
-	// attempts cannot both succeed.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteOTPChallenge(ctx context.Context, challenge oauth.Digest) (bool, error)
-	// GetWebAuthnSession retrieves a pending WebAuthn ceremony session by
-	// its digest.
-	//
-	// If found, it must return the data and nil.
-	// If not found or expired, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetWebAuthnSession(
-		ctx context.Context,
-		handle oauth.Digest,
-	) (WebAuthnSession, error)
-	// CreateWebAuthnSession stores a new WebAuthn ceremony session.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateWebAuthnSession(ctx context.Context, data WebAuthnSession) error
-	// DeleteWebAuthnSession removes a session by its digest and reports
-	// whether it was present. Like [oauth.TokenStore.DeleteAuthCode], the
-	// deletion and the report must be atomic so that concurrent finish
-	// attempts cannot both succeed.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteWebAuthnSession(ctx context.Context, handle oauth.Digest) (bool, error)
-	// GetTrustedDevice retrieves a remember-me device trust record by the
-	// digest of its token.
-	//
-	// If found, it must return the record and nil.
-	// If not found or expired, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetTrustedDevice(
-		ctx context.Context,
-		token oauth.Digest,
-	) (TrustedDevice, error)
-	// CreateTrustedDevice stores a new device trust record.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateTrustedDevice(ctx context.Context, data TrustedDevice) error
-	// DeleteTrustedDevice removes a device trust record by the digest of its
-	// token and reports whether it was present.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteTrustedDevice(ctx context.Context, token oauth.Digest) (bool, error)
-	// DeleteTrustedDevicesForSubject removes every device trust record enrolled
-	// by the given subject. It backs a "sign out everywhere" or a
-	// credential-change revocation, and is a no-op when the subject trusts no
-	// devices.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteTrustedDevicesForSubject(
-		ctx context.Context,
-		subjectID uuid.UUID,
-	) error
-	// GetFlowTransaction retrieves an in-progress login flow by the digest of
-	// its handle.
-	//
-	// If found, it must return the transaction and nil.
-	// If not found or expired, it must return an empty value and nil.
-	// It should return an error only if the storage lookup fails.
-	GetFlowTransaction(
-		ctx context.Context,
-		handle oauth.Digest,
-	) (FlowTransaction, error)
-	// CreateFlowTransaction stores a new in-progress login flow.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateFlowTransaction(ctx context.Context, data FlowTransaction) error
-	// UpdateFlowTransaction replaces the stored state of a flow, keyed by
-	// [FlowTransaction.Handle]. It records completed steps as the login
-	// advances.
-	//
-	// It should return an error only if the persistence operation fails.
-	UpdateFlowTransaction(ctx context.Context, data FlowTransaction) error
-	// DeleteFlowTransaction removes a flow by the digest of its handle and
-	// reports whether it was present. Like [oauth.TokenStore.DeleteAuthCode],
-	// the deletion and the report must be atomic so that concurrent
-	// completions cannot both establish a session.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteFlowTransaction(ctx context.Context, handle oauth.Digest) (bool, error)
+	// Challenges persists one-time password challenges for the login flow
+	// steps built via [Steps.OTP]. Required with [WithFlow].
+	Challenges otp.Store
+	// Flows persists multi-step login transactions. Required with
+	// [WithFlow].
+	Flows flow.Store
+	// Trust persists remember-me device trust records. Required with
+	// [WithFlow], whose remembered logins enroll devices.
+	Trust trust.Store
+	// Ceremonies persists pending WebAuthn ceremony sessions. Required with
+	// [WithWebAuthn].
+	Ceremonies artifact.Store[oauth.Digest, WebAuthnSession]
 }
 
 // LoginRequest represents the payload for the resource owner login endpoint.

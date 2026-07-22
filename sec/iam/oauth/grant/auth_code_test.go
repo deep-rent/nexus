@@ -163,9 +163,9 @@ func TestAuthCodeGrant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			store := newFakeTokenStore()
+			store := newFakeTokens()
 			if tt.seed {
-				store.authCodes[tt.code.Code] = tt.code
+				seed(t, store.authCodes, tt.code)
 			}
 
 			pro := newProposal(client, store, tt.data, now)
@@ -195,7 +195,10 @@ func TestAuthCodeGrant(t *testing.T) {
 			if !iss.Refreshable {
 				t.Error("issuance should be refreshable")
 			}
-			if _, ok := store.authCodes[newDigest("code-1")]; ok {
+			if _, found, _ := store.authCodes.Get(
+				t.Context(),
+				newDigest("code-1"),
+			); found {
 				t.Error("authorization code should have been deleted after use")
 			}
 		})
@@ -204,8 +207,8 @@ func TestAuthCodeGrant(t *testing.T) {
 	t.Run("single use", func(t *testing.T) {
 		t.Parallel()
 
-		store := newFakeTokenStore()
-		store.authCodes[newDigest("code-1")] = code()
+		store := newFakeTokens()
+		seed(t, store.authCodes, code())
 
 		pro := newProposal(client, store, form(), now)
 		if _, err := AuthCode().Authorize(t.Context(), pro); err != nil {

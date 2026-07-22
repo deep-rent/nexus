@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
+	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
@@ -40,15 +41,15 @@ const DefaultLifetime = 30 * 24 * time.Hour
 type Record struct {
 	// ID is the digest of the trust token and the storage key. The plaintext
 	// token never reaches the store.
-	ID string
+	ID string `json:"id"`
 	// Owner is an opaque reference to whoever trusts the device (e.g. a
 	// subject ID). Trust is honored only for the same owner.
-	Owner string
+	Owner string `json:"owner"`
 	// ExpiresAt is when the trust lapses, as a Unix timestamp in seconds.
-	ExpiresAt int64
+	ExpiresAt int64 `json:"expires_at"`
 	// Label is an optional human-facing hint for a device list, such as a
 	// summary of the user agent. It never carries a secret.
-	Label string
+	Label string `json:"label,omitzero"`
 }
 
 // Device is the result of a trust [Manager.Check]: whether the presented
@@ -62,20 +63,11 @@ type Device struct {
 	ID string
 }
 
-// Store persists trust records keyed by [Record.ID].
-//
-// Implementations are expected to be safe for concurrent use and to honor the
-// provided context.
+// Store persists trust records keyed by [Record.ID]. See [artifact.Store]
+// for the storage contract.
 type Store interface {
-	// Create persists a new trust record.
-	Create(ctx context.Context, r Record) error
-	// Get returns the record with the given ID. found is false when no such
-	// record exists (including after expiry-driven cleanup); the returned
-	// error is reserved for storage failures.
-	Get(ctx context.Context, id string) (r Record, found bool, err error)
-	// Delete removes the record with the given ID, reporting whether it
-	// existed and was removed by this call.
-	Delete(ctx context.Context, id string) (deleted bool, err error)
+	artifact.Store[string, Record]
+
 	// DeleteForOwner removes every trust record enrolled by the given owner.
 	// It backs a "sign out everywhere" or a credential-change revocation, and
 	// is a no-op when the owner trusts no devices.

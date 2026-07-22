@@ -118,7 +118,7 @@ func TestFlowContinue_Completes(t *testing.T) {
 	if sessionCookie(w) == nil {
 		t.Error("missing session cookie after completion")
 	}
-	if len(env.sessions.flowTransactions) != 0 {
+	if env.stores.flows.Len() != 0 {
 		t.Error("flow transaction should be consumed on completion")
 	}
 }
