@@ -22,7 +22,7 @@
 // The core of the package is the [Server], which manages the lifecycle of
 // authorization requests, token issuance, and resource owner sessions. It
 // relies on the [oauth.ClientStore] and [SubjectStore] interfaces and the
-// [Stores] bundle of [artifact.Store] backends, which must be implemented to
+// [Stores] bundle of [github.com/deep-rent/nexus/sec/iam/artifact.Store] backends, which must be implemented to
 // bridge the library with the underlying database or persistence layer.
 //
 // The protocol machinery is layered into subpackages:
@@ -40,7 +40,7 @@
 //     and [github.com/deep-rent/nexus/sec/iam/trust] are transport-agnostic
 //     engines for multi-step logins, one-time passwords, and device trust,
 //     each persisting through its own digest-keyed store; the generic
-//     [artifact.Store] contract they share lives in
+//     [github.com/deep-rent/nexus/sec/iam/artifact.Store] contract they share lives in
 //     [github.com/deep-rent/nexus/sec/iam/artifact].
 //
 // The resource-server counterpart — verifying the issued JWTs and guarding
@@ -131,7 +131,7 @@
 // # Passkeys
 //
 // WebAuthn passkeys are supported both as a first-party web login and as a
-// direct token grant for native apps; see [WithWebAuthn]. Web clients run
+// direct token grant for native apps; see [WithPasskeys]. Web clients run
 // the registration and login ceremonies against the /webauthn endpoints and
 // end up with the same session cookie as a password login, while native
 // apps exchange an assertion for tokens at the token endpoint using
@@ -139,7 +139,7 @@
 //
 //	s := iam.New(cfg,
 //	  iam.WithGrant(grant.AuthCode()),
-//	  iam.WithWebAuthn(iam.WebAuthnConfig{
+//	  iam.WithPasskeys(passkey.Config{
 //	    RPID:          "example.com",
 //	    RPDisplayName: "Example",
 //	    RPOrigins:     []string{"https://app.example.com"},
@@ -161,5 +161,5 @@
 // Deployments must provide the remaining protections that fall outside this
 // package: serve all endpoints over TLS (cookies are marked secure), and
 // back the store interfaces with implementations that honor the atomicity
-// and TTL contracts documented on [artifact.Store].
+// and TTL contracts documented on [github.com/deep-rent/nexus/sec/iam/artifact.Store].
 package iam

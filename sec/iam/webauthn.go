@@ -15,102 +15,37 @@
 package iam
 
 import (
-	"bytes"
-	"cmp"
 	"context"
 	"encoding/json/jsontext"
-	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"net/http"
-	"time"
 	"uuid"
-
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/deep-rent/nexus/dat/valid"
 	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/sec/iam/flow"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/sec/iam/passkey"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
-// WebAuthnCredential is a passkey credential record as verified and
-// consumed by the underlying WebAuthn implementation. Store implementations
-// should treat it as an opaque, JSON-serializable blob keyed by its ID
-// field; see [SubjectStore.CreateWebAuthnCredential].
-type WebAuthnCredential = webauthn.Credential
-
-// DefaultWebAuthnSessionLifetime is the validity period of a WebAuthn
-// ceremony session, i.e. the time a client may take between requesting
-// ceremony options and submitting the authenticator's response.
-const DefaultWebAuthnSessionLifetime = 5 * time.Minute
-
-// WebAuthnConfig carries the relying party settings for passkey support,
-// activated via [WithWebAuthn].
-type WebAuthnConfig struct {
-	// RPID is the relying party identifier: the effective domain that
-	// passkeys are scoped to (e.g., "example.com"). Native apps must be
-	// associated with this domain (apple-app-site-association on iOS,
-	// assetlinks.json on Android) to use the same passkeys. Required.
-	RPID string
-	// RPDisplayName is the human-palatable relying party name shown by
-	// authenticators during ceremonies. Required.
-	RPDisplayName string
-	// RPOrigins lists the origins allowed to answer challenges. Web clients
-	// appear as regular origins (e.g., "https://app.example.com"); Android
-	// apps appear as "android:apk-key-hash:..." origins and must be listed
-	// explicitly. Required.
-	RPOrigins []string
-	// SessionLifetime overrides [DefaultWebAuthnSessionLifetime].
-	SessionLifetime time.Duration
-}
-
-// webAuthnSupport holds the resolved passkey settings of a [Server].
-type webAuthnSupport struct {
-	handle          *webauthn.WebAuthn
-	sessionLifetime time.Duration
-}
-
-// WithWebAuthn enables passkey support.
+// WithPasskeys enables passkey support with the given relying party
+// settings; see [passkey.Config].
 //
 // Once enabled, [Server.Mount] registers the WebAuthn registration and
-// login endpoints, and the token endpoint accepts the [oauth.GrantTypeWebAuthn]
-// grant for clients that exchange a passkey assertion directly for tokens
-// (native apps bypassing browser redirects).
+// login endpoints, and the token endpoint accepts the
+// [oauth.GrantTypeWebAuthn] grant for clients that exchange a passkey
+// assertion directly for tokens (native apps bypassing browser redirects).
+// Ceremony state and credentials persist through [Stores.Ceremonies] and
+// [Stores.Credentials].
 //
 // Registered credentials are required to be discoverable (resident keys)
 // with user verification, so a passkey login is inherently multi-factor. The
-// dedicated login endpoints stand alone; a passkey can additionally serve as a
-// step-up factor within a [WithFlow] login via [Steps.WebAuthn].
-//
-// It panics if the configuration is rejected by the underlying WebAuthn
-// implementation, since relying party settings are startup configuration.
-func WithWebAuthn(cfg WebAuthnConfig) Option {
-	return func(s *Server) {
-		handle, err := webauthn.New(&webauthn.Config{
-			RPID:          cfg.RPID,
-			RPDisplayName: cfg.RPDisplayName,
-			RPOrigins:     cfg.RPOrigins,
-			AuthenticatorSelection: protocol.AuthenticatorSelection{
-				ResidentKey:      protocol.ResidentKeyRequirementRequired,
-				UserVerification: protocol.VerificationRequired,
-			},
-		})
-		if err != nil {
-			panic("invalid WebAuthn configuration: " + err.Error())
-		}
-		s.webauthn = &webAuthnSupport{
-			handle: handle,
-			sessionLifetime: cmp.Or(
-				cfg.SessionLifetime,
-				DefaultWebAuthnSessionLifetime,
-			),
-		}
-		s.grants[oauth.GrantTypeWebAuthn] = &webAuthnGrant{s}
-	}
+// dedicated login endpoints stand alone; a passkey can additionally serve as
+// a step-up factor within a [WithFlow] login via [Steps.WebAuthn].
+func WithPasskeys(cfg passkey.Config) Option {
+	return func(s *Server) { s.passkeyCfg = &cfg }
 }
 
 // WebAuthnOptionsResponse is the payload returned by the endpoints that
@@ -176,29 +111,55 @@ func (r *WebAuthnLoginRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*WebAuthnLoginRequest)(nil)
 
-// webAuthnUser adapts a [Subject] and its stored credentials to the user
-// model of the underlying WebAuthn implementation. The subject's UUID bytes
-// double as the user handle, which discoverable credentials store on the
-// authenticator and return with every assertion; this is what lets the
-// login endpoints resolve the account without a username prompt.
-type webAuthnUser struct {
-	sub   Subject
-	creds []WebAuthnCredential
+// account describes the subject to the passkey engine. The subject's UUID
+// bytes double as the WebAuthn user handle, which discoverable credentials
+// store on the authenticator and return with every assertion; this is what
+// lets the login endpoints resolve the account without a username prompt.
+func account(sub Subject, creds []passkey.Credential) passkey.Account {
+	id := sub.ID()
+	return passkey.Account{
+		Handle:      id[:],
+		Owner:       id.String(),
+		Username:    sub.Username(),
+		Credentials: creds,
+	}
 }
 
-func (u *webAuthnUser) WebAuthnID() []byte {
-	id := u.sub.ID()
-	return id[:]
+// subjectDirectory adapts the [SubjectStore] and [Stores.Credentials] to the
+// [passkey.Directory] interface, resolving accounts from WebAuthn user
+// handles during login ceremonies.
+type subjectDirectory struct {
+	s *Server
 }
 
-func (u *webAuthnUser) WebAuthnName() string        { return u.sub.Username() }
-func (u *webAuthnUser) WebAuthnDisplayName() string { return u.sub.Username() }
+var _ passkey.Directory = subjectDirectory{}
 
-func (u *webAuthnUser) WebAuthnCredentials() []WebAuthnCredential {
-	return u.creds
+// Lookup implements [passkey.Directory].
+func (d subjectDirectory) Lookup(
+	ctx context.Context,
+	userHandle []byte,
+) (passkey.Account, bool, error) {
+	// User handles minted by this server are raw subject UUIDs; anything
+	// else cannot belong to a known account.
+	if len(userHandle) != len(uuid.UUID{}) {
+		return passkey.Account{}, false, nil
+	}
+	id := uuid.UUID(userHandle)
+
+	sub, err := d.s.subjects.GetSubject(ctx, id)
+	if err != nil {
+		return passkey.Account{}, false, err
+	}
+	if sub == nil {
+		return passkey.Account{}, false, nil
+	}
+
+	creds, err := d.s.stores.Credentials.List(ctx, id.String())
+	if err != nil {
+		return passkey.Account{}, false, err
+	}
+	return account(sub, creds), true, nil
 }
-
-var _ webauthn.User = (*webAuthnUser)(nil)
 
 // webAuthnSubject resolves the subject on behalf of whom a registration
 // ceremony runs. It accepts the session cookie established by the login
@@ -239,179 +200,6 @@ func (s *Server) webAuthnSubject(e *router.Exchange) (Subject, error) {
 	return s.subjects.GetSubject(e.Context(), id)
 }
 
-// beginWebAuthnCeremony persists the ceremony state under a fresh handle
-// and returns the handle together with the client-side options.
-func (s *Server) beginWebAuthnCeremony(
-	e *router.Exchange,
-	ceremony WebAuthnCeremony,
-	subjectID uuid.UUID,
-	options any,
-	data *webauthn.SessionData,
-) error {
-	handle, err := s.nonce.Draw(e.Context())
-	if err != nil {
-		return router.ServerError("failed to generate handle", err)
-	}
-
-	if err := s.storeWebAuthnSession(
-		e.Context(), handle, ceremony, subjectID, data,
-	); err != nil {
-		return router.ServerError("failed to store ceremony session", err)
-	}
-
-	return e.JSON(http.StatusOK, WebAuthnOptionsResponse{
-		Handle:    handle,
-		ExpiresIn: int64(s.webauthn.sessionLifetime.Seconds()),
-		Options:   options,
-	})
-}
-
-// storeWebAuthnSession persists ceremony state under the digest of the given
-// handle. It is shared by the ceremony endpoints and the WebAuthn login step,
-// which supplies a handle derived from the outer flow handle.
-func (s *Server) storeWebAuthnSession(
-	ctx context.Context,
-	handle string,
-	ceremony WebAuthnCeremony,
-	subjectID uuid.UUID,
-	data *webauthn.SessionData,
-) error {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	return s.stores.Ceremonies.Create(ctx, WebAuthnSession{
-		Handle:    s.digest(handle),
-		Ceremony:  ceremony,
-		SubjectID: subjectID,
-		Data:      raw,
-		ExpiresAt: s.now().Add(s.webauthn.sessionLifetime).Unix(),
-	})
-}
-
-// takeWebAuthnSession claims the ceremony session bound to the given handle
-// for a single finish attempt: it loads the session, checks that it matches
-// the expected ceremony and has not expired, and deletes it atomically so a
-// concurrent attempt cannot claim it again. Failed finishes deliberately
-// burn the session; the client must begin a fresh ceremony.
-//
-// It returns nil data (with a nil error) when the handle is unknown,
-// expired, of the wrong ceremony, or already claimed. It returns an error
-// only if storage access or state deserialization fails.
-func (s *Server) takeWebAuthnSession(
-	ctx context.Context,
-	handle string,
-	ceremony WebAuthnCeremony,
-) (WebAuthnSession, *webauthn.SessionData, error) {
-	digest := s.digest(handle)
-
-	sess, found, err := s.stores.Ceremonies.Get(ctx, digest)
-	if err != nil {
-		return sess, nil, err
-	}
-
-	if !found ||
-		sess.Ceremony != ceremony ||
-		(sess.ExpiresAt != 0 && s.now().Unix() > sess.ExpiresAt) {
-		return sess, nil, nil
-	}
-
-	deleted, err := s.stores.Ceremonies.Delete(ctx, digest)
-	if err != nil {
-		return sess, nil, err
-	}
-	if !deleted {
-		return sess, nil, nil
-	}
-
-	var data webauthn.SessionData
-	if err := json.Unmarshal(sess.Data, &data); err != nil {
-		return sess, nil, err
-	}
-
-	return sess, &data, nil
-}
-
-// verifyWebAuthnAssertion validates a discoverable-credential assertion
-// against the claimed ceremony state, resolves the asserting subject from
-// the user handle, and persists the updated credential record (signature
-// counter and backup flags).
-//
-// The first returned error (reject) reports why the assertion was refused
-// and must translate into an authentication failure; the second (fail)
-// reports a storage problem and must translate into a server error.
-func (s *Server) verifyWebAuthnAssertion(
-	ctx context.Context,
-	data *webauthn.SessionData,
-	credential []byte,
-) (sub Subject, reject, fail error) {
-	parsed, err := protocol.ParseCredentialRequestResponseBody(
-		bytes.NewReader(credential),
-	)
-	if err != nil {
-		return nil, err, nil
-	}
-
-	// Storage failures inside the lookup callback must not masquerade as
-	// verification failures, so they are captured out-of-band.
-	var lookupErr error
-	handler := func(_, userHandle []byte) (webauthn.User, error) {
-		if len(userHandle) != len(uuid.UUID{}) {
-			return nil, errors.New("malformed user handle")
-		}
-		id := uuid.UUID(userHandle)
-
-		subject, err := s.subjects.GetSubject(ctx, id)
-		if err != nil {
-			lookupErr = err
-			return nil, err
-		}
-		if subject == nil {
-			return nil, errors.New("unknown subject")
-		}
-
-		creds, err := s.subjects.GetWebAuthnCredentials(ctx, id)
-		if err != nil {
-			lookupErr = err
-			return nil, err
-		}
-
-		sub = subject
-		return &webAuthnUser{sub: subject, creds: creds}, nil
-	}
-
-	cred, err := s.webauthn.handle.ValidateDiscoverableLogin(
-		handler,
-		*data,
-		parsed,
-	)
-	if lookupErr != nil {
-		return nil, nil, lookupErr
-	}
-	if err != nil {
-		return nil, err, nil
-	}
-
-	if cred.Authenticator.CloneWarning {
-		return nil, errors.New(
-			"signature counter regressed; authenticator may be cloned",
-		), nil
-	}
-
-	// The updated record carries the new signature counter; failing to
-	// persist it would blind future clone detection, so the login fails
-	// closed.
-	if err := s.subjects.UpdateWebAuthnCredential(
-		ctx,
-		sub.ID(),
-		*cred,
-	); err != nil {
-		return nil, nil, err
-	}
-
-	return sub, nil, nil
-}
-
 // WebAuthnRegisterOptions begins a passkey registration ceremony for an
 // authenticated subject.
 //
@@ -420,7 +208,7 @@ func (s *Server) verifyWebAuthnAssertion(
 // The returned options exclude already registered credentials, require a
 // discoverable credential, and demand user verification.
 func (s *Server) WebAuthnRegisterOptions(e *router.Exchange) error {
-	if s.webauthn == nil {
+	if s.passkeys == nil {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -437,40 +225,36 @@ func (s *Server) WebAuthnRegisterOptions(e *router.Exchange) error {
 		}
 	}
 
-	creds, err := s.subjects.GetWebAuthnCredentials(e.Context(), sub.ID())
+	creds, err := s.stores.Credentials.List(e.Context(), sub.ID().String())
 	if err != nil {
 		return router.ServerError("failed to retrieve credentials", err)
 	}
 
-	creation, data, err := s.webauthn.handle.BeginRegistration(
-		&webAuthnUser{sub: sub, creds: creds},
-		webauthn.WithExclusions(
-			webauthn.Credentials(creds).CredentialDescriptors(),
-		),
+	handle, options, expiresIn, err := s.passkeys.BeginRegistration(
+		e.Context(),
+		account(sub, creds),
 	)
 	if err != nil {
 		return router.ServerError("failed to begin registration", err)
 	}
 
-	return s.beginWebAuthnCeremony(
-		e,
-		WebAuthnCeremonyRegistration,
-		sub.ID(),
-		creation,
-		data,
-	)
+	return e.JSON(http.StatusOK, WebAuthnOptionsResponse{
+		Handle:    handle,
+		ExpiresIn: expiresIn,
+		Options:   options,
+	})
 }
 
 // WebAuthnRegister finishes a passkey registration ceremony by verifying
 // the authenticator's attestation response and persisting the new
-// credential via [SubjectStore.CreateWebAuthnCredential].
+// credential via [Stores.Credentials].
 //
 // It expects a [WebAuthnRegistrationRequest] carrying the handle returned
 // by [Server.WebAuthnRegisterOptions] and must be called by the same
 // subject that began the ceremony. Ceremony sessions are single use: any
 // finish attempt, successful or not, burns the handle.
 func (s *Server) WebAuthnRegister(e *router.Exchange) error {
-	if s.webauthn == nil {
+	if s.passkeys == nil {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -492,58 +276,35 @@ func (s *Server) WebAuthnRegister(e *router.Exchange) error {
 		return err
 	}
 
-	sess, data, err := s.takeWebAuthnSession(
+	out, err := s.passkeys.FinishRegistration(
 		e.Context(),
+		account(sub, nil),
+		req.Name,
 		req.Handle,
-		WebAuthnCeremonyRegistration,
+		req.Credential,
 	)
 	if err != nil {
-		return router.ServerError("failed to claim ceremony session", err)
+		return router.ServerError("failed to finish registration", err)
 	}
-	if data == nil || sess.SubjectID != sub.ID() {
+
+	switch out.Status {
+	case passkey.StatusInvalid:
 		return &router.Error{
 			Status:      http.StatusUnauthorized,
 			Reason:      auth.ReasonAuthenticationFailed,
 			Description: "invalid or expired handle",
 		}
-	}
-
-	parsed, err := protocol.ParseCredentialCreationResponseBody(
-		bytes.NewReader(req.Credential),
-	)
-	if err != nil {
-		return &router.Error{
-			Status:      http.StatusBadRequest,
-			Reason:      router.ReasonValidationFailed,
-			Description: "malformed credential",
-		}
-	}
-
-	cred, err := s.webauthn.handle.CreateCredential(
-		&webAuthnUser{sub: sub},
-		*data,
-		parsed,
-	)
-	if err != nil {
+	case passkey.StatusRejected:
 		s.logger.DebugContext(
 			e.Context(),
 			"WebAuthn attestation rejected",
-			log.Err(err),
+			log.Err(out.Reason),
 		)
 		return &router.Error{
 			Status:      http.StatusBadRequest,
 			Reason:      router.ReasonValidationFailed,
 			Description: "credential verification failed",
 		}
-	}
-
-	if err := s.subjects.CreateWebAuthnCredential(
-		e.Context(),
-		sub.ID(),
-		req.Name,
-		*cred,
-	); err != nil {
-		return router.ServerError("failed to store credential", err)
 	}
 
 	e.NoContent()
@@ -560,25 +321,21 @@ func (s *Server) WebAuthnRegister(e *router.Exchange) error {
 // cookie) or via the [oauth.GrantTypeWebAuthn] token grant (native apps
 // exchanging the assertion directly for tokens).
 func (s *Server) WebAuthnLoginOptions(e *router.Exchange) error {
-	if s.webauthn == nil {
+	if s.passkeys == nil {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
 
-	assertion, data, err := s.webauthn.handle.BeginDiscoverableLogin(
-		webauthn.WithUserVerification(protocol.VerificationRequired),
-	)
+	handle, options, expiresIn, err := s.passkeys.BeginLogin(e.Context())
 	if err != nil {
 		return router.ServerError("failed to begin login", err)
 	}
 
-	return s.beginWebAuthnCeremony(
-		e,
-		WebAuthnCeremonyLogin,
-		uuid.Nil(),
-		assertion,
-		data,
-	)
+	return e.JSON(http.StatusOK, WebAuthnOptionsResponse{
+		Handle:    handle,
+		ExpiresIn: expiresIn,
+		Options:   options,
+	})
 }
 
 // WebAuthnLogin finishes a passkey login ceremony and establishes a
@@ -591,7 +348,7 @@ func (s *Server) WebAuthnLoginOptions(e *router.Exchange) error {
 // assertion with user verification is inherently multi-factor, so no OTP
 // confirmation follows.
 func (s *Server) WebAuthnLogin(e *router.Exchange) error {
-	if s.webauthn == nil {
+	if s.passkeys == nil {
 		e.Status(http.StatusNotFound)
 		return nil
 	}
@@ -601,43 +358,39 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 		return err
 	}
 
-	_, data, err := s.takeWebAuthnSession(
-		e.Context(),
-		req.Handle,
-		WebAuthnCeremonyLogin,
-	)
+	out, err := s.passkeys.FinishLogin(e.Context(), req.Handle, req.Credential)
 	if err != nil {
-		return router.ServerError("failed to claim ceremony session", err)
+		return router.ServerError("failed to finish login", err)
 	}
-	if data == nil {
+
+	switch out.Status {
+	case passkey.StatusInvalid:
 		s.penalize(s.addr(e))
 		return &router.Error{
 			Status:      http.StatusUnauthorized,
 			Reason:      auth.ReasonAuthenticationFailed,
 			Description: "invalid or expired handle",
 		}
-	}
-
-	sub, reject, fail := s.verifyWebAuthnAssertion(
-		e.Context(),
-		data,
-		req.Credential,
-	)
-	if fail != nil {
-		return router.ServerError("failed to verify assertion", fail)
-	}
-	if reject != nil {
+	case passkey.StatusRejected:
 		s.penalize(s.addr(e))
 		s.logger.DebugContext(
 			e.Context(),
 			"WebAuthn assertion rejected",
-			log.Err(reject),
+			log.Err(out.Reason),
 		)
 		return &router.Error{
 			Status:      http.StatusUnauthorized,
 			Reason:      auth.ReasonAuthenticationFailed,
 			Description: "assertion verification failed",
 		}
+	}
+
+	sub, err := s.subjectOf(e.Context(), out.Owner)
+	if err != nil {
+		return router.ServerError("failed to lookup subject", err)
+	}
+	if sub == nil {
+		return invalidLogin()
 	}
 
 	if err := s.session(e, sub, false); err != nil {
@@ -649,9 +402,20 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 	return nil
 }
 
-// webAuthnGrant implements the custom [oauth.GrantTypeWebAuthn] grant. It lets a
-// client exchange a passkey assertion directly for tokens, bypassing the
-// browser-bound authorization code flow. The client obtains ceremony
+// subjectOf resolves the subject behind an engine-reported owner reference.
+// It returns nil (with a nil error) when the owner is malformed or no longer
+// exists.
+func (s *Server) subjectOf(ctx context.Context, owner string) (Subject, error) {
+	id, err := uuid.Parse(owner)
+	if err != nil {
+		return nil, nil
+	}
+	return s.subjects.GetSubject(ctx, id)
+}
+
+// webAuthnGrant implements the custom [oauth.GrantTypeWebAuthn] grant. It
+// lets a client exchange a passkey assertion directly for tokens, bypassing
+// the browser-bound authorization code flow. The client obtains ceremony
 // options from [Server.WebAuthnLoginOptions], performs the platform passkey
 // ceremony, and submits the resulting assertion to the token endpoint:
 //
@@ -660,8 +424,8 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 //	assertion=... (JSON-encoded PublicKeyCredential)
 //	scope=...     (optional)
 //
-// The grant is registered automatically by [WithWebAuthn]; clients must
-// additionally be allowed to use it via [Client.CanUseGrant].
+// The grant is registered automatically by [WithPasskeys]; clients must
+// additionally be allowed to use it via [oauth.Client.CanUseGrant].
 type webAuthnGrant struct {
 	s *Server
 }
@@ -703,45 +467,28 @@ func (g *webAuthnGrant) Authorize(
 		}
 	}
 
-	_, data, err := g.s.takeWebAuthnSession(
-		ctx,
-		handle,
-		WebAuthnCeremonyLogin,
-	)
+	out, err := g.s.passkeys.FinishLogin(ctx, handle, []byte(assertion))
 	if err != nil {
 		return nil, &oauth.Error{
 			Status:      http.StatusInternalServerError,
 			Code:        oauth.ErrorCodeServerError,
-			Description: "failed to claim ceremony session",
+			Description: "failed to finish login ceremony",
 			Cause:       err,
 		}
 	}
-	if data == nil {
+
+	switch out.Status {
+	case passkey.StatusInvalid:
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,
 			Code:        oauth.ErrorCodeInvalidGrant,
 			Description: "invalid or expired handle",
 		}
-	}
-
-	sub, reject, fail := g.s.verifyWebAuthnAssertion(
-		ctx,
-		data,
-		[]byte(assertion),
-	)
-	if fail != nil {
-		return nil, &oauth.Error{
-			Status:      http.StatusInternalServerError,
-			Code:        oauth.ErrorCodeServerError,
-			Description: "failed to verify assertion",
-			Cause:       fail,
-		}
-	}
-	if reject != nil {
+	case passkey.StatusRejected:
 		pro.Logger.DebugContext(
 			ctx,
 			"WebAuthn assertion rejected",
-			log.Err(reject),
+			log.Err(out.Reason),
 		)
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,
@@ -750,8 +497,18 @@ func (g *webAuthnGrant) Authorize(
 		}
 	}
 
+	id, err := uuid.Parse(out.Owner)
+	if err != nil {
+		return nil, &oauth.Error{
+			Status:      http.StatusInternalServerError,
+			Code:        oauth.ErrorCodeServerError,
+			Description: "malformed ceremony owner",
+			Cause:       err,
+		}
+	}
+
 	return &oauth.Issuance{
-		Subject:     sub.ID(),
+		Subject:     id,
 		Scope:       scope,
 		Refreshable: true,
 	}, nil
@@ -791,25 +548,15 @@ func (w *webAuthnStep) Begin(
 	_ *flow.Transaction,
 	handle string,
 ) (any, error) {
-	assertion, data, err := w.s.webauthn.handle.BeginDiscoverableLogin(
-		webauthn.WithUserVerification(protocol.VerificationRequired),
-	)
+	options, expiresIn, err := w.s.passkeys.StartLogin(ctx, w.handle(handle))
 	if err != nil {
 		return nil, err
 	}
-	if err := w.s.storeWebAuthnSession(
-		ctx, w.handle(handle), WebAuthnCeremonyLogin, uuid.Nil(), data,
-	); err != nil {
-		return nil, err
-	}
-	return webAuthnPrompt{
-		Options:   assertion,
-		ExpiresIn: int64(w.s.webauthn.sessionLifetime.Seconds()),
-	}, nil
+	return webAuthnPrompt{Options: options, ExpiresIn: expiresIn}, nil
 }
 
-// Verify implements [flow.Step]: it claims the ceremony, verifies the
-// assertion, and requires the asserted subject to match the login's subject.
+// Verify implements [flow.Step]: it finishes the ceremony and requires the
+// asserted account to match the login's subject.
 //
 // A WebAuthn challenge is single use, so a failed or mismatched assertion burns
 // the ceremony and fails the step (the client restarts the login) rather than
@@ -820,26 +567,16 @@ func (w *webAuthnStep) Verify(
 	handle string,
 	in flow.Input,
 ) (flow.Verdict, error) {
-	_, data, err := w.s.takeWebAuthnSession(
-		ctx, w.handle(handle), WebAuthnCeremonyLogin,
-	)
+	out, err := w.s.passkeys.FinishLogin(ctx, w.handle(handle), in.Raw)
 	if err != nil {
 		return 0, err
 	}
-	if data == nil {
-		return flow.VerdictFail, nil
-	}
-
-	sub, reject, fail := w.s.verifyWebAuthnAssertion(ctx, data, in.Raw)
-	if fail != nil {
-		return 0, fail
-	}
-	if reject != nil {
+	if !out.OK() {
 		return flow.VerdictFail, nil
 	}
 	// The passkey must belong to the subject the login already identified, so a
 	// valid assertion for another account cannot complete this login.
-	if sub.ID().String() != t.Owner {
+	if out.Owner != t.Owner {
 		return flow.VerdictFail, nil
 	}
 	return flow.VerdictOK, nil
@@ -864,13 +601,13 @@ func (w *webAuthnStep) Act(
 // identified; the presented passkey must belong to that subject.
 //
 // It panics if id is empty or passkey support is not enabled via
-// [WithWebAuthn].
+// [WithPasskeys].
 func (b Steps) WebAuthn(id string) flow.Step {
 	if id == "" {
 		panic("step ID is required")
 	}
-	if b.s.webauthn == nil {
-		panic("webauthn support is not enabled")
+	if b.s.passkeys == nil {
+		panic("passkey support is not enabled")
 	}
 	return &webAuthnStep{id: id, s: b.s}
 }

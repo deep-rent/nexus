@@ -22,6 +22,7 @@ import (
 	"slices"
 	"time"
 
+	"sync"
 	"testing"
 
 	"github.com/deep-rent/nexus/sec/digest"
@@ -30,6 +31,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/idp"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sec/iam/otp"
+	"github.com/deep-rent/nexus/sec/iam/passkey"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"uuid"
 )
@@ -105,9 +107,7 @@ type fakeSubjectStore struct {
 	usernames map[string]uuid.UUID // username -> subject ID
 	external  map[string]uuid.UUID // provider "/" external ID -> subject ID
 	sessions  map[string]uuid.UUID // session key -> subject ID
-	// credentials maps subject IDs to registered passkey credentials.
-	credentials map[uuid.UUID][]WebAuthnCredential
-	err         error
+	err       error
 }
 
 func newFakeSubjectStore() *fakeSubjectStore {
@@ -117,49 +117,7 @@ func newFakeSubjectStore() *fakeSubjectStore {
 		usernames: make(map[string]uuid.UUID),
 		external:  make(map[string]uuid.UUID),
 		sessions:  make(map[string]uuid.UUID),
-		credentials: make(
-			map[uuid.UUID][]WebAuthnCredential,
-		),
 	}
-}
-
-func (s *fakeSubjectStore) GetWebAuthnCredentials(
-	_ context.Context,
-	subjectID uuid.UUID,
-) ([]WebAuthnCredential, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	return s.credentials[subjectID], nil
-}
-
-func (s *fakeSubjectStore) CreateWebAuthnCredential(
-	_ context.Context,
-	subjectID uuid.UUID,
-	_ string,
-	credential WebAuthnCredential,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.credentials[subjectID] = append(s.credentials[subjectID], credential)
-	return nil
-}
-
-func (s *fakeSubjectStore) UpdateWebAuthnCredential(
-	_ context.Context,
-	subjectID uuid.UUID,
-	credential WebAuthnCredential,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	for i, c := range s.credentials[subjectID] {
-		if bytes.Equal(c.ID, credential.ID) {
-			s.credentials[subjectID][i] = credential
-		}
-	}
-	return nil
 }
 
 func (s *fakeSubjectStore) Authenticate(
@@ -328,6 +286,63 @@ func (s *fakeTrustStore) DeleteForOwner(
 
 var _ trust.Store = (*fakeTrustStore)(nil)
 
+// fakeCredentialStore is an in-memory [passkey.CredentialStore].
+type fakeCredentialStore struct {
+	mu    sync.Mutex
+	creds map[string][]passkey.Credential
+	err   error
+}
+
+func newFakeCredentialStore() *fakeCredentialStore {
+	return &fakeCredentialStore{creds: make(map[string][]passkey.Credential)}
+}
+
+func (s *fakeCredentialStore) List(
+	_ context.Context,
+	owner string,
+) ([]passkey.Credential, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.creds[owner]), nil
+}
+
+func (s *fakeCredentialStore) Create(
+	_ context.Context,
+	owner, _ string,
+	cred passkey.Credential,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.creds[owner] = append(s.creds[owner], cred)
+	return nil
+}
+
+func (s *fakeCredentialStore) Update(
+	_ context.Context,
+	owner string,
+	cred passkey.Credential,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, c := range s.creds[owner] {
+		if bytes.Equal(c.ID, cred.ID) {
+			s.creds[owner][i] = cred
+		}
+	}
+	return nil
+}
+
+var _ passkey.CredentialStore = (*fakeCredentialStore)(nil)
+
 // fakeStores bundles Map-backed [Stores] with typed handles for seeding and
 // peeking.
 type fakeStores struct {
@@ -338,7 +353,8 @@ type fakeStores struct {
 	challenges    *artifact.Map[string, otp.Challenge]
 	flows         *artifact.Map[string, flow.Transaction]
 	trust         *fakeTrustStore
-	ceremonies    *artifact.Map[oauth.Digest, WebAuthnSession]
+	ceremonies    *artifact.Map[string, passkey.Ceremony]
+	credentials   *fakeCredentialStore
 }
 
 func newFakeStores() *fakeStores {
@@ -362,8 +378,9 @@ func newFakeStores() *fakeStores {
 			func(r trust.Record) string { return r.ID },
 		)},
 		ceremonies: artifact.NewMap(
-			func(c WebAuthnSession) oauth.Digest { return c.Handle },
+			func(c passkey.Ceremony) string { return c.ID },
 		),
+		credentials: newFakeCredentialStore(),
 	}
 	s.Stores = Stores{
 		TokenStores: oauth.TokenStores{
@@ -371,10 +388,11 @@ func newFakeStores() *fakeStores {
 			RefreshTokens: s.refreshTokens,
 			DeviceCodes:   s.deviceCodes,
 		},
-		Challenges: s.challenges,
-		Flows:      s.flows,
-		Trust:      s.trust,
-		Ceremonies: s.ceremonies,
+		Challenges:  s.challenges,
+		Flows:       s.flows,
+		Trust:       s.trust,
+		Ceremonies:  s.ceremonies,
+		Credentials: s.credentials,
 	}
 	return s
 }
@@ -389,6 +407,7 @@ func (s *fakeStores) setErr(err error) {
 	s.flows.Err = err
 	s.trust.Err = err
 	s.ceremonies.Err = err
+	s.credentials.err = err
 }
 
 // seed inserts a record into the store, failing the test on error.
@@ -397,6 +416,21 @@ func seed[K ~string, V any](t *testing.T, s artifact.Store[K, V], v V) {
 	if err := s.Create(t.Context(), v); err != nil {
 		t.Fatalf("failed to seed store: %v", err)
 	}
+}
+
+// listCreds returns the credentials stored for the subject, failing the test
+// on a storage error.
+func listCreds(
+	t *testing.T,
+	s *fakeCredentialStore,
+	id uuid.UUID,
+) []passkey.Credential {
+	t.Helper()
+	creds, err := s.List(t.Context(), id.String())
+	if err != nil {
+		t.Fatalf("failed to list credentials: %v", err)
+	}
+	return creds
 }
 
 // discardLogger returns a logger that drops all records.

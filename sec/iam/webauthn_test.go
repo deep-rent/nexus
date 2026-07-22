@@ -30,6 +30,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/sec/iam/passkey"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 )
 
@@ -52,7 +53,7 @@ func newWebAuthnEnv(t *testing.T, opts ...Option) *webAuthnEnv {
 	t.Helper()
 
 	opts = append([]Option{
-		WithWebAuthn(WebAuthnConfig{
+		WithPasskeys(passkey.Config{
 			RPID:          testRPID,
 			RPDisplayName: testRPName,
 			RPOrigins:     []string{testRPOrigin},
@@ -253,7 +254,7 @@ func TestWebAuthnRegistration(t *testing.T) {
 			)
 		}
 
-		creds := env.subjects.credentials[env.subject.id]
+		creds := listCreds(t, env.stores.credentials, env.subject.id)
 		if len(creds) != 1 {
 			t.Fatalf("got %d stored credentials; want 1", len(creds))
 		}
@@ -341,7 +342,7 @@ func TestWebAuthnRegistration(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 		}
-		if len(env.subjects.credentials[env.subject.id]) != 0 {
+		if len(listCreds(t, env.stores.credentials, env.subject.id)) != 0 {
 			t.Error("no credential should have been stored")
 		}
 	})
@@ -461,7 +462,7 @@ func TestWebAuthnLogin(t *testing.T) {
 		}
 
 		// The updated signature counter must have been persisted.
-		creds := env.subjects.credentials[env.subject.id]
+		creds := listCreds(t, env.stores.credentials, env.subject.id)
 		if len(creds) != 1 || creds[0].Authenticator.SignCount != 7 {
 			t.Errorf("stored sign count was not updated: %+v", creds)
 		}
@@ -485,7 +486,7 @@ func TestWebAuthnLogin(t *testing.T) {
 		env.register(t)
 
 		handle, opts := env.beginLogin(t)
-		env.now = env.now.Add(DefaultWebAuthnSessionLifetime + time.Second)
+		env.now = env.now.Add(passkey.DefaultLifetime + time.Second)
 
 		w := finish(env, handle, env.assert(opts))
 		if w.Code != http.StatusUnauthorized {

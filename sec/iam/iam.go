@@ -20,11 +20,11 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/dat/valid"
-	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/flow"
 	"github.com/deep-rent/nexus/sec/iam/idp"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sec/iam/otp"
+	"github.com/deep-rent/nexus/sec/iam/passkey"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 )
 
@@ -99,45 +99,6 @@ type SubjectStore interface {
 		ctx context.Context,
 		username, password string,
 	) (Subject, error)
-	// GetWebAuthnCredentials retrieves all passkey credentials registered
-	// by the subject. An enrolled subject typically owns a handful; a
-	// subject without any yields an empty slice.
-	//
-	// It should return an error only if the storage lookup fails.
-	//
-	// The WebAuthn store methods are only consulted when the server was
-	// constructed with [WithWebAuthn]; implementations backing servers
-	// without passkey support may simply return zero values.
-	GetWebAuthnCredentials(
-		ctx context.Context,
-		subjectID uuid.UUID,
-	) ([]WebAuthnCredential, error)
-	// CreateWebAuthnCredential stores a newly registered passkey credential
-	// for the subject. The name is an optional human-readable label chosen
-	// by the subject (e.g., "MacBook Touch ID"); implementations may ignore
-	// it. Credentials are opaque records: implementations should persist
-	// them as-is (e.g., as a JSON blob keyed by [WebAuthnCredential.ID])
-	// and must not modify them.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateWebAuthnCredential(
-		ctx context.Context,
-		subjectID uuid.UUID,
-		name string,
-		credential WebAuthnCredential,
-	) error
-	// UpdateWebAuthnCredential replaces a stored passkey credential, keyed
-	// by [WebAuthnCredential.ID] and the owning subject. The [Server] calls
-	// it after every successful assertion to persist the updated signature
-	// counter and backup flags, which future assertions are validated
-	// against. Updating an absent credential is a no-op.
-	//
-	// It should return an error only if the persistence operation fails.
-	UpdateWebAuthnCredential(
-		ctx context.Context,
-		subjectID uuid.UUID,
-		credential WebAuthnCredential,
-	) error
 	// GetSubject retrieves a subject by their unique ID.
 	//
 	// If the user is found, it must return the subject and nil.
@@ -183,46 +144,6 @@ type SubjectStore interface {
 	DeleteSession(ctx context.Context, key string) error
 }
 
-// WebAuthnCeremony distinguishes the two kinds of WebAuthn ceremonies whose
-// state is tracked by a [WebAuthnSession].
-type WebAuthnCeremony string
-
-const (
-	// WebAuthnCeremonyRegistration marks the session of a credential
-	// registration (attestation) ceremony.
-	WebAuthnCeremonyRegistration WebAuthnCeremony = "registration"
-	// WebAuthnCeremonyLogin marks the session of an authentication
-	// (assertion) ceremony.
-	WebAuthnCeremonyLogin WebAuthnCeremony = "login"
-)
-
-// WebAuthnSession holds the server-side state of a WebAuthn ceremony
-// between its begin and finish steps, most importantly the challenge the
-// authenticator response must answer.
-//
-// The handle is the client's reference to the pending ceremony; the
-// serialized ceremony state is produced and consumed by the server and is
-// opaque to the store. Sessions are short-lived and must be deleted after a
-// single finish attempt, successful or not.
-type WebAuthnSession struct {
-	// Handle is the digest of the high-entropy handle issued to the client.
-	// The plaintext value never reaches the store.
-	Handle oauth.Digest `json:"handle"`
-	// Ceremony states which kind of ceremony this session belongs to. A
-	// session begun for one ceremony cannot finish another.
-	Ceremony WebAuthnCeremony `json:"ceremony"`
-	// SubjectID identifies the authenticated subject who began a
-	// registration ceremony. It remains the zero UUID for login ceremonies,
-	// where the subject is only discovered from the assertion itself.
-	SubjectID uuid.UUID `json:"subject_id,omitzero"`
-	// Data carries the serialized ceremony state. Implementations must
-	// persist it verbatim.
-	Data []byte `json:"data"`
-	// ExpiresAt defines when this session expires, as a UNIX timestamp in
-	// seconds.
-	ExpiresAt int64 `json:"expires_at"`
-}
-
 // Stores bundles the persistence backends for every ephemeral artifact the
 // [Server] manages. The token-issuance stores are embedded as
 // [oauth.TokenStores]; the rest back the login machinery: one-time password
@@ -230,7 +151,7 @@ type WebAuthnSession struct {
 // ceremony sessions.
 //
 // All records are keyed by digests — the server hashes every bearer secret
-// before it crosses a store boundary — and follow the [artifact.Store]
+// before it crosses a store boundary — and follow the [github.com/deep-rent/nexus/sec/iam/artifact.Store]
 // contract. A single generic backend can therefore be instantiated per
 // artifact type; the stores enabled by the server's options must be non-nil
 // (see [New]).
@@ -247,8 +168,12 @@ type Stores struct {
 	// [WithFlow], whose remembered logins enroll devices.
 	Trust trust.Store
 	// Ceremonies persists pending WebAuthn ceremony sessions. Required with
-	// [WithWebAuthn].
-	Ceremonies artifact.Store[oauth.Digest, WebAuthnSession]
+	// [WithPasskeys].
+	Ceremonies passkey.Store
+	// Credentials persists registered passkey credentials. Unlike its
+	// siblings it holds durable identity data rather than ephemeral
+	// artifacts. Required with [WithPasskeys].
+	Credentials passkey.CredentialStore
 }
 
 // LoginRequest represents the payload for the resource owner login endpoint.

@@ -36,6 +36,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sec/iam/oauth/pkce"
 	"github.com/deep-rent/nexus/sec/iam/otp"
+	"github.com/deep-rent/nexus/sec/iam/passkey"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/nonce"
@@ -208,7 +209,8 @@ type Server struct {
 	rememberedSessionLifetime time.Duration
 	trustedDeviceLifetime     time.Duration
 	trust                     *trust.Manager
-	webauthn                  *webAuthnSupport
+	passkeyCfg                *passkey.Config
+	passkeys                  *passkey.RelyingParty
 	hasher                    *digest.Hasher
 	throttle                  *throttle.Throttle
 	throttlePenalty           int
@@ -439,8 +441,10 @@ func New(cfg Config, opts ...Option) *Server {
 		panic("WithFlow requires Stores.Flows")
 	case s.planner != nil && s.stores.Trust == nil:
 		panic("WithFlow requires Stores.Trust")
-	case s.webauthn != nil && s.stores.Ceremonies == nil:
-		panic("WithWebAuthn requires Stores.Ceremonies")
+	case s.passkeyCfg != nil && s.stores.Ceremonies == nil:
+		panic("WithPasskeys requires Stores.Ceremonies")
+	case s.passkeyCfg != nil && s.stores.Credentials == nil:
+		panic("WithPasskeys requires Stores.Credentials")
 	case s.verificationURI != "" && s.stores.DeviceCodes == nil:
 		panic("Config.VerificationURI requires Stores.DeviceCodes")
 	}
@@ -506,6 +510,21 @@ func New(cfg Config, opts ...Option) *Server {
 		)
 	}
 
+	// The passkey relying party shares the server's nonce generator, hasher,
+	// and clock, and registers the WebAuthn token grant.
+	if s.passkeyCfg != nil {
+		s.passkeys = passkey.New(
+			*s.passkeyCfg,
+			s.stores.Ceremonies,
+			s.stores.Credentials,
+			subjectDirectory{s},
+			passkey.WithHasher(s.hasher),
+			passkey.WithHandleGenerator(s.nonce),
+			passkey.WithClock(s.now),
+		)
+		s.grants[oauth.GrantTypeWebAuthn] = &webAuthnGrant{s}
+	}
+
 	s.introspector = jwt.NewVerifier[*auth.Claims](
 		s.vault.Keys(),
 		jwt.WithIssuers(s.issuer),
@@ -527,7 +546,7 @@ func (s *Server) Supports(grant oauth.GrantType) bool {
 // URI has been configured, the external login endpoints only when at least
 // one identity provider is registered, the login continue and action
 // endpoints only when a multi-step login is enabled via [WithFlow], and the
-// WebAuthn endpoints only when passkey support is enabled via [WithWebAuthn].
+// WebAuthn endpoints only when passkey support is enabled via [WithPasskeys].
 //
 // When [Config.Throttle] is set, every endpoint that verifies a credential
 // — the token, revocation, introspection, login, device authorization, and
@@ -586,7 +605,7 @@ func (s *Server) Mount(r *router.Router, prefix string) {
 		)
 	}
 
-	if s.webauthn != nil {
+	if s.passkeys != nil {
 		r.HandleFunc(
 			http.MethodPost+" "+prefix+PathWebAuthnRegisterOptions,
 			s.WebAuthnRegisterOptions,
