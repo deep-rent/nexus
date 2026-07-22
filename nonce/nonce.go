@@ -18,13 +18,22 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+)
+
+var (
+	// ErrInvalidSize is returned when a nonpositive size is specified.
+	ErrInvalidSize = errors.New("size must be positive")
+
+	// ErrEmptyAlphabet is returned when an empty alphabet is specified.
+	ErrEmptyAlphabet = errors.New("alphabet must not be empty")
 )
 
 // Bytes reads n cryptographically secure random bytes from [crypto/rand].
-// If n is less than or equal to 0, it returns a nil slice and no error.
+// It returns [ErrInvalidSize] if n is less than or equal to 0.
 func Bytes(n int) ([]byte, error) {
 	if n <= 0 {
-		return nil, nil
+		return nil, ErrInvalidSize
 	}
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -37,12 +46,9 @@ func Bytes(n int) ([]byte, error) {
 // unpadded base64url string.
 //
 // The output is safe for inclusion in URLs, HTTP headers, and JSON payloads.
-// Drawing 32 bytes of entropy produces a 43-character string. If n is less
-// than or equal to 0, it returns an empty string and no error.
+// Drawing 32 bytes of entropy produces a 43-character string. It returns
+// [ErrInvalidSize] if n is less than or equal to 0.
 func Opaque(n int) (string, error) {
-	if n <= 0 {
-		return "", nil
-	}
 	b, err := Bytes(n)
 	if err != nil {
 		return "", err
@@ -53,12 +59,9 @@ func Opaque(n int) (string, error) {
 // Hex draws n random bytes from [crypto/rand] and returns them encoded as a
 // lowercase hexadecimal string.
 //
-// Drawing 32 bytes of entropy produces a 64-character hex string. If n is less
-// than or equal to 0, it returns an empty string and no error.
+// Drawing 32 bytes of entropy produces a 64-character hex string. It returns
+// [ErrInvalidSize] if n is less than or equal to 0.
 func Hex(n int) (string, error) {
-	if n <= 0 {
-		return "", nil
-	}
 	b, err := Bytes(n)
 	if err != nil {
 		return "", err
@@ -70,11 +73,14 @@ func Hex(n int) (string, error) {
 // onto the provided character alphabet.
 //
 // It is commonly used to generate human-readable PINs, user codes, or short
-// verification tokens. If n is less than or equal to 0 or alphabet is empty, it
-// returns an empty string and no error.
+// verification tokens. It returns [ErrInvalidSize] if n is less than or equal
+// to 0, or [ErrEmptyAlphabet] if the alphabet string is empty.
 func String(n int, alphabet string) (string, error) {
-	if n <= 0 || len(alphabet) == 0 {
-		return "", nil
+	if n <= 0 {
+		return "", ErrInvalidSize
+	}
+	if len(alphabet) == 0 {
+		return "", ErrEmptyAlphabet
 	}
 	b, err := Bytes(n)
 	if err != nil {

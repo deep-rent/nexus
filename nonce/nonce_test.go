@@ -15,6 +15,7 @@
 package nonce_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -28,16 +29,12 @@ func TestBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(b) != 16 {
-		t.Fatalf("expected 16 bytes, got %d", len(b))
+	if exp, act := 16, len(b); exp != act {
+		t.Fatalf("expected %d bytes, got %d", exp, act)
 	}
 
-	bZero, err := nonce.Bytes(0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if bZero != nil {
-		t.Fatalf("expected nil for 0 bytes, got %v", bZero)
+	if _, err := nonce.Bytes(0); !errors.Is(err, nonce.ErrInvalidSize) {
+		t.Fatalf("expected invalid size error, got %v", err)
 	}
 }
 
@@ -48,8 +45,8 @@ func TestOpaque(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(tok1) != 43 {
-		t.Fatalf("expected 43 chars for 32 bytes, got %d (%s)", len(tok1), tok1)
+	if exp, act := 43, len(tok1); exp != act {
+		t.Fatalf("expected %d chars for 32 bytes, got %d (%s)", exp, act, tok1)
 	}
 
 	tok2, err := nonce.Opaque(32)
@@ -60,12 +57,8 @@ func TestOpaque(t *testing.T) {
 		t.Fatalf("expected unique tokens, got identical: %s", tok1)
 	}
 
-	tokCustom, err := nonce.Opaque(16)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(tokCustom) != 22 {
-		t.Fatalf("expected 22 chars for 16 bytes base64url, got %d (%s)", len(tokCustom), tokCustom)
+	if _, err := nonce.Opaque(0); !errors.Is(err, nonce.ErrInvalidSize) {
+		t.Fatalf("expected invalid size error, got %v", err)
 	}
 }
 
@@ -76,38 +69,39 @@ func TestHex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(hex1) != 64 {
-		t.Fatalf("expected 64 hex chars for 32 bytes, got %d (%s)", len(hex1), hex1)
+	if exp, act := 64, len(hex1); exp != act {
+		t.Fatalf("expected %d hex chars, got %d (%s)", exp, act, hex1)
 	}
 
-	hex2, err := nonce.Hex(16)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(hex2) != 32 {
-		t.Fatalf("expected 32 hex chars for 16 bytes, got %d (%s)", len(hex2), hex2)
+	if _, err := nonce.Hex(0); !errors.Is(err, nonce.ErrInvalidSize) {
+		t.Fatalf("expected invalid size error, got %v", err)
 	}
 }
 
 func TestString(t *testing.T) {
 	t.Parallel()
 
-	alphabet := "ABCDEF012345"
-	str, err := nonce.String(10, alphabet)
+	const alphabet = "ABCDEF012345"
+
+	s, err := nonce.String(10, alphabet)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(str) != 10 {
-		t.Fatalf("expected length 10, got %d", len(str))
+	if exp, act := 10, len(s); exp != act {
+		t.Fatalf("expected length %d, got %d", exp, act)
 	}
-	for _, ch := range str {
-		if !strings.ContainsRune(alphabet, ch) {
-			t.Fatalf("character %q not in alphabet %q", ch, alphabet)
+
+	for _, c := range s {
+		if !strings.ContainsRune(alphabet, c) {
+			t.Fatalf("character %q not in alphabet %q", c, alphabet)
 		}
 	}
 
-	empty, err := nonce.String(0, alphabet)
-	if err != nil || empty != "" {
-		t.Fatalf("expected empty string for n=0, got %q, err %v", empty, err)
+	if _, err := nonce.String(0, "ab"); !errors.Is(err, nonce.ErrInvalidSize) {
+		t.Fatalf("expected invalid size error, got %v", err)
+	}
+
+	if _, err := nonce.String(1, ""); !errors.Is(err, nonce.ErrEmptyAlphabet) {
+		t.Fatalf("expected empty alphabet error, got %v", err)
 	}
 }
