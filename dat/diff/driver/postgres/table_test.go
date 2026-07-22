@@ -292,7 +292,7 @@ func TestNewTable_Panics(t *testing.T) {
 	}
 	s := postgres.New(db)
 
-	expect := func(t *testing.T, name string, fn func()) {
+	assert := func(t *testing.T, name string, fn func()) {
 		t.Helper()
 		defer func() {
 			if recover() == nil {
@@ -302,26 +302,26 @@ func TestNewTable_Panics(t *testing.T) {
 		fn()
 	}
 
-	expect(t, "nil store", func() {
+	assert(t, "nil store", func() {
 		postgres.NewTable(nil, "asset", "assets")
 	})
 
-	expect(t, "empty model", func() {
+	assert(t, "empty model", func() {
 		postgres.NewTable(s, "", "assets")
 	})
 
-	expect(t, "empty table", func() {
+	assert(t, "empty table", func() {
 		postgres.NewTable(s, "asset", "")
 	})
 
-	expect(t, "unknown parent", func() {
+	assert(t, "unknown parent", func() {
 		postgres.NewTable(s, "file", "files",
 			postgres.WithParent("missing", "asset_id"))
 	})
 
 	postgres.NewTable(s, "asset", "assets")
 
-	expect(t, "duplicate table", func() {
+	assert(t, "duplicate table", func() {
 		postgres.NewTable(s, "asset2", "assets")
 	})
 }
