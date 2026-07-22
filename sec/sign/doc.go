@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sign provides context-aware cryptographic signing interfaces.
-//
-
 // Package sign bridges the gap between Go's standard [crypto.Signer] and
 // context-aware operations. It provides a [Signer] interface that respects
 // context cancellation and deadlines during cryptographic operations.
