@@ -190,9 +190,10 @@ func (s *Sampler) Draw(ctx context.Context) (string, error) {
 
 	filled := 0
 	for filled < s.n {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
+		// Assume that the source re-raises context errors.
+		// if err := ctx.Err(); err != nil {
+		// 	return "", err
+		// }
 		if err := s.src.Read(ctx, b); err != nil {
 			return "", err
 		}
