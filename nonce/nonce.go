@@ -75,8 +75,8 @@ type Generator struct {
 	n   int
 }
 
-// NewGenerator returns a [Generator] that draws n bytes per token from src. If
-// src is nil, [DefaultSource] is used.
+// NewGenerator returns a [Generator] that draws n bytes per token from the
+// the given source. If the source is nil, [DefaultSource] is used.
 //
 // A token of n bytes carries 8n bits of entropy; 32 bytes (256 bits) is a
 // sound default for unguessable secrets. NewGenerator panics if n is not
@@ -135,10 +135,11 @@ type Sampler struct {
 }
 
 // NewSampler returns a [Sampler] that draws n-rune strings from the given
-// alphabet using src. If src is nil, [DefaultSource] is used.
+// alphabet using the provided source. If the source is nil, [DefaultSource]
+// is used.
 //
-// The alphabet's distinct runes define the output symbols. NewSampler panics
-// if n is not positive, or if the alphabet holds fewer than [MinAlphabetSize]
+// The alphabet's distinct runes define the output symbols. It panics if the
+// size is not positive, or if the alphabet holds fewer than [MinAlphabetSize]
 // or more than [MaxAlphabetSize] runes, since these are configuration rather
 // than runtime input. Duplicate runes are not collapsed and will be sampled
 // more frequently; supply a de-duplicated alphabet if uniform weighting
