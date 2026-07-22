@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package loadshed
+package shed
 
 import (
 	"runtime/metrics"
 	"time"
 )
 
-// config holds the configuration options for the loadshed middleware.
+// config holds the configuration options for the shed middleware.
 type config struct {
 	interval   time.Duration
 	fraction   float64
@@ -28,7 +28,7 @@ type config struct {
 	now        func() time.Time
 }
 
-// Option configures the loadshed middleware.
+// Option configures the shed middleware.
 type Option func(*config)
 
 const (
