@@ -57,17 +57,6 @@ func (s *mockSource) Read(_ context.Context, b []byte) error {
 	return nil
 }
 
-// mustPanic fails the test unless fn panics.
-func mustPanic(t *testing.T, fn func()) {
-	t.Helper()
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic, got none")
-		}
-	}()
-	fn()
-}
-
 func TestDefaultSource(t *testing.T) {
 	t.Parallel()
 
@@ -88,7 +77,14 @@ func TestNewGeneratorPanics(t *testing.T) {
 	t.Parallel()
 
 	for _, n := range []int{0, -1} {
-		mustPanic(t, func() { nonce.NewGenerator(nil, n) })
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("expected panic, got none")
+				}
+			}()
+			nonce.NewGenerator(nil, n)
+		}()
 	}
 }
 
@@ -178,7 +174,12 @@ func TestNewSamplerPanics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mustPanic(t, func() { nonce.NewSampler(nil, tt.alphabet, tt.n) })
+			defer func() {
+				if recover() == nil {
+					t.Fatal("expected panic, got none")
+				}
+			}()
+			nonce.NewSampler(nil, tt.alphabet, tt.n)
 		})
 	}
 }
