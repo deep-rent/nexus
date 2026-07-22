@@ -26,9 +26,9 @@ import (
 	"github.com/deep-rent/nexus/digest"
 )
 
-// b64 encodes a raw hash sum the way the package does, so tests can assert the
-// exact fingerprint independently of the implementation.
-func b64(sum []byte) string {
+// encode encodes a raw hash sum the way the package does, so tests can assert
+// the exact fingerprint independently of the implementation.
+func encode(sum []byte) string {
 	return base64.RawURLEncoding.EncodeToString(sum)
 }
 
@@ -39,7 +39,7 @@ func TestDefaultHasher(t *testing.T) {
 	got := digest.DefaultHasher.String(input)
 
 	sum := sha256.Sum256([]byte(input))
-	if want := b64(sum[:]); got != want {
+	if want := encode(sum[:]); got != want {
 		t.Fatalf("expected %s, got %s", want, got)
 	}
 	// SHA-256 is 32 bytes, which is 43 unpadded base64url characters.
@@ -54,7 +54,7 @@ func TestBytesAndStringAgree(t *testing.T) {
 	h := digest.New(nil)
 	const input = "secret-auth-token-12345"
 	if s, b := h.String(input), h.Bytes([]byte(input)); s != b {
-		t.Fatalf("String and Bytes disagree: %s vs %s", s, b)
+		t.Fatalf("string and bytes disagree: %s vs %s", s, b)
 	}
 }
 
@@ -64,7 +64,10 @@ func TestNewNilUsesDefaultAlgorithm(t *testing.T) {
 	const input = "raw-bearer-token"
 	if got, want := digest.New(nil).String(input),
 		digest.DefaultHasher.String(input); got != want {
-		t.Fatalf("nil algorithm should equal DefaultHasher: %s vs %s", got, want)
+		t.Fatalf(
+			"nil algorithm should equal the default hasher: %s vs %s",
+			got, want,
+		)
 	}
 }
 
@@ -84,8 +87,8 @@ func TestInjectableAlgorithm(t *testing.T) {
 		want string
 		size int
 	}{
-		{"sha256", sha256.New, b64(sum256[:]), 43},
-		{"sha512", sha512.New, b64(sum512[:]), 86},
+		{"sha256", sha256.New, encode(sum256[:]), 43},
+		{"sha512", sha512.New, encode(sum512[:]), 86},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -114,30 +117,25 @@ func TestKeyedAlgorithm(t *testing.T) {
 
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(input))
-	if want := b64(mac.Sum(nil)); got != want {
+	if want := encode(mac.Sum(nil)); got != want {
 		t.Fatalf("expected %s, got %s", want, got)
 	}
 }
 
-// TestAlgorithmInvokedPerCall verifies a fresh hash is constructed for every
-// fingerprint, the property that makes a [digest.Hasher] concurrency-safe.
-func TestAlgorithmInvokedPerCall(t *testing.T) {
+// TestReuseIsolation guards the pooling optimization: because a [digest.Hasher]
+// reuses hashes across calls (resetting between them), a stale internal state
+// would corrupt later fingerprints. Interleaving inputs must still match the
+// standalone digest of each.
+func TestReuseIsolation(t *testing.T) {
 	t.Parallel()
 
-	var mu sync.Mutex
-	calls := 0
-	h := digest.New(func() hash.Hash {
-		mu.Lock()
-		calls++
-		mu.Unlock()
-		return sha256.New()
-	})
-
-	h.String("a")
-	h.Bytes([]byte("b"))
-
-	if calls != 2 {
-		t.Fatalf("expected algorithm invoked 2 times, got %d", calls)
+	h := digest.New(nil)
+	inputs := []string{"a", "bb", "ccc", "a", "", "bb"}
+	for _, in := range inputs {
+		sum := sha256.Sum256([]byte(in))
+		if got, want := h.String(in), encode(sum[:]); got != want {
+			t.Fatalf("hash of %q produced %s, want %s", in, got, want)
+		}
 	}
 }
 
@@ -162,7 +160,10 @@ func TestEqual(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := digest.Equal(tt.x, tt.y); got != tt.want {
-				t.Fatalf("Equal(%q, %q) = %v, want %v", tt.x, tt.y, got, tt.want)
+				t.Fatalf(
+					"comparing %q to %q yielded %v, want %v",
+					tt.x, tt.y, got, tt.want,
+				)
 			}
 		})
 	}
@@ -190,7 +191,7 @@ func TestMatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := h.Match(tt.value, tt.digest); got != tt.want {
-				t.Fatalf("Match(%q, %q) = %v, want %v",
+				t.Fatalf("matching %q against %q yielded %v, want %v",
 					tt.value, tt.digest, got, tt.want)
 			}
 		})
