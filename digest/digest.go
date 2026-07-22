@@ -18,24 +18,73 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"hash"
 )
 
-// String computes the SHA-256 fingerprint of a string value, returning its
-// 43-character, unpadded base64url representation.
-func String(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+// Algorithm constructs a fresh [hash.Hash]. It is the injection point of the
+// package: production code uses [DefaultAlgorithm] (SHA-256), while callers may
+// substitute any other algorithm — SHA-512, SHA-3, BLAKE2 — or a keyed
+// construction such as HMAC:
+//
+//	key := []byte("...")
+//	h := digest.New(func() hash.Hash { return hmac.New(sha256.New, key) })
+//
+// A [Hasher] calls its Algorithm afresh for every fingerprint, so any Algorithm
+// that returns an independent hash per call (as the standard-library
+// constructors do) yields a Hasher that is safe for concurrent use.
+type Algorithm = func() hash.Hash
+
+// DefaultAlgorithm is SHA-256, a 256-bit cryptographic hash suitable for
+// fingerprinting secrets and detecting tampering. Its digests encode to 43
+// base64url characters.
+var DefaultAlgorithm Algorithm = sha256.New
+
+// Hasher computes fingerprints of values using a configurable [Algorithm]. It
+// is safe for concurrent use provided its Algorithm is (see [Algorithm]).
+//
+// A fingerprint is the hash sum of the input encoded as an unpadded base64url
+// string, making it safe for inclusion in URLs, HTTP headers, JSON payloads,
+// and database columns. Fingerprints let a raw secret be stored or compared by
+// its hash rather than in the clear.
+type Hasher struct {
+	algorithm Algorithm
 }
 
-// Bytes computes the SHA-256 fingerprint of a byte slice, returning its
-// 43-character, unpadded base64url representation.
-func Bytes(value []byte) string {
-	sum := sha256.Sum256(value)
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+// New returns a [Hasher] that fingerprints values with the given [Algorithm].
+// If algorithm is nil, [DefaultAlgorithm] (SHA-256) is used.
+func New(algorithm Algorithm) *Hasher {
+	if algorithm == nil {
+		algorithm = DefaultAlgorithm
+	}
+	return &Hasher{algorithm: algorithm}
 }
 
-// Equal performs a constant-time comparison between two digest strings using
-// [subtle.ConstantTimeCompare] to prevent timing side-channel attacks.
+// Bytes returns the fingerprint of value: its hash sum encoded as an unpadded
+// base64url string. With the default SHA-256 algorithm the result is 43
+// characters long.
+func (h *Hasher) Bytes(value []byte) string {
+	sum := h.algorithm()
+	// hash.Hash.Write is documented never to return an error.
+	sum.Write(value)
+	return base64.RawURLEncoding.EncodeToString(sum.Sum(nil))
+}
+
+// String returns the fingerprint of value. It is shorthand for hashing the
+// bytes of a string; see [Hasher.Bytes].
+func (h *Hasher) String(value string) string {
+	return h.Bytes([]byte(value))
+}
+
+// DefaultHasher fingerprints values with [DefaultAlgorithm]. It is a
+// ready-to-use replacement for one-off fingerprinting.
+var DefaultHasher = New(DefaultAlgorithm)
+
+// Equal reports whether two digest strings are identical, comparing them in
+// constant time via [subtle.ConstantTimeCompare] to avoid leaking their
+// contents through timing side channels.
+//
+// The comparison is only meaningful for digests produced by the same
+// [Algorithm]; digests of different lengths are never equal.
 func Equal(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
