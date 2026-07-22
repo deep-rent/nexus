@@ -24,17 +24,16 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
 	"uuid"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"github.com/deep-rent/nexus/sec/auth"
-	"github.com/deep-rent/nexus/sys/log"
-	"github.com/deep-rent/nexus/sec/oauth/flow"
-	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sec/auth"
+	"github.com/deep-rent/nexus/sec/oauth/flow"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // WebAuthnCredential is a passkey credential record as verified and
@@ -843,7 +842,10 @@ func (w *webAuthnStep) Act(
 	_ string,
 	_ flow.Action,
 ) (any, error) {
-	return nil, fmt.Errorf("%w: webauthn step supports no actions", flow.ErrRejected)
+	return nil, fmt.Errorf(
+		"%w: webauthn step supports no actions",
+		flow.ErrRejected,
+	)
 }
 
 // WebAuthn returns a [flow.Step] that confirms the login's subject with a

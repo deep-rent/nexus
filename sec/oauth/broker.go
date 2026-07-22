@@ -23,13 +23,12 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
 	"uuid"
 
-	"github.com/deep-rent/nexus/sec/auth"
-	"github.com/deep-rent/nexus/sys/log"
-	"github.com/deep-rent/nexus/sec/oauth/flow"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sec/auth"
+	"github.com/deep-rent/nexus/sec/oauth/flow"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Login authenticates a resource owner and either establishes a session or
@@ -430,11 +429,11 @@ func (s *Server) session(e *router.Exchange, sub Subject, remember bool) error {
 		)
 	}
 
-	maxAge := 0
+	lifetime := 0
 	if remember {
-		maxAge = int(s.rememberedSessionLifetime.Seconds())
+		lifetime = int(s.rememberedSessionLifetime.Seconds())
 	}
-	e.SetCookie(s.newSessionCookie(key, maxAge))
+	e.SetCookie(s.newSessionCookie(key, lifetime))
 
 	return nil
 }
@@ -489,7 +488,8 @@ func (s *Server) ExternalLogin(e *router.Exchange) error {
 
 	authURL, err := idp.AuthURL(e.Context(), state)
 	if err != nil {
-		return router.ServerError("failed to initiate external login",
+		return router.ServerError(
+			"failed to initiate external login",
 			err,
 		)
 	}
@@ -509,7 +509,8 @@ func (s *Server) ExternalCallback(e *router.Exchange) error {
 	if v, ok := errors.AsType[*router.Error](err); ok {
 		u, err := url.Parse(s.loginTerminalURI)
 		if err != nil {
-			return router.ServerError("failed to parse login terminal URI",
+			return router.ServerError(
+				"failed to parse login terminal URI",
 				err,
 			)
 		}
