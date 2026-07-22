@@ -39,11 +39,12 @@ const (
 // specialized deployments can substitute a deterministic reader, a hardware
 // module, or a remote KMS.
 //
-// Implementations must fill b completely, honor cancellation via ctx, and be
-// safe for concurrent use.
+// Implementations must fill buffers completely, honor cancellation via the
+// input context, and be safe for concurrent use.
 type Source interface {
-	// Read fills b entirely with random bytes, or returns an error. A partial
-	// read must be reported as an error rather than a short fill.
+	// Read fills the byte buffer entirely with random bytes, or returns an
+	// error. Note that a partial read must be reported as an error rather than
+	// a short fill.
 	Read(ctx context.Context, b []byte) error
 }
 
@@ -83,7 +84,7 @@ type Generator struct {
 // positive, since the size is configuration rather than runtime input.
 func NewGenerator(src Source, n int) *Generator {
 	if n <= 0 {
-		panic("nonce: size must be positive")
+		panic("size must be positive")
 	}
 	if src == nil {
 		src = DefaultSource
@@ -146,19 +147,19 @@ type Sampler struct {
 // matters.
 func NewSampler(src Source, alphabet string, n int) *Sampler {
 	if n <= 0 {
-		panic("nonce: size must be positive")
+		panic("size must be positive")
 	}
 	runes := []rune(alphabet)
 	N := len(runes)
 	switch {
 	case N < MinAlphabetSize:
 		panic(fmt.Sprintf(
-			"nonce: alphabet must contain %d characters or less",
+			"alphabet must contain %d characters or less",
 			MinAlphabetSize,
 		))
 	case N > MaxAlphabetSize:
 		panic(fmt.Sprintf(
-			"nonce: alphabet must contain %d characters or more",
+			"alphabet must contain %d characters or more",
 			MaxAlphabetSize,
 		))
 	}
@@ -181,7 +182,7 @@ func NewSampler(src Source, alphabet string, n int) *Sampler {
 
 // Draw returns a string of n runes drawn uniformly from the alphabet, where n
 // is the size fixed at construction. It returns any error reported by the
-// underlying [Source], including cancellation of ctx.
+// underlying [Source], including cancellation of the context.
 func (s *Sampler) Draw(ctx context.Context) (string, error) {
 	N := len(s.runes)
 	out := make([]rune, s.n)
