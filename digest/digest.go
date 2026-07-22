@@ -19,19 +19,15 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"hash"
+	"sync"
 )
 
-// Algorithm constructs a fresh [hash.Hash]. It is the injection point of the
-// package: production code uses [DefaultAlgorithm] (SHA-256), while callers may
-// substitute any other algorithm — SHA-512, SHA-3, BLAKE2 — or a keyed
-// construction such as HMAC:
+// Algorithm constructs a new [hash.Hash]. It is the injection point of the
+// package.
 //
-//	key := []byte("...")
-//	h := digest.New(func() hash.Hash { return hmac.New(sha256.New, key) })
-//
-// A [Hasher] calls its Algorithm afresh for every fingerprint, so any Algorithm
-// that returns an independent hash per call (as the standard-library
-// constructors do) yields a Hasher that is safe for concurrent use.
+// A [Hasher] pools the hashes an Algorithm returns and calls Reset between
+// uses, so an Algorithm need only produce a hash whose Reset restores its
+// initial state — every standard-library constructor and [hmac.New] qualifies.
 type Algorithm = func() hash.Hash
 
 // DefaultAlgorithm is SHA-256, a 256-bit cryptographic hash suitable for
@@ -40,14 +36,23 @@ type Algorithm = func() hash.Hash
 var DefaultAlgorithm Algorithm = sha256.New
 
 // Hasher computes fingerprints of values using a configurable [Algorithm]. It
-// is safe for concurrent use provided its Algorithm is (see [Algorithm]).
+// is safe for concurrent use: each fingerprint borrows an independent hash from
+// an internal pool, so the underlying algorithm need not be concurrency-safe.
 //
 // A fingerprint is the hash sum of the input encoded as an unpadded base64url
 // string, making it safe for inclusion in URLs, HTTP headers, JSON payloads,
 // and database columns. Fingerprints let a raw secret be stored or compared by
 // its hash rather than in the clear.
 type Hasher struct {
-	algorithm Algorithm
+	pool sync.Pool
+}
+
+// scratch is a reusable, pooled hash together with a buffer for its sum,
+// sparing every fingerprint the cost of constructing a hash and allocating a
+// destination for [hash.Hash.Sum].
+type scratch struct {
+	hash hash.Hash
+	sum  []byte
 }
 
 // New returns a [Hasher] that fingerprints values with the given [Algorithm].
@@ -56,17 +61,25 @@ func New(algorithm Algorithm) *Hasher {
 	if algorithm == nil {
 		algorithm = DefaultAlgorithm
 	}
-	return &Hasher{algorithm: algorithm}
+	h := &Hasher{}
+	h.pool.New = func() any { return &scratch{hash: algorithm()} }
+	return h
 }
 
 // Bytes returns the fingerprint of value: its hash sum encoded as an unpadded
 // base64url string. With the default SHA-256 algorithm the result is 43
 // characters long.
 func (h *Hasher) Bytes(value []byte) string {
-	sum := h.algorithm()
+	s := h.pool.Get().(*scratch)
+	s.hash.Reset()
 	// This call is documented never to return an error.
-	_, _ = sum.Write(value)
-	return base64.RawURLEncoding.EncodeToString(sum.Sum(nil))
+	_, _ = s.hash.Write(value)
+	// Reuse the pooled buffer as the sum destination; Sum grows it on first use
+	// and reuses it thereafter.
+	s.sum = s.hash.Sum(s.sum[:0])
+	out := base64.RawURLEncoding.EncodeToString(s.sum)
+	h.pool.Put(s)
+	return out
 }
 
 // String returns the fingerprint of value. It is shorthand for hashing the
