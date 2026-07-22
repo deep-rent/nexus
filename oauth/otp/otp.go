@@ -16,15 +16,18 @@ package otp
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/deep-rent/nexus/nonce"
 	"github.com/deep-rent/nexus/notify/mail"
 	"github.com/deep-rent/nexus/notify/push"
 	"github.com/deep-rent/nexus/notify/text"
 )
+
+// digits is the alphabet a one-time password is sampled from.
+const digits = "0123456789"
 
 const (
 	// DefaultLength is the conventional code length used when consumers do
@@ -50,32 +53,14 @@ var (
 // zero-padded (e.g., "042917"). It panics if length is not positive, since
 // the length is a static configuration choice rather than runtime input.
 // An error is returned only if the system randomness source fails.
+//
+// It samples digits uniformly from [nonce.DefaultSource]; the [nonce.Sampler]
+// it builds handles the rejection sampling that keeps the distribution even.
 func Generate(length int) (string, error) {
 	if length <= 0 {
 		panic("code length must be positive")
 	}
-
-	// Rejection sampling keeps the digit distribution uniform: only bytes
-	// below the largest multiple of 10 are used.
-	const limit = byte(250)
-
-	digits := make([]byte, length)
-	buf := make([]byte, 2*length)
-	i := 0
-	for i < length {
-		if _, err := rand.Read(buf); err != nil {
-			return "", err
-		}
-		for _, b := range buf {
-			if b < limit {
-				digits[i] = '0' + b%10
-				if i++; i == length {
-					break
-				}
-			}
-		}
-	}
-	return string(digits), nil
+	return nonce.NewSampler(nil, digits, length).Draw(context.Background())
 }
 
 // Deliverer sends an already-generated code to a preconfigured destination.

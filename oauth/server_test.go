@@ -1104,22 +1104,33 @@ func TestDeviceVerifyErrors(t *testing.T) {
 	})
 }
 
-func TestGenerateUserCode(t *testing.T) {
+func TestNewUserCode(t *testing.T) {
 	t.Parallel()
 
-	pattern := regexp.MustCompile(
-		`^[` + userCodeAlphabet + `]{4}-[` + userCodeAlphabet + `]{4}$`,
-	)
+	t.Run("format", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t)
+		pattern := regexp.MustCompile(
+			`^[` + userCodeAlphabet + `]{4}-[` + userCodeAlphabet + `]{4}$`,
+		)
+		for range 100 {
+			code, err := env.server.newUserCode(t.Context())
+			if err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+			if !pattern.MatchString(code) {
+				t.Fatalf("user code %q does not match %q", code, pattern)
+			}
+		}
+	})
 
-	for range 100 {
-		code, err := GenerateUserCode(t.Context())
-		if err != nil {
-			t.Fatalf("should not have returned an error: %v", err)
+	t.Run("propagates source failure", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, WithNonceSource(failingSource{}))
+		if _, err := env.server.newUserCode(t.Context()); err == nil {
+			t.Error("expected an error from the failing source")
 		}
-		if !pattern.MatchString(code) {
-			t.Fatalf("user code %q does not match %q", code, pattern)
-		}
-	}
+	})
 }
 
 func TestNormalizeUserCode(t *testing.T) {
@@ -1143,9 +1154,12 @@ func TestNormalizeUserCode(t *testing.T) {
 	}
 }
 
-// failingGenerator simulates an exhausted entropy source.
-func failingGenerator(context.Context) (string, error) {
-	return "", errors.New("boom")
+// failingSource simulates an exhausted entropy source: every artifact the
+// server tries to mint fails.
+type failingSource struct{}
+
+func (failingSource) Read(context.Context, []byte) error {
+	return errors.New("boom")
 }
 
 // wantServerError asserts an opaque 500 response carrying a trace ID.
@@ -1198,7 +1212,7 @@ func TestInternalFailures(t *testing.T) {
 
 	t.Run("auth code generation failure", func(t *testing.T) {
 		t.Parallel()
-		env := newTestEnv(t, WithAuthCodeGenerator(failingGenerator))
+		env := newTestEnv(t, WithNonceSource(failingSource{}))
 
 		q := url.Values{
 			"client_id":             {env.client.id.String()},
@@ -1219,7 +1233,7 @@ func TestInternalFailures(t *testing.T) {
 
 	t.Run("refresh token generation failure", func(t *testing.T) {
 		t.Parallel()
-		env := newTestEnv(t, WithRefreshTokenGenerator(failingGenerator))
+		env := newTestEnv(t, WithNonceSource(failingSource{}))
 		env.sessions.refreshTokens[NewDigest("rt-1")] = RefreshToken{
 			Token:     NewDigest("rt-1"),
 			ClientID:  env.client.id,
@@ -1238,7 +1252,7 @@ func TestInternalFailures(t *testing.T) {
 
 	t.Run("session key generation failure", func(t *testing.T) {
 		t.Parallel()
-		env := newTestEnv(t, WithSessionKeyGenerator(failingGenerator))
+		env := newTestEnv(t, WithNonceSource(failingSource{}))
 
 		w := postJSON(
 			env,
@@ -1254,23 +1268,9 @@ func TestInternalFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("device code generation failure", func(t *testing.T) {
+	t.Run("device authorization generation failure", func(t *testing.T) {
 		t.Parallel()
-		env := newTestEnv(t, WithDeviceCodeGenerator(failingGenerator))
-
-		w := env.postForm(
-			PathDeviceAuthorization,
-			url.Values{},
-			env.client,
-			"s3cret",
-		)
-
-		wantServerError(t, w)
-	})
-
-	t.Run("user code generation failure", func(t *testing.T) {
-		t.Parallel()
-		env := newTestEnv(t, WithUserCodeGenerator(failingGenerator))
+		env := newTestEnv(t, WithNonceSource(failingSource{}))
 
 		w := env.postForm(
 			PathDeviceAuthorization,
@@ -1287,7 +1287,7 @@ func TestInternalFailures(t *testing.T) {
 		env := newTestEnv(
 			t,
 			WithIdentityProvider("acme", &fakeIDP{}),
-			WithStateGenerator(failingGenerator),
+			WithNonceSource(failingSource{}),
 		)
 
 		w := env.do(httptest.NewRequest(

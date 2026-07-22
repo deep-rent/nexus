@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oom
+package shed
 
 import (
 	"math"
@@ -29,7 +29,7 @@ import (
 // resource exhaustion, such as approaching the memory limit.
 const ReasonOverload = "server_overload"
 
-// Middleware returns a [router.Middleware] that rejects new requests with a 503
+// New returns a [router.Middleware] that rejects new requests with a 503
 // status when the application is about to run out of memory.
 //
 // It determines the limit from the active GOMEMLIMIT (via
@@ -37,7 +37,7 @@ const ReasonOverload = "server_overload"
 // [router.Chain] skips entirely. Otherwise, it monitors memory usage inline and
 // sheds load when the active heap size exceeds the configured threshold
 // fraction.
-func Middleware(opts ...Option) router.Middleware {
+func New(opts ...Option) router.Middleware {
 	limit := debug.SetMemoryLimit(-1)
 	if limit <= 0 || limit == math.MaxInt64 {
 		// No memory limit set: return nil so middleware chaining skips

@@ -12,7 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package notify provides transactional notification and messaging delivery
-// services across multiple channels, such as email, mobile push notifications,
-// and SMS text messages.
-package notify
+package digest_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/deep-rent/nexus/digest"
+)
+
+func BenchmarkHasherString(b *testing.B) {
+	h := digest.New(nil)
+	v := strings.Repeat("x", 32)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = h.String(v)
+	}
+}
+
+func BenchmarkHasherBytes(b *testing.B) {
+	h := digest.New(nil)
+	v := []byte(strings.Repeat("x", 32))
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = h.Bytes(v)
+	}
+}
+
+func BenchmarkHasherMatch(b *testing.B) {
+	h := digest.New(nil)
+	v := strings.Repeat("x", 32)
+	d := h.String(v)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = h.Match(v, d)
+	}
+}

@@ -46,7 +46,7 @@ func (s *Server) issueTrustedDevice(
 	subjectID uuid.UUID,
 	label string,
 ) (string, error) {
-	token, err := s.generateTrustToken(ctx)
+	token, err := s.nonce.Draw(ctx)
 	if err != nil {
 		return "", err
 	}

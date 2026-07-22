@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oom
+package shed
 
 import (
 	"math"
@@ -34,7 +34,7 @@ func newExchange() *router.Exchange {
 	}
 }
 
-func TestMiddleware_NoLimit(t *testing.T) {
+func TestNew_NoLimit(t *testing.T) {
 	t.Parallel()
 	// Ensure no limit is set for this test.
 	prev := debug.SetMemoryLimit(math.MaxInt64)
@@ -44,12 +44,12 @@ func TestMiddleware_NoLimit(t *testing.T) {
 
 	// With no memory limit, the factory returns nil so that router.Chain
 	// skips it entirely rather than adding an idle layer.
-	if mw := Middleware(); mw != nil {
+	if mw := New(); mw != nil {
 		t.Fatal("expected nil middleware when no limit is set")
 	}
 }
 
-func TestMiddleware_Overloaded(t *testing.T) {
+func TestNew_Overloaded(t *testing.T) {
 	t.Parallel()
 
 	// Set a very small memory limit (1000 bytes) for testing.
@@ -59,7 +59,7 @@ func TestMiddleware_Overloaded(t *testing.T) {
 	}()
 
 	// Fake the memory provider to report 950 bytes in use (95% of 1000).
-	mw := Middleware(
+	mw := New(
 		WithMemoryProvider(func() uint64 {
 			return 950
 		}),
@@ -101,14 +101,14 @@ func TestMiddleware_Overloaded(t *testing.T) {
 	}
 }
 
-func TestMiddleware_Recovers(t *testing.T) {
+func TestNew_Recovers(t *testing.T) {
 	t.Parallel()
 	prev := debug.SetMemoryLimit(1000) // threshold at 0.90 => 900
 	defer func() { _ = debug.SetMemoryLimit(prev) }()
 
 	now := time.Unix(1_700_000_000, 0)
 	var mem uint64 = 950 // above the threshold
-	mw := Middleware(
+	mw := New(
 		WithInterval(time.Second),
 		WithClock(func() time.Time { return now }),
 		WithMemoryProvider(func() uint64 { return mem }),
@@ -137,7 +137,7 @@ func TestMiddleware_Recovers(t *testing.T) {
 	}
 }
 
-func TestMiddleware_ConcurrentSampling(t *testing.T) {
+func TestNew_ConcurrentSampling(t *testing.T) {
 	t.Parallel()
 	prev := debug.SetMemoryLimit(1000)
 	defer func() { _ = debug.SetMemoryLimit(prev) }()
@@ -146,7 +146,7 @@ func TestMiddleware_ConcurrentSampling(t *testing.T) {
 	// slot; the memory reading stays below the threshold. Run under -race to
 	// exercise the atomic sample gate.
 	now := time.Unix(1_700_000_000, 0)
-	mw := Middleware(
+	mw := New(
 		WithClock(func() time.Time { return now }),
 		WithMemoryProvider(func() uint64 { return 100 }),
 	)

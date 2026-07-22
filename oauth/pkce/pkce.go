@@ -15,15 +15,13 @@
 package pkce
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
+	"context"
 	"errors"
 	"fmt"
-	"unsafe"
 
 	"github.com/deep-rent/nexus/ascii"
+	"github.com/deep-rent/nexus/digest"
+	"github.com/deep-rent/nexus/nonce"
 )
 
 const (
@@ -71,59 +69,24 @@ func Supports(method string) bool {
 	return method == MethodS256 || method == MethodPlain
 }
 
-// explode converts a string to a byte slice without allocations.
-// The returned slice must not be modified.
-func explode(s string) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s)) //nolint:gosec
-}
-
 // Verifier creates a cryptographically secure random string to serve as a PKCE
 // code verifier. The length parameter determines the number of characters in
 // the resulting string, which must be between [MinVerifierLength] and
 // [MaxVerifierLength].
+//
+// Characters are sampled uniformly from [Alphabet] via a [nonce.Sampler].
 func Verifier(length int) (string, error) {
 	if length < MinVerifierLength || length > MaxVerifierLength {
 		return "", ErrInvalidLength
 	}
-
-	result := make([]byte, length)
-
-	// Pre-allocate a buffer of random bytes. Since about 22.6% (58/256) of
-	// bytes
-	// are discarded to avoid modulo bias, allocating 1.4x of length is highly
-	// likely to be sufficient to fill the result slice in a single call.
-	buf := make([]byte, max((length*14)/10, 32))
-
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-
-	idx := 0
-	for i := 0; i < length; {
-		if idx >= len(buf) {
-			// Refill buffer in the rare case we run out of valid bytes.
-			if _, err := rand.Read(buf); err != nil {
-				return "", err
-			}
-			idx = 0
-		}
-		val := buf[idx]
-		idx++
-
-		if val < 198 { // 66 * 3 to eliminate modulo bias (198 < 256)
-			result[i] = Alphabet[val%66]
-			i++
-		}
-	}
-
-	// Convert the byte slice to a string without copying.
-	return unsafe.String(&result[0], len(result)), nil //nolint:gosec
+	return nonce.NewSampler(nil, Alphabet, length).Draw(context.Background())
 }
 
 // Challenge computes a code challenge from a given code verifier and challenge
-// method. For [MethodS256], it returns the Base64URL-encoded SHA256 hash of the
-// verifier. For [MethodPlain], it returns the verifier exactly as provided.
-// It returns [ErrInvalidLength] if the verifier length is non-compliant.
+// method. For [MethodS256], it returns the Base64URL-encoded SHA-256 hash of
+// the verifier (its [digest.DefaultHasher] fingerprint). For [MethodPlain], it
+// returns the verifier exactly as provided. It returns [ErrInvalidLength] if
+// the verifier length is non-compliant.
 func Challenge(verifier, method string) (string, error) {
 	if len(verifier) < MinVerifierLength || len(verifier) > MaxVerifierLength {
 		return "", ErrInvalidLength
@@ -135,9 +98,7 @@ func Challenge(verifier, method string) (string, error) {
 
 	switch method {
 	case MethodS256:
-		// Hash the verifier using SHA-256 and encode the raw bytes.
-		sum := sha256.Sum256(explode(verifier))
-		return base64.RawURLEncoding.EncodeToString(sum[:]), nil
+		return digest.DefaultHasher.String(verifier), nil
 	case MethodPlain:
 		return verifier, nil
 	default:
@@ -146,9 +107,9 @@ func Challenge(verifier, method string) (string, error) {
 }
 
 // Verify validates an incoming code verifier against the originally stored
-// challenge. It returns true if the verifier securely matches the challenge
-// based on the specified method. This function uses constant-time comparison
-// via [subtle.ConstantTimeCompare] to mitigate timing attacks.
+// challenge. It returns true if the verifier matches the challenge for the
+// specified method, comparing in constant time via [digest] to mitigate timing
+// attacks.
 func Verify(verifier, challenge, method string) bool {
 	if len(challenge) == 0 || len(verifier) == 0 {
 		return false
@@ -164,38 +125,21 @@ func Verify(verifier, challenge, method string) bool {
 
 	switch method {
 	case MethodS256:
-		if len(challenge) != 43 {
-			return false
-		}
-		// Hash the verifier.
-		sum := sha256.Sum256(explode(verifier))
-
-		// Decode the challenge into a stack-allocated buffer to avoid
-		// allocations.
-		var decoded [32]byte
-		n, err := base64.RawURLEncoding.Decode(decoded[:], explode(challenge))
-		if err != nil || n != 32 {
-			return false
-		}
-
-		return subtle.ConstantTimeCompare(sum[:], decoded[:]) == 1
+		// Match fingerprints the verifier and compares it to the stored
+		// challenge in constant time; a length mismatch is a non-match.
+		return digest.DefaultHasher.Match(verifier, challenge)
 
 	case MethodPlain:
-		if len(challenge) < MinVerifierLength {
+		if len(challenge) < MinVerifierLength ||
+			len(challenge) > MaxVerifierLength {
 			return false
 		}
-
-		if len(challenge) > MaxVerifierLength {
-			return false
-		}
-
-		// Hash both values to ensure equal-length comparison inputs,
-		// mitigating length-based timing leaks during the constant-time
-		// comparison.
-		h1 := sha256.Sum256(explode(verifier))
-		h2 := sha256.Sum256(explode(challenge))
-
-		return subtle.ConstantTimeCompare(h1[:], h2[:]) == 1
+		// Fingerprint both values so the constant-time compare sees
+		// equal-length inputs, mitigating length-based timing leaks.
+		return digest.Equal(
+			digest.DefaultHasher.String(verifier),
+			digest.DefaultHasher.String(challenge),
+		)
 
 	default:
 		return false

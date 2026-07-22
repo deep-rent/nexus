@@ -16,9 +16,6 @@ package oauth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json/jsontext"
 	"log/slog"
 	"net/http"
@@ -27,6 +24,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/deep-rent/nexus/digest"
 	"github.com/deep-rent/nexus/valid"
 )
 
@@ -68,9 +66,10 @@ type Client interface {
 	// registered secret.
 	//
 	// Implementations must compare in constant time and should persist only
-	// a cryptographic hash of the secret — e.g., compare digests with
-	// [crypto/subtle.ConstantTimeCompare] — so that neither timing nor a
-	// leaked client registry reveals usable credentials.
+	// a cryptographic hash of the secret — for example, store its
+	// [github.com/deep-rent/nexus/digest.Hasher] fingerprint and verify with
+	// [github.com/deep-rent/nexus/digest.Hasher.Match] — so that neither timing
+	// nor a leaked client registry reveals usable credentials.
 	VerifySecret(secret string) bool
 	// VerifyRedirectURI checks if the specified URI is an allowed redirect
 	// destination for the client.
@@ -272,10 +271,10 @@ type SubjectStore interface {
 // treat digests as opaque keys and persist them as-is.
 type Digest string
 
-// NewDigest computes the [Digest] of the given artifact value.
+// NewDigest computes the [Digest] of the given artifact value, fingerprinting
+// it with [digest.DefaultHasher] (SHA-256, base64url).
 func NewDigest(value string) Digest {
-	sum := sha256.Sum256([]byte(value))
-	return Digest(base64.RawURLEncoding.EncodeToString(sum[:]))
+	return Digest(digest.DefaultHasher.String(value))
 }
 
 // AuthCode holds the temporary state bound to an authorization code.
@@ -1201,92 +1200,19 @@ func matchSegment(s, pattern string) bool {
 	return true
 }
 
-// TokenGeneratorFn produces opaque, high-entropy artifact strings (session
-// keys, authorization codes, refresh tokens, device codes, user codes, and
-// state parameters). The default implementations can be overridden per
-// artifact via the corresponding [Option] values.
-type TokenGeneratorFn func(context.Context) (string, error)
+// Token generation defaults. Every opaque bearer artifact is drawn from one
+// [nonce.Generator]; user codes are drawn from one [nonce.Sampler].
+const (
+	// nonceSize is the byte length of an opaque bearer artifact. 32 bytes yield
+	// 256 bits of entropy and a 43-character base64url string.
+	nonceSize = 32
 
-// GenerateSessionKey returns a random 43-character, base64url-encoded string
-// for use as a session key.
-func GenerateSessionKey(context.Context) (string, error) {
-	return opaque()
-}
+	// userCodeAlphabet is the character set for user codes, as recommended by
+	// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
+	// prevent accidental words) and visually ambiguous characters.
+	userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
 
-// GenerateAuthCode returns a random 43-character, base64url-encoded string
-// for use as an authorization code.
-func GenerateAuthCode(context.Context) (string, error) {
-	return opaque()
-}
-
-// GenerateRefreshToken returns a random 43-character, base64url-encoded string
-// for use as a refresh token.
-func GenerateRefreshToken(context.Context) (string, error) {
-	return opaque()
-}
-
-// GenerateDeviceCode returns a random 43-character, base64url-encoded string
-// for use as a device code.
-func GenerateDeviceCode(context.Context) (string, error) {
-	return opaque()
-}
-
-// GenerateState returns a random 43-character, base64url-encoded string
-// for use as a state parameter.
-func GenerateState(context.Context) (string, error) {
-	return opaque()
-}
-
-// GenerateWebAuthnHandle returns a random 43-character, base64url-encoded
-// string for use as the handle of a pending WebAuthn ceremony.
-func GenerateWebAuthnHandle(context.Context) (string, error) {
-	return opaque()
-}
-
-// GenerateTrustToken returns a random 43-character, base64url-encoded string
-// for use as a remember-me device trust token.
-func GenerateTrustToken(context.Context) (string, error) {
-	return opaque()
-}
-
-// userCodeAlphabet is the character set for user codes, as recommended by
-// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
-// prevent accidental words) and visually ambiguous characters.
-const userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
-
-// GenerateUserCode generates a random 9-character string of the form XXXX-XXXX
-// for use as a user code. Characters are drawn uniformly from
-// [userCodeAlphabet].
-func GenerateUserCode(context.Context) (string, error) {
-	// Rejection sampling keeps the character distribution uniform:
-	// only bytes below the largest multiple of len(alphabet) are used.
-	limit := byte(256 - 256%len(userCodeAlphabet))
-
-	var chars [8]byte
-	buf := make([]byte, 16)
-	i := 0
-	for i < len(chars) {
-		if _, err := rand.Read(buf); err != nil {
-			return "", err
-		}
-		for _, b := range buf {
-			if b < limit {
-				chars[i] = userCodeAlphabet[int(b)%len(userCodeAlphabet)]
-				if i++; i == len(chars) {
-					break
-				}
-			}
-		}
-	}
-	return string(chars[:4]) + "-" + string(chars[4:]), nil
-}
-
-// opaque generates a high-entropy, base64url-encoded string suitable for
-// use as a secure token. It always contains 43 characters.
-func opaque() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
+	// userCodeLength is the number of characters sampled for a user code,
+	// rendered as two dash-separated groups (XXXX-XXXX).
+	userCodeLength = 8
+)
