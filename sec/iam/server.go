@@ -37,6 +37,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/oauth/pkce"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/iam/passkey"
+	"github.com/deep-rent/nexus/sec/iam/session"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/nonce"
@@ -73,6 +74,9 @@ const (
 	// DefaultThrottlePenalty is the number of tokens charged against a
 	// throttle bucket for a single failed authentication attempt.
 	DefaultThrottlePenalty = 10
+	// DefaultSessionLifetime is the server-side validity period of a session
+	// established without the remember flag.
+	DefaultSessionLifetime = 24 * time.Hour
 	// DefaultRememberedSessionLifetime is the persistence of a session when the
 	// client asked to be remembered.
 	DefaultRememberedSessionLifetime = 30 * 24 * time.Hour
@@ -144,10 +148,16 @@ type Config struct {
 	// OTPMaxResends overrides [DefaultOTPMaxResends]. A negative value
 	// disables resends entirely.
 	OTPMaxResends int
+	// SessionLifetime is the server-side validity period of a session
+	// established without the remember flag. The session cookie itself
+	// remains a browser-session cookie; this bounds how long the session
+	// stays resolvable on the server. Defaults to [DefaultSessionLifetime].
+	SessionLifetime time.Duration
 	// RememberedSessionLifetime is how long a session persists when the client
-	// asked to be remembered at login. It sets the Max-Age of the persistent
-	// session cookie; without it, a session lasts only until the browser
-	// closes. Defaults to [DefaultRememberedSessionLifetime].
+	// asked to be remembered at login. It sets both the Max-Age of the
+	// persistent session cookie and the server-side expiry; without the
+	// remember flag, SessionLifetime applies instead. Defaults to
+	// [DefaultRememberedSessionLifetime].
 	RememberedSessionLifetime time.Duration
 	// TrustedDeviceLifetime is how long a remember-me device trust token stays
 	// valid. On a trusted device within this window, a [Planner] may skip
@@ -202,6 +212,8 @@ type Server struct {
 	userCodes                 *nonce.Sampler
 	verificationURI           string
 	planner                   Planner
+	sessions                  *session.Manager
+	sessionLifetime           time.Duration
 	passwordless              bool
 	otpOpts                   []otp.Option
 	flow                      *flow.Coordinator
@@ -336,6 +348,8 @@ func New(cfg Config, opts ...Option) *Server {
 		panic("auth code store is required")
 	case cfg.Stores.RefreshTokens == nil:
 		panic("refresh token store is required")
+	case cfg.Stores.Sessions == nil:
+		panic("session store is required")
 	case cfg.Subjects == nil:
 		panic("subjects is required")
 	case cfg.Issuer == "":
@@ -395,6 +409,10 @@ func New(cfg Config, opts ...Option) *Server {
 		devicePollInterval: cmp.Or(
 			cfg.DevicePollInterval,
 			DefaultDevicePollInterval,
+		),
+		sessionLifetime: cmp.Or(
+			cfg.SessionLifetime,
+			DefaultSessionLifetime,
 		),
 		rememberedSessionLifetime: cmp.Or(
 			cfg.RememberedSessionLifetime,
@@ -459,6 +477,15 @@ func New(cfg Config, opts ...Option) *Server {
 		s.nonceSource,
 		UserCodeAlphabet,
 		UserCodeLength,
+	)
+
+	// The session engine shares the server's nonce generator, hasher, and
+	// clock; per-session lifetimes are decided at establishment.
+	s.sessions = session.New(
+		s.stores.Sessions,
+		session.WithHasher(s.hasher),
+		session.WithGenerator(s.nonce),
+		session.WithClock(s.now),
 	)
 
 	// The device trust engine shares the server's nonce generator, hasher,
@@ -803,7 +830,11 @@ func (s *Server) subjectFromSession(e *router.Exchange) (Subject, error) {
 	if err != nil || cookie.Value == "" {
 		return nil, nil
 	}
-	return s.subjects.GetSubjectBySession(e.Context(), cookie.Value)
+	owner, ok, err := s.sessions.Resolve(e.Context(), cookie.Value)
+	if err != nil || !ok {
+		return nil, err
+	}
+	return s.subjectOf(e.Context(), owner)
 }
 
 func (s *Server) authenticate(e *router.Exchange) (*oauth.Proposal, error) {

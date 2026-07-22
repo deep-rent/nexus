@@ -32,6 +32,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/iam/passkey"
+	"github.com/deep-rent/nexus/sec/iam/session"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"uuid"
 )
@@ -106,7 +107,6 @@ type fakeSubjectStore struct {
 	passwords map[string]string    // username -> password
 	usernames map[string]uuid.UUID // username -> subject ID
 	external  map[string]uuid.UUID // provider "/" external ID -> subject ID
-	sessions  map[string]uuid.UUID // session key -> subject ID
 	err       error
 }
 
@@ -116,7 +116,6 @@ func newFakeSubjectStore() *fakeSubjectStore {
 		passwords: make(map[string]string),
 		usernames: make(map[string]uuid.UUID),
 		external:  make(map[string]uuid.UUID),
-		sessions:  make(map[string]uuid.UUID),
 	}
 }
 
@@ -178,43 +177,6 @@ func (s *fakeSubjectStore) GetSubjectByExternalID(
 		return sub, nil
 	}
 	return nil, nil
-}
-
-func (s *fakeSubjectStore) GetSubjectBySession(
-	_ context.Context,
-	key string,
-) (Subject, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	id, ok := s.sessions[key]
-	if !ok {
-		return nil, nil
-	}
-	if sub, ok := s.subjects[id]; ok {
-		return sub, nil
-	}
-	return nil, nil
-}
-
-func (s *fakeSubjectStore) CreateSession(
-	_ context.Context,
-	key string,
-	subjectID uuid.UUID,
-) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.sessions[key] = subjectID
-	return nil
-}
-
-func (s *fakeSubjectStore) DeleteSession(_ context.Context, key string) error {
-	if s.err != nil {
-		return s.err
-	}
-	delete(s.sessions, key)
-	return nil
 }
 
 var _ SubjectStore = (*fakeSubjectStore)(nil)
@@ -350,6 +312,7 @@ type fakeStores struct {
 	authCodes     *artifact.Map[oauth.Digest, oauth.AuthCode]
 	refreshTokens *artifact.Map[oauth.Digest, oauth.RefreshToken]
 	deviceCodes   *fakeDeviceCodeStore
+	sessions      *artifact.Map[string, session.Record]
 	challenges    *artifact.Map[string, otp.Challenge]
 	flows         *artifact.Map[string, flow.Transaction]
 	trust         *fakeTrustStore
@@ -368,6 +331,9 @@ func newFakeStores() *fakeStores {
 		deviceCodes: &fakeDeviceCodeStore{Map: artifact.NewMap(
 			func(c oauth.DeviceCode) oauth.Digest { return c.DeviceCode },
 		)},
+		sessions: artifact.NewMap(
+			func(r session.Record) string { return r.ID },
+		),
 		challenges: artifact.NewMap(
 			func(c otp.Challenge) string { return c.ID },
 		),
@@ -388,6 +354,7 @@ func newFakeStores() *fakeStores {
 			RefreshTokens: s.refreshTokens,
 			DeviceCodes:   s.deviceCodes,
 		},
+		Sessions:    s.sessions,
 		Challenges:  s.challenges,
 		Flows:       s.flows,
 		Trust:       s.trust,
@@ -403,6 +370,7 @@ func (s *fakeStores) setErr(err error) {
 	s.authCodes.Err = err
 	s.refreshTokens.Err = err
 	s.deviceCodes.Err = err
+	s.sessions.Err = err
 	s.challenges.Err = err
 	s.flows.Err = err
 	s.trust.Err = err
@@ -416,6 +384,45 @@ func seed[K ~string, V any](t *testing.T, s artifact.Store[K, V], v V) {
 	if err := s.Create(t.Context(), v); err != nil {
 		t.Fatalf("failed to seed store: %v", err)
 	}
+}
+
+// seedSession stores a resolvable session under the given raw key for the
+// subject, mirroring what the session engine would persist. It panics on a
+// storage fault, which only a test-injected error can cause.
+func seedSession(s *fakeStores, key string, id uuid.UUID, expiresAt int64) {
+	err := s.sessions.Create(context.Background(), session.Record{
+		ID:        digest.DefaultHasher.String(key),
+		Owner:     id.String(),
+		ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+// sessionOwner resolves the subject a raw session key maps to, reporting
+// whether the session exists.
+func sessionOwner(
+	t *testing.T,
+	s *fakeStores,
+	key string,
+) (uuid.UUID, bool) {
+	t.Helper()
+	r, found, err := s.sessions.Get(
+		t.Context(),
+		digest.DefaultHasher.String(key),
+	)
+	if err != nil {
+		t.Fatalf("failed to read session: %v", err)
+	}
+	if !found {
+		return uuid.UUID{}, false
+	}
+	id, err := uuid.Parse(r.Owner)
+	if err != nil {
+		t.Fatalf("malformed session owner %q: %v", r.Owner, err)
+	}
+	return id, true
 }
 
 // listCreds returns the credentials stored for the subject, failing the test

@@ -408,33 +408,28 @@ func (s *Server) readTrustCookie(e *router.Exchange) string {
 	return ""
 }
 
-// session establishes a session by generating a high-entropy session key,
-// persisting the session mapping for the subject, and setting the session
-// cookie on the user-agent. It is shared by the password login and external
-// login flows.
+// session establishes a session through the session engine and sets the
+// session cookie on the user-agent. It is shared by the password login and
+// external login flows.
 //
 // A remembered session is set as a persistent cookie lasting
 // [Config.RememberedSessionLifetime]; otherwise it is a browser-session cookie
-// that lapses when the user-agent closes.
+// that lapses when the user-agent closes, with the server-side record bounded
+// by [Config.SessionLifetime].
 func (s *Server) session(e *router.Exchange, sub Subject, remember bool) error {
-	key, err := s.nonce.Draw(e.Context())
-	if err != nil {
-		return router.ServerError("failed to generate session key",
-			err,
-		)
-	}
-
-	if err := s.subjects.CreateSession(e.Context(), key, sub.ID()); err != nil {
-		return router.ServerError("failed to create subject session",
-			err,
-		)
-	}
-
-	lifetime := 0
+	lifetime := s.sessionLifetime
+	maxAge := 0
 	if remember {
-		lifetime = int(s.rememberedSessionLifetime.Seconds())
+		lifetime = s.rememberedSessionLifetime
+		maxAge = int(lifetime.Seconds())
 	}
-	e.SetCookie(s.newSessionCookie(key, lifetime))
+
+	key, err := s.sessions.Establish(e.Context(), sub.ID().String(), lifetime)
+	if err != nil {
+		return router.ServerError("failed to establish session", err)
+	}
+
+	e.SetCookie(s.newSessionCookie(key, maxAge))
 
 	return nil
 }
@@ -447,13 +442,13 @@ func (s *Server) session(e *router.Exchange, sub Subject, remember bool) error {
 func (s *Server) Logout(e *router.Exchange) error {
 	cookie, err := e.Cookie(s.sessionCookieName)
 	if err == nil && cookie.Value != "" {
-		if err := s.subjects.DeleteSession(
+		if _, err := s.sessions.Destroy(
 			e.Context(),
 			cookie.Value,
 		); err != nil {
 			s.logger.ErrorContext(
 				e.Context(),
-				"Failed to delete subject session",
+				"Failed to destroy session",
 				log.Err(err),
 			)
 		}

@@ -191,7 +191,7 @@ func (env *testEnv) postForm(
 
 // login seeds a session for the default subject and returns the cookie.
 func (env *testEnv) login() *http.Cookie {
-	env.subjects.sessions["session-key"] = env.subject.id
+	seedSession(env.stores, "session-key", env.subject.id, 0)
 	return &http.Cookie{
 		Name:  DefaultSessionCookieName,
 		Value: "session-key",

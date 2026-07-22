@@ -100,7 +100,7 @@ func TestLogin(t *testing.T) {
 		if !cookie.HttpOnly || !cookie.Secure {
 			t.Error("session cookie should be HttpOnly and Secure")
 		}
-		if got, ok := env.subjects.sessions[cookie.Value]; !ok {
+		if got, ok := sessionOwner(t, env.stores, cookie.Value); !ok {
 			t.Error("session should have been persisted")
 		} else if got != env.subject.id {
 			t.Errorf("session maps to %v; want %v", got, env.subject.id)
@@ -119,7 +119,7 @@ func TestLogin(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusUnauthorized)
 		}
-		if len(env.subjects.sessions) != 0 {
+		if env.stores.sessions.Len() != 0 {
 			t.Error("no session should have been created")
 		}
 	})
@@ -136,7 +136,7 @@ func TestLogout(t *testing.T) {
 		t.Fatalf("got status %d; want %d", w.Code, http.StatusNoContent)
 	}
 
-	if _, ok := env.subjects.sessions[cookie.Value]; ok {
+	if _, ok := sessionOwner(t, env.stores, cookie.Value); ok {
 		t.Error("session should have been deleted")
 	}
 	if got := w.Header().Get("Clear-Site-Data"); got != `"*"` {
@@ -221,7 +221,7 @@ func TestExternalFlow(t *testing.T) {
 		if session == nil || session.Value == "" {
 			t.Fatal("missing session cookie")
 		}
-		if got := env.subjects.sessions[session.Value]; got != env.subject.id {
+		if got, _ := sessionOwner(t, env.stores, session.Value); got != env.subject.id {
 			t.Errorf("session maps to %v; want %v", got, env.subject.id)
 		}
 	})

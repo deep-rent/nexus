@@ -25,6 +25,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/iam/passkey"
+	"github.com/deep-rent/nexus/sec/iam/session"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 )
 
@@ -56,10 +57,12 @@ type Channel struct {
 	Label string `json:"label,omitzero"`
 }
 
-// SubjectStore provides data access and authentication for resource owners.
+// SubjectStore provides identity resolution and credential verification for
+// resource owners.
 //
 // It is used by the [Server] to authenticate subjects during the login flow
-// and to resolve identities during authorization and token issuance.
+// and to resolve identities during authorization and token issuance. Session
+// state lives elsewhere, in [Stores.Sessions].
 type SubjectStore interface {
 	// Authenticate validates subject credentials.
 	//
@@ -127,21 +130,6 @@ type SubjectStore interface {
 		ctx context.Context,
 		provider string, identity idp.Claimant,
 	) (Subject, error)
-	// GetSubjectBySession retrieves the authenticated subject via their
-	// session key.
-	//
-	// If the session is valid, it must return the subject and nil.
-	// If the session is missing, invalid, or expired, it must return nil and
-	// nil. It should return an error only if the storage lookup fails.
-	GetSubjectBySession(ctx context.Context, key string) (Subject, error)
-	// CreateSession stores the session mapping for the authenticated user.
-	//
-	// It should return an error only if the persistence operation fails.
-	CreateSession(ctx context.Context, key string, subjectID uuid.UUID) error
-	// DeleteSession removes the session mapping associated with the key.
-	//
-	// It should return an error only if the removal operation fails.
-	DeleteSession(ctx context.Context, key string) error
 }
 
 // Stores bundles the persistence backends for every ephemeral artifact the
@@ -158,6 +146,10 @@ type SubjectStore interface {
 type Stores struct {
 	oauth.TokenStores
 
+	// Sessions persists login sessions: the digest-keyed mapping from a
+	// session key to the authenticated subject. Always required, since the
+	// login endpoints are always mounted.
+	Sessions session.Store
 	// Challenges persists one-time password challenges for the login flow
 	// steps built via [Steps.OTP]. Required with [WithFlow].
 	Challenges otp.Store

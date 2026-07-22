@@ -457,7 +457,7 @@ func TestWebAuthnLogin(t *testing.T) {
 		if cookie == nil || cookie.Value == "" {
 			t.Fatal("missing session cookie")
 		}
-		if got := env.subjects.sessions[cookie.Value]; got != env.subject.id {
+		if got, _ := sessionOwner(t, env.stores, cookie.Value); got != env.subject.id {
 			t.Errorf("session maps to %v; want %v", got, env.subject.id)
 		}
 

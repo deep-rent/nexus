@@ -318,7 +318,7 @@ func TestPasswordless_RefusesZeroFactor(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("got %d; want %d", w.Code, http.StatusInternalServerError)
 	}
-	if len(env.subjects.sessions) != 0 {
+	if env.stores.sessions.Len() != 0 {
 		t.Error("a zero-factor passwordless login must not create a session")
 	}
 }
