@@ -45,7 +45,7 @@ func TestVerifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := pkce.Verifier(tt.length)
+			got, err := pkce.Verifier(t.Context(), tt.length)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("error: got %v; want %v", err, tt.wantErr)
 				return
@@ -166,7 +166,7 @@ func TestVerify(t *testing.T) {
 }
 
 func BenchmarkVerify(b *testing.B) {
-	v, _ := pkce.Verifier(128)
+	v, _ := pkce.Verifier(b.Context(), 128)
 	c, _ := pkce.Challenge(v, pkce.MethodS256)
 
 	for b.Loop() {
@@ -176,7 +176,7 @@ func BenchmarkVerify(b *testing.B) {
 
 func BenchmarkVerifier(b *testing.B) {
 	for b.Loop() {
-		_, _ = pkce.Verifier(128)
+		_, _ = pkce.Verifier(b.Context(), 128)
 	}
 }
 

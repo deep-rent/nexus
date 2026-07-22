@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/ascii"
 )
 
 const (
@@ -72,14 +72,15 @@ func Supports(method string) bool {
 // Verifier creates a cryptographically secure random string to serve as a PKCE
 // code verifier. The length parameter determines the number of characters in
 // the resulting string, which must be between [MinVerifierLength] and
-// [MaxVerifierLength].
+// [MaxVerifierLength]. A context is required for the underlying random number
+// generator.
 //
 // Characters are sampled uniformly from [Alphabet] via a [nonce.Sampler].
-func Verifier(length int) (string, error) {
+func Verifier(ctx context.Context, length int) (string, error) {
 	if length < MinVerifierLength || length > MaxVerifierLength {
 		return "", ErrInvalidLength
 	}
-	return nonce.NewSampler(nil, Alphabet, length).Draw(context.Background())
+	return nonce.NewSampler(nil, Alphabet, length).Draw(ctx)
 }
 
 // Challenge computes a code challenge from a given code verifier and challenge
@@ -130,8 +131,10 @@ func Verify(verifier, challenge, method string) bool {
 		return digest.DefaultHasher.Match(verifier, challenge)
 
 	case MethodPlain:
-		if len(challenge) < MinVerifierLength ||
-			len(challenge) > MaxVerifierLength {
+		if len(challenge) < MinVerifierLength {
+			return false
+		}
+		if len(challenge) > MaxVerifierLength {
 			return false
 		}
 		// Fingerprint both values so the constant-time compare sees

@@ -26,19 +26,19 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/time/rate"
 	"uuid"
 
+	"golang.org/x/time/rate"
+
+	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/net/throttle"
 	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/oauth/pkce"
-	"github.com/deep-rent/nexus/std/rotor"
-	"github.com/deep-rent/nexus/net/router"
-	"github.com/deep-rent/nexus/net/throttle"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/std/rotor"
 )
 
 const (
@@ -618,7 +618,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	env := newTestEnv(t)
 	cookie := env.login()
 
-	verifier, err := pkce.Verifier(64)
+	verifier, err := pkce.Verifier(t.Context(), 64)
 	if err != nil {
 		t.Fatalf("failed to generate verifier: %v", err)
 	}

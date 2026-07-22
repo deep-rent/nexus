@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/oauth/pkce"
@@ -31,7 +30,7 @@ func TestAuthCodeGrant(t *testing.T) {
 	clientID := uuid.New()
 	subjectID := uuid.New()
 
-	verifier, err := pkce.Verifier(64)
+	verifier, err := pkce.Verifier(t.Context(), 64)
 	if err != nil {
 		t.Fatalf("failed to generate verifier: %v", err)
 	}
