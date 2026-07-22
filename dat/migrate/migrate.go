@@ -1,0 +1,810 @@
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package migrate
+
+import (
+	"cmp"
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"log/slog"
+	"slices"
+	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
+	"github.com/deep-rent/nexus/dat/migrate/schema"
+)
+
+// Direction signals whether a migration is being applied or reverted.
+type Direction int
+
+const (
+	// Up indicates a migration that applies changes to the database schema.
+	Up Direction = iota
+	// Down indicates a migration that undoes changes made by an upward
+	// migration.
+	Down
+)
+
+// unlockTimeout bounds the deferred lock release so that a wedged database
+// cannot hang the migrator after the actual work has finished.
+const unlockTimeout = 15 * time.Second
+
+// String implements [fmt.Stringer].
+func (d Direction) String() string {
+	switch d {
+	case Up:
+		return "up"
+	case Down:
+		return "down"
+	default:
+		return "unknown"
+	}
+}
+
+// Record represents a successfully applied migration stored in the database.
+type Record struct {
+	// Version is the unique sequence number of the applied migration.
+	Version int64
+	// Checksum is the SHA-256 hash of the migration's content, used to detect
+	// tampering or accidental modification of historical migration files.
+	Checksum [32]byte
+	// Dirty indicates if the migration failed mid-execution, leaving the
+	// database in a potentially inconsistent state that requires manual
+	// intervention.
+	Dirty bool
+}
+
+// Driver is the interface that database-specific backends must implement.
+//
+// It abstracts all direct database interactions, locking mechanisms, and state
+// tracking away from the core migration logic.
+type Driver interface {
+	// Parser returns a database-specific statement parser to safely split raw
+	// SQL scripts into individual executable statements.
+	Parser() schema.Parser
+	// Init ensures the migration tracking table exists in the database.
+	Init(ctx context.Context) error
+	// Lock acquires an exclusive, distributed lock to prevent concurrent
+	// migrator instances from causing race conditions.
+	Lock(ctx context.Context) error
+	// Unlock releases the exclusive distributed lock.
+	Unlock(ctx context.Context) error
+	// Applied returns all successfully applied migration records from the
+	// tracking table, ordered by version in ascending order.
+	Applied(ctx context.Context) ([]Record, error)
+	// Force sets the database to the specified version and clears the dirty
+	// state, effectively ignoring any migrations past that point.
+	Force(ctx context.Context, version int64) error
+	// Execute runs the parsed migration statements and records the state update
+	// within the tracking table.
+	Execute(ctx context.Context, script ParsedScript) error
+}
+
+// Source provides migrations from an external system (e.g., filesystem).
+type Source interface {
+	// List returns a list of all available migration files.
+	// The Migrator will handle hashing the content and sorting the results.
+	List() ([]SourceScript, error)
+}
+
+// SourceScript represents an unhashed migration script retrieved from a
+// [Source].
+type SourceScript struct {
+	// Version is the unique sequence number of the migration.
+	Version int64
+	// Description is a human-readable summary of the migration's intent.
+	Description string
+	// Direction indicates whether this script applies (Up) or reverts (Down)
+	// changes.
+	Direction Direction
+	// Path is the location identifier of the script within the source.
+	Path string
+	// Content contains the raw, unparsed SQL script.
+	Content []byte
+	// Tx specifies whether the script should be executed within a transaction.
+	Tx bool
+}
+
+// ParsedScript holds the parameters required to execute a migration.
+type ParsedScript struct {
+	// Version is the unique sequence number of the migration.
+	Version int64
+	// Direction indicates whether this script applies (Up) or reverts (Down)
+	// changes.
+	Direction Direction
+	// Checksum is the cryptographic hash of the original script content.
+	Checksum [32]byte
+	// Statements contains the individually parsed SQL statements ready for
+	// execution.
+	Statements []string
+	// Tx specifies whether the statements should be executed within a
+	// transaction.
+	Tx bool
+}
+
+// Migration represents a fully parsed and hashed migration file.
+type Migration struct {
+	// Version is the unique sequence number of the migration.
+	Version int64
+	// Description is a human-readable description of the migration.
+	Description string
+	// Direction indicates whether this script applies (Up) or reverts (Down)
+	// changes.
+	Direction Direction
+	// Path is the location identifier of the script within the source from
+	// which the migration stems.
+	Path string
+	// Checksum is the SHA-256 hash of the content.
+	Checksum [32]byte
+	// Content is the raw SQL content of the migration, which can contain
+	// multiple statements.
+	Content []byte
+	// Tx indicates whether to run all statements together in a transaction.
+	Tx bool
+}
+
+// Compare returns an integer comparing two migrations to establish a strict
+// ordering.
+//
+// The result will be 0 if m == other, -1 if m < other, and +1 if m > other.
+// Migrations are ordered primarily by version in ascending order. If two
+// migrations share the same version, they are secondarily ordered by direction
+// (so "up" comes before "down") to guarantee deterministic sorting.
+func (m Migration) Compare(other Migration) int {
+	if n := cmp.Compare(m.Version, other.Version); n != 0 {
+		return n
+	}
+	return cmp.Compare(m.Direction, other.Direction)
+}
+
+// Migrator orchestrates the execution of database migrations.
+type Migrator struct {
+	// source is the provider for migration files.
+	source Source
+	// driver is the backend database implementation.
+	driver Driver
+	// dryRun determines if execution should be skipped.
+	dryRun bool
+	// strict determines if out-of-order pending migrations are rejected.
+	strict bool
+	// logger is the structured logger for migration events.
+	logger *slog.Logger
+}
+
+// Option configures a [Migrator] instance.
+type Option func(*Migrator)
+
+// WithSource sets the migration source.
+//
+// This option is mandatory.
+func WithSource(source Source) Option {
+	return func(m *Migrator) {
+		m.source = source
+	}
+}
+
+// WithDriver sets the database driver.
+//
+// This option is mandatory.
+func WithDriver(driver Driver) Option {
+	return func(m *Migrator) {
+		m.driver = driver
+	}
+}
+
+// WithDryRun enables a mode where the [Migrator] computes checksums and logs.
+//
+// It logs the parsed statements without executing them against the database.
+func WithDryRun(enabled bool) Option {
+	return func(m *Migrator) {
+		m.dryRun = enabled
+	}
+}
+
+// WithStrictOrder makes the [Migrator] reject out-of-order migrations.
+//
+// When enabled, applying a pending migration whose version is lower than the
+// highest already-applied version returns an error instead of silently
+// executing it after its successors. Such gaps typically appear when branches
+// with independently numbered migrations are merged. The default is lenient:
+// out-of-order migrations are applied in ascending version order.
+func WithStrictOrder(enabled bool) Option {
+	return func(m *Migrator) {
+		m.strict = enabled
+	}
+}
+
+// WithLogger sets the logger for the migrator.
+//
+// A nil value will be ignored.
+func WithLogger(logger *slog.Logger) Option {
+	return func(m *Migrator) {
+		if logger != nil {
+			m.logger = logger
+		}
+	}
+}
+
+// New creates a new [Migrator] instance.
+//
+// It panics if the required dependencies ([Source] and [Driver]) are not
+// provided.
+func New(opts ...Option) *Migrator {
+	m := &Migrator{
+		logger: slog.Default(),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	if m.source == nil {
+		panic("source is required")
+	}
+	if m.driver == nil {
+		panic("driver is required")
+	}
+	return m
+}
+
+// lock is a helper that acquires the driver lock and initializes tracking.
+//
+// It ensures the tracking table is initialized, executes the provided
+// function, and guarantees the lock is released afterward.
+func (m *Migrator) lock(
+	ctx context.Context,
+	fn func(context.Context) error,
+) error {
+	if err := m.driver.Lock(ctx); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+
+	defer func() {
+		// Release on a fresh context so the lock is returned even when the
+		// caller's context is already canceled, but bound the attempt so a
+		// wedged database cannot hang the process indefinitely.
+		c, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			unlockTimeout,
+		)
+		defer cancel()
+		if err := m.driver.Unlock(c); err != nil {
+			m.logger.Error("Failed to release lock", log.Err(err))
+		}
+	}()
+
+	if err := m.driver.Init(ctx); err != nil {
+		return fmt.Errorf("failed to initialize driver: %w", err)
+	}
+
+	return fn(ctx)
+}
+
+// files fetches migrations from the source and prepares them.
+//
+// It calculates cryptographic checksums, maps them to domain objects, and
+// strictly sorts them. It returns an error if two migrations share the same
+// version and direction, since applying such duplicates would silently
+// corrupt the tracking state.
+func (m *Migrator) files() ([]Migration, error) {
+	files, err := m.source.List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list source files: %w", err)
+	}
+
+	migrations := make([]Migration, 0, len(files))
+	for _, raw := range files {
+		migrations = append(migrations, Migration{
+			Version:     raw.Version,
+			Description: raw.Description,
+			Direction:   raw.Direction,
+			Path:        raw.Path,
+			Checksum:    sha256.Sum256(raw.Content),
+			Content:     raw.Content,
+			Tx:          raw.Tx,
+		})
+	}
+
+	slices.SortFunc(migrations, Migration.Compare)
+
+	// After sorting, duplicates of (version, direction) are adjacent.
+	for i := 1; i < len(migrations); i++ {
+		prev, cur := migrations[i-1], migrations[i]
+		if prev.Version == cur.Version && prev.Direction == cur.Direction {
+			return nil, fmt.Errorf(
+				"duplicate %s migration for version %d: %q and %q",
+				cur.Direction, cur.Version, prev.Path, cur.Path,
+			)
+		}
+	}
+
+	return migrations, nil
+}
+
+// filter is a helper to fetch either pending or applied migrations.
+//
+// It ensures the tracking table exists first, so read-only queries also work
+// against a pristine database.
+func (m *Migrator) filter(ctx context.Context, up bool) ([]Migration, error) {
+	if err := m.driver.Init(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize driver: %w", err)
+	}
+
+	records, files, err := m.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	applied := toLookup(records)
+
+	out := make([]Migration, 0, len(files))
+	for _, f := range files {
+		if f.Direction == Up && applied[f.Version] == up {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+// Up applies all pending migrations in ascending order.
+//
+// It acquires an exclusive database lock before delegating to the internal
+// up implementation.
+func (m *Migrator) Up(ctx context.Context) error {
+	return m.lock(ctx, m.up)
+}
+
+// up is the internal implementation of [Migrator.Up].
+//
+// It determines which migrations are pending and executes them sequentially.
+// It assumes the caller has already acquired the necessary database locks.
+func (m *Migrator) up(ctx context.Context) error {
+	// 1. Identify which migrations have not yet been applied.
+	records, files, err := m.load(ctx)
+	if err != nil {
+		return err
+	}
+	applied := toLookup(records)
+
+	pending := make([]Migration, 0, len(files))
+	for _, f := range files {
+		if f.Direction == Up && !applied[f.Version] {
+			pending = append(pending, f)
+		}
+	}
+
+	// 2. In strict mode, refuse to apply migrations that sort below the
+	// current database version.
+	if m.strict {
+		if err := checkOrder(records, pending); err != nil {
+			return err
+		}
+	}
+
+	// 3. Fast-path return if the database is already fully up to date.
+	if len(pending) == 0 {
+		m.logger.Info("Migrations are up to date")
+		return nil
+	}
+
+	m.logger.Info(
+		"Applying pending migrations",
+		slog.Int("count", len(pending)),
+	)
+
+	// 4. Execute each pending migration in strict ascending order.
+	// If any single migration fails, the loop halts immediately to prevent
+	// cascading errors and leaves the database in a dirty state for review.
+	for _, p := range pending {
+		if err := m.run(ctx, p); err != nil {
+			return err
+		}
+	}
+
+	m.logger.Info("All migrations applied successfully")
+	return nil
+}
+
+// Down reverts the most recently applied migration.
+//
+// It acquires an exclusive database lock before delegating to the internal
+// down implementation.
+func (m *Migrator) Down(ctx context.Context) error {
+	return m.lock(ctx, m.down)
+}
+
+// down is the internal implementation of [Migrator.Down].
+//
+// It identifies the most recently applied migration, locates its corresponding
+// down script from the source, and executes it. It assumes the caller has
+// already acquired the database lock.
+func (m *Migrator) down(ctx context.Context) error {
+	// 1. Fetch the applied records and verified source files in one pass.
+	records, files, err := m.load(ctx)
+	if err != nil {
+		return err
+	}
+
+	// 2. Fast-path return if the database is pristine and has no migrations.
+	if len(records) == 0 {
+		m.logger.Info("No applied migrations to revert")
+		return nil
+	}
+
+	// 3. Isolate the target version to rollback (the last one applied).
+	last := records[len(records)-1]
+
+	// 4. Locate the matching down script; error out if the database claims a
+	// version is applied, but the source lacks the file to safely revert it.
+	f, ok := toDowns(files)[last.Version]
+	if !ok {
+		return fmt.Errorf(
+			"down migration file not found for version %d",
+			last.Version,
+		)
+	}
+
+	// 5. Execute the rollback script.
+	if err := m.run(ctx, f); err != nil {
+		return err
+	}
+
+	m.logger.Info(
+		"Migration reverted successfully",
+		slog.Int64("version", f.Version),
+	)
+	return nil
+}
+
+// Force manually sets the database version and clears the dirty flag.
+//
+// It should be used to resolve a dirty state after human intervention.
+func (m *Migrator) Force(ctx context.Context, version int64) error {
+	fn := func(c context.Context) error {
+		if err := m.driver.Force(c, version); err != nil {
+			return fmt.Errorf("failed to force version: %w", err)
+		}
+		m.logger.Info(
+			"Successfully forced migration version",
+			slog.Int64("version", version),
+		)
+		return nil
+	}
+
+	return m.lock(ctx, fn)
+}
+
+// MigrateTo applies or reverts migrations to reach the target version.
+func (m *Migrator) MigrateTo(ctx context.Context, target int64) error {
+	fn := func(c context.Context) error {
+		records, files, err := m.load(c)
+		if err != nil {
+			return err
+		}
+		applied := toLookup(records)
+		downs := toDowns(files)
+
+		// In strict mode, fail fast if reaching the target would apply a
+		// migration below the version the database will sit at afterward.
+		if m.strict {
+			kept := records
+			for len(kept) > 0 && kept[len(kept)-1].Version > target {
+				kept = kept[:len(kept)-1]
+			}
+			pending := make([]Migration, 0, len(files))
+			for _, f := range files {
+				if f.Direction == Up &&
+					f.Version <= target &&
+					!applied[f.Version] {
+					pending = append(pending, f)
+				}
+			}
+			if err := checkOrder(kept, pending); err != nil {
+				return err
+			}
+		}
+
+		// Revert applied migrations strictly greater than the target version in
+		// descending order.
+		for _, record := range slices.Backward(records) {
+			v := record.Version
+			if v > target {
+				f, ok := downs[v]
+				if !ok {
+					return fmt.Errorf(
+						"down migration file not found for version %d", v,
+					)
+				}
+				if err := m.run(c, f); err != nil {
+					return err
+				}
+				applied[v] = false
+			}
+		}
+
+		// Apply pending migrations less than or equal to the target version in
+		// ascending order.
+		for _, f := range files {
+			if f.Direction == Up && f.Version <= target && !applied[f.Version] {
+				if err := m.run(c, f); err != nil {
+					return err
+				}
+				applied[f.Version] = true
+			}
+		}
+
+		return nil
+	}
+
+	return m.lock(ctx, fn)
+}
+
+// Pending returns a list of "Up" migrations that have not yet been applied.
+//
+// It initializes the tracking table if necessary, so it can be called against
+// a pristine database before any migration has run.
+func (m *Migrator) Pending(ctx context.Context) ([]Migration, error) {
+	return m.filter(ctx, false)
+}
+
+// Applied returns a list of "Up" migrations that have already been executed.
+//
+// It initializes the tracking table if necessary, so it can be called against
+// a pristine database before any migration has run.
+func (m *Migrator) Applied(ctx context.Context) ([]Migration, error) {
+	return m.filter(ctx, true)
+}
+
+// Steps applies or reverts up to n migrations.
+//
+// A positive n applies at most n pending migrations in ascending version
+// order; a negative n reverts at most -n applied migrations in descending
+// order. If fewer migrations are available than requested, all of them are
+// processed without error. A zero n is a no-op.
+//
+// It acquires an exclusive database lock for the duration of the operation.
+func (m *Migrator) Steps(ctx context.Context, n int) error {
+	if n == 0 {
+		return nil
+	}
+	return m.lock(ctx, func(c context.Context) error {
+		return m.steps(c, n)
+	})
+}
+
+// steps is the internal implementation of [Migrator.Steps].
+//
+// It assumes the caller has already acquired the database lock.
+func (m *Migrator) steps(ctx context.Context, n int) error {
+	records, files, err := m.load(ctx)
+	if err != nil {
+		return err
+	}
+	applied := toLookup(records)
+
+	if n > 0 {
+		pending := make([]Migration, 0, len(files))
+		for _, f := range files {
+			if f.Direction == Up && !applied[f.Version] {
+				pending = append(pending, f)
+			}
+		}
+		if m.strict {
+			if err := checkOrder(records, pending); err != nil {
+				return err
+			}
+		}
+		if len(pending) > n {
+			pending = pending[:n]
+		}
+		for _, p := range pending {
+			if err := m.run(ctx, p); err != nil {
+				return err
+			}
+		}
+		m.logger.Info(
+			"Applied migration steps",
+			slog.Int("count", len(pending)),
+		)
+		return nil
+	}
+
+	downs := toDowns(files)
+	count := 0
+	for i := len(records) - 1; i >= 0 && count < -n; i-- {
+		v := records[i].Version
+		f, ok := downs[v]
+		if !ok {
+			return fmt.Errorf(
+				"down migration file not found for version %d", v,
+			)
+		}
+		if err := m.run(ctx, f); err != nil {
+			return err
+		}
+		count++
+	}
+	m.logger.Info(
+		"Reverted migration steps",
+		slog.Int("count", count),
+	)
+	return nil
+}
+
+// Version reports the newest applied migration record.
+//
+// It initializes the tracking table if necessary, so it can be called against
+// a pristine database. Unlike [Migrator.Applied], it does not verify source
+// files or reject dirty state, making it suitable for inspecting a database
+// after a failed migration. The boolean return is false when no migration has
+// been applied yet.
+func (m *Migrator) Version(ctx context.Context) (Record, bool, error) {
+	if err := m.driver.Init(ctx); err != nil {
+		return Record{}, false, fmt.Errorf(
+			"failed to initialize driver: %w", err,
+		)
+	}
+
+	records, err := m.driver.Applied(ctx)
+	if err != nil {
+		return Record{}, false, fmt.Errorf(
+			"failed to get applied versions: %w", err,
+		)
+	}
+	if len(records) == 0 {
+		return Record{}, false, nil
+	}
+	return records[len(records)-1], true, nil
+}
+
+// run reads the migration payload and executes it via the driver.
+//
+// If dry run is enabled, it logs the statements and skips execution.
+func (m *Migrator) run(ctx context.Context, migration Migration) error {
+	m.logger.InfoContext(ctx,
+		"Running migration",
+		slog.Int64("version", migration.Version),
+		slog.String("description", migration.Description),
+		slog.String("direction", migration.Direction.String()),
+	)
+
+	parse := m.driver.Parser()
+	stmts := parse(migration.Content)
+
+	if m.dryRun {
+		m.logger.InfoContext(ctx,
+			"Dry run: skipping execution",
+			slog.Int("statements", len(stmts)),
+		)
+		for i, stmt := range stmts {
+			m.logger.DebugContext(ctx,
+				"Dry run statement",
+				slog.Int("index", i+1),
+				slog.String("query", stmt),
+			)
+		}
+		return nil
+	}
+
+	err := m.driver.Execute(ctx, ParsedScript{
+		Version:    migration.Version,
+		Direction:  migration.Direction,
+		Checksum:   migration.Checksum,
+		Statements: stmts,
+		Tx:         migration.Tx,
+	})
+	if err != nil {
+		err = fmt.Errorf("migration %d failed: %w", migration.Version, err)
+		m.logger.ErrorContext(ctx, "Migration failed", log.Err(err))
+		return err
+	}
+
+	m.logger.InfoContext(ctx,
+		"Migration completed",
+		slog.Int64("version", migration.Version),
+	)
+	return nil
+}
+
+// load loads applied records and available files.
+//
+// It ensures that there are no missing files or checksum mismatches for
+// previously applied migrations.
+func (m *Migrator) load(ctx context.Context) ([]Record, []Migration, error) {
+	files, err := m.files()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	applied, err := m.driver.Applied(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get applied versions: %w", err)
+	}
+
+	ups := make(map[int64]Migration, len(files))
+	for _, f := range files {
+		if f.Direction == Up {
+			ups[f.Version] = f
+		}
+	}
+
+	for _, a := range applied {
+		if a.Dirty {
+			return nil, nil, fmt.Errorf(
+				"database is dirty at version %d; manual intervention required",
+				a.Version,
+			)
+		}
+		f, ok := ups[a.Version]
+		if !ok {
+			return nil, nil, fmt.Errorf(
+				"applied migration %d is missing from source files",
+				a.Version,
+			)
+		}
+		if a.Checksum != f.Checksum {
+			return nil, nil, fmt.Errorf(
+				"checksum mismatch for migration %d: "+
+					"database has %x, file has %x",
+				a.Version,
+				a.Checksum,
+				f.Checksum,
+			)
+		}
+	}
+
+	return applied, files, nil
+}
+
+// toLookup converts a slice of migration records to a map for quick lookups.
+func toLookup(records []Record) map[int64]bool {
+	applied := make(map[int64]bool, len(records))
+	for _, r := range records {
+		applied[r.Version] = true
+	}
+	return applied
+}
+
+// checkOrder rejects pending migrations that sort below the newest applied
+// record.
+//
+// The records must be sorted by version in ascending order. It returns an
+// error naming the offending file so operators can renumber or explicitly
+// disable strict ordering.
+func checkOrder(records []Record, pending []Migration) error {
+	if len(records) == 0 {
+		return nil
+	}
+	newest := records[len(records)-1].Version
+	for _, p := range pending {
+		if p.Version < newest {
+			return fmt.Errorf(
+				"out-of-order migration %d (%s): database is already at "+
+					"version %d",
+				p.Version, p.Path, newest,
+			)
+		}
+	}
+	return nil
+}
+
+// toDowns indexes the down migrations among the given files by version.
+func toDowns(files []Migration) map[int64]Migration {
+	downs := make(map[int64]Migration)
+	for _, f := range files {
+		if f.Direction == Down {
+			downs[f.Version] = f
+		}
+	}
+	return downs
+}

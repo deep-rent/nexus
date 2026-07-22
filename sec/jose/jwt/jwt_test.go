@@ -1,0 +1,503 @@
+// Copyright (c) 2025-present deep.rent GmbH (https://deep.rent)
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package jwt_test
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json/v2"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"uuid"
+
+	"github.com/deep-rent/nexus/sec/jose/jwa"
+	"github.com/deep-rent/nexus/sec/jose/jwk"
+	"github.com/deep-rent/nexus/sec/jose/jwt"
+)
+
+type testClaims struct {
+	jwt.Reserved
+	Role string `json:"rol"`
+}
+
+func mockKeyPair(t *testing.T) jwk.KeyPair {
+	t.Helper()
+	key, err := jwk.Generate(jwa.ES256)
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+	return key
+}
+
+func TestSignVerify(t *testing.T) {
+	t.Parallel()
+	k := mockKeyPair(t)
+	set := jwk.Singleton(k)
+
+	sub := uuid.NewV7()
+	claims := map[string]any{
+		"sub": sub.String(),
+		"rol": "admin",
+	}
+
+	raw, err := jwt.Sign(t.Context(), k, claims)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+
+	out, err := jwt.Verify[*testClaims](set, raw)
+	if err != nil {
+		t.Fatalf("verification: should not have returned an error: %v", err)
+	}
+
+	if got, want := out.Subject(), sub.String(); got != want {
+		t.Errorf("subject: got %v; want %v", got, want)
+	}
+	if got, want := out.Role, "admin"; got != want {
+		t.Errorf("role: got %q; want %q", got, want)
+	}
+}
+
+func TestSignVerify_MLDSA(t *testing.T) {
+	t.Parallel()
+	k, err := jwk.Generate(jwa.MLDSA44)
+	if err != nil {
+		t.Fatalf("key generation: should not have returned an error: %v", err)
+	}
+	set := jwk.Singleton(k)
+
+	claims := map[string]any{
+		"sub": "user_123",
+		"rol": "admin",
+	}
+
+	raw, err := jwt.Sign(t.Context(), k, claims)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+
+	out, err := jwt.Verify[*testClaims](set, raw)
+	if err != nil {
+		t.Fatalf("verification: should not have returned an error: %v", err)
+	}
+
+	if got, want := out.Subject(), "user_123"; got != want {
+		t.Errorf("subject: got %v; want %v", got, want)
+	}
+	if got, want := out.Role, "admin"; got != want {
+		t.Errorf("role: got %q; want %q", got, want)
+	}
+}
+
+func TestVerifier_Validation(t *testing.T) {
+	t.Parallel()
+	k := mockKeyPair(t)
+	set := jwk.Singleton(k)
+	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	c := &testClaims{
+		Iss: "good-iss",
+		Aud: []string{"good-aud"},
+		Exp: now.Add(time.Hour),
+	}
+	token, err := jwt.Sign(t.Context(), k, c)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+
+	d1 := 2 * time.Hour
+	d2 := time.Hour + 30*time.Second
+
+	tests := []struct {
+		name    string
+		v       jwt.Verifier[*testClaims]
+		wantErr error
+	}{
+		{
+			name: "valid",
+			v: jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithIssuers("good-iss"),
+				jwt.WithAudiences("good-aud"),
+				jwt.WithClock(func() time.Time { return now }),
+			),
+			wantErr: nil,
+		},
+		{
+			name: "bad issuer",
+			v: jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithIssuers("bad-iss"),
+				jwt.WithClock(func() time.Time { return now }),
+			),
+			wantErr: jwt.ErrInvalidIssuer,
+		},
+		{
+			name: "bad audience",
+			v: jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithAudiences("bad-aud"),
+				jwt.WithClock(func() time.Time { return now }),
+			),
+			wantErr: jwt.ErrInvalidAudience,
+		},
+		{
+			name: "expired",
+			v: jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithClock(func() time.Time { return now.Add(d1) }),
+			),
+			wantErr: jwt.ErrTokenExpired,
+		},
+		{
+			name: "leeway saves",
+			v: jwt.NewVerifier[*testClaims](
+				set,
+				jwt.WithClock(func() time.Time { return now.Add(d2) }),
+				jwt.WithLeeway(time.Minute),
+			),
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.v.Verify(token)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("should not have returned an error: %v", err)
+				}
+			} else {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("got error %v; want %v", err, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestVerifier_TimeConstraints(t *testing.T) {
+	t.Parallel()
+	k := mockKeyPair(t)
+	set := jwk.Singleton(k)
+	now := time.Now()
+
+	t.Run("token not yet active", func(t *testing.T) {
+		t.Parallel()
+		c := &testClaims{Nbf: now.Add(time.Hour)}
+		raw, _ := jwt.Sign(t.Context(), k, c)
+
+		v := jwt.NewVerifier[*testClaims](
+			set,
+			jwt.WithClock(func() time.Time { return now }),
+		)
+
+		wantErr := jwt.ErrTokenNotYetActive
+		if _, err := v.Verify(raw); !errors.Is(err, wantErr) {
+			t.Errorf("got error %v; want %v", err, wantErr)
+		}
+	})
+
+	t.Run("token too old", func(t *testing.T) {
+		t.Parallel()
+		c := &testClaims{Iat: now.Add(-2 * time.Hour)}
+		raw, _ := jwt.Sign(t.Context(), k, c)
+
+		v := jwt.NewVerifier[*testClaims](
+			set,
+			jwt.WithMaxAge(time.Hour),
+			jwt.WithClock(func() time.Time { return now }),
+		)
+
+		wantErr := jwt.ErrTokenTooOld
+		if _, err := v.Verify(raw); !errors.Is(err, wantErr) {
+			t.Errorf("got error %v; want %v", err, wantErr)
+		}
+	})
+}
+
+func TestOmitEmpty(t *testing.T) {
+	t.Parallel()
+	k := mockKeyPair(t)
+	raw, err := jwt.Sign(t.Context(), k, &jwt.Reserved{})
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+	tok, _ := jwt.Parse[*jwt.Reserved](raw)
+	b, _ := json.Marshal(tok.Claims())
+	got := string(b)
+
+	keys := []string{"jti", "sub", "iss", "aud", "iat", "nbf", "exp"}
+	for _, key := range keys {
+		if strings.Contains(got, key) {
+			t.Errorf("should have omitted key %q: %s", key, got)
+		}
+	}
+	if got != "{}" {
+		t.Errorf("json output: got %q; want %q", got, "{}")
+	}
+}
+
+func TestDynamicClaims(t *testing.T) {
+	t.Parallel()
+	k := mockKeyPair(t)
+	set := jwk.Singleton(k)
+
+	input := map[string]any{
+		"sub":    uuid.NewV7().String(),
+		"str":    "nexus",
+		"num":    42,
+		"flag":   true,
+		"nested": map[string]string{"foo": "bar"},
+	}
+
+	raw, err := jwt.Sign(t.Context(), k, input)
+	if err != nil {
+		t.Fatalf("signing: should not have returned an error: %v", err)
+	}
+
+	claims, err := jwt.Verify[*jwt.DynamicClaims](set, raw)
+	if err != nil {
+		t.Fatalf("verification: should not have returned an error: %v", err)
+	}
+
+	t.Run("valid string", func(t *testing.T) {
+		t.Parallel()
+		v, ok := (claims).Get[string]("str")
+		if !ok || v != "nexus" {
+			t.Errorf("got %v, %v; want \"nexus\", true", v, ok)
+		}
+	})
+
+	t.Run("valid int", func(t *testing.T) {
+		t.Parallel()
+		v, ok := (claims).Get[int]("num")
+		if !ok || v != 42 {
+			t.Errorf("got %v, %v; want 42, true", v, ok)
+		}
+	})
+
+	t.Run("valid bool", func(t *testing.T) {
+		t.Parallel()
+		v, ok := (claims).Get[bool]("flag")
+		if !ok || v != true {
+			t.Errorf("got %v, %v; want true, true", v, ok)
+		}
+	})
+
+	t.Run("valid struct", func(t *testing.T) {
+		t.Parallel()
+		type nested struct {
+			Foo string `json:"foo"`
+		}
+		v, ok := (claims).Get[nested]("nested")
+		if !ok || v.Foo != "bar" {
+			t.Errorf("got %+v, %v; want Foo: \"bar\", true", v, ok)
+		}
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		t.Parallel()
+		if _, ok := (claims).Get[string]("missing"); ok {
+			t.Error("should not have found a value for a missing key")
+		}
+	})
+
+	t.Run("type mismatch", func(t *testing.T) {
+		t.Parallel()
+		if _, ok := (claims).Get[string]("num"); ok {
+			t.Error("should not have found a value on type mismatch")
+		}
+	})
+}
+
+func TestParse_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		wantErr string
+	}{
+		{"not enough segments", "a.b", "expected three dot-separated segments"},
+		{"bad header base64", "!!!.b.c", "failed to decode header"},
+		{"bad header json", "dGVzdA.b.c", "failed to unmarshal header"},
+		{
+			"bad typ",
+			"eyJ0eXAiOiJmb28ifQ.e30.c",
+			"unexpected token type \"foo\"",
+		},
+		{
+			"bad claims base64",
+			"eyJ0eXAiOiJKV1QifQ.!!!.c",
+			"failed to decode claims",
+		},
+		{
+			"bad claims json",
+			"eyJ0eXAiOiJKV1QifQ.dGVzdA.c",
+			"failed to unmarshal claims",
+		},
+		{
+			"bad sig base64",
+			"eyJ0eXAiOiJKV1QifQ.e30.!!!",
+			"failed to decode signature",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := jwt.Parse[*testClaims]([]byte(tt.in))
+			if err == nil {
+				t.Fatal("should have returned an error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("got error %q; want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestVerify_Errors(t *testing.T) {
+	t.Parallel()
+	k1 := mockKeyPair(t)
+	k2 := mockKeyPair(t)
+
+	raw, _ := jwt.Sign(t.Context(), k1, &testClaims{Role: "user"})
+
+	t.Run("key not found", func(t *testing.T) {
+		t.Parallel()
+		set := jwk.Singleton(k2)
+		if _, err := jwt.Verify[*testClaims](set, raw); !errors.Is(
+			err, jwt.ErrKeyNotFound,
+		) {
+			t.Errorf("got error %v; want %v", err, jwt.ErrKeyNotFound)
+		}
+	})
+
+	t.Run("invalid signature", func(t *testing.T) {
+		t.Parallel()
+		tampered := append([]byte{}, raw...)
+		dot := bytes.LastIndexByte(tampered, '.')
+		if dot == -1 || dot+1 >= len(tampered) {
+			t.Fatal("invalid token format")
+		}
+		idx := dot + 1
+		if tampered[idx] == 'A' {
+			tampered[idx] = 'B'
+		} else {
+			tampered[idx] = 'A'
+		}
+
+		set := jwk.Singleton(k1)
+		wantErr := jwt.ErrInvalidSignature
+
+		if _, err := jwt.Verify[*testClaims](set, tampered); !errors.Is(
+			err, wantErr,
+		) {
+			t.Errorf("got error %v; want %v", err, wantErr)
+		}
+	})
+}
+
+func TestAudience_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		json    string
+		want    []string
+		wantErr bool
+	}{
+		{
+			name: "single string",
+			json: `{"aud":"api"}`,
+			want: []string{"api"},
+		},
+		{
+			name: "string array",
+			json: `{"aud":["api","web"]}`,
+			want: []string{"api", "web"},
+		},
+		{
+			name:    "wrong type int",
+			json:    `{"aud":123}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var c struct{ jwt.Reserved }
+			err := json.Unmarshal([]byte(tt.json), &c)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("should have returned an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+			got := c.Audience()
+			if act, exp := len(got), len(tt.want); act != exp {
+				t.Fatalf("got length %d; want %d", act, exp)
+			}
+			for i := range got {
+				if act, exp := got[i], tt.want[i]; act != exp {
+					t.Errorf("at index %d: got %q; want %q", i, act, exp)
+				}
+			}
+		})
+	}
+}
+
+func TestParse_ValidTypes(t *testing.T) {
+	t.Parallel()
+
+	validTypes := []string{
+		"jwt",
+		"JWT",
+		"application/jwt",
+		"at+jwt",
+		"application/at+jwt",
+	}
+
+	for _, typ := range validTypes {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			// Header JSON: {"typ":"<typ>"}
+			headerJSON, err := json.Marshal(map[string]string{"typ": typ})
+			if err != nil {
+				t.Fatalf(
+					"header marshalling: should not have returned an error: %v",
+					err,
+				)
+			}
+			hEncoded := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+			// Build token: <header>.<payload>.<signature>
+			tokenStr := hEncoded + ".e30.c2lnbmF0dXJl" // e30 is Base64Url for {}
+			_, err = jwt.Parse[*testClaims]([]byte(tokenStr))
+			if err != nil {
+				t.Fatalf("should not have returned an error: %v", err)
+			}
+		})
+	}
+}
