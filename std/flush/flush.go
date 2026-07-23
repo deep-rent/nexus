@@ -95,6 +95,17 @@ func (w *Writer) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
+// WriteString implements [io.StringWriter]. It forwards strings to the
+// underlying writer.
+func (w *Writer) WriteString(s string) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return io.WriteString(w.dst, s)
+	}
+	return w.buf.WriteString(s)
+}
+
 // Flush forwards all buffered data to the destination.
 func (w *Writer) Flush() error {
 	w.mu.Lock()
@@ -120,3 +131,8 @@ func (w *Writer) Close() (err error) {
 	})
 	return err
 }
+
+var (
+	_ io.Writer       = (*Writer)(nil)
+	_ io.StringWriter = (*Writer)(nil)
+)

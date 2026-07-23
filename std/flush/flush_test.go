@@ -17,6 +17,7 @@ package flush_test
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -242,5 +243,43 @@ func TestWriter_Concurrent(t *testing.T) {
 	}
 	if got, want := strings.Count(out, "line\n"), 800; got != want {
 		t.Errorf("got %d lines; want %d", got, want)
+	}
+}
+
+func TestWriter_WriteString(t *testing.T) {
+	t.Parallel()
+
+	dst := new(fakeWriter)
+	w := flush.New(dst, flush.WithInterval(0))
+
+	if n, err := w.WriteString("hello "); err != nil || n != 6 {
+		t.Fatalf("WriteString failed: n=%d, err=%v", n, err)
+	}
+	if n, err := io.WriteString(w, "world\n"); err != nil || n != 6 {
+		t.Fatalf("io.WriteString failed: n=%d, err=%v", n, err)
+	}
+
+	if got := dst.Writes(); got != 0 {
+		t.Fatalf("got %d premature writes: %q", got, dst.String())
+	}
+
+	if err := w.Flush(); err != nil {
+		t.Fatalf("flush failed: %v", err)
+	}
+
+	if got, want := dst.String(), "hello world\n"; got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	// Invocation after close must bypass the buffer.
+	if n, err := w.WriteString("after close\n"); err != nil || n != 12 {
+		t.Fatalf("WriteString after close failed: n=%d, err=%v", n, err)
+	}
+	if got, want := dst.String(), "hello world\nafter close\n"; got != want {
+		t.Errorf("got %q; want %q", got, want)
 	}
 }
