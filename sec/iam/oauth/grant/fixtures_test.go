@@ -26,6 +26,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -148,7 +149,7 @@ func newProposal(
 		data,
 		nil,
 		discardLogger(),
-		func() time.Time { return now },
+		clock.Frozen(now),
 	)
 }
 

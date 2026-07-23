@@ -23,6 +23,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/trust"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // fakeStore is an in-memory [trust.Store]: an [artifact.Map] extended by the
@@ -68,7 +69,7 @@ func newEnv(t *testing.T, opts ...trust.Option) *env {
 	e.manager = trust.New(
 		e.store,
 		append([]trust.Option{
-			trust.WithClock(func() time.Time { return e.now }),
+			trust.WithClock(clock.Clock(func() time.Time { return e.now })),
 		}, opts...)...,
 	)
 	return e

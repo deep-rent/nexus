@@ -32,6 +32,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Record is the persisted state of a login session. The key is stored only
@@ -59,7 +60,7 @@ type Manager struct {
 	store  Store
 	hasher *digest.Hasher
 	keys   *nonce.Generator
-	now    func() time.Time
+	now    clock.Clock
 }
 
 // New creates a [Manager] backed by the given [Store]. It panics if store is
@@ -72,7 +73,7 @@ func New(store Store, opts ...Option) *Manager {
 		store:  store,
 		hasher: digest.DefaultHasher,
 		keys:   nonce.DefaultGenerator,
-		now:    time.Now,
+		now:    clock.System,
 	}
 	for _, opt := range opts {
 		opt(m)

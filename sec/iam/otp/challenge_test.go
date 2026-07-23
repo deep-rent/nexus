@@ -24,6 +24,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // memStore is an in-memory [otp.Store] for tests: an [artifact.Map] with
@@ -79,9 +80,9 @@ func (c *capture) method(id string) otp.Method {
 
 const purpose = "test"
 
-// fixedClock returns a clock function anchored at t.
-func fixedClock(t time.Time) func() time.Time {
-	return func() time.Time { return t }
+// fixedClock returns a clock anchored at t.
+func fixedClock(t time.Time) clock.Clock {
+	return clock.Frozen(t)
 }
 
 func TestChallenger_New_PanicsOnNilStore(t *testing.T) {
@@ -235,10 +236,10 @@ func TestChallenger_Verify_Expired(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	store := newMemStore()
 	cap := &capture{}
-	clock := base
+	now := base
 	c := otp.New(store,
 		otp.WithLifetime(time.Minute),
-		otp.WithClock(func() time.Time { return clock }),
+		otp.WithClock(clock.Clock(func() time.Time { return now })),
 	)
 
 	handle, _, err := c.Begin(t.Context(), purpose, "u", cap.method("sms"))
@@ -246,7 +247,7 @@ func TestChallenger_Verify_Expired(t *testing.T) {
 		t.Fatalf("Begin: %v", err)
 	}
 
-	clock = base.Add(2 * time.Minute) // past expiry
+	now = base.Add(2 * time.Minute) // past expiry
 
 	out, err := c.Verify(t.Context(), purpose, handle, cap.code)
 	if err != nil {

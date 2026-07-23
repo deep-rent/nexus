@@ -18,12 +18,12 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"time"
 
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -344,7 +344,7 @@ type Proposal struct {
 	Logger *log.Logger
 	// Now returns the current time. Grants must use it instead of [time.Now]
 	// so that temporal checks stay consistent with the server clock.
-	Now func() time.Time
+	Now clock.Clock
 	// hasher fingerprints bearer artifacts; see [Proposal.Digest].
 	hasher *digest.Hasher
 	// data contains the raw form values.
@@ -357,14 +357,14 @@ type Proposal struct {
 //
 // The hasher fingerprints bearer artifacts via [Proposal.Digest]; nil falls
 // back to [digest.DefaultHasher]. A nil logger falls back to [log.Discard],
-// and a nil now to [time.Now].
+// and a nil now to [clock.System].
 func NewProposal(
 	client Client,
 	tokens TokenStores,
 	form url.Values,
 	hasher *digest.Hasher,
 	logger *log.Logger,
-	now func() time.Time,
+	now clock.Clock,
 ) *Proposal {
 	if hasher == nil {
 		hasher = digest.DefaultHasher
@@ -373,7 +373,7 @@ func NewProposal(
 		logger = log.Discard()
 	}
 	if now == nil {
-		now = time.Now
+		now = clock.System
 	}
 	return &Proposal{
 		Client: client,

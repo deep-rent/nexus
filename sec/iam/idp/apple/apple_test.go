@@ -33,6 +33,7 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // generatePEM returns a fresh P-256 private key encoded as PKCS#8 PEM, in
@@ -177,7 +178,7 @@ func TestClientSecret(t *testing.T) {
 	p := New(cfg)
 
 	now := time.Unix(1_752_000_000, 0)
-	p.now = func() time.Time { return now }
+	p.now = clock.Frozen(now)
 
 	secret, err := p.clientSecret(t.Context())
 	if err != nil {

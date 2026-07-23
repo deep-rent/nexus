@@ -22,6 +22,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -72,7 +73,7 @@ type Store = artifact.Store[string, Transaction]
 type Coordinator struct {
 	store    Store
 	lifetime time.Duration
-	now      func() time.Time
+	now      clock.Clock
 	hasher   *digest.Hasher
 	handles  *nonce.Generator
 	logger   *log.Logger
@@ -87,7 +88,7 @@ func New(store Store, opts ...Option) *Coordinator {
 	c := &Coordinator{
 		store:    store,
 		lifetime: DefaultLifetime,
-		now:      time.Now,
+		now:      clock.System,
 		hasher:   digest.DefaultHasher,
 		handles:  nonce.DefaultGenerator,
 		logger:   log.Discard(),

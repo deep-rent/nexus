@@ -37,6 +37,7 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -171,7 +172,7 @@ type Server struct {
 	hasher               *digest.Hasher
 	limit                limit.Limiter
 	logger               *log.Logger
-	now                  func() time.Time
+	now                  clock.Clock
 }
 
 // NewServer assembles a [Server] from the given configuration and options.
@@ -247,7 +248,7 @@ func NewServer(cfg ServerConfig, opts ...ServerOption) *Server {
 		),
 		hasher: digest.DefaultHasher,
 		logger: logger,
-		now:    time.Now,
+		now:    clock.System,
 	}
 
 	for _, opt := range opts {

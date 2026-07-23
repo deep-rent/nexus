@@ -30,6 +30,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Record is the persisted state of a device trust. The token is stored only
@@ -78,7 +79,7 @@ type Manager struct {
 	lifetime time.Duration
 	hasher   *digest.Hasher
 	handles  *nonce.Generator
-	now      func() time.Time
+	now      clock.Clock
 }
 
 // New creates a [Manager] backed by the given [Store]. It panics if store is
@@ -92,7 +93,7 @@ func New(store Store, opts ...Option) *Manager {
 		lifetime: DefaultLifetime,
 		hasher:   digest.DefaultHasher,
 		handles:  nonce.DefaultGenerator,
-		now:      time.Now,
+		now:      clock.System,
 	}
 	for _, opt := range opts {
 		opt(m)

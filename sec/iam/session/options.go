@@ -15,10 +15,9 @@
 package session
 
 import (
-	"time"
-
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Option configures a [Manager].
@@ -46,8 +45,8 @@ func WithGenerator(g *nonce.Generator) Option {
 }
 
 // WithClock overrides the time source, primarily for testing. A nil function
-// is ignored. Defaults to [time.Now].
-func WithClock(now func() time.Time) Option {
+// is ignored. Defaults to [clock.System].
+func WithClock(now clock.Clock) Option {
 	return func(m *Manager) {
 		if now != nil {
 			m.now = now

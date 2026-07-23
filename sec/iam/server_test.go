@@ -39,6 +39,7 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/std/rotor"
 )
 
@@ -132,7 +133,7 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 		WithGrant(grant.ClientCredentials()),
 		WithGrant(grant.RefreshToken()),
 		WithGrant(grant.DeviceCode()),
-		WithClock(func() time.Time { return env.now }),
+		WithClock(clock.Clock(func() time.Time { return env.now })),
 	}, opts...)
 
 	s := New(cfg, opts...)
@@ -211,7 +212,7 @@ func (env *testEnv) verifyToken(t *testing.T, token string) *auth.Claims {
 	verifier := jwt.NewVerifier[*auth.Claims](
 		env.vault.Keys(),
 		jwt.WithIssuers(testIssuer),
-		jwt.WithClock(func() time.Time { return env.now }),
+		jwt.WithClock(clock.Clock(func() time.Time { return env.now })),
 	)
 	claims, err := verifier.Verify([]byte(token))
 	if err != nil {
@@ -1358,7 +1359,7 @@ func TestThrottleIntegration(t *testing.T) {
 			withThrottle(throttle.New(throttle.Config{
 				Rate:  rate.Limit(1),
 				Burst: 10,
-				Clock: func() time.Time { return *now },
+				Clock: clock.Clock(func() time.Time { return *now }),
 			})),
 			withThrottlePenalty(5),
 		)

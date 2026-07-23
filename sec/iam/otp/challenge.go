@@ -21,6 +21,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -102,7 +103,7 @@ type Challenger struct {
 	lifetime    time.Duration
 	maxAttempts int
 	maxResends  int
-	now         func() time.Time
+	now         clock.Clock
 	hasher      *digest.Hasher
 	handles     *nonce.Generator
 	codes       *nonce.Sampler
@@ -120,7 +121,7 @@ func New(store Store, opts ...Option) *Challenger {
 		lifetime:    DefaultLifetime,
 		maxAttempts: DefaultMaxAttempts,
 		maxResends:  DefaultMaxResends,
-		now:         time.Now,
+		now:         clock.System,
 		hasher:      digest.DefaultHasher,
 		handles:     nonce.DefaultGenerator,
 		codes:       defaultCodes,

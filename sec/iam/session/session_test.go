@@ -22,6 +22,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/session"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // env bundles a manager with its store and a controllable clock.
@@ -42,7 +43,7 @@ func newEnv(t *testing.T, opts ...session.Option) *env {
 	e.manager = session.New(
 		e.store,
 		append([]session.Option{
-			session.WithClock(func() time.Time { return e.now }),
+			session.WithClock(clock.Clock(func() time.Time { return e.now })),
 		}, opts...)...,
 	)
 	return e

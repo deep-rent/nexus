@@ -32,6 +32,7 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/sign"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Apple endpoints and token Issuer, as documented at
@@ -60,7 +61,7 @@ type Provider struct {
 	verifier    jwt.Verifier[*oidc.IDToken]
 	auth        string
 	token       string
-	now         func() time.Time
+	now         clock.Clock
 }
 
 // New assembles an Apple [Provider] from the given configuration.
@@ -117,7 +118,7 @@ func New(cfg Config) *Provider {
 		),
 		auth:  AuthEndpoint,
 		token: TokenEndpoint,
-		now:   time.Now,
+		now:   clock.System,
 	}
 }
 

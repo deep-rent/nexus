@@ -21,6 +21,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -135,7 +136,7 @@ func WithHasher(h *digest.Hasher) ServerOption {
 
 // WithClock overrides the server's time source. This is primarily useful for
 // deterministic testing.
-func WithClock(now func() time.Time) ServerOption {
+func WithClock(now clock.Clock) ServerOption {
 	return func(s *Server) {
 		if now != nil {
 			s.now = now

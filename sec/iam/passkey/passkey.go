@@ -49,6 +49,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Credential is a passkey credential record as verified and consumed by the
@@ -202,7 +203,7 @@ type RelyingParty struct {
 	lifetime    time.Duration
 	hasher      *digest.Hasher
 	handles     *nonce.Generator
-	now         func() time.Time
+	now         clock.Clock
 }
 
 // New creates a [RelyingParty] from the given configuration.
@@ -248,7 +249,7 @@ func New(
 		lifetime:    cmp.Or(cfg.Lifetime, DefaultLifetime),
 		hasher:      digest.DefaultHasher,
 		handles:     nonce.DefaultGenerator,
-		now:         time.Now,
+		now:         clock.System,
 	}
 	for _, opt := range opts {
 		opt(p)

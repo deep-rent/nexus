@@ -19,6 +19,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -41,8 +42,8 @@ func WithLifetime(d time.Duration) Option {
 }
 
 // WithClock overrides the time source, primarily for testing. A nil function
-// is ignored. Defaults to [time.Now].
-func WithClock(now func() time.Time) Option {
+// is ignored. Defaults to [clock.System].
+func WithClock(now clock.Clock) Option {
 	return func(c *Coordinator) {
 		if now != nil {
 			c.now = now

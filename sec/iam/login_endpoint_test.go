@@ -28,6 +28,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/flow"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/iam/trust"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // flowEnv wraps a testEnv whose planner requires a single OTP step (unless the
@@ -341,7 +342,7 @@ func TestFlowThrottle_LocksOutPerHandle(t *testing.T) {
 		withThrottle(throttle.New(throttle.Config{
 			Rate:  rate.Limit(1),
 			Burst: 10,
-			Clock: func() time.Time { return now },
+			Clock: clock.Frozen(now),
 		})),
 		withThrottlePenalty(5),
 	)

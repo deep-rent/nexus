@@ -19,6 +19,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // DefaultLifetime is the validity period of a ceremony applied by [New] when
@@ -71,8 +72,8 @@ func WithHandleGenerator(g *nonce.Generator) Option {
 }
 
 // WithClock overrides the time source, primarily for testing. A nil function
-// is ignored. Defaults to [time.Now].
-func WithClock(now func() time.Time) Option {
+// is ignored. Defaults to [clock.System].
+func WithClock(now clock.Clock) Option {
 	return func(p *RelyingParty) {
 		if now != nil {
 			p.now = now

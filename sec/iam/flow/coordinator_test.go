@@ -23,6 +23,7 @@ import (
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/flow"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // memStore is an in-memory [flow.Store] for tests.
@@ -278,18 +279,18 @@ func TestContinue_UnknownAndExpired(t *testing.T) {
 	t.Run("expired transaction", func(t *testing.T) {
 		t.Parallel()
 		base := time.Unix(1_700_000_000, 0)
-		clock := base
+		now := base
 		step := &fakeStep{id: "otp", verdict: flow.VerdictOK}
 		c := flow.New(newMemStore(),
 			flow.WithLifetime(time.Minute),
-			flow.WithClock(func() time.Time { return clock }),
+			flow.WithClock(clock.Clock(func() time.Time { return now })),
 		)
 
 		handle, _, err := c.Begin(t.Context(), "u", false, []flow.Step{step})
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
-		clock = base.Add(2 * time.Minute)
+		now = base.Add(2 * time.Minute)
 
 		res, err := c.Continue(t.Context(), handle, planOf(step), code)
 		if err != nil {

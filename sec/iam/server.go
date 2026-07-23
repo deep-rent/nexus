@@ -36,6 +36,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -74,7 +75,7 @@ type Server struct {
 	throttlePenalty           int
 	limit                     limit.Limiter
 	logger                    *log.Logger
-	now                       func() time.Time
+	now                       clock.Clock
 }
 
 // New assembles a [Server] from the given configuration and options.
@@ -143,7 +144,7 @@ func New(cfg Config, opts ...Option) *Server {
 		),
 		hasher: digest.DefaultHasher,
 		logger: logger,
-		now:    time.Now,
+		now:    clock.System,
 	}
 
 	for _, opt := range opts {

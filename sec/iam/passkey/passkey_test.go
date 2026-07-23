@@ -26,6 +26,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/passkey"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 const (
@@ -165,7 +166,7 @@ func newEnv(t *testing.T) *env {
 		e.store,
 		e.creds,
 		e.directory,
-		passkey.WithClock(func() time.Time { return e.now }),
+		passkey.WithClock(clock.Clock(func() time.Time { return e.now })),
 	)
 	return e
 }
