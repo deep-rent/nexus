@@ -29,7 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/dat/diff"
@@ -259,7 +258,7 @@ func (s *Store) Claim(
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim mutations: %w", err)
 	}
-	defer close(rows, s.logger)
+	defer close(ctx, rows, s.logger)
 
 	var claimed []uuid.UUID
 	for rows.Next() {
@@ -294,7 +293,7 @@ func (s *Store) Grants(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read grants: %w", err)
 	}
-	defer close(rows, s.logger)
+	defer close(ctx, rows, s.logger)
 
 	for rows.Next() {
 		var owner, team uuid.UUID
@@ -503,7 +502,7 @@ func (s *Store) grantOwners(
 	if err != nil {
 		return nil, fmt.Errorf("failed to list team grants: %w", err)
 	}
-	defer close(rows, s.logger)
+	defer close(ctx, rows, s.logger)
 
 	var owners []uuid.UUID
 	for rows.Next() {
@@ -773,7 +772,7 @@ func (h *shares) Upsert(
 	if err != nil {
 		return fmt.Errorf("failed to upsert shares: %w", err)
 	}
-	landed, err := stamps(rows, s.logger)
+	landed, err := stamps(ctx, rows, s.logger)
 	if err != nil {
 		return err
 	}
@@ -832,7 +831,7 @@ func (h *shares) snapshot(
 	if err != nil {
 		return nil, fmt.Errorf("failed to snapshot shares: %w", err)
 	}
-	states, err := scanStates(rows, s.logger)
+	states, err := scanStates(ctx, rows, s.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -978,7 +977,7 @@ func (h *shares) Fetch(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch shares: %w", err)
 	}
-	return collect(rows, s.logger)
+	return collect(ctx, rows, s.logger)
 }
 
 // Read implements the [diff.Reader] interface. A grant is visible to its
@@ -1095,8 +1094,12 @@ type stamp struct {
 }
 
 // stamps consumes rows of the shape (id, user_id, team_id, hlc).
-func stamps(rows *sql.Rows, logger *log.Logger) ([]stamp, error) {
-	defer close(rows, logger)
+func stamps(
+	ctx context.Context,
+	rows *sql.Rows,
+	logger *log.Logger,
+) ([]stamp, error) {
+	defer close(ctx, rows, logger)
 
 	var out []stamp
 	for rows.Next() {
@@ -1114,8 +1117,12 @@ func stamps(rows *sql.Rows, logger *log.Logger) ([]stamp, error) {
 
 // collect scans feed rows of the shape (id, seq, hlc, deleted, data) into
 // versions, preserving row order.
-func collect(rows *sql.Rows, logger *log.Logger) ([]diff.Version, error) {
-	defer close(rows, logger)
+func collect(
+	ctx context.Context,
+	rows *sql.Rows,
+	logger *log.Logger,
+) ([]diff.Version, error) {
+	defer close(ctx, rows, logger)
 
 	var out []diff.Version
 	for rows.Next() {
@@ -1164,7 +1171,7 @@ func resolve(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve documents: %w", err)
 	}
-	defer close(rows, logger)
+	defer close(ctx, rows, logger)
 
 	for rows.Next() {
 		var id, user, team uuid.UUID
@@ -1181,13 +1188,9 @@ func resolve(
 
 // close closes a result set, logging failures instead of shadowing the
 // caller's error.
-func close(rows *sql.Rows, logger *log.Logger) {
+func close(ctx context.Context, rows *sql.Rows, logger *log.Logger) {
 	if err := rows.Close(); err != nil {
-		logger.Error(
-			context.Background(),
-			"Failed to close rows",
-			log.Error(err),
-		)
+		logger.Error(ctx, "Failed to close rows", log.Error(err))
 	}
 }
 

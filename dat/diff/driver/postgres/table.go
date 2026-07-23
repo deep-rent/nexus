@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/dat/diff"
@@ -367,7 +366,7 @@ func (t *Table) Upsert(
 	if err != nil {
 		return fmt.Errorf("failed to upsert documents: %w", err)
 	}
-	after, err := stamps(rows, t.store.logger)
+	after, err := stamps(ctx, rows, t.store.logger)
 	if err != nil {
 		return err
 	}
@@ -412,7 +411,7 @@ func (t *Table) snapshot(
 	if err != nil {
 		return nil, fmt.Errorf("failed to snapshot documents: %w", err)
 	}
-	states, err := scanStates(rows, t.store.logger)
+	states, err := scanStates(ctx, rows, t.store.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -431,8 +430,12 @@ type state struct {
 }
 
 // scanStates consumes rows of the shape (id, team_id).
-func scanStates(rows *sql.Rows, logger *log.Logger) ([]state, error) {
-	defer close(rows, logger)
+func scanStates(
+	ctx context.Context,
+	rows *sql.Rows,
+	logger *log.Logger,
+) ([]state, error) {
+	defer close(ctx, rows, logger)
 
 	var out []state
 	for rows.Next() {
@@ -519,7 +522,7 @@ func (t *Table) remove(
 	if err != nil {
 		return fmt.Errorf("failed to delete documents: %w", err)
 	}
-	victims, err := stamps(rows, t.store.logger)
+	victims, err := stamps(ctx, rows, t.store.logger)
 	if err != nil {
 		return err
 	}
@@ -640,7 +643,7 @@ func (t *Table) Fetch(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch documents: %w", err)
 	}
-	return collect(rows, t.store.logger)
+	return collect(ctx, rows, t.store.logger)
 }
 
 // Read implements the [diff.Reader] interface. It returns the live version
