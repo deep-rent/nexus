@@ -66,8 +66,8 @@ func TestNewValidation(t *testing.T) {
 		t.Parallel()
 
 		th := New(Config{})
-		if th.rate != DefaultRate {
-			t.Errorf("got rate %v; want %v", th.rate, DefaultRate)
+		if th.rate != DefaultLimit {
+			t.Errorf("got rate %v; want %v", th.rate, DefaultLimit)
 		}
 		if th.burst != DefaultBurst {
 			t.Errorf("got burst %d; want %d", th.burst, DefaultBurst)

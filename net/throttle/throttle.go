@@ -71,7 +71,7 @@ type Throttle struct {
 func New(cfg Config) *Throttle {
 	limit := cfg.Rate
 	if limit == 0 {
-		limit = DefaultRate
+		limit = DefaultLimit
 	}
 	burst := cfg.Burst
 	if burst == 0 {

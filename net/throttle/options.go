@@ -25,9 +25,9 @@ import (
 
 // Default values applied by [New] for the optional [Config] fields.
 const (
-	// DefaultRate is the sustained rate, in tokens per second, at which a
+	// DefaultLimit is the sustained rate, in tokens per second, at which a
 	// drained allowance recovers.
-	DefaultRate = rate.Limit(1)
+	DefaultLimit = rate.Limit(1)
 	// DefaultBurst is the number of tokens each key may hold.
 	DefaultBurst = 60
 )
