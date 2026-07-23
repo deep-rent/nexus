@@ -57,6 +57,15 @@ const (
 	DEL = 0x7F //      Delete
 )
 
+const (
+	// Uppers is the set of all uppercase ASCII letters.
+	Uppers = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	// Lowers is the set of all lowercase ASCII letters.
+	Lowers = "abcdefghijklmnopqrstuvwxyz"
+	// Digits is the set of all ASCII digits.
+	Digits = "0123456789"
+)
+
 // IsUpper reports whether the byte is an uppercase ASCII letter
 // ('A' through 'Z').
 func IsUpper(c byte) bool { return lookup[c]&upp != 0 }
