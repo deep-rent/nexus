@@ -132,7 +132,35 @@ func (w *Writer) Close() (err error) {
 	return err
 }
 
+// Size returns the capacity of the underlying buffer in bytes.
+func (w *Writer) Size() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Size()
+}
+
+// Buffered returns the number of bytes currently stored in the buffer.
+func (w *Writer) Buffered() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return 0
+	}
+	return w.buf.Buffered()
+}
+
+// Available returns how many bytes are unused in the buffer.
+func (w *Writer) Available() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return 0
+	}
+	return w.buf.Available()
+}
+
 var (
 	_ io.Writer       = (*Writer)(nil)
 	_ io.StringWriter = (*Writer)(nil)
 )
+

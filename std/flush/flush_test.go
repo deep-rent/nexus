@@ -57,7 +57,8 @@ func (f *fakeWriter) Writes() int {
 	return f.writes
 }
 
-// eventually polls fn until it reports true or the deadline expires.
+// eventually polls the specified function until it either reports true or the
+// deadline expires.
 func eventually(t *testing.T, fn func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -170,7 +171,12 @@ func TestWriter_Close(t *testing.T) {
 		t.Errorf("second close failed: %v", err)
 	}
 
-	// Writes after close must bypass the buffer entirely.
+	// Writes and flushes after close must be no-ops for the buffer and bypass
+	// to the destination.
+	if err := w.Flush(); err != nil {
+		t.Errorf("flush after close failed: %v", err)
+	}
+
 	if _, err := w.Write([]byte("late\n")); err != nil {
 		t.Fatalf("write after close failed: %v", err)
 	}
@@ -253,10 +259,10 @@ func TestWriter_WriteString(t *testing.T) {
 	w := flush.New(dst, flush.WithInterval(0))
 
 	if n, err := w.WriteString("hello "); err != nil || n != 6 {
-		t.Fatalf("WriteString failed: n=%d, err=%v", n, err)
+		t.Fatalf("writing failed (%d bytes): %v", n, err)
 	}
 	if n, err := io.WriteString(w, "world\n"); err != nil || n != 6 {
-		t.Fatalf("io.WriteString failed: n=%d, err=%v", n, err)
+		t.Fatalf("writing failed (%d bytes): %v", n, err)
 	}
 
 	if got := dst.Writes(); got != 0 {
@@ -277,9 +283,66 @@ func TestWriter_WriteString(t *testing.T) {
 
 	// Invocation after close must bypass the buffer.
 	if n, err := w.WriteString("after close\n"); err != nil || n != 12 {
-		t.Fatalf("WriteString after close failed: n=%d, err=%v", n, err)
+		t.Fatalf("writing after close failed (%d bytes): %v", n, err)
 	}
 	if got, want := dst.String(), "hello world\nafter close\n"; got != want {
 		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestWriter_Observability(t *testing.T) {
+	t.Parallel()
+
+	dst := new(fakeWriter)
+	bufSize := 128
+	w := flush.New(dst, flush.WithSize(bufSize), flush.WithInterval(0))
+
+	if got, want := w.Size(), bufSize; got != want {
+		t.Errorf("got size %d; want %d", got, want)
+	}
+	if got, want := w.Buffered(), 0; got != want {
+		t.Errorf("got buffered %d; want %d", got, want)
+	}
+	if got, want := w.Available(), bufSize; got != want {
+		t.Errorf("got available %d; want %d", got, want)
+	}
+
+	data := []byte("hello observability")
+	if _, err := w.Write(data); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	if got, want := w.Buffered(), len(data); got != want {
+		t.Errorf("%d bytes buffered after write; want %d", got, want)
+	}
+	if got, want := w.Available(), bufSize-len(data); got != want {
+		t.Errorf("%d bytes available after write; want %d", got, want)
+	}
+
+	if err := w.Flush(); err != nil {
+		t.Fatalf("flush failed: %v", err)
+	}
+
+	if got, want := w.Buffered(), 0; got != want {
+		t.Errorf("%d bytes buffered after flush; want %d", got, want)
+	}
+	if got, want := w.Available(), bufSize; got != want {
+		t.Errorf("%d bytes available after flush; want %d", got, want)
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	// After closing, the buffered and available byte count is zero, while the
+	// size retains capacity.
+	if got, want := w.Buffered(), 0; got != want {
+		t.Errorf("%d bytes buffered after close; want %d", got, want)
+	}
+	if got, want := w.Available(), 0; got != want {
+		t.Errorf("%d bytes available after close; want %d", got, want)
+	}
+	if got, want := w.Size(), bufSize; got != want {
+		t.Errorf("got size %d after close; want %d", got, want)
 	}
 }
