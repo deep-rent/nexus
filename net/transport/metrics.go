@@ -26,7 +26,6 @@ import (
 // transport; see [WithMetrics].
 const RequestDuration = "http_client_request_duration_seconds"
 
-
 // metricsTransport wraps an underlying [http.RoundTripper] with request
 // measurement.
 type metricsTransport struct {

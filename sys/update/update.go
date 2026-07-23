@@ -40,7 +40,6 @@ type Release struct {
 	Notes string `json:"body"`
 }
 
-
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {
 	// baseURL is the API endpoint for release lookups.

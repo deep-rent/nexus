@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/net/middleware/cors"
+	"github.com/deep-rent/nexus/std/ascii"
 )
 
 func TestNew_PanicsOnCredentialsWithoutOrigins(t *testing.T) {

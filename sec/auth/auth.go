@@ -26,8 +26,8 @@ import (
 	"uuid"
 
 	"github.com/deep-rent/nexus/net/header"
-	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sec/jose/jwt"
 )
 
 // Scheme defines the expected authentication scheme for the Authorization

@@ -22,10 +22,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/health"
 	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/sys/health"
 )
-
 
 // TCP returns a health check that attempts to establish a TCP connection
 // to the specified address.

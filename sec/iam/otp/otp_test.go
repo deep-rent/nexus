@@ -413,7 +413,11 @@ func TestViaPush(t *testing.T) {
 		t.Errorf("got body %q; want %q", msg.Body, want)
 	}
 	if msg.Target.Token != "device-token" {
-		t.Errorf("got target token %q; want %q", msg.Target.Token, "device-token")
+		t.Errorf(
+			"got target token %q; want %q",
+			msg.Target.Token,
+			"device-token",
+		)
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/net/router"
@@ -384,7 +385,11 @@ func (s *Server) completeLogin(
 		return err
 	}
 	if remember && s.flow != nil {
-		token, err := s.issueTrustedDevice(e.Context(), sub.ID(), e.R.UserAgent())
+		token, err := s.issueTrustedDevice(
+			e.Context(),
+			sub.ID(),
+			e.R.UserAgent(),
+		)
 		if err != nil {
 			s.logger.Error(e.Context(),
 				"Failed to issue device trust", log.Err(err),

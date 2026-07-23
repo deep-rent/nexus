@@ -18,6 +18,7 @@ import (
 	"math"
 	"time"
 	"unsafe"
+
 	"uuid"
 )
 
@@ -122,7 +123,7 @@ func (a Arg) Value() any {
 
 // String returns an [Arg] carrying a string value. The value is packed
 // as data pointer and length, so no allocation or copy takes place.
-func String(key string, val string) Arg {
+func String(key, val string) Arg {
 	return Arg{
 		Key:  key,
 		kind: KindString,

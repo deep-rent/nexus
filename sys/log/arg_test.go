@@ -18,6 +18,7 @@ import (
 	"errors"
 	"testing"
 	"time"
+
 	"uuid"
 
 	"github.com/deep-rent/nexus/sys/log"
@@ -156,8 +157,11 @@ func TestArg_Constructors(t *testing.T) {
 			wantVal: now,
 		},
 		{
-			name:    "uuid",
-			in:      log.UUID("k", uuid.MustParse("0195c2a7-9e4b-7c58-8000-0123456789ab")),
+			name: "uuid",
+			in: log.UUID(
+				"k",
+				uuid.MustParse("0195c2a7-9e4b-7c58-8000-0123456789ab"),
+			),
 			wantKey: "k",
 			want:    log.KindString,
 			wantVal: "0195c2a7-9e4b-7c58-8000-0123456789ab",

@@ -23,10 +23,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/deep-rent/nexus/sec/jose/jwk"
-	"github.com/deep-rent/nexus/std/rotor"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/sign"
+	"github.com/deep-rent/nexus/std/rotor"
 )
 
 // Vault represents a secure retrieval mechanism for cryptographic signing keys.

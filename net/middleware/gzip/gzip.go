@@ -28,7 +28,6 @@ import (
 	"github.com/deep-rent/nexus/net/middleware"
 )
 
-
 // interceptor wraps an [http.ResponseWriter] to compress the response body.
 //
 // It transparently compresses the response body with gzip. It also implements
@@ -224,4 +223,3 @@ func New(opts ...Option) middleware.Pipe {
 		})
 	}
 }
-

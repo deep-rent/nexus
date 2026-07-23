@@ -67,7 +67,11 @@ func TestCollector_MergesTargets(t *testing.T) {
 			t.Errorf("target %s: got down; want up", target.Name)
 		}
 		if target.Error != "" {
-			t.Errorf("target %s: unexpected error %q", target.Name, target.Error)
+			t.Errorf(
+				"target %s: unexpected error %q",
+				target.Name,
+				target.Error,
+			)
 		}
 	}
 

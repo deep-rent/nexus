@@ -26,7 +26,8 @@
 //
 // # Usage
 //
-// Fingerprint a value with the default SHA-256 hasher (43 base64url characters):
+// Fingerprint a value with the default SHA-256 hasher (43 base64url
+// characters):
 //
 //	fp := digest.DefaultHasher.String("raw-bearer-token")
 //

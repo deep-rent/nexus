@@ -16,12 +16,13 @@ package iam
 
 import (
 	"context"
-	"github.com/deep-rent/nexus/sec/iam/idp"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/deep-rent/nexus/sec/iam/idp"
 )
 
 // fakeIDP is a scriptable [idp.Provider].
@@ -221,7 +222,11 @@ func TestExternalFlow(t *testing.T) {
 		if session == nil || session.Value == "" {
 			t.Fatal("missing session cookie")
 		}
-		if got, _ := sessionOwner(t, env.stores, session.Value); got != env.subject.id {
+		if got, _ := sessionOwner(
+			t,
+			env.stores,
+			session.Value,
+		); got != env.subject.id {
 			t.Errorf("session maps to %v; want %v", got, env.subject.id)
 		}
 	})

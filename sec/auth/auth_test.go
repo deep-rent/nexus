@@ -25,9 +25,9 @@ import (
 
 	"uuid"
 
+	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
-	"github.com/deep-rent/nexus/net/router"
 )
 
 type mockVerifier[T jwt.Claims] struct {

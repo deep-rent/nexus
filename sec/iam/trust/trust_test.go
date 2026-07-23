@@ -253,10 +253,24 @@ func TestManager_StorageErrors(t *testing.T) {
 
 	e.store.Err = boom
 
-	if _, err := e.manager.Issue(t.Context(), "alice", ""); !errors.Is(err, boom) {
+	if _, err := e.manager.Issue(
+		t.Context(),
+		"alice",
+		"",
+	); !errors.Is(
+		err,
+		boom,
+	) {
 		t.Errorf("Issue: got %v; want the storage error", err)
 	}
-	if _, err := e.manager.Check(t.Context(), token, "alice"); !errors.Is(err, boom) {
+	if _, err := e.manager.Check(
+		t.Context(),
+		token,
+		"alice",
+	); !errors.Is(
+		err,
+		boom,
+	) {
 		t.Errorf("Check: got %v; want the storage error", err)
 	}
 	if err := e.manager.Revoke(t.Context(), token); !errors.Is(err, boom) {

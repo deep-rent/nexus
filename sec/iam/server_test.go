@@ -25,9 +25,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"uuid"
 
 	"golang.org/x/time/rate"
+	"uuid"
 
 	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/net/throttle"
@@ -500,7 +500,11 @@ func TestTokenErrors(t *testing.T) {
 		}
 		res := decodeJSON[oauth.Error](t, w)
 		if res.Code != oauth.ErrorCodeInvalidClient {
-			t.Errorf("got error %q; want %q", res.Code, oauth.ErrorCodeInvalidClient)
+			t.Errorf(
+				"got error %q; want %q",
+				res.Code,
+				oauth.ErrorCodeInvalidClient,
+			)
 		}
 	})
 
@@ -526,7 +530,11 @@ func TestTokenErrors(t *testing.T) {
 		}
 		res := decodeJSON[oauth.Error](t, w)
 		if res.Code != oauth.ErrorCodeInvalidRequest {
-			t.Errorf("got error %q; want %q", res.Code, oauth.ErrorCodeInvalidRequest)
+			t.Errorf(
+				"got error %q; want %q",
+				res.Code,
+				oauth.ErrorCodeInvalidRequest,
+			)
 		}
 	})
 
@@ -581,7 +589,12 @@ func TestTokenErrors(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
 
-		w := env.postForm(oauth.PathToken, form("password"), env.client, "s3cret")
+		w := env.postForm(
+			oauth.PathToken,
+			form("password"),
+			env.client,
+			"s3cret",
+		)
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 		}
@@ -721,7 +734,10 @@ func TestAuthCodeFlow(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 	}
-	if res := decodeJSON[oauth.Error](t, w); res.Code != oauth.ErrorCodeInvalidGrant {
+	if res := decodeJSON[oauth.Error](
+		t,
+		w,
+	); res.Code != oauth.ErrorCodeInvalidGrant {
 		t.Errorf("got error %q; want %q", res.Code, oauth.ErrorCodeInvalidGrant)
 	}
 }
@@ -773,8 +789,15 @@ func TestAuthorizeErrors(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 		}
-		if res := decodeJSON[oauth.Error](t, w); res.Code != oauth.ErrorCodeInvalidRequest {
-			t.Errorf("got error %q; want %q", res.Code, oauth.ErrorCodeInvalidRequest)
+		if res := decodeJSON[oauth.Error](
+			t,
+			w,
+		); res.Code != oauth.ErrorCodeInvalidRequest {
+			t.Errorf(
+				"got error %q; want %q",
+				res.Code,
+				oauth.ErrorCodeInvalidRequest,
+			)
 		}
 	})
 
@@ -796,8 +819,13 @@ func TestAuthorizeErrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to parse redirect location: %v", err)
 		}
-		if got := loc.Query().Get("error"); got != oauth.ErrorCodeInvalidRequest {
-			t.Errorf("got error %q; want %q", got, oauth.ErrorCodeInvalidRequest)
+		if got := loc.Query().
+			Get("error"); got != oauth.ErrorCodeInvalidRequest {
+			t.Errorf(
+				"got error %q; want %q",
+				got,
+				oauth.ErrorCodeInvalidRequest,
+			)
 		}
 	})
 }
@@ -976,7 +1004,10 @@ func TestDeviceFlow(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 	}
-	if e := decodeJSON[oauth.Error](t, w); e.Code != oauth.ErrorCodeAuthorizationPending {
+	if e := decodeJSON[oauth.Error](
+		t,
+		w,
+	); e.Code != oauth.ErrorCodeAuthorizationPending {
 		t.Fatalf(
 			"got error %q; want %q",
 			e.Code,
@@ -1371,7 +1402,10 @@ func TestThrottleIntegration(t *testing.T) {
 		if got := w.Header().Get("Retry-After"); got == "" {
 			t.Error("missing Retry-After header")
 		}
-		if res := decodeJSON[oauth.Error](t, w); res.Code != oauth.ErrorCodeSlowDown {
+		if res := decodeJSON[oauth.Error](
+			t,
+			w,
+		); res.Code != oauth.ErrorCodeSlowDown {
 			t.Errorf("got error %q; want %q", res.Code, oauth.ErrorCodeSlowDown)
 		}
 

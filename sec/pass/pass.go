@@ -84,7 +84,6 @@ type Hasher struct {
 	algorithms map[string]Algorithm
 }
 
-
 // register adds the algorithm to the verification registry.
 func (h *Hasher) register(alg Algorithm) {
 	if alg == nil {

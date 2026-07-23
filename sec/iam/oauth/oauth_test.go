@@ -15,8 +15,9 @@
 package oauth_test
 
 import (
-	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"testing"
+
+	"github.com/deep-rent/nexus/sec/iam/oauth"
 )
 
 func TestVerifyRedirectURI(t *testing.T) {

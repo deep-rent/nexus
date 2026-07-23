@@ -56,7 +56,9 @@ func (env *webAuthnEnv) registerPasskey(t *testing.T) {
 		`{"handle":%q,"name":"key","credential":%s}`, res.Handle, attestation,
 	)
 	req = httptest.NewRequest(
-		http.MethodPost, testPrefix+PathWebAuthnRegister, strings.NewReader(body),
+		http.MethodPost,
+		testPrefix+PathWebAuthnRegister,
+		strings.NewReader(body),
 	)
 	req.Header.Set("Authorization", bearer)
 	req.Header.Set("Content-Type", "application/json")
@@ -105,7 +107,9 @@ func TestWebAuthnStep_CompletesFlow(t *testing.T) {
 	env.registerPasskey(t)
 
 	res := env.beginPasskeyFlow(t)
-	opts, err := virtualwebauthn.ParseAssertionOptions(string(res.Prompt.Options))
+	opts, err := virtualwebauthn.ParseAssertionOptions(
+		string(res.Prompt.Options),
+	)
 	if err != nil {
 		t.Fatalf("parse assertion options: %v", err)
 	}

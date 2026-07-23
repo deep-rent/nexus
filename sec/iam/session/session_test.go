@@ -172,13 +172,21 @@ func TestManager_Destroy(t *testing.T) {
 		t.Fatalf("Establish: %v", err)
 	}
 
-	if deleted, err := e.manager.Destroy(t.Context(), key); err != nil || !deleted {
+	if deleted, err := e.manager.Destroy(
+		t.Context(),
+		key,
+	); err != nil ||
+		!deleted {
 		t.Fatalf("Destroy: got (%t, %v); want (true, nil)", deleted, err)
 	}
 	if deleted, _ := e.manager.Destroy(t.Context(), key); deleted {
 		t.Error("second Destroy should report nothing removed")
 	}
-	if deleted, err := e.manager.Destroy(t.Context(), ""); deleted || err != nil {
+	if deleted, err := e.manager.Destroy(
+		t.Context(),
+		"",
+	); deleted ||
+		err != nil {
 		t.Error("Destroy of an empty key should be a no-op")
 	}
 }

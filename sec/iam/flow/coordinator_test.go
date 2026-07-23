@@ -104,10 +104,17 @@ func TestBegin_EmptyPlanCompletesImmediately(t *testing.T) {
 		t.Fatalf("got status %v; want Done", res.Status)
 	}
 	if handle != "" {
-		t.Errorf("got handle %q; want empty for an immediate completion", handle)
+		t.Errorf(
+			"got handle %q; want empty for an immediate completion",
+			handle,
+		)
 	}
 	if res.Owner != "user-1" || !res.Remember {
-		t.Errorf("got owner=%q remember=%v; want user-1/true", res.Owner, res.Remember)
+		t.Errorf(
+			"got owner=%q remember=%v; want user-1/true",
+			res.Owner,
+			res.Remember,
+		)
 	}
 	if store.Len() != 0 {
 		t.Error("no transaction should be minted for an empty plan")
@@ -177,7 +184,11 @@ func TestContinue_TwoStepsInOrder(t *testing.T) {
 		t.Fatalf("Continue 1: %v", err)
 	}
 	if res.Status != flow.StatusPrompt || res.Prompt.Step != "email-otp" {
-		t.Fatalf("got %v/%q; want Prompt/email-otp", res.Status, res.Prompt.Step)
+		t.Fatalf(
+			"got %v/%q; want Prompt/email-otp",
+			res.Status,
+			res.Prompt.Step,
+		)
 	}
 	if s2.begins != 1 {
 		t.Errorf("second step begun %d times; want 1", s2.begins)
@@ -346,7 +357,12 @@ func TestAct(t *testing.T) {
 		t.Fatalf("Begin: %v", err)
 	}
 
-	res, err := c.Act(t.Context(), handle, planOf(step), flow.Action{Name: "resend"})
+	res, err := c.Act(
+		t.Context(),
+		handle,
+		planOf(step),
+		flow.Action{Name: "resend"},
+	)
 	if err != nil {
 		t.Fatalf("Act: %v", err)
 	}
@@ -362,7 +378,11 @@ func TestAct_PropagatesRateLimit(t *testing.T) {
 	t.Parallel()
 	store := newMemStore()
 	c := flow.New(store)
-	step := &fakeStep{id: "otp", verdict: flow.VerdictOK, actErr: flow.ErrRateLimited}
+	step := &fakeStep{
+		id:      "otp",
+		verdict: flow.VerdictOK,
+		actErr:  flow.ErrRateLimited,
+	}
 
 	handle, _, err := c.Begin(t.Context(), "u", false, []flow.Step{step})
 	if err != nil {
@@ -399,7 +419,12 @@ func TestContinue_SingleUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if res, _ := c.Continue(t.Context(), handle, planOf(step), code); !res.Done() {
+	if res, _ := c.Continue(
+		t.Context(),
+		handle,
+		planOf(step),
+		code,
+	); !res.Done() {
 		t.Fatal("first completion did not finish")
 	}
 	// The handle cannot be replayed.
@@ -417,7 +442,11 @@ func TestContinue_AdvanceFailureAborts(t *testing.T) {
 	store := newMemStore()
 	c := flow.New(store)
 	s1 := &fakeStep{id: "otp", verdict: flow.VerdictOK}
-	s2 := &fakeStep{id: "email", verdict: flow.VerdictOK, beginErr: errors.New("sms down")}
+	s2 := &fakeStep{
+		id:       "email",
+		verdict:  flow.VerdictOK,
+		beginErr: errors.New("sms down"),
+	}
 
 	handle, _, err := c.Begin(t.Context(), "u", false, []flow.Step{s1, s2})
 	if err != nil {

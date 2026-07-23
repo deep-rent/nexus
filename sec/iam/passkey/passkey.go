@@ -51,7 +51,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
-
 // Credential is a passkey credential record as verified and consumed by the
 // underlying WebAuthn implementation. Store implementations should treat it
 // as an opaque, JSON-serializable blob keyed by its ID field; see
@@ -191,7 +190,6 @@ type Outcome struct {
 // OK reports whether the outcome represents success.
 func (o Outcome) OK() bool { return o.Status == StatusOK }
 
-
 // RelyingParty runs the lifecycle of WebAuthn ceremonies — beginning them,
 // persisting their state, and verifying the authenticator responses that
 // finish them — over a [Store]. It is safe for concurrent use if its stores
@@ -206,7 +204,6 @@ type RelyingParty struct {
 	handles     *nonce.Generator
 	now         func() time.Time
 }
-
 
 // New creates a [RelyingParty] from the given configuration.
 //

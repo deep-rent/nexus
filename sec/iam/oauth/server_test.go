@@ -41,11 +41,16 @@ type m2mClient struct {
 	secret string
 }
 
-func (c *m2mClient) ID() uuid.UUID                   { return c.id }
-func (c *m2mClient) Public() bool                    { return false }
-func (c *m2mClient) Audience() []string              { return nil }
-func (c *m2mClient) VerifySecret(secret string) bool { return secret == c.secret }
-func (c *m2mClient) VerifyRedirectURI(string) bool   { return false }
+func (c *m2mClient) ID() uuid.UUID      { return c.id }
+func (c *m2mClient) Public() bool       { return false }
+func (c *m2mClient) Audience() []string { return nil }
+
+func (c *m2mClient) VerifySecret(
+	secret string,
+) bool {
+	return secret == c.secret
+}
+func (c *m2mClient) VerifyRedirectURI(string) bool { return false }
 func (c *m2mClient) CanUseGrant(g oauth.GrantType) bool {
 	return g == oauth.GrantTypeClientCredentials
 }
@@ -111,7 +116,12 @@ func TestServer_Standalone(t *testing.T) {
 			nil,
 		))
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 		var meta oauth.ServerMetadata
 		if err := json.Unmarshal(w.Body.Bytes(), &meta); err != nil {
@@ -155,7 +165,12 @@ func TestServer_Standalone(t *testing.T) {
 
 		w := do(req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 		var res oauth.TokenResponse
 		if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
@@ -183,7 +198,12 @@ func TestServer_Standalone(t *testing.T) {
 
 		w = do(req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
+			t.Fatalf(
+				"got status %d; want %d: %s",
+				w.Code,
+				http.StatusOK,
+				w.Body,
+			)
 		}
 		var intro oauth.IntrospectionResponse
 		if err := json.Unmarshal(w.Body.Bytes(), &intro); err != nil {

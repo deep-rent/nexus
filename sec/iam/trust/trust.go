@@ -32,7 +32,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
-
 // Record is the persisted state of a device trust. The token is stored only
 // as its digest, never in the clear.
 type Record struct {
@@ -81,7 +80,6 @@ type Manager struct {
 	handles  *nonce.Generator
 	now      func() time.Time
 }
-
 
 // New creates a [Manager] backed by the given [Store]. It panics if store is
 // nil, since that is a startup configuration error.

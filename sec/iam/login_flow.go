@@ -136,7 +136,13 @@ func (s *otpStep) Begin(
 	handle string,
 ) (any, error) {
 	m := s.methods[0]
-	expiresIn, err := s.ch.Start(ctx, purposeLogin, t.Owner, s.handle(handle), m)
+	expiresIn, err := s.ch.Start(
+		ctx,
+		purposeLogin,
+		t.Owner,
+		s.handle(handle),
+		m,
+	)
 	if err != nil {
 		return nil, err
 	}

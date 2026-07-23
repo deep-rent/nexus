@@ -194,7 +194,8 @@ func WithClock(now func() time.Time) Option {
 // WithNonceSource sets the entropy source for every opaque bearer artifact the
 // server mints — session keys, authorization codes, refresh tokens, device and
 // user codes, state parameters, WebAuthn handles, and device trust tokens — all
-// of which are drawn from a single [nonce.Generator] (a [nonce.Sampler] for user
+// of which are drawn from a single [nonce.Generator] (a [nonce.Sampler] for
+// user
 // codes). It defaults to [nonce.DefaultSource] (crypto/rand); provide a
 // deterministic source for testing or a hardware/remote source in specialized
 // deployments. A nil source is ignored.

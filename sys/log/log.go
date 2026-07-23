@@ -134,7 +134,12 @@ func (l *Logger) Enabled(ctx context.Context, level Level) bool {
 // Log emits a record at the given level. Records at [LevelSilent] or at
 // levels outside the defined range are discarded. A nil context is
 // replaced by [context.Background].
-func (l *Logger) Log(ctx context.Context, level Level, msg string, args ...Arg) {
+func (l *Logger) Log(
+	ctx context.Context,
+	level Level,
+	msg string,
+	args ...Arg,
+) {
 	l.log(ctx, level, msg, args)
 }
 

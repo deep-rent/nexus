@@ -41,12 +41,18 @@
 //   - [github.com/deep-rent/nexus/sec/iam/idp] defines the [idp.Provider]
 //     contract for social login, with Google and Apple providers and shared
 //     OIDC client utilities in its subpackages.
-//   - [github.com/deep-rent/nexus/sec/iam/flow], [github.com/deep-rent/nexus/sec/iam/otp],
-//     and [github.com/deep-rent/nexus/sec/iam/trust] are transport-agnostic
-//     engines for multi-step logins, one-time passwords, and device trust,
-//     each persisting through its own digest-keyed store; the generic
-//     [github.com/deep-rent/nexus/sec/iam/artifact.Store] contract they share lives in
-//     [github.com/deep-rent/nexus/sec/iam/artifact].
+//
+// - [github.com/deep-rent/nexus/sec/iam/flow],
+// [github.com/deep-rent/nexus/sec/iam/otp],
+//
+//	and [github.com/deep-rent/nexus/sec/iam/trust] are transport-agnostic
+//	engines for multi-step logins, one-time passwords, and device trust,
+//	each persisting through its own digest-keyed store; the generic
+//
+// [github.com/deep-rent/nexus/sec/iam/artifact.Store] contract they share lives
+// in
+//
+//	[github.com/deep-rent/nexus/sec/iam/artifact].
 //
 // The resource-server counterpart — verifying the issued JWTs and guarding
 // routes by roles and scopes — is [github.com/deep-rent/nexus/sec/auth].
@@ -166,5 +172,6 @@
 // Deployments must provide the remaining protections that fall outside this
 // package: serve all endpoints over TLS (cookies are marked secure), and
 // back the store interfaces with implementations that honor the atomicity
-// and TTL contracts documented on [github.com/deep-rent/nexus/sec/iam/artifact.Store].
+// and TTL contracts documented on
+// [github.com/deep-rent/nexus/sec/iam/artifact.Store].
 package iam

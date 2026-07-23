@@ -272,7 +272,11 @@ func TestRelyingParty_FinishLogin_SingleUse(t *testing.T) {
 	if out, _ := e.party.FinishLogin(t.Context(), handle, response); !out.OK() {
 		t.Fatalf("first finish should succeed; got %+v", out)
 	}
-	if out, _ := e.party.FinishLogin(t.Context(), handle, response); out.Status != passkey.StatusInvalid {
+	if out, _ := e.party.FinishLogin(
+		t.Context(),
+		handle,
+		response,
+	); out.Status != passkey.StatusInvalid {
 		t.Fatalf("replay should be invalid; got %+v", out)
 	}
 }
@@ -320,7 +324,11 @@ func TestRelyingParty_FinishLogin_GarbageAssertion(t *testing.T) {
 	}
 
 	// The failed attempt burned the ceremony.
-	if out, _ := e.party.FinishLogin(t.Context(), handle, []byte("x")); out.Status != passkey.StatusInvalid {
+	if out, _ := e.party.FinishLogin(
+		t.Context(),
+		handle,
+		[]byte("x"),
+	); out.Status != passkey.StatusInvalid {
 		t.Fatalf("burned ceremony should be invalid; got %+v", out)
 	}
 }

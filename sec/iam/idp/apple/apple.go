@@ -48,8 +48,6 @@ const (
 // is minted per exchange.
 const SecretLifetime = 5 * time.Minute
 
-
-
 // Provider implements [idp.Provider] for Apple.
 type Provider struct {
 	clientID    string

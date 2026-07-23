@@ -19,10 +19,11 @@ import (
 	"context"
 	"net/url"
 	"slices"
-	"time"
-
 	"sync"
 	"testing"
+	"time"
+
+	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
@@ -34,7 +35,6 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/session"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"github.com/deep-rent/nexus/sys/log"
-	"uuid"
 )
 
 // fakeClient is a configurable in-memory [oauth.Client] implementation.

@@ -26,12 +26,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
-	"github.com/deep-rent/nexus/std/rotor"
-	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/sign"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/std/rotor"
 )
 
 func generate(t *testing.T, kid string) jwk.KeyPair {

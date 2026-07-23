@@ -113,7 +113,12 @@ func TestFlowContinue_Completes(t *testing.T) {
 		`{"handle":%q,"code":%q}`, res.Handle, env.sms.last(t),
 	))
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusNoContent, w.Body)
+		t.Fatalf(
+			"got status %d; want %d: %s",
+			w.Code,
+			http.StatusNoContent,
+			w.Body,
+		)
 	}
 	if sessionCookie(w) == nil {
 		t.Error("missing session cookie after completion")
@@ -193,7 +198,8 @@ func TestFlowAction_UnknownChannel(t *testing.T) {
 	res := env.login(t, false)
 
 	w := postJSON(env.testEnv, PathLoginAction, fmt.Sprintf(
-		`{"handle":%q,"action":"resend","channel":"carrier-pigeon"}`, res.Handle,
+		`{"handle":%q,"action":"resend","channel":"carrier-pigeon"}`,
+		res.Handle,
 	))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
@@ -229,7 +235,12 @@ func TestRememberMe_TrustsDeviceAndSkips(t *testing.T) {
 		`{"username":"alice","password":"wonderland"}`, tc,
 	)
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusNoContent, w.Body)
+		t.Fatalf(
+			"got status %d; want %d: %s",
+			w.Code,
+			http.StatusNoContent,
+			w.Body,
+		)
 	}
 	if sessionCookie(w) == nil {
 		t.Error("missing session cookie on trusted-device login")
@@ -343,7 +354,12 @@ func TestFlowThrottle_LocksOutPerHandle(t *testing.T) {
 	}
 	for i := range 2 {
 		if code := guess(); code != http.StatusUnauthorized {
-			t.Fatalf("attempt %d: got %d; want %d", i, code, http.StatusUnauthorized)
+			t.Fatalf(
+				"attempt %d: got %d; want %d",
+				i,
+				code,
+				http.StatusUnauthorized,
+			)
 		}
 	}
 	if code := guess(); code != http.StatusTooManyRequests {

@@ -290,7 +290,11 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // records with a version strictly greater than the target. This is typically
 // used to recover from a dirty database state after human intervention.
 func (d *Driver) Force(ctx context.Context, version int64) error {
-	d.logger.Info(ctx, "Forcing database version", log.Int64("version", version))
+	d.logger.Info(
+		ctx,
+		"Forcing database version",
+		log.Int64("version", version),
+	)
 
 	return d.withTx(ctx, func(tx *sql.Tx) error {
 		queryUpdate := "UPDATE " + d.ident + " SET dirty = false WHERE version = $1"

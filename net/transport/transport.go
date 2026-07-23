@@ -25,13 +25,11 @@ import (
 	"github.com/deep-rent/nexus/net/retry"
 )
 
-
 // Proxy defines a custom proxy function.
 type Proxy func(*http.Request) (*url.URL, error)
 
 // Dialer defines a custom dial function for creating network connections.
 type Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
-
 
 // New creates a new [http.RoundTripper] configured with the provided options.
 func New(opts ...Option) http.RoundTripper {

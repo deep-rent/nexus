@@ -108,10 +108,13 @@ type recordingMethod struct {
 }
 
 func (m *recordingMethod) method() otp.Method {
-	return otp.Method{ID: m.id, Deliver: func(_ context.Context, code string) error {
-		m.codes = append(m.codes, code)
-		return nil
-	}}
+	return otp.Method{
+		ID: m.id,
+		Deliver: func(_ context.Context, code string) error {
+			m.codes = append(m.codes, code)
+			return nil
+		},
+	}
 }
 
 func (m *recordingMethod) last(t *testing.T) string {
@@ -155,7 +158,10 @@ func newOTPStepFixture(t *testing.T, multi bool) *otpStepFixture {
 	}
 }
 
-func (f *otpStepFixture) begin(t *testing.T, remember bool) (string, flow.Result) {
+func (f *otpStepFixture) begin(
+	t *testing.T,
+	remember bool,
+) (string, flow.Result) {
 	t.Helper()
 	handle, res, err := f.coord.Begin(
 		t.Context(), "user-1", remember, flow.Course{f.step},
@@ -185,7 +191,12 @@ func TestOTPStep_FullLogin(t *testing.T) {
 		t.Errorf("single method should not advertise channels")
 	}
 
-	res, err := f.coord.Continue(t.Context(), handle, f.plan, flow.Input{Value: f.sms.last(t)})
+	res, err := f.coord.Continue(
+		t.Context(),
+		handle,
+		f.plan,
+		flow.Input{Value: f.sms.last(t)},
+	)
 	if err != nil {
 		t.Fatalf("Continue: %v", err)
 	}
@@ -202,7 +213,12 @@ func TestOTPStep_WrongThenRight(t *testing.T) {
 	f := newOTPStepFixture(t, false)
 	handle, _ := f.begin(t, false)
 
-	res, err := f.coord.Continue(t.Context(), handle, f.plan, flow.Input{Value: "000000"})
+	res, err := f.coord.Continue(
+		t.Context(),
+		handle,
+		f.plan,
+		flow.Input{Value: "000000"},
+	)
 	if err != nil {
 		t.Fatalf("Continue: %v", err)
 	}
@@ -210,7 +226,12 @@ func TestOTPStep_WrongThenRight(t *testing.T) {
 		t.Fatalf("got %v; want WrongInput", res.Status)
 	}
 
-	res, err = f.coord.Continue(t.Context(), handle, f.plan, flow.Input{Value: f.sms.last(t)})
+	res, err = f.coord.Continue(
+		t.Context(),
+		handle,
+		f.plan,
+		flow.Input{Value: f.sms.last(t)},
+	)
 	if err != nil {
 		t.Fatalf("Continue retry: %v", err)
 	}
@@ -244,15 +265,25 @@ func TestOTPStep_ResendAndSwitchChannel(t *testing.T) {
 
 	// Switch to email and complete with the email code.
 	if _, err := f.coord.Act(
-		t.Context(), handle, f.plan,
-		flow.Action{Name: ActionResend, Extra: map[string]string{"channel": "email"}},
+		t.Context(),
+		handle,
+		f.plan,
+		flow.Action{
+			Name:  ActionResend,
+			Extra: map[string]string{"channel": "email"},
+		},
 	); err != nil {
 		t.Fatalf("Act switch: %v", err)
 	}
 	if len(f.email.codes) != 1 {
 		t.Fatalf("got %d email deliveries; want 1", len(f.email.codes))
 	}
-	res, err := f.coord.Continue(t.Context(), handle, f.plan, flow.Input{Value: f.email.last(t)})
+	res, err := f.coord.Continue(
+		t.Context(),
+		handle,
+		f.plan,
+		flow.Input{Value: f.email.last(t)},
+	)
 	if err != nil {
 		t.Fatalf("Continue: %v", err)
 	}

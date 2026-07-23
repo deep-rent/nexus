@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/health"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sys/health"
 )
 
 func TestMonitor_Ready(t *testing.T) {

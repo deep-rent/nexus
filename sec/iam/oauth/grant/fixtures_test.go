@@ -18,13 +18,12 @@ import (
 	"context"
 	"net/url"
 	"slices"
+	"testing"
 	"time"
 
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
-	"testing"
-
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sys/log"

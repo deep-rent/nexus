@@ -122,7 +122,6 @@ const (
 	KindAll = KindReadiness | KindLiveness
 )
 
-
 // check wraps a registered check with its caching state and mutex.
 type check struct {
 	name    string             // specific identifier for the health check

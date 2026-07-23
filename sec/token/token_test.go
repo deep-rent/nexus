@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/schedule"
 	"github.com/deep-rent/nexus/sec/token"
+	"github.com/deep-rent/nexus/sys/schedule"
 )
 
 func TestSource_Get_Success(t *testing.T) {

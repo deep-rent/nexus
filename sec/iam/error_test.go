@@ -18,12 +18,13 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
-	"github.com/deep-rent/nexus/sec/iam/oauth"
-	"github.com/deep-rent/nexus/sys/log"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // withLogger installs a logger that captures JSON records into the returned

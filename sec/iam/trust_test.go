@@ -25,7 +25,11 @@ func TestTrustedDevice_IssueAndTrust(t *testing.T) {
 	t.Parallel()
 	env := newTestEnv(t)
 
-	token, err := env.server.issueTrustedDevice(t.Context(), env.subject.id, "iPhone")
+	token, err := env.server.issueTrustedDevice(
+		t.Context(),
+		env.subject.id,
+		"iPhone",
+	)
 	if err != nil {
 		t.Fatalf("issueTrustedDevice: %v", err)
 	}
@@ -122,9 +126,16 @@ func TestTrustedDevice_RevokeAllForSubject(t *testing.T) {
 	env := newTestEnv(t)
 
 	t1, _ := env.server.issueTrustedDevice(t.Context(), env.subject.id, "phone")
-	t2, _ := env.server.issueTrustedDevice(t.Context(), env.subject.id, "laptop")
+	t2, _ := env.server.issueTrustedDevice(
+		t.Context(),
+		env.subject.id,
+		"laptop",
+	)
 
-	if err := env.server.RevokeTrustedDevices(t.Context(), env.subject.id); err != nil {
+	if err := env.server.RevokeTrustedDevices(
+		t.Context(),
+		env.subject.id,
+	); err != nil {
 		t.Fatalf("RevokeTrustedDevices: %v", err)
 	}
 

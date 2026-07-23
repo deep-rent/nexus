@@ -20,7 +20,6 @@ import (
 	"github.com/deep-rent/nexus/std/jitter"
 )
 
-
 // Strategy defines the contract for a backoff algorithm.
 //
 // Implementations are stateless: the delay depends only on the attempt number
@@ -49,7 +48,6 @@ type Rand interface {
 	// Float64 generates a pseudo-random number in [0.0, 1.0).
 	Float64() float64
 }
-
 
 // New creates a backoff [Strategy] from the provided options.
 //

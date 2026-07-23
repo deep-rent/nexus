@@ -21,5 +21,6 @@
 // token endpoint [Exchange] helper that swaps an authorization code for an
 // [oauth.TokenResponse].
 //
-// Concrete providers built on top of this package live in the sibling packages of iam/idp.
+// Concrete providers built on top of this package live in the sibling packages
+// of iam/idp.
 package oidc

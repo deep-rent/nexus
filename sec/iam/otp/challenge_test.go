@@ -163,7 +163,10 @@ func TestChallenger_BeginVerify(t *testing.T) {
 		t.Errorf("got owner %q; want %q", out.Owner, "user-1")
 	}
 	if store.Len() != 0 {
-		t.Errorf("challenge not consumed on success (store has %d)", store.Len())
+		t.Errorf(
+			"challenge not consumed on success (store has %d)",
+			store.Len(),
+		)
 	}
 }
 
@@ -327,7 +330,10 @@ func TestChallenger_Begin_DeliveryFailureCleansUp(t *testing.T) {
 		t.Fatalf("got %v; want boom", err)
 	}
 	if store.Len() != 0 {
-		t.Errorf("undeliverable challenge left behind (store has %d)", store.Len())
+		t.Errorf(
+			"undeliverable challenge left behind (store has %d)",
+			store.Len(),
+		)
 	}
 }
 
@@ -374,7 +380,12 @@ func TestChallenger_Resend_LimitReached(t *testing.T) {
 		t.Fatalf("Begin: %v", err)
 	}
 
-	if out, _ := c.Resend(t.Context(), purpose, handle, cap.method("sms")); !out.OK() {
+	if out, _ := c.Resend(
+		t.Context(),
+		purpose,
+		handle,
+		cap.method("sms"),
+	); !out.OK() {
 		t.Fatal("first resend should succeed")
 	}
 	out, err := c.Resend(t.Context(), purpose, handle, cap.method("sms"))

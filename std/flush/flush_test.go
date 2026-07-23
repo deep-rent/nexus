@@ -243,7 +243,14 @@ func TestWriter_Concurrent(t *testing.T) {
 
 	// Every line must arrive exactly once and unmangled.
 	out := dst.String()
-	if got, want := strings.Count(out, "line\n")*len("line\n"), len(out); got != want {
+	if got, want := strings.Count(
+		out,
+		"line\n",
+	)*len(
+		"line\n",
+	), len(
+		out,
+	); got != want {
 		t.Errorf("output mangled: %d of %d bytes form whole lines",
 			got, want)
 	}

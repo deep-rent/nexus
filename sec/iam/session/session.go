@@ -62,7 +62,6 @@ type Manager struct {
 	now    func() time.Time
 }
 
-
 // New creates a [Manager] backed by the given [Store]. It panics if store is
 // nil, since that is a startup configuration error.
 func New(store Store, opts ...Option) *Manager {

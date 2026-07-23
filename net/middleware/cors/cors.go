@@ -24,7 +24,6 @@ import (
 // requests from any origin.
 const wildcard = "*"
 
-
 // New creates a middleware [middleware.Pipe] that handles CORS requests.
 //
 // The middleware distinguishes between preflight and actual requests. Preflight

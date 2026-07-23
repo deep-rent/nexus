@@ -19,9 +19,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/net/retry"
 	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
 
 // requestSamples returns the client duration samples recorded in reg, keyed

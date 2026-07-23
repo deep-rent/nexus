@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/dat/bind"
+	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/std/snake"
 )
 
@@ -31,7 +31,6 @@ import (
 // lookup mechanisms, such as reading from sources other than the actual
 // environment, which is especially useful for testing.
 type Lookup func(key string) (string, bool)
-
 
 // binder is shared by every call to [Unmarshal]. Caching the reflection
 // metadata is safe because a type's tags cannot change, and it keeps a

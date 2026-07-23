@@ -25,7 +25,8 @@ import (
 )
 
 // Transaction is the persisted state of an in-progress login. It holds no
-// secret: the client-facing handle is stored only as its digest ([Transaction.ID]),
+// secret: the client-facing handle is stored only as its digest
+// ([Transaction.ID]),
 // and each step keeps its own state elsewhere.
 type Transaction struct {
 	// ID is the digest of the client-facing handle and the storage key.

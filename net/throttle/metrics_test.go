@@ -17,8 +17,8 @@ package throttle_test
 import (
 	"testing"
 
-	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/net/throttle"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
 
 // decisionCounts collects the decision counter grouped by the allowed tag,

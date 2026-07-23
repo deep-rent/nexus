@@ -457,7 +457,11 @@ func TestWebAuthnLogin(t *testing.T) {
 		if cookie == nil || cookie.Value == "" {
 			t.Fatal("missing session cookie")
 		}
-		if got, _ := sessionOwner(t, env.stores, cookie.Value); got != env.subject.id {
+		if got, _ := sessionOwner(
+			t,
+			env.stores,
+			cookie.Value,
+		); got != env.subject.id {
 			t.Errorf("session maps to %v; want %v", got, env.subject.id)
 		}
 
@@ -668,7 +672,12 @@ func TestWebAuthnGrant(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				tt.form.Set("grant_type", string(oauth.GrantTypeWebAuthn))
-				w := env.postForm(oauth.PathToken, tt.form, env.client, "s3cret")
+				w := env.postForm(
+					oauth.PathToken,
+					tt.form,
+					env.client,
+					"s3cret",
+				)
 				res := decodeJSON[oauth.Error](t, w)
 				if res.Code != tt.code {
 					t.Errorf(
