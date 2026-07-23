@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
@@ -42,7 +43,7 @@ type config struct {
 	backoff     backoff.Strategy // delays between failed refreshes
 	logger      *log.Logger      // destination for internal logs
 	client      *http.Client     // HTTP client used for fetching
-	now         func() time.Time // clock used to interpret date headers
+	now         clock.Clock      // clock used to interpret date headers
 
 	registry *metrics.Registry // records the refresh counter
 }
@@ -145,9 +146,9 @@ func WithRegistry(reg *metrics.Registry) Option {
 }
 
 // WithClock provides a custom time source used to interpret the date-based
-// caching headers, primarily for testing. If not provided, [time.Now] is used.
+// caching headers, primarily for testing. If not provided, [clock.System] is used.
 // A nil value is ignored.
-func WithClock(now func() time.Time) Option {
+func WithClock(now clock.Clock) Option {
 	return func(c *config) {
 		if now != nil {
 			c.now = now

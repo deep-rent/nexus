@@ -25,6 +25,7 @@ import (
 	"github.com/deep-rent/nexus/net/header"
 	"github.com/deep-rent/nexus/net/transport"
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/std/jitter"
 	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
@@ -95,7 +96,7 @@ func NewController[T any](
 		maxInterval: DefaultMaxInterval,
 		logger:      log.Discard(),
 		client:      transport.DefaultClient,
-		now:         time.Now,
+		now:         clock.System,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -142,7 +143,7 @@ type controller[T any] struct {
 	backoff     backoff.Strategy // delays between failed refreshes
 	jitter      *jitter.Jitter   // scatters the refresh interval
 	logger      *log.Logger      // destination for internal logs
-	now         func() time.Time // clock used to interpret date headers
+	now         clock.Clock      // clock used to interpret date headers
 	stats       stats            // counts refresh cycles by outcome
 
 	readyOnce sync.Once     // ensures the ready channel is closed only once

@@ -25,6 +25,7 @@ import (
 
 	"github.com/deep-rent/nexus/dat/cache"
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // handler is a test origin that serves a scripted sequence of responses.
@@ -164,7 +165,7 @@ func TestController_Run_ExpiresHeader(t *testing.T) {
 	ctrl := cache.NewController(srv.URL, text,
 		cache.WithMinInterval(time.Minute),
 		cache.WithMaxInterval(24*time.Hour),
-		cache.WithClock(func() time.Time { return now }),
+		cache.WithClock(clock.Frozen(now)),
 	)
 
 	if got, want := ctrl.Run(t.Context()), 2*time.Hour; got != want {

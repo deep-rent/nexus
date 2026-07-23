@@ -22,6 +22,7 @@ import (
 	"time"
 
 	xatomic "github.com/deep-rent/nexus/std/atomic"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Counter is a monotonically increasing count. The zero value is ready for
@@ -177,7 +178,7 @@ type Meter struct {
 	r15  xatomic.Float64
 	warm atomic.Bool // whether the rates have been seeded
 
-	now func() time.Time // clock, replaced in tests
+	now clock.Clock // clock, replaced in tests
 }
 
 // tickInterval is the resolution at which meter rates advance.
@@ -192,7 +193,7 @@ var (
 
 // newMeter builds a meter starting now.
 func newMeter() *Meter {
-	m := &Meter{started: time.Now(), now: time.Now}
+	m := &Meter{started: time.Now(), now: clock.System}
 	m.tick.Store(m.started.UnixNano())
 	return m
 }

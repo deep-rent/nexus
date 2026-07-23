@@ -18,6 +18,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 const (
@@ -63,17 +65,17 @@ func Unpack(packed Time) (physical, logical uint64) {
 // Clock is a thread-safe HLC instance.
 type Clock struct {
 	mu  sync.Mutex
-	now func() time.Time
+	now clock.Clock
 	l   uint64 // Highest physical second observed
 	c   uint64 // Logical counter
 }
 
 // New initializes a Clock to the current wall time.
-// You may inject a custom time provider for testing; if nil, [time.Now] will be
+// You may inject a custom time provider for testing; if nil, [clock.System] will be
 // used instead.
-func New(now func() time.Time) *Clock {
+func New(now clock.Clock) *Clock {
 	if now == nil {
-		now = time.Now
+		now = clock.System
 	}
 	return &Clock{
 		now: now,

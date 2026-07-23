@@ -28,6 +28,7 @@ import (
 	"github.com/deep-rent/nexus/dat/diff/driver/mock"
 	"github.com/deep-rent/nexus/dat/diff/hlc"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -506,8 +507,8 @@ func TestEngine_Sync_LogicalOverflow(t *testing.T) {
 	// A clock whose logical counter is exhausted for the change's second
 	// yields a per-change drift rejection, not a whole-request 500.
 	base := uint64(1_700_000_000)
-	clock := hlc.New(func() time.Time { return time.Unix(int64(base), 0) })
-	f := setup(diff.WithClock(clock))
+	now := hlc.New(clock.Frozen(time.Unix(int64(base), 0)))
+	f := setup(diff.WithClock(now))
 
 	owner := uuid.NewV7()
 	scope := diff.Scope{UserID: owner}

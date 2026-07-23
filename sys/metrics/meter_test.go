@@ -18,6 +18,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // TestMeter_Rates drives the meter with a fake clock and checks the moving
@@ -27,7 +29,7 @@ func TestMeter_Rates(t *testing.T) {
 
 	now := time.Unix(0, 0)
 	m := newMeter()
-	m.now = func() time.Time { return now }
+	m.now = clock.Clock(func() time.Time { return now })
 	m.started = now
 	m.tick.Store(now.UnixNano())
 
@@ -67,7 +69,7 @@ func TestMeter_IdleGap(t *testing.T) {
 
 	now := time.Unix(0, 0)
 	m := newMeter()
-	m.now = func() time.Time { return now }
+	m.now = clock.Clock(func() time.Time { return now })
 	m.started = now
 	m.tick.Store(now.UnixNano())
 
