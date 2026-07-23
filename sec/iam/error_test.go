@@ -62,6 +62,8 @@ func (g *failingGrant) Authorize(
 // A grant that fails unexpectedly must be logged once, by the boundary, with
 // an identifier the client can quote back.
 func TestServer_LogsServerErrors(t *testing.T) {
+	t.Parallel()
+
 	const detail = "dial tcp 10.0.0.1:5432: connection refused"
 
 	logOpt, buf := withLogger(log.LevelDebug)
@@ -124,6 +126,8 @@ func TestServer_LogsServerErrors(t *testing.T) {
 // Protocol errors are ordinary traffic and must not be reported as failures
 // of the server.
 func TestServer_ProtocolErrorsAreNotErrors(t *testing.T) {
+	t.Parallel()
+
 	logOpt, buf := withLogger(log.LevelDebug)
 	env := newTestEnv(t, logOpt)
 
@@ -153,6 +157,8 @@ func TestServer_ProtocolErrorsAreNotErrors(t *testing.T) {
 // A protocol error is not something a client reports back, so minting an
 // identifier for every one of them would be wasted work.
 func TestServer_ProtocolErrorHasNoID(t *testing.T) {
+	t.Parallel()
+
 	logOpt, _ := withLogger(log.LevelDebug)
 	env := newTestEnv(t, logOpt)
 
@@ -172,6 +178,8 @@ func TestServer_ProtocolErrorHasNoID(t *testing.T) {
 
 // Nothing is formatted when the level is disabled.
 func TestServer_RespectsLogLevel(t *testing.T) {
+	t.Parallel()
+
 	logOpt, buf := withLogger(log.LevelError)
 	env := newTestEnv(t, logOpt)
 
@@ -185,6 +193,8 @@ func TestServer_RespectsLogLevel(t *testing.T) {
 }
 
 func TestError_Unwrap(t *testing.T) {
+	t.Parallel()
+
 	cause := errors.New("underlying")
 	err := &oauth.Error{
 		Status:      http.StatusInternalServerError,

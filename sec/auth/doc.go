@@ -15,7 +15,7 @@
 // Package auth provides JWT-based authentication and authorization middleware
 // for the router ecosystem.
 //
-// It defines a Guard that intercepts incoming requests, extracts and verifies
+// It defines a [Guard] that intercepts incoming requests, extracts and verifies
 // a Bearer token, and evaluates a set of authorization rules. Successfully
 // parsed claims are injected into the request context for downstream handlers.
 //

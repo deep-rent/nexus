@@ -25,9 +25,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	"golang.org/x/time/rate"
-	"uuid"
 
 	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/net/throttle"
@@ -41,6 +41,7 @@ import (
 	"github.com/deep-rent/nexus/sec/vault"
 	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/std/rotor"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -125,7 +126,7 @@ func newTestEnv(t *testing.T, opts ...Option) *testEnv {
 		LoginTerminalURI: "https://app.example.com/login",
 		LoginRedirectURI: "https://app.example.com/dashboard",
 		VerificationURI:  "https://app.example.com/device",
-		Logger:           discardLogger(),
+		Logger:           log.Discard(),
 	}
 
 	opts = append([]Option{

@@ -20,7 +20,7 @@
 // Randomness flows from a [Source], the single injection point of the package.
 // Production code relies on [DefaultSource] (backed by [crypto/rand]); tests
 // and specialized deployments substitute their own reader. Two generators build
-// on a Source:
+// on a [Source]:
 //
 //   - [Generator] emits opaque, fixed-length byte tokens, optionally encoded as
 //     base64url. Use it for bearer tokens, session IDs, and similar secrets.

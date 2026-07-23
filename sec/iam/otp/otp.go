@@ -116,7 +116,7 @@ func ViaText(sender text.Sender, from, to, format string) Deliverer {
 //
 // Every email is rendered from the dynamic template identified by templateID,
 // with the code exposed under dataKey; an empty dataKey falls back to
-// [DefaultTemplateDataKey]. To localize, build a Method per locale with a
+// [DefaultTemplateDataKey]. To localize, build a [Method] per locale with a
 // locale-specific templateID. It panics if the sender is nil, the from address
 // is empty, or the template ID is empty — all static configuration errors.
 func ViaMail(

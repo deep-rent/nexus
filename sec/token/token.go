@@ -73,7 +73,7 @@ func WithClock(now clock.Clock) Option {
 	}
 }
 
-// WithScheduler configures the Source to eagerly fetch and proactively refresh
+// WithScheduler configures the [Source] to eagerly fetch and proactively refresh
 // tokens in the background using the provided scheduler. If not provided,
 // tokens are refreshed synchronously during the [Source.Get] call.
 func WithScheduler(sched schedule.Scheduler) Option {

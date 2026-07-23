@@ -26,7 +26,7 @@
 // # The storage contract
 //
 // Keys are digests: the IAM engines hash every bearer secret before it
-// crosses the Store boundary, so implementations never see plaintext values
+// crosses the [Store] boundary, so implementations never see plaintext values
 // and a leaked datastore cannot be replayed against the server.
 // Implementations must treat keys as opaque and persist them as-is.
 //

@@ -20,7 +20,7 @@
 // The hash function is the single injection point of the package, expressed as
 // an [Algorithm]. Production code relies on [DefaultAlgorithm]; callers may
 // substitute SHA-512, SHA-3, BLAKE2, or a keyed construction such as HMAC. A
-// [Hasher] binds an Algorithm and turns values into fingerprints — the hash sum
+// [Hasher] binds an [Algorithm] and turns values into fingerprints — the hash sum
 // encoded as an unpadded base64url string. Hashers are configured once and are
 // safe for concurrent use.
 //

@@ -22,7 +22,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
@@ -439,11 +438,6 @@ func listCreds(
 	return creds
 }
 
-// discardLogger returns a logger that drops all records.
-func discardLogger() *log.Logger {
-	return log.Discard()
-}
-
 // newProposal assembles an [oauth.Proposal] for direct grant testing.
 func newProposal(
 	c oauth.Client,
@@ -456,7 +450,7 @@ func newProposal(
 		tokens,
 		data,
 		nil,
-		discardLogger(),
+		log.Discard(),
 		clock.Frozen(now),
 	)
 }

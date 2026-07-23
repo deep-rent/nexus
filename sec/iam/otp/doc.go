@@ -33,7 +33,7 @@
 // # Delivery
 //
 // The code is delivered by a [Method], which pairs a stable ID with a
-// [Deliverer] closure. Because the caller builds the Deliverer knowing the
+// [Deliverer] closure. Because the caller builds the [Deliverer] knowing the
 // recipient, it owns every destination, template, and locale choice; the engine
 // stays oblivious. [ViaText], [ViaMail], and [ViaPush] construct Deliverers
 // over the notify senders (SMS/WhatsApp, email, and push respectively). A
