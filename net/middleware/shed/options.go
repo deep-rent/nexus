@@ -17,6 +17,8 @@ package shed
 import (
 	"runtime/metrics"
 	"time"
+
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // config holds the configuration options for the shed middleware.
@@ -25,7 +27,7 @@ type config struct {
 	fraction   float64
 	retryAfter time.Duration
 	memory     func() uint64
-	now        func() time.Time
+	now        clock.Clock
 }
 
 // Option configures the shed middleware.
@@ -78,8 +80,8 @@ func WithRetryAfter(d time.Duration) Option {
 }
 
 // WithClock overrides the function used to get the current time. It is
-// primarily useful for testing. Defaults to [time.Now] if left as nil.
-func WithClock(now func() time.Time) Option {
+// primarily useful for testing. Defaults to [clock.System] if left as nil.
+func WithClock(now clock.Clock) Option {
 	return func(c *config) {
 		if now != nil {
 			c.now = now

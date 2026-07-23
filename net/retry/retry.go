@@ -22,6 +22,7 @@ import (
 
 	"github.com/deep-rent/nexus/net/header"
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -32,7 +33,7 @@ type transport struct {
 	policy  Policy            // decides whether another attempt is made
 	backoff backoff.Strategy  // supplies the delay between attempts
 	logger  *log.Logger       // destination for debug output
-	now     func() time.Time  // clock used to interpret date headers
+	now     clock.Clock       // clock used to interpret date headers
 	drain   int64             // bytes read from an abandoned response body
 }
 
@@ -55,7 +56,7 @@ func NewTransport(
 		limit:   0,
 		backoff: backoff.Constant(0),
 		logger:  log.Discard(),
-		now:     time.Now,
+		now:     clock.System,
 		drain:   DefaultMaxDrainBytes,
 	}
 	for _, opt := range opts {

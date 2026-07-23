@@ -29,6 +29,7 @@ import (
 
 	"github.com/deep-rent/nexus/net/retry"
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -1066,7 +1067,7 @@ func TestWithClock(t *testing.T) {
 			)
 			return res, nil
 		}),
-		retry.WithClock(func() time.Time { return now }),
+		retry.WithClock(clock.Frozen(now)),
 	)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)

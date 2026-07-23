@@ -35,6 +35,7 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/sign"
 	"github.com/deep-rent/nexus/sec/token"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -47,7 +48,7 @@ type Sender struct {
 	url       string
 	client    *http.Client
 	logger    *log.Logger
-	now       func() time.Time
+	now       clock.Clock
 }
 
 var _ push.Sender = (*Sender)(nil)
@@ -97,7 +98,7 @@ func New(
 		baseURL: DefaultBaseURL,
 		authURL: DefaultAuthURL,
 		logger:  log.Discard(),
-		now:     time.Now,
+		now:     clock.System,
 		client:  transport.DefaultClient,
 	}
 

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // newExchange builds a throwaway exchange for driving the middleware.
@@ -110,7 +111,7 @@ func TestNew_Recovers(t *testing.T) {
 	var mem uint64 = 950 // above the threshold
 	mw := New(
 		WithInterval(time.Second),
-		WithClock(func() time.Time { return now }),
+		WithClock(clock.Clock(func() time.Time { return now })),
 		WithMemoryProvider(func() uint64 { return mem }),
 	)
 	handler := mw(router.HandlerFunc(func(e *router.Exchange) error {
@@ -147,7 +148,7 @@ func TestNew_ConcurrentSampling(t *testing.T) {
 	// exercise the atomic sample gate.
 	now := time.Unix(1_700_000_000, 0)
 	mw := New(
-		WithClock(func() time.Time { return now }),
+		WithClock(clock.Frozen(now)),
 		WithMemoryProvider(func() uint64 { return 100 }),
 	)
 	handler := mw(router.HandlerFunc(func(e *router.Exchange) error {

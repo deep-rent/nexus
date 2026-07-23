@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // ReasonOverload is returned when the server is rejecting requests due to
@@ -50,7 +51,7 @@ func New(opts ...Option) router.Middleware {
 		fraction:   DefaultThreshold,
 		retryAfter: DefaultRetryAfter,
 		memory:     memory,
-		now:        time.Now,
+		now:        clock.System,
 	}
 	for _, opt := range opts {
 		opt(&cfg)

@@ -24,6 +24,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
@@ -55,7 +56,7 @@ type Throttle struct {
 	rate  rate.Limit
 	burst int
 	key   func(*http.Request) string
-	clock func() time.Time
+	clock clock.Clock
 
 	allowed   *metrics.Counter // AllowN spends that succeeded
 	rejected  *metrics.Counter // AllowN spends that were rate limited
@@ -89,9 +90,9 @@ func New(cfg Config) *Throttle {
 	if key == nil {
 		key = RemoteAddr
 	}
-	clock := cfg.Clock
-	if clock == nil {
-		clock = time.Now
+	now := cfg.Clock
+	if now == nil {
+		now = clock.System
 	}
 	reg := cfg.Registry
 	if reg == nil {
@@ -103,14 +104,14 @@ func New(cfg Config) *Throttle {
 		rate:  limit,
 		burst: burst,
 		key:   key,
-		clock: clock,
+		clock: now,
 		allowed: reg.Counter(Decisions,
 			name, metrics.T("allowed", "true")),
 		rejected: reg.Counter(Decisions,
 			name, metrics.T("allowed", "false")),
 		penalties: reg.Counter(Penalties, name),
 		buckets:   make(map[string]*rate.Limiter),
-		swept:     clock(),
+		swept:     now(),
 	}
 }
 

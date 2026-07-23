@@ -23,6 +23,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // penalty is the charge used by the tests that exercise [Throttle.Penalize].
@@ -34,7 +35,7 @@ func testThrottle(now *time.Time) *Throttle {
 	return New(Config{
 		Rate:  rate.Limit(1),
 		Burst: 10,
-		Clock: func() time.Time { return *now },
+		Clock: clock.Clock(func() time.Time { return *now }),
 	})
 }
 
@@ -82,7 +83,7 @@ func TestAllow(t *testing.T) {
 	th := New(Config{
 		Rate:  rate.Limit(1),
 		Burst: 3,
-		Clock: func() time.Time { return now },
+		Clock: clock.Clock(func() time.Time { return now }),
 	})
 
 	// The burst is spent one token at a time, then the key is blocked.
@@ -109,7 +110,7 @@ func TestAllowN(t *testing.T) {
 	th := New(Config{
 		Rate:  rate.Limit(1),
 		Burst: 5,
-		Clock: func() time.Time { return now },
+		Clock: clock.Frozen(now),
 	})
 
 	// A spend larger than the balance takes nothing and reports failure.
@@ -188,7 +189,7 @@ func TestPenalize_ClampsToBurst(t *testing.T) {
 	th := New(Config{
 		Rate:  rate.Limit(1),
 		Burst: 4,
-		Clock: func() time.Time { return now },
+		Clock: clock.Frozen(now),
 	})
 
 	th.Penalize("k", 1000)
@@ -264,7 +265,7 @@ func TestSweep(t *testing.T) {
 	th := New(Config{
 		Rate:  rate.Limit(0.1),
 		Burst: 10,
-		Clock: func() time.Time { return now },
+		Clock: clock.Clock(func() time.Time { return now }),
 	})
 
 	// A recovered bucket is evicted; a penalized one is retained so that its

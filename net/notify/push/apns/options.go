@@ -16,8 +16,8 @@ package apns
 
 import (
 	"net/http"
-	"time"
 
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -32,7 +32,7 @@ type config struct {
 	baseURL string
 	topic   string
 	logger  *log.Logger
-	now     func() time.Time
+	now     clock.Clock
 	client  *http.Client
 }
 
@@ -86,7 +86,7 @@ func WithLogger(logger *log.Logger) Option {
 
 // WithClock injects a custom clock function for JWT generation and caching.
 // Nil values are ignored.
-func WithClock(now func() time.Time) Option {
+func WithClock(now clock.Clock) Option {
 	return func(cfg *config) {
 		if now != nil {
 			cfg.now = now

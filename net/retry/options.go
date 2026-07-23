@@ -15,9 +15,8 @@
 package retry
 
 import (
-	"time"
-
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -33,7 +32,7 @@ type config struct {
 	limit   int              // maximum number of attempts
 	backoff backoff.Strategy // supplies the delay between attempts
 	logger  *log.Logger      // destination for debug output
-	now     func() time.Time // clock used to interpret date headers
+	now     clock.Clock      // clock used to interpret date headers
 	drain   int64            // bytes read from an abandoned response body
 }
 
@@ -93,8 +92,8 @@ func WithLogger(logger *log.Logger) Option {
 // testing. It does not affect the actual waiting between attempts, which
 // always follows the real clock.
 //
-// If not provided, [time.Now] is used. A nil value is ignored.
-func WithClock(now func() time.Time) Option {
+// If not provided, [clock.System] is used. A nil value is ignored.
+func WithClock(now clock.Clock) Option {
 	return func(c *config) {
 		if now != nil {
 			c.now = now

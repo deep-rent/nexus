@@ -16,10 +16,10 @@ package throttle
 
 import (
 	"net/http"
-	"time"
 
 	"golang.org/x/time/rate"
 
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
@@ -56,8 +56,8 @@ type Config struct {
 	// the key directly.
 	Key func(*http.Request) string
 	// Clock overrides the time source. This is primarily useful for
-	// deterministic testing. Defaults to [time.Now].
-	Clock func() time.Time
+	// deterministic testing. Defaults to [clock.System].
+	Clock clock.Clock
 	// Name is the value of the "name" tag on the recorded counters,
 	// keeping multiple instances apart in a metrics backend. Defaults to
 	// the empty string.
