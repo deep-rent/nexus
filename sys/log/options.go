@@ -15,120 +15,98 @@
 package log
 
 import (
+	"context"
 	"io"
-	"log/slog"
-
-	"github.com/deep-rent/nexus/std/ascii"
 )
 
-// Default configuration values for a new logger.
-const (
-	// DefaultLevel is the level used when none is specified.
-	DefaultLevel = slog.LevelInfo
-	// DefaultAddSource is the default setting for including source information.
-	DefaultAddSource = false
-	// DefaultFormat is the format used when none is specified.
-	DefaultFormat = FormatText
-)
+// DefaultLevel is the threshold used when none is specified.
+const DefaultLevel = LevelInfo
 
-// config holds the configuration settings for the logger.
+// config holds the configuration settings for the JSON sink.
 type config struct {
-	// Level is the minimum log level enabled.
-	Level slog.Level
-	// AddSource determines if file/line information is included.
-	AddSource bool
-	// Format determines the output encoding.
-	Format Format
-	// Writer is the output destination.
-	Writer io.Writer
-	// ReplaceAttr rewrites or drops attributes before they are logged.
-	ReplaceAttr func(groups []string, a slog.Attr) slog.Attr
+	// level is the initial threshold; ignored if cutoff is set.
+	level Level
+	// cutoff is a shared, externally adjustable threshold.
+	cutoff *Cutoff
+	// writer is the output destination.
+	writer io.Writer
+	// redact lists keys whose values are masked on output.
+	redact []string
+	// derive derives ambient arguments from the context of each record.
+	derive func(ctx context.Context, args []Arg) []Arg
 }
 
-// Option defines a function that modifies the logger configuration.
+// Option defines a function that modifies the JSON sink configuration.
 type Option func(*config)
 
-// WithLevel sets the minimum log level.
-func WithLevel(level slog.Level) Option {
+// WithLevel sets the minimum log level. The sink owns a private [Cutoff]
+// initialized to this level; use [WithCutoff] instead to share an
+// adjustable threshold, in which case this option is ignored.
+func WithLevel(level Level) Option {
 	return func(c *config) {
-		c.Level = level
+		c.level = level
 	}
 }
 
-// WithFormat sets the log output format.
-func WithFormat(format Format) Option {
+// WithCutoff shares an externally adjustable threshold with the sink,
+// overriding [WithLevel]. A nil cutoff is ignored.
+func WithCutoff(cutoff *Cutoff) Option {
 	return func(c *config) {
-		c.Format = format
+		if cutoff != nil {
+			c.cutoff = cutoff
+		}
 	}
 }
 
-// WithAddSource configures the logger to include the source code position (file
-// and line number) in each log entry.
+// WithWriter sets the output destination for the logs. The sink
+// serializes its writes, so the writer need not be safe for concurrent
+// use. A nil writer is ignored.
 //
-// Note that this has a performance cost and should be used judiciously, often
-// enabled only during development or at debug levels.
-func WithAddSource(add bool) Option {
-	return func(c *config) {
-		c.AddSource = add
-	}
-}
-
-// WithWriter returns an [Option] that sets the output destination for the logs.
-// If the provided [io.Writer] is nil, it is ignored.
+// The sink issues one write per record. High-volume deployments where
+// the resulting system calls show up in profiles can wrap the
+// destination in a [github.com/deep-rent/nexus/std/flush.Writer] to
+// batch them, trading a bounded loss window on a crash.
 func WithWriter(w io.Writer) Option {
 	return func(c *config) {
 		if w != nil {
-			c.Writer = w
+			c.writer = w
 		}
 	}
 }
 
-// WithReplaceAttr sets a function that is called for every non-group
-// attribute before it is written, letting the caller rewrite or drop it. It
-// maps directly onto [slog.HandlerOptions.ReplaceAttr].
+// WithRedact masks the value of any argument whose key matches one of the
+// given names with a fixed marker. Key comparison is case-insensitive,
+// since header- and field-derived keys vary in casing. Repeated use adds
+// to the set.
 //
-// The common use is redaction: keeping secrets out of the logs regardless of
-// what a call site passes. A nil function is ignored.
+//	log.New(log.WithRedact("authorization", "password", "set-cookie"))
 //
-//	log.New(log.WithReplaceAttr(func(_ []string, a slog.Attr) slog.Attr {
-//		switch a.Key {
-//		case "authorization", "password", "token":
-//			return slog.String(a.Key, "[REDACTED]")
-//		default:
-//			return a
-//		}
-//	}))
+// Redaction applies to call-site arguments and to arguments bound with
+// [Logger.With] alike. It guards accidental leaks; it is not a substitute
+// for not logging secrets in the first place.
+func WithRedact(keys ...string) Option {
+	return func(c *config) {
+		c.redact = append(c.redact, keys...)
+	}
+}
+
+// WithContextArgs sets a function that derives ambient arguments, such as
+// a trace or request ID, from the context of each record. The function
+// appends to args and returns the result; it runs after the level check,
+// once per emitted record. A nil function is ignored.
 //
-// Redaction guards accidental leaks; it is not a substitute for not logging
-// secrets in the first place.
-func WithReplaceAttr(
-	fn func(groups []string, a slog.Attr) slog.Attr,
-) Option {
+//	log.New(log.WithContextArgs(
+//		func(ctx context.Context, args []log.Arg) []log.Arg {
+//			if id, ok := trace.FromContext(ctx); ok {
+//				args = append(args, log.String("trace_id", id))
+//			}
+//			return args
+//		},
+//	))
+func WithContextArgs(fn func(ctx context.Context, args []Arg) []Arg) Option {
 	return func(c *config) {
 		if fn != nil {
-			c.ReplaceAttr = fn
+			c.derive = fn
 		}
 	}
-}
-
-// Redact returns a [WithReplaceAttr] option that replaces the value of any
-// attribute whose key matches one of the given names with a fixed marker. Key
-// comparison is case-insensitive, since header- and field-derived keys vary
-// in casing.
-//
-//	log.New(log.Redact("authorization", "password", "set-cookie"))
-//
-// Only top-level keys are matched; an attribute nested inside a group is
-// compared by its own key, not its group-qualified path.
-func Redact(keys ...string) Option {
-	set := make(map[string]struct{}, len(keys))
-	for _, k := range keys {
-		set[ascii.ToLower(k)] = struct{}{}
-	}
-	return WithReplaceAttr(func(_ []string, a slog.Attr) slog.Attr {
-		if _, ok := set[ascii.ToLower(a.Key)]; ok {
-			return slog.String(a.Key, "[REDACTED]")
-		}
-		return a
-	})
 }

@@ -318,6 +318,13 @@ func (e Error) Error() string {
 	return e.Code + ": " + e.Description
 }
 
+// ErrorID returns the unique identifier of this error occurrence, making
+// the error traceable by the logging facility, which records the value
+// under a stable key.
+func (e Error) ErrorID() string {
+	return e.ID
+}
+
 // Proposal represents the raw input of an OAuth 2.0 grant request. It
 // encapsulates the verified identity of the requesting client and the
 // unvalidated parameters provided in the request body.

@@ -57,6 +57,16 @@ func (e *Error) Error() string {
 	return e.Reason + ": " + e.Description
 }
 
+// ErrorID returns the unique identifier of this error occurrence, making
+// the error traceable by the logging facility, which records the value
+// under a stable key.
+func (e *Error) ErrorID() string {
+	return e.ID
+}
+
+// The logging facility discovers the identifier through this interface.
+var _ log.Traceable = (*Error)(nil)
+
 // Unwrap returns the wrapped error if applicable.
 func (e *Error) Unwrap() error {
 	return e.Cause

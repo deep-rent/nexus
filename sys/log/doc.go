@@ -12,47 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package log provides a configurable constructor for the standard
-// [slog.Logger], allowing for easy setup using the functional options pattern.
-// It simplifies the creation of a structured logger by abstracting away the
-// handler setup and providing flexible options for setting the level, format,
-// and output from common types like strings.
+// Package log implements a strict, structured logging facility.
+//
+// Records are emitted as JSON lines only. There is no text format, no
+// reflection-based encoding, and no package-level default logger; loggers
+// arrive by injection. Every call takes a [context.Context], and values are
+// attached as typed key/value pairs built with constructors such as
+// [String], [Int], and [Err].
 //
 // # Usage
 //
-// Create a logger that outputs JSON at a debug level to standard error:
-//
-// Example:
+// Create a logger that writes JSON lines to standard error at debug level:
 //
 //	logger := log.New(
-//	  log.WithLevel(slog.LevelDebug),
-//	  log.WithFormat(log.FormatJSON),
-//	  log.WithWriter(os.Stderr),
-//	  log.WithAddSource(true), // Include file and line number.
+//		log.WithLevel(log.LevelDebug),
+//		log.WithWriter(os.Stderr),
 //	)
+//	logger.Info(ctx, "Server started", log.Int("port", 8080))
 //
-// Levels and formats can also be parsed from configuration strings with
-// [ParseLevel] and [ParseFormat].
+// Loggers are hierarchical: [Logger.Child] derives a named sub-logger whose
+// dotted path is recorded under the "logger" key, and [Logger.With] returns
+// a logger that includes the given arguments in every record. Bound
+// arguments are encoded once, not on every call, so per-request loggers are
+// cheap:
 //
-//	slog.SetDefault(logger)
-//	slog.Debug("This is a debug message")
+//	web := logger.Child("http").With(log.String("request_id", id))
+//	web.Debug(ctx, "Request received", log.String("path", r.URL.Path))
 //
-// Create a multi-target logger using Combine and NewHandler:
+// # Levels
 //
-// Example:
+// The level set is fixed: [LevelError], [LevelWarn], [LevelInfo], and
+// [LevelDebug], plus [LevelSilent], a configuration-only threshold that
+// disables output entirely. There is deliberately no designated fatal or panic
+// level; a logger that terminates the process skips deferred cleanup and cannot
+// be tested. If a catastrophic error occurs, log it and exit.
 //
-//	h1 := log.NewHandler(
-//	  log.WithLevel(slog.LevelDebug),
-//	  log.WithFormat(FormatText),
-//	  log.WithWriter(os.Stdout),
-//	)
-//	h2 := log.NewHandler(
-//	  log.WithLevel(slog.LevelError),
-//	  log.WithFormat(FormatJSON),
-//	  log.WithWriter(os.Stderr),
-//	)
-//	multiLogger := log.Combine(h1, h2)
+// The threshold can be adjusted at runtime through a shared [Cutoff], and
+// overridden per request with [SetLevel]:
 //
-//	slog.SetDefault(multiLogger)
-//	slog.Debug("This is a debug message")
+//	ctx = log.SetLevel(ctx, log.LevelDebug)
+//
+// # Sinks
+//
+// The [Logger] front-end is fixed policy; the [Sink] interface is the
+// extension point. [NewSink] returns the JSON sink, [Multi] fans records
+// out to several sinks, and [Discard] returns a logger that reports every
+// level as disabled, so callers guarding expensive work with
+// [Logger.Enabled] skip it entirely.
+//
+// # Testing
+//
+// [Capture] couples a logger to a concurrency-safe [Buffer] for
+// asserting on the emitted JSON, and [Recorder] is a [Sink] that captures
+// [Record] values in memory for structural assertions that do not depend
+// on the wire format.
 package log
