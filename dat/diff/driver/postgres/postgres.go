@@ -1183,7 +1183,11 @@ func resolve(
 // caller's error.
 func close(rows *sql.Rows, logger *log.Logger) {
 	if err := rows.Close(); err != nil {
-		logger.Error(context.Background(), "Failed to close rows", log.Error(err))
+		logger.Error(
+			context.Background(),
+			"Failed to close rows",
+			log.Error(err),
+		)
 	}
 }
 
