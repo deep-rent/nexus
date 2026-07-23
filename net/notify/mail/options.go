@@ -15,8 +15,9 @@
 package mail
 
 import (
-	"log/slog"
 	"net/http"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -30,8 +31,8 @@ type config struct {
 	baseURL string
 	// userAgent defines the User-Agent header value for outgoing requests.
 	userAgent string
-	// logger specifies the custom structured [slog.Logger].
-	logger *slog.Logger
+	// logger specifies the custom structured [log.Logger].
+	logger *log.Logger
 	// client is the HTTP client used for outbound API requests.
 	client *http.Client
 }
@@ -68,9 +69,10 @@ func WithUserAgent(v string) Option {
 	}
 }
 
-// WithLogger injects a structured [slog.Logger] into the sender.
-// Nil values will be ignored.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger injects a structured [log.Logger] into the sender. If not
+// provided, the sender stays silent ([log.Discard]). Nil values will be
+// ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

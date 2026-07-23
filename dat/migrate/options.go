@@ -15,7 +15,7 @@
 package migrate
 
 import (
-	"log/slog"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Option configures a [Migrator] instance.
@@ -64,7 +64,7 @@ func WithStrictOrder(enabled bool) Option {
 // WithLogger sets the logger for the migrator.
 //
 // A nil value will be ignored.
-func WithLogger(logger *slog.Logger) Option {
+func WithLogger(logger *log.Logger) Option {
 	return func(m *Migrator) {
 		if logger != nil {
 			m.logger = logger

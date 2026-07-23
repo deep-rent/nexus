@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
 
 // InstanceTag is the tag key under which merged samples carry the name of

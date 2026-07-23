@@ -15,9 +15,9 @@
 package schedule
 
 import (
-	"log/slog"
 	"time"
 
+	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
@@ -28,7 +28,7 @@ const DefaultRecoveryDelay = 1 * time.Minute
 
 // config holds the internal settings for the scheduler.
 type config struct {
-	logger   *slog.Logger      // destination for internal logs
+	logger   *log.Logger       // destination for internal logs
 	recovery time.Duration     // delay applied after a tick panicked
 	start    time.Duration     // delay before the first run of a tick
 	jitter   float64           // fraction of the start delay subject to jitter
@@ -39,10 +39,10 @@ type config struct {
 // Option is a function that configures the [Scheduler].
 type Option func(*config)
 
-// WithLogger provides a custom [slog.Logger] for the scheduler. It receives
-// the report when a [Tick] panics. If not provided, [slog.Default] is used.
-// A nil value is ignored.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger provides a custom [log.Logger] for the scheduler. It receives
+// the report when a [Tick] panics. If not provided, the scheduler stays
+// silent, as if [log.Discard] had been given. A nil value is ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

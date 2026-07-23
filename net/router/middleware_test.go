@@ -22,9 +22,9 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/middleware"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func TestHandler_ChainMiddleware(t *testing.T) {
@@ -128,7 +128,7 @@ func TestHandler_AdaptStdMiddleware(t *testing.T) {
 func TestMiddleware_Connectivity(t *testing.T) {
 	t.Parallel()
 
-	logger := log.Silent()
+	logger := log.Discard()
 	tests := []struct {
 		name string
 		fn   any

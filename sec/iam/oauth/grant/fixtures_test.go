@@ -16,7 +16,6 @@ package grant
 
 import (
 	"context"
-	"log/slog"
 	"net/url"
 	"slices"
 	"time"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/iam/artifact"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // fakeClient is a configurable in-memory [oauth.Client] implementation.
@@ -132,8 +132,8 @@ func seed[K ~string, V any](t *testing.T, s artifact.Store[K, V], v V) {
 }
 
 // discardLogger returns a logger that drops all records.
-func discardLogger() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
+func discardLogger() *log.Logger {
+	return log.Discard()
 }
 
 // newProposal assembles an [oauth.Proposal] for direct grant testing.

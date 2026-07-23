@@ -20,16 +20,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
@@ -154,11 +152,10 @@ type sender struct {
 	// client holds the configured [http.Client].
 	client *http.Client
 	// logger is used for structured diagnostic output.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 var _ Sender = (*sender)(nil)
-
 
 // NewSender creates a configured Twilio client with the given account SID and
 // authentication token. Requests are dispatched through
@@ -173,7 +170,7 @@ func NewSender(sid, token string, opts ...Option) Sender {
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		logger:  slog.Default(),
+		logger:  log.Discard(),
 		client:  transport.DefaultClient,
 	}
 
@@ -224,10 +221,10 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	req.SetBasicAuth(s.sid, s.token)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	s.logger.DebugContext(
+	s.logger.Debug(
 		ctx,
 		"Dispatching SMS to provider",
-		slog.String("to", msg.To),
+		log.String("to", msg.To),
 	)
 
 	start := time.Now()
@@ -239,14 +236,14 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	defer func() {
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			s.logger.WarnContext(
+			s.logger.Warn(
 				ctx,
 				"Failed to drain response body",
 				log.Err(err),
 			)
 		}
 		if err := res.Body.Close(); err != nil {
-			s.logger.WarnContext(
+			s.logger.Warn(
 				ctx,
 				"Failed to close response body",
 				log.Err(err),
@@ -260,7 +257,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		// Attempt to parse the JSON error body. If it fails, we just return the
 		// status. The client caps response body size, so this read is bounded.
 		if err := json.UnmarshalRead(res.Body, &apiErr); err != nil {
-			s.logger.WarnContext(
+			s.logger.Warn(
 				ctx,
 				"Failed to parse API error response",
 				log.Err(err),
@@ -269,10 +266,10 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		return &apiErr
 	}
 
-	s.logger.DebugContext(
+	s.logger.Debug(
 		ctx,
 		"SMS dispatched",
-		slog.Duration("duration", delta),
+		log.Duration("duration", delta),
 	)
 
 	return nil

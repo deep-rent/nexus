@@ -15,8 +15,9 @@
 package file
 
 import (
-	"log/slog"
 	"strings"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -30,7 +31,7 @@ type config struct {
 	// ext is the file extension to filter for.
 	ext string
 	// logger is the structured logger for reporting skipped files.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // Option configures a [Source] instance.
@@ -54,8 +55,8 @@ func WithExtension(ext string) Option {
 
 // WithLogger injects a structured logger to record skipped files.
 //
-// Nil values are ignored, falling back to [slog.Default].
-func WithLogger(logger *slog.Logger) Option {
+// Nil values are ignored; without a logger, logging is disabled.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

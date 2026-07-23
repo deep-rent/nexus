@@ -22,10 +22,10 @@ import (
 
 	"uuid"
 
-	"github.com/deep-rent/nexus/sec/auth"
+	"github.com/deep-rent/nexus/dat/valid"
 	"github.com/deep-rent/nexus/net/header"
 	"github.com/deep-rent/nexus/net/router"
-	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sec/auth"
 )
 
 // Error reasons emitted by the sync endpoint, complementing the reasons

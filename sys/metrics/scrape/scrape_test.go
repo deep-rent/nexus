@@ -20,10 +20,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/sys/metrics/scrape"
-	"github.com/deep-rent/nexus/net/router"
 )
 
 // endpoint builds a registry pre-loaded by fill and serves its collection
@@ -52,7 +52,7 @@ func TestCollector_MergesTargets(t *testing.T) {
 		reg.Gauge("pool_size").Set(6)
 	})
 
-	c := scrape.New(scrape.WithLogger(log.Silent()))
+	c := scrape.New(scrape.WithLogger(log.Discard()))
 	c.Add("api-1", one.URL)
 	c.Add("api-2", two.URL)
 	c.Run(t.Context())
@@ -118,7 +118,7 @@ func TestCollector_MergesHistograms(t *testing.T) {
 		h.Observe(0.05)
 	})
 
-	c := scrape.New(scrape.WithLogger(log.Silent()))
+	c := scrape.New(scrape.WithLogger(log.Discard()))
 	c.Add("api-1", one.URL)
 	c.Add("api-2", two.URL)
 	c.Run(t.Context())
@@ -158,7 +158,7 @@ func TestCollector_ReportsFailures(t *testing.T) {
 	))
 	defer down.Close()
 
-	c := scrape.New(scrape.WithLogger(log.Silent()))
+	c := scrape.New(scrape.WithLogger(log.Discard()))
 	c.Add("up", up.URL)
 	c.Add("down", down.URL)
 	c.Run(t.Context())
@@ -204,7 +204,7 @@ func TestCollector_KeepsLastSnapshotAcrossFailures(t *testing.T) {
 	))
 	defer srv.Close()
 
-	c := scrape.New(scrape.WithLogger(log.Silent()))
+	c := scrape.New(scrape.WithLogger(log.Discard()))
 	c.Add("api", srv.URL)
 
 	c.Run(t.Context())
@@ -246,7 +246,7 @@ func TestCollector_Mount(t *testing.T) {
 		reg.Counter("requests_total").Add(2)
 	})
 
-	c := scrape.New(scrape.WithLogger(log.Silent()))
+	c := scrape.New(scrape.WithLogger(log.Discard()))
 	c.Add("api", one.URL)
 	c.Run(t.Context())
 

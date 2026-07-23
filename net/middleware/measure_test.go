@@ -15,13 +15,13 @@
 package middleware_test
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/deep-rent/nexus/sys/metrics"
 	mw "github.com/deep-rent/nexus/net/middleware"
+	"github.com/deep-rent/nexus/sys/log"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
 
 // durations returns the request duration samples recorded in reg, keyed by
@@ -140,7 +140,7 @@ func TestMeasure_RecordsPanicsAsServerErrors(t *testing.T) {
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			panic("boom")
 		}),
-		mw.Recover(mockLogger(&bytes.Buffer{})),
+		mw.Recover(log.Discard()),
 		mw.Measure(mw.WithRegistry(reg)),
 	)
 

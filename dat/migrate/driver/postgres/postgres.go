@@ -25,16 +25,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"log/slog"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/dat/migrate"
 	"github.com/deep-rent/nexus/dat/migrate/schema"
 	"github.com/deep-rent/nexus/std/quote"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
-
 
 // Driver implements the [migrate.Driver] interface for PostgreSQL.
 //
@@ -58,7 +55,7 @@ type Driver struct {
 	// stmtTimeout is the maximum duration for a single statement.
 	stmtTimeout time.Duration
 	// logger records driver operations.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // New creates a new PostgreSQL migration driver.
@@ -71,7 +68,7 @@ func New(db *sql.DB, opts ...Option) *Driver {
 	cfg := &config{
 		table:  DefaultTable,
 		schema: DefaultSchema,
-		logger: slog.Default(),
+		logger: log.Discard(),
 	}
 
 	for _, opt := range opts {
@@ -134,7 +131,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 		return errors.New("already locked")
 	}
 
-	d.logger.Debug("Acquiring advisory lock", slog.Int64("id", d.lockID))
+	d.logger.Debug(ctx, "Acquiring advisory lock", log.Int64("id", d.lockID))
 	conn, err := d.db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to acquire database connection: %w", err)
@@ -153,7 +150,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 		d.lockID,
 	); err != nil {
 		if e := conn.Close(); e != nil {
-			d.logger.Error(
+			d.logger.Error(ctx,
 				"Failed to close connection after lock failure",
 				log.Err(e),
 			)
@@ -162,7 +159,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 	}
 
 	d.lock = conn
-	d.logger.Info("Advisory lock acquired")
+	d.logger.Info(ctx, "Advisory lock acquired")
 	return nil
 }
 
@@ -174,7 +171,7 @@ func (d *Driver) Unlock(ctx context.Context) error {
 		return errors.New("not locked")
 	}
 
-	d.logger.Debug("Releasing advisory lock", slog.Int64("id", d.lockID))
+	d.logger.Debug(ctx, "Releasing advisory lock", log.Int64("id", d.lockID))
 	_, err := d.lock.ExecContext(
 		ctx,
 		"SELECT pg_advisory_unlock($1)",
@@ -188,7 +185,7 @@ func (d *Driver) Unlock(ctx context.Context) error {
 		return fmt.Errorf("failed to release advisory lock: %w", err)
 	}
 
-	d.logger.Info("Advisory lock released")
+	d.logger.Info(ctx, "Advisory lock released")
 	return e
 }
 
@@ -197,10 +194,10 @@ func (d *Driver) Unlock(ctx context.Context) error {
 // It creates the table with columns for version, checksum, dirty state, and
 // application timestamp if it is not already present.
 func (d *Driver) Init(ctx context.Context) error {
-	d.logger.Debug(
+	d.logger.Debug(ctx,
 		"Initializing migration table if missing",
-		slog.String("name", d.table),
-		slog.String("schema", d.schema),
+		log.String("name", d.table),
+		log.String("schema", d.schema),
 	)
 
 	query := fmt.Sprintf(`
@@ -219,7 +216,7 @@ func (d *Driver) Init(ctx context.Context) error {
 //
 // The records are ordered by their version in ascending order.
 func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
-	d.logger.Debug("Fetching applied migrations")
+	d.logger.Debug(ctx, "Fetching applied migrations")
 	query := "SELECT version, checksum, dirty FROM " +
 		d.ident + " ORDER BY version ASC"
 
@@ -229,7 +226,7 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	}
 	defer func() {
 		if e := rows.Close(); e != nil {
-			d.logger.Error("Failed to close rows", log.Err(e))
+			d.logger.Error(ctx, "Failed to close rows", log.Err(e))
 		}
 	}()
 
@@ -270,7 +267,7 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 
 	defer func() {
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
-			d.logger.Error(
+			d.logger.Error(ctx,
 				"Failed to rollback transaction",
 				log.Err(e),
 			)
@@ -293,7 +290,7 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // records with a version strictly greater than the target. This is typically
 // used to recover from a dirty database state after human intervention.
 func (d *Driver) Force(ctx context.Context, version int64) error {
-	d.logger.Info("Forcing database version", slog.Int64("version", version))
+	d.logger.Info(ctx, "Forcing database version", log.Int64("version", version))
 
 	return d.withTx(ctx, func(tx *sql.Tx) error {
 		queryUpdate := "UPDATE " + d.ident + " SET dirty = false WHERE version = $1"
@@ -319,10 +316,10 @@ func (d *Driver) Execute(
 	ctx context.Context,
 	script migrate.ParsedScript,
 ) error {
-	d.logger.Info(
+	d.logger.Info(ctx,
 		"Executing migration",
-		slog.Int64("version", script.Version),
-		slog.String("direction", script.Direction.String()),
+		log.Int64("version", script.Version),
+		log.String("direction", script.Direction.String()),
 	)
 
 	if err := d.setDirty(
@@ -335,7 +332,7 @@ func (d *Driver) Execute(
 	}
 
 	if script.Tx {
-		d.logger.Debug("Running migration in transaction")
+		d.logger.Debug(ctx, "Running migration in transaction")
 		err := d.withTx(ctx, func(tx *sql.Tx) error {
 			return d.execAll(ctx, tx, script.Statements)
 		})
@@ -344,11 +341,12 @@ func (d *Driver) Execute(
 			// the dirty marker to spare the operator a manual Force. If the
 			// cleanup itself fails, the marker stays and blocks further runs,
 			// which is the safe direction to err in.
-			if e := d.undoDirty(
+			if e := d.undo(
+				ctx,
 				script.Version,
 				script.Direction,
 			); e != nil {
-				d.logger.Error(
+				d.logger.Error(ctx,
 					"Failed to undo dirty marker after rollback",
 					log.Err(e),
 				)
@@ -356,7 +354,7 @@ func (d *Driver) Execute(
 			return err
 		}
 	} else {
-		d.logger.Debug("Running migration without transaction")
+		d.logger.Debug(ctx, "Running migration without transaction")
 		if err := d.execAll(ctx, d.db, script.Statements); err != nil {
 			return err
 		}
@@ -385,7 +383,7 @@ func (d *Driver) execAll(
 	statements []string,
 ) error {
 	for i, stmt := range statements {
-		d.logger.Debug("Executing statement", slog.Int("index", i+1))
+		d.logger.Debug(ctx, "Executing statement", log.Int("index", i+1))
 		if err := d.execOne(ctx, run, stmt); err != nil {
 			return fmt.Errorf("statement %d failed: %w", i+1, err)
 		}
@@ -414,9 +412,9 @@ func (d *Driver) setDirty(
 	direction migrate.Direction,
 	checksum [32]byte,
 ) error {
-	d.logger.Debug(
+	d.logger.Debug(ctx,
 		"Marking migration as dirty",
-		slog.Int64("version", version),
+		log.Int64("version", version),
 	)
 
 	switch direction {
@@ -446,17 +444,22 @@ func (d *Driver) setDirty(
 	return nil
 }
 
-// undoDirty reverts the marker written by setDirty after a transactional
-// migration failed and rolled back cleanly.
+// undo reverts the dirty marker after a transactional migration failed and
+// rolled back cleanly.
 //
 // For upward migrations, it deletes the record inserted for the attempt. For
 // downward migrations, it restores the existing record to a clean state. It
 // runs on a fresh context so cleanup still succeeds when the migration failed
 // due to cancellation of the original context.
-func (d *Driver) undoDirty(version int64, direction migrate.Direction) error {
+func (d *Driver) undo(
+	ctx context.Context,
+	version int64,
+	direction migrate.Direction,
+) error {
 	d.logger.Debug(
+		ctx,
 		"Undoing dirty marker after rollback",
-		slog.Int64("version", version),
+		log.Int64("version", version),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -486,7 +489,7 @@ func (d *Driver) setClean(
 	version int64,
 	direction migrate.Direction,
 ) error {
-	d.logger.Debug("Clearing dirty state", slog.Int64("version", version))
+	d.logger.Debug(ctx, "Clearing dirty state", log.Int64("version", version))
 
 	switch direction {
 	case migrate.Up:

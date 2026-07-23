@@ -16,7 +16,6 @@ package oauth
 
 import (
 	"context"
-	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/artifact"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // GrantType defines the various flows for obtaining an access token.
@@ -335,7 +335,7 @@ type Proposal struct {
 	// codes, refresh tokens, and device codes.
 	Tokens TokenStores
 	// Logger provides a context-aware logger for the grant handler.
-	Logger *slog.Logger
+	Logger *log.Logger
 	// Now returns the current time. Grants must use it instead of [time.Now]
 	// so that temporal checks stay consistent with the server clock.
 	Now func() time.Time
@@ -350,21 +350,21 @@ type Proposal struct {
 // crafted form values into a [Grant].
 //
 // The hasher fingerprints bearer artifacts via [Proposal.Digest]; nil falls
-// back to [digest.DefaultHasher]. A nil logger falls back to [slog.Default],
+// back to [digest.DefaultHasher]. A nil logger falls back to [log.Discard],
 // and a nil now to [time.Now].
 func NewProposal(
 	client Client,
 	tokens TokenStores,
 	form url.Values,
 	hasher *digest.Hasher,
-	logger *slog.Logger,
+	logger *log.Logger,
 	now func() time.Time,
 ) *Proposal {
 	if hasher == nil {
 		hasher = digest.DefaultHasher
 	}
 	if logger == nil {
-		logger = slog.Default()
+		logger = log.Discard()
 	}
 	if now == nil {
 		now = time.Now

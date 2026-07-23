@@ -15,8 +15,9 @@
 package postgres
 
 import (
-	"log/slog"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -40,7 +41,7 @@ type config struct {
 	// stmtTimeout is the maximum execution time for a single SQL statement.
 	stmtTimeout time.Duration
 	// logger is the structured logger for driver activity.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // Option configures a PostgreSQL [Driver] instance.
@@ -100,8 +101,8 @@ func WithStatementTimeout(timeout time.Duration) Option {
 
 // WithLogger injects a structured logger to record driver operations.
 //
-// Nil values are ignored, falling back to [slog.Default].
-func WithLogger(logger *slog.Logger) Option {
+// Nil values are ignored; without a logger, logging is disabled.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

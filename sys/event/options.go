@@ -15,8 +15,7 @@
 package event
 
 import (
-	"log/slog"
-
+	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
@@ -34,7 +33,7 @@ type config struct {
 	// a constructor rather than an instance so that every bus gets its own.
 	wait func() WaitStrategy
 	// logger is used for reporting errors and panics.
-	logger *slog.Logger
+	logger *log.Logger
 	// registry records the bus counters.
 	registry *metrics.Registry
 	// name distinguishes bus instances in the recorded metrics.
@@ -103,9 +102,9 @@ func WithWaitStrategy(strategy func() WaitStrategy) Option {
 	}
 }
 
-// WithLogger sets the structured logger for recording subscriber panics. If not
-// provided, it defaults to [slog.Default].
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger sets the structured logger for recording subscriber panics. If
+// not provided, the bus stays silent, as if [log.Discard] had been given.
+func WithLogger(logger *log.Logger) Option {
 	return func(o *config) {
 		if logger != nil {
 			o.logger = logger

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"uuid"
@@ -169,18 +168,18 @@ func (e *panicError) Unwrap() error {
 // Logging every error here, rather than at each site that builds one, is what
 // keeps handlers free of logging boilerplate and keeps the log record shape
 // consistent across the application.
-func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
+func defaultErrorHandler(logger *log.Logger) ErrorHandler {
 	return func(e *Exchange, err error) {
 		ctx := e.Context()
 
 		// Nothing can be sent once the response is on the wire, so the error
 		// is only recorded.
 		if e.W.Closed() {
-			logger.ErrorContext(ctx,
+			logger.Error(ctx,
 				"Handler returned error after writing response",
 				log.Err(err),
-				slog.String("method", e.Method()),
-				slog.String("path", e.Path()),
+				log.String("method", e.Method()),
+				log.String("path", e.Path()),
 			)
 			return
 		}
@@ -204,7 +203,7 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 		record(ctx, logger, e, res)
 
 		if werr := e.JSON(res.Status, res); werr != nil {
-			logger.WarnContext(ctx,
+			logger.Warn(ctx,
 				"Failed to write error response",
 				log.Err(werr),
 			)
@@ -217,27 +216,29 @@ func defaultErrorHandler(logger *slog.Logger) ErrorHandler {
 // API and would otherwise drown the logs, so they are recorded at debug level.
 func record(
 	ctx context.Context,
-	logger *slog.Logger,
+	logger *log.Logger,
 	e *Exchange,
 	res *Error,
 ) {
-	level := slog.LevelDebug
+	level := log.LevelDebug
 	if res.Status >= http.StatusInternalServerError {
-		level = slog.LevelError
+		level = log.LevelError
 	}
 
 	if !logger.Enabled(ctx, level) {
 		return
 	}
 
-	attrs := []any{
-		slog.Int("status", res.Status),
-		slog.String("reason", res.Reason),
-		slog.String("method", e.Method()),
-		slog.String("path", e.Path()),
+	attrs := []log.Arg{
+		log.Int("status", res.Status),
+		log.String("reason", res.Reason),
+		log.String("method", e.Method()),
+		log.String("path", e.Path()),
 	}
+	// The identifier is attached by hand because the error logged below is
+	// the cause, not the [Error] itself, so the sink cannot discover it.
 	if res.ID != "" {
-		attrs = append(attrs, slog.String("error_id", res.ID))
+		attrs = append(attrs, log.String(log.ErrorIDKey, res.ID))
 	}
 	// The cause carries the internal detail that the description withholds
 	// from the client.
@@ -247,7 +248,7 @@ func record(
 
 	// A recovered panic is only useful with the stack that produced it.
 	if pe, ok := errors.AsType[*panicError](res.Cause); ok {
-		attrs = append(attrs, slog.String("stack", string(pe.stack)))
+		attrs = append(attrs, log.String("stack", string(pe.stack)))
 	}
 
 	logger.Log(ctx, level, res.Description, attrs...)

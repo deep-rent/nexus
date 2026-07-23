@@ -25,18 +25,17 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/deep-rent/nexus/dat/cache"
-	"github.com/deep-rent/nexus/sec/jose/jwa"
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/router"
-	"github.com/deep-rent/nexus/sys/schedule"
+	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/sign"
+	"github.com/deep-rent/nexus/sys/log"
+	"github.com/deep-rent/nexus/sys/schedule"
 )
 
 // Media types as registered in RFC 7517.
@@ -535,8 +534,8 @@ var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 	if set.Len() == 0 {
 		return nil, errors.New("no valid keys found")
 	}
-	if err != nil && r.Logger.Enabled(r.Ctx, slog.LevelDebug) {
-		r.Logger.DebugContext(
+	if err != nil && r.Logger.Enabled(r.Ctx, log.LevelDebug) {
+		r.Logger.Debug(
 			r.Ctx,
 			"Some keys could not be parsed",
 			log.Err(err),

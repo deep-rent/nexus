@@ -15,10 +15,9 @@
 package mail_test
 
 import (
-	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/net/notify/mail"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 type mockRoundTripper struct {
@@ -362,13 +362,7 @@ func TestSender_Send(t *testing.T) {
 func TestSender_CustomLogger(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(
-		&buf,
-		&slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		},
-	))
+	logger, buf := log.Capture(log.WithLevel(log.LevelDebug))
 
 	client := mockHTTPClient(t, &http.Response{
 		StatusCode: http.StatusAccepted,
@@ -392,9 +386,19 @@ func TestSender_CustomLogger(t *testing.T) {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
-	if s := buf.String(); !strings.Contains(s,
-		"Dispatching message to provider") {
-		t.Errorf("log buffer should contain the debug output; got %q", s)
+	lines := buf.Lines()
+	if len(lines) == 0 {
+		t.Fatal("log buffer should contain the debug output")
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &rec); err != nil {
+		t.Fatalf("unmarshal log line %q: %v", lines[0], err)
+	}
+	if got, want := rec["msg"], "Dispatching message to provider"; got != want {
+		t.Errorf("msg: got %v; want %v", got, want)
+	}
+	if got, want := rec["level"], "debug"; got != want {
+		t.Errorf("level: got %v; want %v", got, want)
 	}
 }
 

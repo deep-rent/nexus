@@ -16,7 +16,6 @@ package otp
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
@@ -24,7 +23,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Status is the logical result of a [Challenger.Verify] or [Challenger.Resend]
 // call. It is distinct from a Go error, which is reserved for storage and
@@ -108,9 +106,8 @@ type Challenger struct {
 	hasher      *digest.Hasher
 	handles     *nonce.Generator
 	codes       *nonce.Sampler
-	logger      *slog.Logger
+	logger      *log.Logger
 }
-
 
 // New creates a [Challenger] backed by the given [Store]. It panics if store
 // is nil, since that is a startup configuration error.
@@ -127,7 +124,7 @@ func New(store Store, opts ...Option) *Challenger {
 		hasher:      digest.DefaultHasher,
 		handles:     nonce.DefaultGenerator,
 		codes:       defaultCodes,
-		logger:      slog.Default(),
+		logger:      log.Discard(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -338,7 +335,7 @@ func (c *Challenger) expired(ch Challenge) bool {
 // the challenge's expiry is the backstop for a failed deletion.
 func (c *Challenger) deleteBestEffort(ctx context.Context, id, what string) {
 	if _, err := c.store.Delete(ctx, id); err != nil {
-		c.logger.ErrorContext(ctx, "Failed to delete "+what, log.Err(err))
+		c.logger.Error(ctx, "Failed to delete "+what, log.Err(err))
 	}
 }
 

@@ -20,22 +20,21 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/deep-rent/nexus/net/notify/push"
+	"github.com/deep-rent/nexus/net/transport"
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
-	"github.com/deep-rent/nexus/net/notify/push"
 	"github.com/deep-rent/nexus/sec/sign"
 	"github.com/deep-rent/nexus/sec/token"
-	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Sender implements the [push.Sender] interface for the Apple Push Notification
 // service (APNs). It handles authentication, payload construction, and
@@ -45,12 +44,11 @@ type Sender struct {
 	url    string
 	topic  string
 	client *http.Client
-	logger *slog.Logger
+	logger *log.Logger
 	clock  func() time.Time
 }
 
 var _ push.Sender = (*Sender)(nil)
-
 
 // Credentials contains the necessary credentials for authenticating with APNs.
 type Credentials struct {
@@ -80,7 +78,7 @@ func New(
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		logger:  slog.Default(),
+		logger:  log.Discard(),
 		now:     time.Now,
 		client:  transport.DefaultClient,
 	}
@@ -200,10 +198,10 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 		req.Header.Set("apns-expiration", "0")
 	}
 
-	s.logger.DebugContext(
+	s.logger.Debug(
 		ctx,
 		"Dispatching APNs message",
-		slog.String("token", msg.Target.Token),
+		log.String("token", msg.Target.Token),
 	)
 
 	return push.Deliver(ctx, s.client, req, s.logger)

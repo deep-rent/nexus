@@ -15,11 +15,11 @@
 package cache
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
@@ -40,7 +40,7 @@ type config struct {
 	maxInterval time.Duration    // ceiling for refresh delays
 	jitter      float64          // fraction of the interval subject to jitter
 	backoff     backoff.Strategy // delays between failed refreshes
-	logger      *slog.Logger     // destination for internal logs
+	logger      *log.Logger      // destination for internal logs
 	client      *http.Client     // HTTP client used for fetching
 	now         func() time.Time // clock used to interpret date headers
 
@@ -122,9 +122,9 @@ func WithBackoff(strategy backoff.Strategy) Option {
 	}
 }
 
-// WithLogger provides a custom [slog.Logger] for the controller. If not
-// provided, [slog.Default] is used. A nil value is ignored.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger provides a custom [log.Logger] for the controller. If not
+// provided, logging is disabled. A nil value is ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

@@ -182,7 +182,7 @@ func (s *Server) webAuthnSubject(e *router.Exchange) (Subject, error) {
 
 	claims, err := s.introspector.Verify([]byte(token))
 	if err != nil {
-		s.logger.DebugContext(
+		s.logger.Debug(
 			e.Context(),
 			"Token verification failed during WebAuthn registration",
 			log.Err(err),
@@ -295,7 +295,7 @@ func (s *Server) WebAuthnRegister(e *router.Exchange) error {
 			Description: "invalid or expired handle",
 		}
 	case passkey.StatusRejected:
-		s.logger.DebugContext(
+		s.logger.Debug(
 			e.Context(),
 			"WebAuthn attestation rejected",
 			log.Err(out.Reason),
@@ -373,7 +373,7 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 		}
 	case passkey.StatusRejected:
 		s.penalize(s.addr(e))
-		s.logger.DebugContext(
+		s.logger.Debug(
 			e.Context(),
 			"WebAuthn assertion rejected",
 			log.Err(out.Reason),
@@ -485,7 +485,7 @@ func (g *webAuthnGrant) Authorize(
 			Description: "invalid or expired handle",
 		}
 	case passkey.StatusRejected:
-		pro.Logger.DebugContext(
+		pro.Logger.Debug(
 			ctx,
 			"WebAuthn assertion rejected",
 			log.Err(out.Reason),

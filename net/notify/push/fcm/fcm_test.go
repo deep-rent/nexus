@@ -25,10 +25,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/notify/push"
 	"github.com/deep-rent/nexus/net/notify/push/fcm"
 	"github.com/deep-rent/nexus/sec/sign"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func generate(t *testing.T) []byte {
@@ -107,7 +107,7 @@ func TestFCM_Send(t *testing.T) {
 		fcm.WithClient(&http.Client{Timeout: 1 * time.Second, Transport: tr}),
 		fcm.WithBaseURL("https://fcm.googleapis.com/v1"),
 		fcm.WithAuthURL("https://oauth2.googleapis.com/token"),
-		fcm.WithLogger(log.Silent()),
+		fcm.WithLogger(log.Discard()),
 	)
 
 	msg := push.NewMessage("Title", "Body", push.Target{Topic: "news"})

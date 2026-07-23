@@ -21,17 +21,14 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 
 	"uuid"
 
 	"github.com/deep-rent/nexus/dat/diff/hlc"
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
-
 
 // Engine orchestrates the bidirectional sync pipeline: it ingests change
 // sets and compiles patch feeds within a single transaction per request.
@@ -60,7 +57,7 @@ func New[Tx any](
 	reg.verify() // surface handler/registry misconfiguration now
 
 	cfg := config{
-		logger:     slog.Default(),
+		logger:     log.Discard(),
 		clock:      hlc.New(nil),
 		maxChanges: DefaultMaxChanges,
 		maxLimit:   DefaultMaxPatches,
@@ -180,7 +177,7 @@ func (e *Engine[Tx]) Sync(
 			})
 			ids = fresh
 		} else {
-			e.cfg.logger.Warn("prefilter failed", log.Err(err))
+			e.cfg.logger.Warn(ctx, "prefilter failed", log.Err(err))
 		}
 	}
 
@@ -245,16 +242,16 @@ func (e *Engine[Tx]) Sync(
 
 	if e.cfg.prefilter != nil && len(ids) > 0 {
 		if err := e.cfg.prefilter.Mark(ctx, ids); err != nil {
-			e.cfg.logger.Warn("prefilter mark failed", log.Err(err))
+			e.cfg.logger.Warn(ctx, "prefilter mark failed", log.Err(err))
 		}
 	}
 
-	e.cfg.logger.Info("sync completed",
-		slog.String("user", scope.UserID.String()),
-		slog.Int("received", len(req.Changes)),
-		slog.Int("applied", len(winners)),
-		slog.Int("patches", len(resp.Patches)),
-		slog.Bool("more", resp.More),
+	e.cfg.logger.Info(ctx, "sync completed",
+		log.UUID("user", scope.UserID),
+		log.Int("received", len(req.Changes)),
+		log.Int("applied", len(winners)),
+		log.Int("patches", len(resp.Patches)),
+		log.Bool("more", resp.More),
 	)
 	return resp, nil
 }

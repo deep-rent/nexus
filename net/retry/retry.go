@@ -17,12 +17,11 @@ package retry
 import (
 	"context"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/deep-rent/nexus/std/backoff"
 	"github.com/deep-rent/nexus/net/header"
+	"github.com/deep-rent/nexus/std/backoff"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -32,7 +31,7 @@ type transport struct {
 	next    http.RoundTripper // underlying transport used to send requests
 	policy  Policy            // decides whether another attempt is made
 	backoff backoff.Strategy  // supplies the delay between attempts
-	logger  *slog.Logger      // destination for debug output
+	logger  *log.Logger       // destination for debug output
 	now     func() time.Time  // clock used to interpret date headers
 	drain   int64             // bytes read from an abandoned response body
 }
@@ -55,7 +54,7 @@ func NewTransport(
 		policy:  DefaultPolicy(),
 		limit:   0,
 		backoff: backoff.Constant(0),
-		logger:  slog.Default(),
+		logger:  log.Discard(),
 		now:     time.Now,
 		drain:   DefaultMaxDrainBytes,
 	}
@@ -131,10 +130,10 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// even when the request turns out not to be repeatable.
 		if !retry || !rewindable {
 			if retry {
-				t.logger.DebugContext(ctx,
+				t.logger.Debug(ctx,
 					"Not retrying a request with a non-rewindable body",
-					slog.String("method", req.Method),
-					slog.String("url", req.URL.String()),
+					log.String("method", req.Method),
+					log.String("url", req.URL.String()),
 				)
 			}
 			return res, err
@@ -147,11 +146,11 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// still intact.
 		if deadline, ok := ctx.Deadline(); ok &&
 			time.Until(deadline) <= delay {
-			t.logger.DebugContext(ctx,
+			t.logger.Debug(ctx,
 				"Not retrying, deadline would elapse during backoff",
-				slog.Duration("delay", delay),
-				slog.String("method", req.Method),
-				slog.String("url", req.URL.String()),
+				log.Duration("delay", delay),
+				log.String("method", req.Method),
+				log.String("url", req.URL.String()),
 			)
 			return res, err
 		}
@@ -211,20 +210,22 @@ func (t *transport) discard(ctx context.Context, res *http.Response) {
 		switch {
 		case err != nil:
 			t.logger.Warn(
+				ctx,
 				"Failed to drain response body",
 				log.Err(err),
 			)
 		case n > t.drain:
-			t.logger.DebugContext(
+			t.logger.Debug(
 				ctx,
 				"Abandoned response body exceeds the drain limit",
-				slog.Int64("limit", t.drain),
+				log.Int64("limit", t.drain),
 			)
 		}
 	}
 
 	if err := res.Body.Close(); err != nil {
 		t.logger.Warn(
+			ctx,
 			"Failed to close response body",
 			log.Err(err),
 		)
@@ -240,24 +241,24 @@ func (t *transport) log(
 	res *http.Response,
 	err error,
 ) {
-	if !t.logger.Enabled(ctx, slog.LevelDebug) {
+	if !t.logger.Enabled(ctx, log.LevelDebug) {
 		return
 	}
 
-	attrs := []any{
-		slog.Int("attempt", count),
-		slog.Duration("delay", delay),
-		slog.String("method", req.Method),
-		slog.String("url", req.URL.String()),
+	args := []log.Arg{
+		log.Int("attempt", count),
+		log.Duration("delay", delay),
+		log.String("method", req.Method),
+		log.String("url", req.URL.String()),
 	}
 	if err != nil {
-		attrs = append(attrs, log.Err(err))
+		args = append(args, log.Err(err))
 	}
 	if res != nil {
-		attrs = append(attrs, slog.Int("status", res.StatusCode))
+		args = append(args, log.Int("status", res.StatusCode))
 	}
 
-	t.logger.DebugContext(ctx, "Request attempt failed, retrying", attrs...)
+	t.logger.Debug(ctx, "Request attempt failed, retrying", args...)
 }
 
 var _ http.RoundTripper = (*transport)(nil)

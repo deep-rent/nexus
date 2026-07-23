@@ -17,7 +17,6 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 
 	"github.com/deep-rent/nexus/dat/diff"
 	"github.com/deep-rent/nexus/dat/diff/driver/postgres"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // TestStore_Options constructs a store with every name option set to its
@@ -42,7 +42,7 @@ func TestStore_Options(t *testing.T) {
 		postgres.WithStateTable("document_state"),
 		postgres.WithSharesTable("document_shares"),
 		postgres.WithSequence("document_seq"),
-		postgres.WithLogger(slog.New(slog.DiscardHandler)),
+		postgres.WithLogger(log.Discard()),
 		postgres.WithLogger(nil), // nil is ignored, keeps the prior logger
 	)
 

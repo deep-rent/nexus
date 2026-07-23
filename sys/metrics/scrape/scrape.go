@@ -43,22 +43,19 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/deep-rent/nexus/net/transport"
 	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/sys/schedule"
-	"github.com/deep-rent/nexus/net/transport"
 )
-
 
 // maxBody caps how many bytes of a snapshot response are read, so that a
 // misbehaving target cannot exhaust the collector.
 const maxBody = 8 << 20 // 8 MB
-
 
 // target is one registered collection endpoint together with its latest
 // scrape result.
@@ -77,7 +74,7 @@ type target struct {
 // documentation.
 type Collector struct {
 	client  *http.Client
-	logger  *slog.Logger
+	logger  *log.Logger
 	timeout time.Duration
 
 	mu      sync.RWMutex
@@ -89,7 +86,7 @@ type Collector struct {
 func New(opts ...Option) *Collector {
 	cfg := config{
 		client:  transport.NewClient(0),
-		logger:  slog.Default(),
+		logger:  log.Discard(),
 		timeout: DefaultTimeout,
 	}
 	for _, opt := range opts {
@@ -144,10 +141,10 @@ func (c *Collector) scrape(ctx context.Context, t *target) {
 	took := time.Since(start)
 
 	if err != nil {
-		c.logger.WarnContext(ctx,
+		c.logger.Warn(ctx,
 			"Scrape failed",
-			slog.String("target", t.name),
-			slog.String("url", t.url),
+			log.String("target", t.name),
+			log.String("url", t.url),
 			log.Err(err),
 		)
 	}
@@ -178,7 +175,7 @@ func (c *Collector) fetch(
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			c.logger.WarnContext(
+			c.logger.Warn(
 				ctx,
 				"Failed to close response body",
 				log.Err(err),

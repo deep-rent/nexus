@@ -15,22 +15,21 @@
 package app_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/deep-rent/nexus/sys/app"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func TestLogger_Default(t *testing.T) {
 	t.Parallel()
 
-	if got := app.Logger(t.Context()); got != slog.Default() {
-		t.Error("got a custom logger; want the default one")
+	if got := app.Logger(t.Context()); got != log.Discard() {
+		t.Error("got a custom logger; want the discard logger")
 	}
 }
 
@@ -110,11 +109,11 @@ func TestNamed_PassesNil(t *testing.T) {
 func TestNamed_ScopesLogger(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	rec := log.NewRecorder()
+	logger := log.Wrap(rec)
 
 	c := app.Named("worker", func(ctx context.Context) error {
-		app.Logger(ctx).Info("hello")
+		app.Logger(ctx).Info(ctx, "hello")
 		return nil
 	})
 
@@ -122,9 +121,18 @@ func TestNamed_ScopesLogger(t *testing.T) {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
-	if want := "component=worker"; !strings.Contains(buf.String(), want) {
-		t.Errorf("want match for %q; got %q", want, buf.String())
+	for _, r := range rec.Records() {
+		if r.Msg != "hello" {
+			continue
+		}
+		for _, arg := range r.Args {
+			if arg.Key == "component" && arg.Value() == "worker" {
+				return
+			}
+		}
+		t.Fatalf("record %q lacks component=worker: %v", r.Msg, r.Args)
 	}
+	t.Error("no record with message \"hello\" was captured")
 }
 
 func TestGraceful_StopsOnCancellation(t *testing.T) {

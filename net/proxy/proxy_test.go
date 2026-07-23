@@ -15,20 +15,19 @@
 package proxy_test
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/deep-rent/nexus/net/proxy"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func TestHandler_ServeHTTP_EndToEnd(t *testing.T) {
@@ -150,8 +149,7 @@ func TestErrorHandler_Handle_StatusAndLogging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buf bytes.Buffer
-			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			logger, buf := log.Capture()
 			h := proxy.NewErrorHandler(logger)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/", nil).
@@ -164,13 +162,21 @@ func TestErrorHandler_Handle_StatusAndLogging(t *testing.T) {
 					t.Errorf("status code: got %d; want %d", got, want)
 				}
 			}
+			lines := buf.Lines()
 			if tt.log != "" {
-				if got := buf.String(); !strings.Contains(got, tt.log) {
-					t.Errorf("log: want match for %q; got %q", tt.log, got)
+				if got, want := len(lines), 1; got != want {
+					t.Fatalf("log lines: got %d; want %d", got, want)
+				}
+				var entry map[string]any
+				if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+					t.Fatalf("unmarshal log line %q: %v", lines[0], err)
+				}
+				if got, want := entry["msg"], tt.log; got != want {
+					t.Errorf("msg: got %v; want %v", got, want)
 				}
 			} else {
-				if got := buf.Len(); got != 0 {
-					t.Errorf("log length: got %d; want 0", got)
+				if got := len(lines); got != 0 {
+					t.Errorf("log lines: got %d; want 0", got)
 				}
 			}
 		})
@@ -250,7 +256,7 @@ func TestWithErrorHandler_Functional_CustomHandler(t *testing.T) {
 
 	wantErr := errors.New("sentinel")
 
-	ehf := func(log *slog.Logger) proxy.ErrorHandler {
+	ehf := func(_ *log.Logger) proxy.ErrorHandler {
 		return func(w http.ResponseWriter, r *http.Request, err error) {
 			called = true
 			if !errors.Is(err, wantErr) {

@@ -163,4 +163,3 @@ var (
 	_ io.Writer       = (*Writer)(nil)
 	_ io.StringWriter = (*Writer)(nil)
 )
-

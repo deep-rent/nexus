@@ -19,12 +19,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log/slog"
 	"slices"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/dat/migrate/schema"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Direction signals whether a migration is being applied or reverted.
@@ -181,9 +180,8 @@ type Migrator struct {
 	// strict determines if out-of-order pending migrations are rejected.
 	strict bool
 	// logger is the structured logger for migration events.
-	logger *slog.Logger
+	logger *log.Logger
 }
-
 
 // New creates a new [Migrator] instance.
 //
@@ -191,7 +189,7 @@ type Migrator struct {
 // provided.
 func New(opts ...Option) *Migrator {
 	m := &Migrator{
-		logger: slog.Default(),
+		logger: log.Discard(),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -227,7 +225,7 @@ func (m *Migrator) lock(
 		)
 		defer cancel()
 		if err := m.driver.Unlock(c); err != nil {
-			m.logger.Error("Failed to release lock", log.Err(err))
+			m.logger.Error(c, "Failed to release lock", log.Err(err))
 		}
 	}()
 
@@ -340,13 +338,13 @@ func (m *Migrator) up(ctx context.Context) error {
 
 	// 3. Fast-path return if the database is already fully up to date.
 	if len(pending) == 0 {
-		m.logger.Info("Migrations are up to date")
+		m.logger.Info(ctx, "Migrations are up to date")
 		return nil
 	}
 
-	m.logger.Info(
+	m.logger.Info(ctx,
 		"Applying pending migrations",
-		slog.Int("count", len(pending)),
+		log.Int("count", len(pending)),
 	)
 
 	// 4. Execute each pending migration in strict ascending order.
@@ -358,7 +356,7 @@ func (m *Migrator) up(ctx context.Context) error {
 		}
 	}
 
-	m.logger.Info("All migrations applied successfully")
+	m.logger.Info(ctx, "All migrations applied successfully")
 	return nil
 }
 
@@ -384,7 +382,7 @@ func (m *Migrator) down(ctx context.Context) error {
 
 	// 2. Fast-path return if the database is pristine and has no migrations.
 	if len(records) == 0 {
-		m.logger.Info("No applied migrations to revert")
+		m.logger.Info(ctx, "No applied migrations to revert")
 		return nil
 	}
 
@@ -406,9 +404,9 @@ func (m *Migrator) down(ctx context.Context) error {
 		return err
 	}
 
-	m.logger.Info(
+	m.logger.Info(ctx,
 		"Migration reverted successfully",
-		slog.Int64("version", f.Version),
+		log.Int64("version", f.Version),
 	)
 	return nil
 }
@@ -421,9 +419,9 @@ func (m *Migrator) Force(ctx context.Context, version int64) error {
 		if err := m.driver.Force(c, version); err != nil {
 			return fmt.Errorf("failed to force version: %w", err)
 		}
-		m.logger.Info(
+		m.logger.Info(c,
 			"Successfully forced migration version",
-			slog.Int64("version", version),
+			log.Int64("version", version),
 		)
 		return nil
 	}
@@ -559,9 +557,9 @@ func (m *Migrator) steps(ctx context.Context, n int) error {
 				return err
 			}
 		}
-		m.logger.Info(
+		m.logger.Info(ctx,
 			"Applied migration steps",
-			slog.Int("count", len(pending)),
+			log.Int("count", len(pending)),
 		)
 		return nil
 	}
@@ -581,9 +579,9 @@ func (m *Migrator) steps(ctx context.Context, n int) error {
 		}
 		count++
 	}
-	m.logger.Info(
+	m.logger.Info(ctx,
 		"Reverted migration steps",
-		slog.Int("count", count),
+		log.Int("count", count),
 	)
 	return nil
 }
@@ -618,26 +616,26 @@ func (m *Migrator) Version(ctx context.Context) (Record, bool, error) {
 //
 // If dry run is enabled, it logs the statements and skips execution.
 func (m *Migrator) run(ctx context.Context, migration Migration) error {
-	m.logger.InfoContext(ctx,
+	m.logger.Info(ctx,
 		"Running migration",
-		slog.Int64("version", migration.Version),
-		slog.String("description", migration.Description),
-		slog.String("direction", migration.Direction.String()),
+		log.Int64("version", migration.Version),
+		log.String("description", migration.Description),
+		log.String("direction", migration.Direction.String()),
 	)
 
 	parse := m.driver.Parser()
 	stmts := parse(migration.Content)
 
 	if m.dryRun {
-		m.logger.InfoContext(ctx,
+		m.logger.Info(ctx,
 			"Dry run: skipping execution",
-			slog.Int("statements", len(stmts)),
+			log.Int("statements", len(stmts)),
 		)
 		for i, stmt := range stmts {
-			m.logger.DebugContext(ctx,
+			m.logger.Debug(ctx,
 				"Dry run statement",
-				slog.Int("index", i+1),
-				slog.String("query", stmt),
+				log.Int("index", i+1),
+				log.String("query", stmt),
 			)
 		}
 		return nil
@@ -652,13 +650,13 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	})
 	if err != nil {
 		err = fmt.Errorf("migration %d failed: %w", migration.Version, err)
-		m.logger.ErrorContext(ctx, "Migration failed", log.Err(err))
+		m.logger.Error(ctx, "Migration failed", log.Err(err))
 		return err
 	}
 
-	m.logger.InfoContext(ctx,
+	m.logger.Info(ctx,
 		"Migration completed",
-		slog.Int64("version", migration.Version),
+		log.Int64("version", migration.Version),
 	)
 	return nil
 }

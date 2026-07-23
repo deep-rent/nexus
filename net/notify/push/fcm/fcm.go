@@ -22,23 +22,21 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/deep-rent/nexus/net/notify/push"
+	"github.com/deep-rent/nexus/net/transport"
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
-	"github.com/deep-rent/nexus/sys/log"
-	"github.com/deep-rent/nexus/net/notify/push"
 	"github.com/deep-rent/nexus/sec/sign"
 	"github.com/deep-rent/nexus/sec/token"
-	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Sender implements the [push.Sender] interface for Firebase Cloud Messaging
 // (FCM). It handles authentication, payload construction, and dispatching of
@@ -48,12 +46,11 @@ type Sender struct {
 	source    *token.Source
 	url       string
 	client    *http.Client
-	logger    *slog.Logger
+	logger    *log.Logger
 	now       func() time.Time
 }
 
 var _ push.Sender = (*Sender)(nil)
-
 
 // Credentials holds the necessary credentials for authenticating with FCM.
 // It mirrors the JSON structure of a Google service account file, so the file
@@ -99,7 +96,7 @@ func New(
 	cfg := config{
 		baseURL: DefaultBaseURL,
 		authURL: DefaultAuthURL,
-		logger:  slog.Default(),
+		logger:  log.Discard(),
 		now:     time.Now,
 		client:  transport.DefaultClient,
 	}
@@ -164,6 +161,7 @@ func New(
 		defer func() {
 			if err := res.Body.Close(); err != nil {
 				s.logger.Error(
+					ctx,
 					"failed to close response body",
 					log.Err(err),
 				)
@@ -293,9 +291,9 @@ func (s *Sender) Send(ctx context.Context, msg *push.Message) error {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 
-	s.logger.DebugContext(ctx, "Dispatching FCM message",
-		slog.String("project", s.projectID),
-		slog.Any("target", msg.Target),
+	s.logger.Debug(ctx, "Dispatching FCM message",
+		log.String("project", s.projectID),
+		log.String("target", fmt.Sprintf("%v", msg.Target)),
 	)
 
 	return push.Deliver(ctx, s.client, req, s.logger)

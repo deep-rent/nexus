@@ -15,8 +15,9 @@
 package text
 
 import (
-	"log/slog"
 	"net/http"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -28,8 +29,8 @@ const (
 type config struct {
 	// baseURL overrides the default Twilio API endpoint.
 	baseURL string
-	// logger specifies the custom structured [slog.Logger].
-	logger *slog.Logger
+	// logger specifies the custom structured [log.Logger].
+	logger *log.Logger
 	// client is the HTTP client used for outbound API requests.
 	client *http.Client
 }
@@ -57,9 +58,10 @@ func WithBaseURL(url string) Option {
 	}
 }
 
-// WithLogger injects a structured [slog.Logger] into the sender.
-// Nil values are ignored.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger injects a structured [log.Logger] into the sender. If not
+// provided, the sender stays silent ([log.Discard]). Nil values are
+// ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

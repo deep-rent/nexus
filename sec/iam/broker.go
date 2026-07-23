@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -387,7 +386,7 @@ func (s *Server) completeLogin(
 	if remember && s.flow != nil {
 		token, err := s.issueTrustedDevice(e.Context(), sub.ID(), e.R.UserAgent())
 		if err != nil {
-			s.logger.ErrorContext(e.Context(),
+			s.logger.Error(e.Context(),
 				"Failed to issue device trust", log.Err(err),
 			)
 		} else {
@@ -447,7 +446,7 @@ func (s *Server) Logout(e *router.Exchange) error {
 			e.Context(),
 			cookie.Value,
 		); err != nil {
-			s.logger.ErrorContext(
+			s.logger.Error(
 				e.Context(),
 				"Failed to destroy session",
 				log.Err(err),
@@ -566,11 +565,11 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 	if err != nil {
 		id := router.ErrorID()
 
-		s.logger.ErrorContext(
+		s.logger.Error(
 			e.Context(),
 			"Failed to process external exchange",
-			slog.String("idp", name),
-			slog.String("error_id", id),
+			log.String("idp", name),
+			log.String(log.ErrorIDKey, id),
 			log.Err(err),
 		)
 

@@ -15,9 +15,10 @@
 package apns
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -30,7 +31,7 @@ const (
 type config struct {
 	baseURL string
 	topic   string
-	logger  *slog.Logger
+	logger  *log.Logger
 	now     func() time.Time
 	client  *http.Client
 }
@@ -72,9 +73,10 @@ func WithTopic(topic string) Option {
 	}
 }
 
-// WithLogger injects a structured [slog.Logger] into the sender.
-// Nil values are ignored.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger injects a structured [log.Logger] into the sender. If not
+// provided, the sender stays silent ([log.Discard]). Nil values are
+// ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(cfg *config) {
 		if logger != nil {
 			cfg.logger = logger

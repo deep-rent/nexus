@@ -17,7 +17,7 @@ package app
 import (
 	"context"
 	"errors"
-	"log/slog"
+	"fmt"
 	"os"
 	"os/signal"
 	"slices"
@@ -85,7 +85,7 @@ func RunAll(components []Component, opts ...Option) error {
 // function.
 func RunStages(stages []Stage, opts ...Option) error {
 	cfg := config{
-		logger:  slog.Default(),
+		logger:  log.New(),
 		timeout: DefaultTimeout,
 		start:   DefaultStartTimeout,
 		signals: []os.Signal{syscall.SIGTERM, syscall.SIGINT},
@@ -172,9 +172,10 @@ func (r *runner) run(stages []Stage) error {
 	base = context.WithValue(base, timeoutKey{}, cfg.timeout)
 
 	cfg.logger.Info(
+		base,
 		"Application starting",
-		slog.Int("stages", len(stages)),
-		slog.Int("components", int(r.remaining.Load())),
+		log.Int("stages", len(stages)),
+		log.Int("components", int(r.remaining.Load())),
 	)
 
 	startErr := r.start(base, stages)
@@ -198,10 +199,10 @@ func (r *runner) run(stages []Stage) error {
 	// Restore the default signal disposition, so that a second interrupt
 	// terminates a process whose components refuse to stop.
 	stopSignals()
-	cfg.logger.Info("Shutting down", slog.String("reason", reason))
+	cfg.logger.Info(base, "Shutting down", log.String("reason", reason))
 
-	timedOut := r.stop()
-	return r.result(startErr, timedOut)
+	timedOut := r.stop(base)
+	return r.result(base, startErr, timedOut)
 }
 
 // start launches the stages in order, waiting for each one to become ready
@@ -219,9 +220,10 @@ func (r *runner) start(base context.Context, stages []Stage) error {
 		}
 
 		r.cfg.logger.Info(
+			ctx,
 			"Stage started",
-			slog.Int("stage", i),
-			slog.Int("components", len(components)),
+			log.Int("stage", i),
+			log.Int("components", len(components)),
 		)
 
 		// The last stage has no dependents, so nothing waits on it.
@@ -239,7 +241,7 @@ func (r *runner) start(base context.Context, stages []Stage) error {
 		select {
 		case <-ready:
 			timer.Stop()
-			r.cfg.logger.Info("Stage ready", slog.Int("stage", i))
+			r.cfg.logger.Info(base, "Stage ready", log.Int("stage", i))
 		case <-r.trigger:
 			timer.Stop()
 			return nil
@@ -278,7 +280,7 @@ func (r *runner) launch(
 		s.mu.Unlock()
 
 		if err != nil && !errors.Is(err, context.Canceled) {
-			r.report(err)
+			r.report(ctx, err)
 			r.fire()
 		}
 		if r.remaining.Add(-1) == 0 {
@@ -289,21 +291,22 @@ func (r *runner) launch(
 
 // report logs a component failure as it happens, so that the cause of a
 // cascading shutdown is visible before the runner returns.
-func (r *runner) report(err error) {
+func (r *runner) report(ctx context.Context, err error) {
 	if panicErr, ok := errors.AsType[*PanicError](err); ok {
 		r.cfg.logger.Error(
+			ctx,
 			"Component panicked",
-			slog.Any("panic", panicErr.Value),
-			slog.String("stack", string(panicErr.Stack)),
+			log.String("panic", fmt.Sprint(panicErr.Value)),
+			log.String("stack", string(panicErr.Stack)),
 		)
 		return
 	}
-	r.cfg.logger.Error("Component failed", log.Err(err))
+	r.cfg.logger.Error(ctx, "Component failed", log.Err(err))
 }
 
 // stop cancels the started stages in reverse order, draining each one before
 // moving on. It reports whether the shutdown timeout elapsed.
-func (r *runner) stop() bool {
+func (r *runner) stop(ctx context.Context) bool {
 	timer := time.NewTimer(r.cfg.timeout)
 	defer timer.Stop()
 
@@ -319,12 +322,13 @@ func (r *runner) stop() bool {
 
 		select {
 		case <-drained:
-			r.cfg.logger.Info("Stage stopped", slog.Int("stage", i))
+			r.cfg.logger.Info(ctx, "Stage stopped", log.Int("stage", i))
 		case <-timer.C:
 			r.cfg.logger.Error(
+				ctx,
 				"Shutdown timed out",
-				slog.Int("stage", i),
-				slog.Duration("timeout", r.cfg.timeout),
+				log.Int("stage", i),
+				log.Duration("timeout", r.cfg.timeout),
 			)
 			return true
 		}
@@ -334,7 +338,11 @@ func (r *runner) stop() bool {
 
 // result joins the errors collected from all components with any startup or
 // shutdown failure.
-func (r *runner) result(startErr error, timedOut bool) error {
+func (r *runner) result(
+	ctx context.Context,
+	startErr error,
+	timedOut bool,
+) error {
 	errs := make([]error, 0, len(r.started)+2)
 	if timedOut {
 		errs = append(errs, ErrShutdownTimeout)
@@ -359,7 +367,7 @@ func (r *runner) result(startErr error, timedOut bool) error {
 		return err
 	}
 
-	r.cfg.logger.Info("Shutdown complete")
+	r.cfg.logger.Info(ctx, "Shutdown complete")
 	return nil
 }
 

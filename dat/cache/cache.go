@@ -18,18 +18,17 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/deep-rent/nexus/std/backoff"
 	"github.com/deep-rent/nexus/net/header"
+	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/std/backoff"
 	"github.com/deep-rent/nexus/std/jitter"
 	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/sys/schedule"
-	"github.com/deep-rent/nexus/net/transport"
 )
 
 // Mapper is a function that parses a response's raw response body into the
@@ -49,7 +48,7 @@ type Response struct {
 	// Ctx is the context controlling the HTTP exchange.
 	Ctx context.Context
 	// Logger is the logger instance inherited from the [Controller].
-	Logger *slog.Logger
+	Logger *log.Logger
 }
 
 // Controller manages the lifecycle of a cached resource. It implements
@@ -94,7 +93,7 @@ func NewController[T any](
 	cfg := config{
 		minInterval: DefaultMinInterval,
 		maxInterval: DefaultMaxInterval,
-		logger:      slog.Default(),
+		logger:      log.Discard(),
 		client:      transport.DefaultClient,
 		now:         time.Now,
 	}
@@ -142,7 +141,7 @@ type controller[T any] struct {
 	maxInterval time.Duration    // maximum wait between refreshes
 	backoff     backoff.Strategy // delays between failed refreshes
 	jitter      *jitter.Jitter   // scatters the refresh interval
-	logger      *slog.Logger     // destination for internal logs
+	logger      *log.Logger      // destination for internal logs
 	now         func() time.Time // clock used to interpret date headers
 	stats       stats            // counts refresh cycles by outcome
 
@@ -178,14 +177,14 @@ func (c *controller[T]) ready() {
 // [schedule.Tick] interface. It handles conditional requests, response
 // parsing, and caching, and returns the duration to wait before the next run.
 func (c *controller[T]) Run(ctx context.Context) time.Duration {
-	c.logger.DebugContext(ctx, "Fetching resource")
+	c.logger.Debug(ctx, "Fetching resource")
 
 	res, err := c.fetch(ctx)
 	if err != nil {
 		// A canceled context means the scheduler is shutting down, which is
 		// not a failure of the resource.
 		if !errors.Is(err, context.Canceled) {
-			c.logger.ErrorContext(ctx,
+			c.logger.Error(ctx,
 				"Failed to fetch resource",
 				log.Err(err),
 			)
@@ -202,9 +201,9 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		return c.update(ctx, res)
 
 	default:
-		c.logger.ErrorContext(ctx,
+		c.logger.Error(ctx,
 			"Received an unexpected HTTP status code",
-			slog.Int("status", code),
+			log.Int("status", code),
 		)
 		return c.retry(ctx)
 	}
@@ -244,7 +243,7 @@ func (c *controller[T]) unchanged(
 	// A 304 without a cached value means our validators are out of step with
 	// the server, so they are dropped to force an unconditional refetch.
 	if !ok {
-		c.logger.WarnContext(ctx,
+		c.logger.Warn(ctx,
 			"Resource reported unchanged but nothing is cached",
 		)
 		c.mu.Lock()
@@ -253,9 +252,9 @@ func (c *controller[T]) unchanged(
 		return c.retry(ctx)
 	}
 
-	c.logger.DebugContext(ctx,
+	c.logger.Debug(ctx,
 		"Resource unchanged",
-		slog.String("etag", etag),
+		log.String("etag", etag),
 	)
 	c.stats.unchanged.Inc()
 	return c.refresh(res.Header)
@@ -268,7 +267,7 @@ func (c *controller[T]) update(
 ) time.Duration {
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		c.logger.ErrorContext(ctx,
+		c.logger.Error(ctx,
 			"Failed to read response body",
 			log.Err(err),
 		)
@@ -281,7 +280,7 @@ func (c *controller[T]) update(
 		Logger: c.logger,
 	})
 	if err != nil {
-		c.logger.ErrorContext(ctx,
+		c.logger.Error(ctx,
 			"Couldn't parse response body",
 			log.Err(err),
 		)
@@ -296,7 +295,7 @@ func (c *controller[T]) update(
 	c.failures = 0
 	c.mu.Unlock()
 
-	c.logger.InfoContext(ctx, "Resource updated successfully")
+	c.logger.Info(ctx, "Resource updated successfully")
 	c.stats.updated.Inc()
 
 	// Signalled only once a value is actually available, so that consumers
@@ -308,7 +307,7 @@ func (c *controller[T]) update(
 // close releases the response body.
 func (c *controller[T]) close(res *http.Response) {
 	if err := res.Body.Close(); err != nil {
-		c.logger.Warn(
+		c.logger.Warn(context.Background(),
 			"Failed to close response body",
 			log.Err(err),
 		)
@@ -341,10 +340,10 @@ func (c *controller[T]) retry(ctx context.Context) time.Duration {
 	c.mu.Unlock()
 
 	d := c.backoff.Delay(n)
-	c.logger.DebugContext(ctx,
+	c.logger.Debug(ctx,
 		"Scheduling a retry",
-		slog.Int("failures", n),
-		slog.Duration("delay", d),
+		log.Int("failures", n),
+		log.Duration("delay", d),
 	)
 	return d
 }

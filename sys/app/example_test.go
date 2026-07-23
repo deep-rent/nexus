@@ -36,13 +36,13 @@ func ExampleRunAll() {
 			case <-ctx.Done():
 				return nil
 			case <-ticker.C:
-				app.Logger(ctx).Info("Working...")
+				app.Logger(ctx).Info(ctx, "Working...")
 			}
 		}
 	}
 
 	migrate := func(ctx context.Context) error {
-		app.Logger(ctx).Info("Migrating...")
+		app.Logger(ctx).Info(ctx, "Migrating...")
 		return nil // Done, but the worker keeps running.
 	}
 

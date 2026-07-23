@@ -25,7 +25,6 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,15 +34,13 @@ import (
 
 	"github.com/deep-rent/nexus/dat/diff"
 	"github.com/deep-rent/nexus/dat/diff/hlc"
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/std/quote"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // zeroUUID is the SQL literal of the zero UUID, the sentinel for personal
 // documents: NULL team columns read as the zero UUID and vice versa.
 const zeroUUID = "'00000000-0000-0000-0000-000000000000'::uuid"
-
 
 // Store implements the [diff.Store] interface for PostgreSQL.
 //
@@ -64,7 +61,7 @@ type Store struct {
 	shares     string            // precomputed, safely quoted identifier
 	sequence   string            // precomputed, safely quoted identifier
 	nextval    string            // nextval() expression of the feed sequence
-	logger     *slog.Logger      // records store operations
+	logger     *log.Logger       // records store operations
 	tables     map[string]*Table // indexes all registered tables by their name
 	order      []*Table          // lists tables in registration order
 	// Note: Parent tables always precede their children.
@@ -84,7 +81,7 @@ func New(db *sql.DB, opts ...Option) *Store {
 		state:      DefaultStateTable,
 		shares:     DefaultSharesTable,
 		sequence:   DefaultSequence,
-		logger:     slog.Default(),
+		logger:     log.Discard(),
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -121,7 +118,7 @@ func (s *Store) Exec(
 
 	defer func() {
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
-			s.logger.Error(
+			s.logger.Error(ctx,
 				"Failed to rollback transaction",
 				log.Err(e),
 			)
@@ -1098,7 +1095,7 @@ type stamp struct {
 }
 
 // stamps consumes rows of the shape (id, user_id, team_id, hlc).
-func stamps(rows *sql.Rows, logger *slog.Logger) ([]stamp, error) {
+func stamps(rows *sql.Rows, logger *log.Logger) ([]stamp, error) {
 	defer close(rows, logger)
 
 	var out []stamp
@@ -1117,7 +1114,7 @@ func stamps(rows *sql.Rows, logger *slog.Logger) ([]stamp, error) {
 
 // collect scans feed rows of the shape (id, seq, hlc, deleted, data) into
 // versions, preserving row order.
-func collect(rows *sql.Rows, logger *slog.Logger) ([]diff.Version, error) {
+func collect(rows *sql.Rows, logger *log.Logger) ([]diff.Version, error) {
 	defer close(rows, logger)
 
 	var out []diff.Version
@@ -1156,7 +1153,7 @@ func resolve(
 	tx *sql.Tx,
 	query string,
 	ids []uuid.UUID,
-	logger *slog.Logger,
+	logger *log.Logger,
 ) (map[uuid.UUID]diff.Meta, error) {
 	out := make(map[uuid.UUID]diff.Meta, len(ids))
 	if len(ids) == 0 {
@@ -1184,9 +1181,9 @@ func resolve(
 
 // close closes a result set, logging failures instead of shadowing the
 // caller's error.
-func close(rows *sql.Rows, logger *slog.Logger) {
+func close(rows *sql.Rows, logger *log.Logger) {
 	if err := rows.Close(); err != nil {
-		logger.Error("Failed to close rows", log.Err(err))
+		logger.Error(context.Background(), "Failed to close rows", log.Err(err))
 	}
 }
 

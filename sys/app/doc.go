@@ -56,7 +56,7 @@
 // A typical application starts a background worker alongside a server:
 //
 //	func main() {
-//	  logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+//	  logger := log.New()
 //
 //	  worker := func(ctx context.Context) error {
 //	    ticker := time.NewTicker(time.Second)
@@ -66,7 +66,7 @@
 //	      case <-ctx.Done():
 //	        return nil
 //	      case <-ticker.C:
-//	        app.Logger(ctx).Info("Working...")
+//	        app.Logger(ctx).Info(ctx, "Working...")
 //	      }
 //	    }
 //	  }
@@ -92,7 +92,7 @@
 //	    app.WithLogger(logger),
 //	  )
 //	  if err != nil {
-//	    logger.Error("Application failed", log.Err(err))
+//	    logger.Error(context.Background(), "Application failed", log.Err(err))
 //	    os.Exit(1)
 //	  }
 //	}

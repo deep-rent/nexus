@@ -21,15 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/transport"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.
@@ -234,16 +232,16 @@ type sender struct {
 	// client holds the configured [http.Client].
 	client *http.Client
 	// logger is used for structured diagnostic output.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 var _ Sender = (*sender)(nil)
 
-
 // NewSender creates a configured SendGrid client implementing the [Sender]
 // interface.
 //
-// It initializes the client with a default base URL and a standard logger.
+// It initializes the client with a default base URL and a discarding
+// logger; diagnostics stay silent unless [WithLogger] injects a logger.
 // These defaults can be overridden by passing one or more [Option] functions.
 // Requests are dispatched through [transport.DefaultClient], which applies a
 // sensible timeout, unless [WithClient] provides another one. It panics if the
@@ -255,7 +253,7 @@ func NewSender(apiKey string, opts ...Option) Sender {
 
 	cfg := config{
 		baseURL: DefaultBaseURL,
-		logger:  slog.Default(),
+		logger:  log.Discard(),
 		client:  transport.DefaultClient,
 	}
 
@@ -312,9 +310,9 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	s.logger.DebugContext(ctx, "Dispatching message to provider",
-		slog.String("template_id", msg.TemplateID),
-		slog.Int("recipients", len(msg.Recipients)),
+	s.logger.Debug(ctx, "Dispatching message to provider",
+		log.String("template_id", msg.TemplateID),
+		log.Int("recipients", len(msg.Recipients)),
 	)
 
 	start := time.Now()
@@ -326,7 +324,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 
 	defer func() {
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			s.logger.WarnContext(
+			s.logger.Warn(
 				ctx,
 				"Failed to drain response body",
 				log.Err(err),
@@ -334,7 +332,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		}
 		err := res.Body.Close()
 		if err != nil {
-			s.logger.WarnContext(
+			s.logger.Warn(
 				ctx,
 				"Failed to close response body",
 				log.Err(err),
@@ -351,10 +349,10 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 		}
 	}
 
-	s.logger.DebugContext(
+	s.logger.Debug(
 		ctx,
 		"Message dispatched",
-		slog.Duration("duration", delta),
+		log.Duration("duration", delta),
 	)
 
 	return nil

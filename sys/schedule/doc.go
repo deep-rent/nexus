@@ -35,7 +35,7 @@
 //	defer s.Shutdown()
 //
 //	task := schedule.TaskFn(func(context.Context) {
-//	  slog.Info("Tick!")
+//	  fmt.Println("Tick!")
 //	})
 //
 //	tick := schedule.Every(2*time.Second, task)

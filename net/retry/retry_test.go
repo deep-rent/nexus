@@ -15,11 +15,10 @@
 package retry_test
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -28,8 +27,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/std/backoff"
 	"github.com/deep-rent/nexus/net/retry"
+	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // tripFunc adapts a function to the [http.RoundTripper] interface.
@@ -869,10 +869,7 @@ func TestRoundTrip_ConcurrentRequestsBackOffIndependently(t *testing.T) {
 func TestRoundTrip_LogsAttempts(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	logger, buf := log.Capture(log.WithLevel(log.LevelDebug))
 
 	var calls int
 	tr := retry.NewTransport(
@@ -894,21 +891,33 @@ func TestRoundTrip_LogsAttempts(t *testing.T) {
 	}
 	defer res.Body.Close()
 
-	logs := buf.String()
+	lines := buf.Lines()
+	if got, want := len(lines), 1; got != want {
+		t.Fatalf("log lines: got %d; want %d", got, want)
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("unmarshal log line %q: %v", lines[0], err)
+	}
+
 	tests := []struct {
 		name string
-		want string
+		key  string
+		want any
 	}{
-		{"message", "Request attempt failed, retrying"},
-		{"attempt", "attempt=1"},
-		{"status", "status=503"},
-		{"method", "method=GET"},
+		{"message", "msg", "Request attempt failed, retrying"},
+		{"attempt", "attempt", float64(1)},
+		{"status", "status", float64(503)},
+		{"method", "method", "GET"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if !strings.Contains(logs, tt.want) {
-				t.Errorf("want match for %q; got %q", tt.want, logs)
+			if got := entry[tt.key]; got != tt.want {
+				t.Errorf(
+					"for key %q: got %v; want %v",
+					tt.key, got, tt.want,
+				)
 			}
 		})
 	}
@@ -917,10 +926,7 @@ func TestRoundTrip_LogsAttempts(t *testing.T) {
 func TestRoundTrip_LogsTransportError(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	logger, buf := log.Capture(log.WithLevel(log.LevelDebug))
 
 	tr := retry.NewTransport(
 		tripFunc(func(*http.Request) (*http.Response, error) {
@@ -941,8 +947,16 @@ func TestRoundTrip_LogsTransportError(t *testing.T) {
 		t.Fatal("should have returned an error")
 	}
 
-	if want := "error="; !strings.Contains(buf.String(), want) {
-		t.Errorf("want match for %q; got %q", want, buf.String())
+	lines := buf.Lines()
+	if got, want := len(lines), 1; got != want {
+		t.Fatalf("log lines: got %d; want %d", got, want)
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("unmarshal log line %q: %v", lines[0], err)
+	}
+	if _, ok := entry["error"]; !ok {
+		t.Errorf("error: missing from log record %q", lines[0])
 	}
 }
 

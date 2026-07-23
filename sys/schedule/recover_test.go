@@ -15,14 +15,13 @@
 package schedule_test
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/schedule"
 )
 
@@ -31,8 +30,7 @@ import (
 func TestScheduler_RecoversPanic(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	logger, buf := log.Capture()
 
 	var started, ran sync.Once
 	panicked := make(chan struct{})
@@ -92,9 +90,8 @@ func TestScheduler_RecoveryDelay(t *testing.T) {
 		calls int
 	)
 
-	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	s := schedule.New(t.Context(),
-		schedule.WithLogger(logger),
+		schedule.WithLogger(log.Discard()),
 		schedule.WithRecoveryDelay(time.Hour),
 	)
 

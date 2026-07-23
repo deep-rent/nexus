@@ -91,7 +91,7 @@ func (g deviceCode) Authorize(
 	// Expired codes are of no further use; remove them as a best effort.
 	if c.ExpiresAt != 0 && now > c.ExpiresAt {
 		if _, err := pro.Tokens.DeviceCodes.Delete(ctx, digest); err != nil {
-			pro.Logger.ErrorContext(
+			pro.Logger.Error(
 				ctx,
 				"Failed to delete expired device code",
 				log.Err(err),
@@ -120,7 +120,7 @@ func (g deviceCode) Authorize(
 		// TouchDeviceCode only records the poll time, so a concurrent
 		// approval via the verification endpoint can never be overwritten.
 		if err := pro.Tokens.DeviceCodes.Touch(ctx, digest, now); err != nil {
-			pro.Logger.ErrorContext(
+			pro.Logger.Error(
 				ctx,
 				"Failed to record device code poll",
 				log.Err(err),
@@ -134,7 +134,7 @@ func (g deviceCode) Authorize(
 	case oauth.DeviceCodeStatusDenied:
 		// The decision is final; remove the code as a best effort.
 		if _, err := pro.Tokens.DeviceCodes.Delete(ctx, digest); err != nil {
-			pro.Logger.ErrorContext(
+			pro.Logger.Error(
 				ctx,
 				"Failed to delete denied device code",
 				log.Err(err),

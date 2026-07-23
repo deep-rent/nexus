@@ -94,7 +94,7 @@ func TestBus_CountsSubscriberPanics(t *testing.T) {
 	reg := metrics.NewRegistry()
 	bus := event.NewBus[int](
 		event.WithRegistry(reg),
-		event.WithLogger(log.Silent()),
+		event.WithLogger(log.Discard()),
 		event.WithSyncDispatch(),
 	)
 

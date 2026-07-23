@@ -16,16 +16,17 @@ package app
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"slices"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // config holds the internal settings for the application runner, including
 // logging, timeouts, signal handling, and parent context.
 type config struct {
-	logger  *slog.Logger
+	logger  *log.Logger
 	timeout time.Duration
 	start   time.Duration
 	signals []os.Signal
@@ -35,13 +36,13 @@ type config struct {
 // Option is a function that configures the application runner [config].
 type Option func(*config)
 
-// WithLogger provides a custom [slog.Logger] for the application runner. It is
+// WithLogger provides a custom [log.Logger] for the application runner. It is
 // also made available to components via [Logger]. If not set, the runner
-// defaults to [slog.Default]. A nil value will be ignored.
-func WithLogger(log *slog.Logger) Option {
+// defaults to a logger created by [log.New]. A nil value will be ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
-		if log != nil {
-			c.logger = log
+		if logger != nil {
+			c.logger = logger
 		}
 	}
 }

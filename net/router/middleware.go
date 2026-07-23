@@ -15,7 +15,6 @@
 package router
 
 import (
-	"log/slog"
 	"math"
 	"net/http"
 	"slices"
@@ -26,6 +25,7 @@ import (
 	"github.com/deep-rent/nexus/net/middleware"
 	"github.com/deep-rent/nexus/net/middleware/cors"
 	"github.com/deep-rent/nexus/net/middleware/gzip"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Middleware defines a function that wraps a [Handler].
@@ -112,7 +112,7 @@ func Adapt(pipe middleware.Pipe) Middleware {
 // parity with the [middleware] package and for the occasional case of
 // wanting recovery at a specific point in the chain, so that middleware
 // outside it still runs after a panic within.
-func Recover(logger *slog.Logger) Middleware {
+func Recover(logger *log.Logger) Middleware {
 	return Adapt(middleware.Recover(logger))
 }
 
@@ -122,7 +122,7 @@ func RequestID() Middleware {
 }
 
 // Log mirrors [middleware.Log] for use in the router.
-func Log(logger *slog.Logger) Middleware {
+func Log(logger *log.Logger) Middleware {
 	return Adapt(middleware.Log(logger))
 }
 

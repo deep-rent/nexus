@@ -15,17 +15,15 @@
 package router_test
 
 import (
-	"bytes"
 	"encoding/json/v2"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // exercise runs a handler through a router and returns the response together
@@ -33,14 +31,11 @@ import (
 func exercise(
 	t *testing.T,
 	fn func(*router.Exchange) error,
-	level slog.Level,
+	level log.Level,
 ) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: level,
-	}))
+	logger, buf := log.Capture(log.WithLevel(level))
 
 	r := router.New(router.WithLogger(logger))
 	r.HandleFunc("GET /resource", fn)
@@ -73,7 +68,7 @@ func TestErrorHandler_LogsHandlerErrors(t *testing.T) {
 	tests := []struct {
 		name  string
 		err   *router.Error
-		level slog.Level
+		level log.Level
 		want  []string
 	}{
 		{
@@ -82,27 +77,27 @@ func TestErrorHandler_LogsHandlerErrors(t *testing.T) {
 				"The document store is unreachable.",
 				errors.New("dial tcp: connection refused"),
 			),
-			level: slog.LevelError,
+			level: log.LevelError,
 			want: []string{
-				"level=ERROR",
+				`"level":"error"`,
 				"The document store is unreachable.",
-				"status=500",
-				"reason=server_error",
-				"method=GET",
-				"path=/resource",
-				"error_id=",
+				`"status":500`,
+				`"reason":"server_error"`,
+				`"method":"GET"`,
+				`"path":"/resource"`,
+				`"error_id":"`,
 				"dial tcp: connection refused",
 			},
 		},
 		{
 			name:  "client error",
 			err:   router.Invalid("The document ID is not a valid UUID."),
-			level: slog.LevelDebug,
+			level: log.LevelDebug,
 			want: []string{
-				"level=DEBUG",
+				`"level":"debug"`,
 				"The document ID is not a valid UUID.",
-				"status=400",
-				"reason=validation_failed",
+				`"status":400`,
+				`"reason":"validation_failed"`,
 			},
 		},
 	}
@@ -130,9 +125,9 @@ func TestErrorHandler_ClientErrorsAreNotErrors(t *testing.T) {
 
 	_, logs := exercise(t, func(*router.Exchange) error {
 		return router.NotFound("No such document.")
-	}, slog.LevelDebug)
+	}, log.LevelDebug)
 
-	if strings.Contains(logs, "level=ERROR") {
+	if strings.Contains(logs, `"level":"error"`) {
 		t.Errorf("client error logged at error level: %q", logs)
 	}
 }
@@ -143,7 +138,7 @@ func TestErrorHandler_ServerErrorCarriesID(t *testing.T) {
 
 	rec, logs := exercise(t, func(*router.Exchange) error {
 		return router.ServerError("Something broke.", errors.New("boom"))
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	got := decode(t, rec)
 
@@ -166,7 +161,7 @@ func TestErrorHandler_PreservesExistingID(t *testing.T) {
 		e := router.ServerError("Something broke.", errors.New("boom"))
 		e.ID = id
 		return e
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if got := decode(t, rec).ID; got != id {
 		t.Errorf("got %q; want %q", got, id)
@@ -180,7 +175,7 @@ func TestErrorHandler_ClientErrorHasNoID(t *testing.T) {
 
 	rec, _ := exercise(t, func(*router.Exchange) error {
 		return router.NotFound("No such document.")
-	}, slog.LevelDebug)
+	}, log.LevelDebug)
 
 	if got := decode(t, rec).ID; got != "" {
 		t.Errorf("got %q; want no ID", got)
@@ -195,7 +190,7 @@ func TestErrorHandler_OpaqueInternalError(t *testing.T) {
 
 	rec, logs := exercise(t, func(*router.Exchange) error {
 		return errors.New(secret)
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if got := rec.Code; got != http.StatusInternalServerError {
 		t.Errorf("status: got %d; want 500", got)
@@ -219,7 +214,7 @@ func TestError_CauseIsNotSerialized(t *testing.T) {
 
 	rec, _ := exercise(t, func(*router.Exchange) error {
 		return router.ServerError("Try again later.", errors.New(secret))
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if body := rec.Body.String(); strings.Contains(body, secret) {
 		t.Errorf("cause leaked to the client: %q", body)
@@ -235,7 +230,7 @@ func TestErrorHandler_AfterResponseWritten(t *testing.T) {
 			return err
 		}
 		return errors.New("too late")
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if want := "after writing response"; !strings.Contains(logs, want) {
 		t.Errorf("want match for %q; got %q", want, logs)
@@ -318,7 +313,7 @@ func TestErrorHandler_RespectsLogLevel(t *testing.T) {
 
 	_, logs := exercise(t, func(*router.Exchange) error {
 		return router.NotFound("No such document.")
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if logs != "" {
 		t.Errorf("got %q; want nothing logged below the level", logs)
@@ -330,12 +325,7 @@ func TestErrorHandler_RespectsLogLevel(t *testing.T) {
 func TestErrorHandler_WithConstructedLogger(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := log.New(
-		log.WithLevel(slog.LevelError),
-		log.WithFormat(log.FormatJSON),
-		log.WithWriter(&buf),
-	)
+	logger, buf := log.Capture(log.WithLevel(log.LevelError))
 
 	r := router.New(router.WithLogger(logger))
 	r.HandleFunc("GET /boom", func(*router.Exchange) error {
@@ -359,7 +349,7 @@ func TestErrorHandler_RecoversPanic(t *testing.T) {
 
 	rec, logs := exercise(t, func(*router.Exchange) error {
 		panic("handler exploded")
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if got := rec.Code; got != http.StatusInternalServerError {
 		t.Errorf("status: got %d; want 500", got)
@@ -372,9 +362,9 @@ func TestErrorHandler_RecoversPanic(t *testing.T) {
 
 	for _, want := range []string{
 		"handler exploded",
-		"stack",
-		"error_id=",
-		"level=ERROR",
+		`"stack"`,
+		`"error_id":"`,
+		`"level":"error"`,
 	} {
 		if !strings.Contains(logs, want) {
 			t.Errorf("want match for %q in logs; got %q", want, logs)
@@ -395,7 +385,7 @@ func TestErrorHandler_PanicWithError(t *testing.T) {
 
 	rec, _ := exercise(t, func(*router.Exchange) error {
 		panic(sentinel)
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if got := rec.Code; got != http.StatusInternalServerError {
 		t.Errorf("status: got %d; want 500", got)
@@ -410,7 +400,7 @@ func TestErrorHandler_PanicAfterWrite(t *testing.T) {
 	_, logs := exercise(t, func(e *router.Exchange) error {
 		e.Status(http.StatusOK)
 		panic("too late")
-	}, slog.LevelError)
+	}, log.LevelError)
 
 	if !strings.Contains(logs, "too late") {
 		t.Errorf("panic after write was not logged: %q", logs)

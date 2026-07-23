@@ -15,9 +15,6 @@
 package event_test
 
 import (
-	"bytes"
-	"io"
-	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
@@ -26,6 +23,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/sys/event"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func TestBus_Basic(t *testing.T) {
@@ -104,7 +102,7 @@ func TestBus_Options(t *testing.T) {
 		{"size valid", []event.Option{event.WithSize(16)}},
 		{"size ignored", []event.Option{event.WithSize(-10)}},
 		{"mode", []event.Option{event.WithOverflowMode(event.DropNewest)}},
-		{"logger", []event.Option{event.WithLogger(slog.Default())}},
+		{"logger", []event.Option{event.WithLogger(log.Discard())}},
 	}
 
 	for _, tt := range tests {
@@ -125,8 +123,7 @@ func TestBus_Options(t *testing.T) {
 
 func TestBus_PanicRecovery_Sync(t *testing.T) {
 	t.Parallel()
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	logger, buf := log.Capture()
 
 	bus := event.NewBus[int](
 		event.WithSyncDispatch(),
@@ -367,30 +364,12 @@ func TestBus_DropOldestMode(t *testing.T) {
 	bus.Close()
 }
 
-type mockSafeBuffer struct {
-	mu sync.Mutex
-	wb bytes.Buffer
-}
-
-func (b *mockSafeBuffer) Write(p []byte) (n int, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.wb.Write(p)
-}
-
-func (b *mockSafeBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.wb.String()
-}
-
-var _ io.Writer = (*mockSafeBuffer)(nil)
-
 func TestBus_PanicRecovery_Async(t *testing.T) {
 	t.Parallel()
 
-	buf := &mockSafeBuffer{}
-	logger := slog.New(slog.NewTextHandler(buf, nil))
+	// The captured buffer is concurrency-safe, so the asynchronous
+	// deliveries may still be writing while the assertions below poll it.
+	logger, buf := log.Capture()
 
 	bus := event.NewBus[int](
 		event.WithLogger(logger),

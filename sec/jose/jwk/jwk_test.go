@@ -28,9 +28,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
-	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/sign"
 )
 

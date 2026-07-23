@@ -15,9 +15,10 @@
 package scrape
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // DefaultTimeout bounds a single target fetch unless the context imposes a
@@ -27,7 +28,7 @@ const DefaultTimeout = 10 * time.Second
 // config holds the collector settings.
 type config struct {
 	client  *http.Client
-	logger  *slog.Logger
+	logger  *log.Logger
 	timeout time.Duration
 }
 
@@ -45,9 +46,10 @@ func WithClient(client *http.Client) Option {
 	}
 }
 
-// WithLogger sets the logger receiving scrape failures. It defaults to
-// [slog.Default]. A nil value is ignored.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger sets the logger receiving scrape failures. If not provided,
+// the collector stays silent, as if [log.Discard] had been given. A nil
+// value is ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

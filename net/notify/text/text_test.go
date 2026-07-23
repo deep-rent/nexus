@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/notify/text"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func TestAPIError(t *testing.T) {
@@ -230,7 +230,7 @@ func TestSender_Send(t *testing.T) {
 					Transport: tr,
 				}),
 				text.WithBaseURL("http://example.com"),
-				text.WithLogger(log.Silent()),
+				text.WithLogger(log.Discard()),
 			)
 
 			err := sender.Send(t.Context(), tt.msg)
@@ -285,7 +285,7 @@ func TestSender_Send_StatusFromStatusLine(t *testing.T) {
 
 	sender := text.NewSender("sid", "token",
 		text.WithClient(&http.Client{Transport: tr}),
-		text.WithLogger(log.Silent()),
+		text.WithLogger(log.Discard()),
 	)
 
 	err := sender.Send(t.Context(), text.NewMessage("+123", "+456", "Hi"))

@@ -20,15 +20,13 @@ package proxy
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/proxy/buffer"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Handler is an alias of [http.Handler] representing a reverse proxy.
 type Handler = http.Handler
@@ -45,7 +43,7 @@ func NewHandler(target *url.URL, opts ...HandlerOption) Handler {
 		maxBufferSize:   DefaultMaxBufferSize,
 		newRewrite:      NewRewrite,
 		newErrorHandler: NewErrorHandler,
-		logger:          slog.Default(),
+		logger:          log.Discard(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -102,13 +100,13 @@ type ErrorHandler = func(http.ResponseWriter, *http.Request, error)
 // ErrorHandlerFactory creates an [ErrorHandler] using the provided logger.
 //
 // It receives the configured logger to be used for error reporting.
-type ErrorHandlerFactory = func(*slog.Logger) ErrorHandler
+type ErrorHandlerFactory = func(*log.Logger) ErrorHandler
 
 // NewErrorHandler is the default [ErrorHandlerFactory] for the proxy.
 //
 // It creates an error handler that logs upstream errors and maps them to
 // appropriate HTTP status codes, while silencing client-initiated disconnects.
-func NewErrorHandler(logger *slog.Logger) ErrorHandler {
+func NewErrorHandler(logger *log.Logger) ErrorHandler {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if errors.Is(err, context.Canceled) {
 			// Silence client-initiated disconnects; there's nothing useful to
@@ -122,18 +120,18 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 		if errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, http.ErrHandlerTimeout) {
 			status = http.StatusGatewayTimeout
-			logger.ErrorContext(
+			logger.Error(
 				r.Context(),
 				"Upstream request timed out",
-				slog.String("method", method),
-				slog.String("uri", uri),
+				log.String("method", method),
+				log.String("uri", uri),
 			)
 		} else {
-			logger.ErrorContext(
+			logger.Error(
 				r.Context(),
 				"Upstream request failed",
-				slog.String("method", method),
-				slog.String("uri", uri),
+				log.String("method", method),
+				log.String("uri", uri),
 				log.Err(err),
 			)
 		}
@@ -141,4 +139,3 @@ func NewErrorHandler(logger *slog.Logger) ErrorHandler {
 		w.WriteHeader(status)
 	}
 }
-

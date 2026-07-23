@@ -15,10 +15,8 @@
 package app_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,6 +26,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/sys/app"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // settle is the grace period allowed for a runner to reach a state that should
@@ -223,11 +222,11 @@ func TestRun_ShutdownTimeout(t *testing.T) {
 func TestRun_WithLogger(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	rec := log.NewRecorder()
+	logger := log.Wrap(rec)
 
 	c := func(ctx context.Context) error {
-		app.Logger(ctx).Info("Component logging")
+		app.Logger(ctx).Info(ctx, "Component logging")
 		return nil
 	}
 
@@ -235,7 +234,11 @@ func TestRun_WithLogger(t *testing.T) {
 		t.Fatalf("should not have returned an error: %v", err)
 	}
 
-	logs := buf.String()
+	var msgs []string
+	for _, r := range rec.Records() {
+		msgs = append(msgs, r.Msg)
+	}
+	logs := strings.Join(msgs, "\n")
 	tests := []struct {
 		name string
 		want string
@@ -544,12 +547,11 @@ func TestRun_WithoutSignals(t *testing.T) {
 func TestOptions_IgnoreInvalidValues(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	logger := log.Wrap(log.NewRecorder())
 
 	var (
 		gotTimeout time.Duration
-		gotLogger  *slog.Logger
+		gotLogger  *log.Logger
 	)
 
 	c := func(ctx context.Context) error {

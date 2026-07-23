@@ -18,15 +18,15 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"runtime/debug"
 
 	"github.com/deep-rent/nexus/dat/bind"
+	"github.com/deep-rent/nexus/dat/valid"
 	"github.com/deep-rent/nexus/net/header"
 	"github.com/deep-rent/nexus/std/snake"
-	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Standard error reasons used for machine-readable error codes.
@@ -401,7 +401,6 @@ var _ Handler = HandlerFunc(nil)
 // ErrorHandler defines a function that handles errors returned by routes.
 type ErrorHandler func(e *Exchange, err error)
 
-
 // Router represents an HTTP request router with middleware support.
 type Router struct {
 	// Mux is the underlying standard [*http.ServeMux].
@@ -423,7 +422,7 @@ func New(opts ...Option) *Router {
 	r := &Router{
 		Mux:          http.NewServeMux(),
 		mws:          nil,
-		errorHandler: defaultErrorHandler(slog.Default()),
+		errorHandler: defaultErrorHandler(log.Discard()),
 	}
 	for _, opt := range opts {
 		opt(r)

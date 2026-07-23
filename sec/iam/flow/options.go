@@ -15,11 +15,11 @@
 package flow
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // DefaultLifetime is the validity period of a login transaction applied by
@@ -73,8 +73,9 @@ func WithHasher(h *digest.Hasher) Option {
 }
 
 // WithLogger injects a structured logger for best-effort cleanup diagnostics.
-// A nil logger is ignored. Defaults to [slog.Default].
-func WithLogger(logger *slog.Logger) Option {
+// A nil logger is ignored. Defaults to [log.Discard], keeping the engine
+// silent unless a logger is injected.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *Coordinator) {
 		if logger != nil {
 			c.logger = logger

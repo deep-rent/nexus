@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/net/notify/push"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func TestMessage_Validate(t *testing.T) {
@@ -296,7 +296,7 @@ func TestDeliver(t *testing.T) {
 				t.Fatalf("should not have returned an error: %v", err)
 			}
 
-			err = push.Deliver(t.Context(), client, req, log.Silent())
+			err = push.Deliver(t.Context(), client, req, log.Discard())
 
 			if tt.wantErr {
 				var apiErr *push.APIError
@@ -341,7 +341,7 @@ func TestDeliver_TransportError(t *testing.T) {
 		t.Context(), http.MethodPost, "http://example.com", nil,
 	)
 
-	err := push.Deliver(t.Context(), client, req, log.Silent())
+	err := push.Deliver(t.Context(), client, req, log.Discard())
 	if err == nil {
 		t.Fatal("expected an error")
 	}

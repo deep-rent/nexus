@@ -16,13 +16,10 @@ package postgres
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/deep-rent/nexus/sys/log"
 )
-
-
 
 // Retention is a ready-made maintenance task enforcing the store's two
 // retention windows: it prunes aged mutation deduplication records
@@ -70,13 +67,13 @@ func NewRetention(s *Store, opts ...RetentionOption) *Retention {
 func (r *Retention) Run(ctx context.Context) {
 	logger := r.store.logger
 	if n, err := r.store.PruneMutations(ctx, r.mutations); err != nil {
-		logger.Error("Failed to prune mutations", log.Err(err))
+		logger.Error(ctx, "Failed to prune mutations", log.Err(err))
 	} else if n > 0 {
-		logger.Info("Pruned aged mutations", slog.Int64("count", n))
+		logger.Info(ctx, "Pruned aged mutations", log.Int64("count", n))
 	}
 	if n, err := r.store.PruneTombstones(ctx, r.tombstones); err != nil {
-		logger.Error("Failed to prune tombstones", log.Err(err))
+		logger.Error(ctx, "Failed to prune tombstones", log.Err(err))
 	} else if n > 0 {
-		logger.Info("Pruned aged tombstones", slog.Int64("count", n))
+		logger.Info(ctx, "Pruned aged tombstones", log.Int64("count", n))
 	}
 }

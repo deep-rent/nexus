@@ -82,7 +82,7 @@ func (g refreshToken) Authorize(
 	// expired token is removed as a best effort.
 	if r.ExpiresAt != 0 && pro.Now().Unix() > r.ExpiresAt {
 		if _, err := pro.Tokens.RefreshTokens.Delete(ctx, digest); err != nil {
-			pro.Logger.ErrorContext(
+			pro.Logger.Error(
 				ctx,
 				"Failed to delete expired refresh token",
 				log.Err(err),

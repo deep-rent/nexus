@@ -23,7 +23,6 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,8 +33,8 @@ import (
 	"github.com/deep-rent/nexus/dat/diff"
 	"github.com/deep-rent/nexus/dat/diff/hlc"
 	"github.com/deep-rent/nexus/std/quote"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Table implements the [diff.Handler] interface for one document model
 // backed by a single PostgreSQL table. It enforces row-level
@@ -432,7 +431,7 @@ type state struct {
 }
 
 // scanStates consumes rows of the shape (id, team_id).
-func scanStates(rows *sql.Rows, logger *slog.Logger) ([]state, error) {
+func scanStates(rows *sql.Rows, logger *log.Logger) ([]state, error) {
 	defer close(rows, logger)
 
 	var out []state

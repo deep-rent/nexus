@@ -17,7 +17,6 @@ package iam
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"net/url"
 	"slices"
 	"time"
@@ -34,6 +33,7 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/passkey"
 	"github.com/deep-rent/nexus/sec/iam/session"
 	"github.com/deep-rent/nexus/sec/iam/trust"
+	"github.com/deep-rent/nexus/sys/log"
 	"uuid"
 )
 
@@ -441,8 +441,8 @@ func listCreds(
 }
 
 // discardLogger returns a logger that drops all records.
-func discardLogger() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
+func discardLogger() *log.Logger {
+	return log.Discard()
 }
 
 // newProposal assembles an [oauth.Proposal] for direct grant testing.

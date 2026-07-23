@@ -15,14 +15,14 @@
 package middleware_test
 
 import (
-	"bytes"
-	"log/slog"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	mw "github.com/deep-rent/nexus/net/middleware"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 var mockHandler = http.HandlerFunc(
@@ -32,10 +32,19 @@ var mockHandler = http.HandlerFunc(
 	},
 )
 
-func mockLogger(buf *bytes.Buffer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+func mockLogger() (*log.Logger, *log.Buffer) {
+	return log.Capture(log.WithLevel(log.LevelDebug))
+}
+
+// parseRecord unmarshals a single captured JSON log line into a map for
+// assertions on its fields.
+func parseRecord(t *testing.T, line string) map[string]any {
+	t.Helper()
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(line), &rec); err != nil {
+		t.Fatalf("unmarshal log line %q: %v", line, err)
+	}
+	return rec
 }
 
 func TestChain(t *testing.T) {
@@ -110,8 +119,7 @@ func TestRecover(t *testing.T) {
 
 	t.Run("recovers from panic", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		logger := mockLogger(&buf)
+		logger, buf := mockLogger()
 		pipe := mw.Recover(logger)
 
 		h := pipe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -126,24 +134,32 @@ func TestRecover(t *testing.T) {
 			t.Errorf("status code: got %d; want %d", got, want)
 		}
 
-		out := buf.String()
-		contains := []string{
-			"Panic caught by middleware",
-			"panic=test",
-			"url=/panic",
-			"stack=",
+		lines := buf.Lines()
+		if got, want := len(lines), 1; got != want {
+			t.Fatalf("log lines: got %d; want %d", got, want)
 		}
-		for _, want := range contains {
-			if !strings.Contains(out, want) {
-				t.Errorf("log: want match for %q; got %q", want, out)
+		rec := parseRecord(t, lines[0])
+		tests := []struct {
+			key  string
+			want any
+		}{
+			{"msg", "Panic caught by middleware"},
+			{"panic", "test"},
+			{"url", "/panic"},
+		}
+		for _, tt := range tests {
+			if got := rec[tt.key]; got != tt.want {
+				t.Errorf("for key %q: got %v; want %v", tt.key, got, tt.want)
 			}
+		}
+		if stack, _ := rec["stack"].(string); len(stack) == 0 {
+			t.Error("stack: got empty; want non-empty")
 		}
 	})
 
 	t.Run("re-panics on ErrAbortHandler", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		logger := mockLogger(&buf)
+		logger, buf := mockLogger()
 		pipe := mw.Recover(logger)
 
 		h := pipe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -168,8 +184,7 @@ func TestRecover(t *testing.T) {
 
 	t.Run("does nothing if no panic", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		logger := mockLogger(&buf)
+		logger, buf := mockLogger()
 		pipe := mw.Recover(logger)
 
 		h := pipe(mockHandler)
@@ -341,8 +356,7 @@ func TestLog(t *testing.T) {
 
 	t.Run("logs with non-default status", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		logger := mockLogger(&buf)
+		logger, buf := mockLogger()
 		pipe := mw.Log(logger)
 
 		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -362,28 +376,38 @@ func TestLog(t *testing.T) {
 			t.Errorf("status code: got %d; want %d", got, want)
 		}
 
-		out := buf.String()
-		contains := []string{
-			`level=DEBUG msg="HTTP request handled"`,
-			`id=test-id`,
-			`method=POST`,
-			`url="/path?q=1"`,
-			`remote=1.2.3.4:12345`,
-			`agent=test-agent`,
-			`status=404`,
-			`duration=`,
+		lines := buf.Lines()
+		if got, want := len(lines), 1; got != want {
+			t.Fatalf("log lines: got %d; want %d", got, want)
 		}
-		for _, want := range contains {
-			if !strings.Contains(out, want) {
-				t.Errorf("log: want match for %q; got %q", want, out)
+		rec := parseRecord(t, lines[0])
+		tests := []struct {
+			key  string
+			want any
+		}{
+			{"level", "debug"},
+			{"msg", "HTTP request handled"},
+			{"id", "test-id"},
+			{"method", "POST"},
+			{"url", "/path?q=1"},
+			{"remote", "1.2.3.4:12345"},
+			{"user_agent", "test-agent"},
+			{"status", float64(404)},
+		}
+		for _, tt := range tests {
+			if got := rec[tt.key]; got != tt.want {
+				t.Errorf("for key %q: got %v; want %v", tt.key, got, tt.want)
 			}
+		}
+		if _, ok := rec["duration"]; !ok {
+			t.Error("duration: missing from log record")
 		}
 	})
 
 	t.Run("preserves flusher", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		pipe := mw.Log(mockLogger(&buf))
+		logger, _ := mockLogger()
+		pipe := mw.Log(logger)
 
 		var flushable bool
 		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -408,8 +432,8 @@ func TestLog(t *testing.T) {
 
 	t.Run("hijack unsupported", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		pipe := mw.Log(mockLogger(&buf))
+		logger, _ := mockLogger()
+		pipe := mw.Log(logger)
 
 		var err error
 		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -433,8 +457,7 @@ func TestLog(t *testing.T) {
 
 	t.Run("logs with default status", func(t *testing.T) {
 		t.Parallel()
-		var buf bytes.Buffer
-		logger := mockLogger(&buf)
+		logger, buf := mockLogger()
 		pipe := mw.Log(logger)
 
 		final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -448,11 +471,16 @@ func TestLog(t *testing.T) {
 		if got, want := rr.Code, http.StatusOK; got != want {
 			t.Errorf("status code: got %d; want %d", got, want)
 		}
-		if want := `status=200`; !strings.Contains(buf.String(), want) {
-			t.Errorf("log: want match for %q", want)
+		lines := buf.Lines()
+		if got, want := len(lines), 1; got != want {
+			t.Fatalf("log lines: got %d; want %d", got, want)
 		}
-		if want := `bytes=2`; !strings.Contains(buf.String(), want) {
-			t.Errorf("log: want match for %q; got %q", want, buf.String())
+		rec := parseRecord(t, lines[0])
+		if got, want := rec["status"], float64(200); got != want {
+			t.Errorf("status: got %v; want %v", got, want)
+		}
+		if got, want := rec["bytes"], float64(2); got != want {
+			t.Errorf("bytes: got %v; want %v", got, want)
 		}
 	})
 }
@@ -624,8 +652,7 @@ func TestSecure(t *testing.T) {
 
 func TestIntegration(t *testing.T) {
 	t.Parallel()
-	var buf bytes.Buffer
-	logger := mockLogger(&buf)
+	logger, buf := mockLogger()
 
 	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if id := mw.GetRequestID(r.Context()); len(id) == 0 {
@@ -670,15 +697,18 @@ func TestIntegration(t *testing.T) {
 		}
 	}
 
-	out := buf.String()
-	contains := []string{
-		"level=DEBUG",
-		"id=" + id,
-		"status=202",
+	lines := buf.Lines()
+	if got, want := len(lines), 1; got != want {
+		t.Fatalf("log lines: got %d; want %d", got, want)
 	}
-	for _, want := range contains {
-		if !strings.Contains(out, want) {
-			t.Errorf("log: want match for %q; got %q", want, out)
-		}
+	rec := parseRecord(t, lines[0])
+	if got, want := rec["level"], "debug"; got != want {
+		t.Errorf("level: got %v; want %v", got, want)
+	}
+	if got, want := rec["id"], id; got != want {
+		t.Errorf("id: got %v; want %v", got, want)
+	}
+	if got, want := rec["status"], float64(202); got != want {
+		t.Errorf("status: got %v; want %v", got, want)
 	}
 }

@@ -15,10 +15,10 @@
 package retry
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/deep-rent/nexus/std/backoff"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // DefaultMaxDrainBytes is the default number of bytes read from the body of a
@@ -32,7 +32,7 @@ type config struct {
 	policy  Policy           // base retry logic
 	limit   int              // maximum number of attempts
 	backoff backoff.Strategy // supplies the delay between attempts
-	logger  *slog.Logger     // destination for debug output
+	logger  *log.Logger      // destination for debug output
 	now     func() time.Time // clock used to interpret date headers
 	drain   int64            // bytes read from an abandoned response body
 }
@@ -76,10 +76,11 @@ func WithBackoff(strategy backoff.Strategy) Option {
 	}
 }
 
-// WithLogger sets the logger for debug messages.
+// WithLogger sets the [log.Logger] for debug messages.
 //
-// If not provided, [slog.Default] is used. A nil value is ignored.
-func WithLogger(logger *slog.Logger) Option {
+// If not provided, debug output is discarded ([log.Discard]). A nil value
+// is ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

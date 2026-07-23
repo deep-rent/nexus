@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -39,7 +38,6 @@ import (
 	"github.com/deep-rent/nexus/sec/vault"
 	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Token generation defaults. Every opaque bearer artifact is drawn from one
 // [nonce.Generator]; user codes are drawn from one [nonce.Sampler].
@@ -141,7 +139,6 @@ type SessionResolver func(e *router.Exchange) (Owner, error)
 // the underlying lookup fails.
 type OwnerResolver func(ctx context.Context, id uuid.UUID) (Owner, error)
 
-
 // Server implements the endpoints of an OAuth 2.0 authorization server: the
 // token, authorization, introspection, revocation, and device authorization
 // machinery, together with the RFC 8414 metadata and JWKS documents.
@@ -172,10 +169,9 @@ type Server struct {
 	userCodes            *nonce.Sampler
 	hasher               *digest.Hasher
 	limit                limit.Limiter
-	logger               *slog.Logger
+	logger               *log.Logger
 	now                  func() time.Time
 }
-
 
 // NewServer assembles a [Server] from the given configuration and options.
 //
@@ -211,7 +207,7 @@ func NewServer(cfg ServerConfig, opts ...ServerOption) *Server {
 
 	logger := cfg.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = log.Discard()
 	}
 
 	s := &Server{
@@ -602,7 +598,7 @@ func (s *Server) introspect(e *router.Exchange) error {
 	var res IntrospectionResponse
 
 	if claims, err := s.introspector.Verify([]byte(token)); err != nil {
-		s.logger.DebugContext(
+		s.logger.Debug(
 			e.Context(),
 			"Token verification failed during introspection",
 			log.Err(err),
@@ -921,10 +917,10 @@ func (s *Server) token(e *router.Exchange) error {
 		claims.Sub = owner.ID().String()
 		claims.Roles = owner.Roles()
 	} else {
-		s.logger.ErrorContext(
+		s.logger.Error(
 			e.Context(),
 			"Subject not found for claims",
-			slog.String("subject", iss.Subject.String()),
+			log.UUID("subject", iss.Subject),
 		)
 
 		return &Error{
@@ -1044,7 +1040,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 		e.Context(),
 		digest,
 	); err != nil {
-		s.logger.ErrorContext(
+		s.logger.Error(
 			e.Context(),
 			"Failed to delete refresh token during revocation",
 			log.Err(err),
@@ -1297,22 +1293,22 @@ func (s *Server) wrap(
 func (s *Server) record(e *router.Exchange, oerr *Error) {
 	ctx := e.Context()
 
-	level := slog.LevelDebug
+	level := log.LevelDebug
 	if oerr.Status >= http.StatusInternalServerError {
-		level = slog.LevelError
+		level = log.LevelError
 	}
 
 	if !s.logger.Enabled(ctx, level) {
 		return
 	}
 
-	attrs := []any{
-		slog.Int("status", oerr.Status),
-		slog.String("code", oerr.Code),
-		slog.String("path", e.Path()),
+	attrs := []log.Arg{
+		log.Int("status", oerr.Status),
+		log.String("code", oerr.Code),
+		log.String("path", e.Path()),
 	}
 	if oerr.ID != "" {
-		attrs = append(attrs, slog.String("error_id", oerr.ID))
+		attrs = append(attrs, log.String(log.ErrorIDKey, oerr.ID))
 	}
 	if oerr.Cause != nil {
 		attrs = append(attrs, log.Err(oerr.Cause))

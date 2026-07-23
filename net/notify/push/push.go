@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -229,7 +228,7 @@ func Deliver(
 	ctx context.Context,
 	client *http.Client,
 	req *http.Request,
-	logger *slog.Logger,
+	logger *log.Logger,
 ) error {
 	start := time.Now()
 	res, err := client.Do(req)
@@ -239,14 +238,14 @@ func Deliver(
 
 	defer func() {
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			logger.WarnContext(
+			logger.Warn(
 				ctx,
 				"Failed to drain response body",
 				log.Err(err),
 			)
 		}
 		if err := res.Body.Close(); err != nil {
-			logger.WarnContext(
+			logger.Warn(
 				ctx,
 				"Failed to close response body",
 				log.Err(err),
@@ -254,16 +253,16 @@ func Deliver(
 		}
 	}()
 
-	logger.DebugContext(ctx, "Provider responded",
-		slog.Int("status", res.StatusCode),
-		slog.Duration("duration", time.Since(start)),
+	logger.Debug(ctx, "Provider responded",
+		log.Int("status", res.StatusCode),
+		log.Duration("duration", time.Since(start)),
 	)
 
 	if res.StatusCode >= http.StatusBadRequest {
 		// The client caps response body size, so this read is bounded.
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			logger.WarnContext(
+			logger.Warn(
 				ctx,
 				"Failed to read response body",
 				log.Err(err),

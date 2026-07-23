@@ -15,16 +15,16 @@
 package iam
 
 import (
-	"log/slog"
 	"time"
 
+	"github.com/deep-rent/nexus/net/throttle"
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/iam/idp"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
 	"github.com/deep-rent/nexus/sec/iam/otp"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sec/vault"
-	"github.com/deep-rent/nexus/net/throttle"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Default values applied by [New] for optional [Config] fields.
@@ -143,8 +143,9 @@ type Config struct {
 	// failure does not exhaust a bucket outright. Ignored when Throttle is
 	// nil. Defaults to [oauth.DefaultThrottlePenalty].
 	ThrottlePenalty int
-	// Logger receives structured diagnostics. Defaults to [slog.Default].
-	Logger *slog.Logger
+	// Logger receives structured diagnostics. Defaults to [log.Discard],
+	// keeping the server silent unless a logger is injected.
+	Logger *log.Logger
 }
 
 // Option customizes a [Server] during construction with [New].

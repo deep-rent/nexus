@@ -15,13 +15,13 @@
 package oauth
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/deep-rent/nexus/net/throttle"
 	"github.com/deep-rent/nexus/sec/digest"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sec/vault"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Default values applied by [NewServer] for optional [ServerConfig] fields.
@@ -103,8 +103,9 @@ type ServerConfig struct {
 	// so that one failure does not exhaust a bucket outright. Ignored when
 	// Throttle is nil. Defaults to [DefaultThrottlePenalty].
 	ThrottlePenalty int
-	// Logger receives structured diagnostics. Defaults to [slog.Default].
-	Logger *slog.Logger
+	// Logger receives structured diagnostics. Defaults to [log.Discard],
+	// keeping the server silent unless a logger is injected.
+	Logger *log.Logger
 }
 
 // ServerOption customizes a [Server] during construction with [NewServer].

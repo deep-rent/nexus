@@ -19,7 +19,6 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/deep-rent/nexus/dat/diff/driver/mock"
 	"github.com/deep-rent/nexus/dat/diff/hlc"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // prefilter is a controllable [diff.Prefilter] for exercising the fast-path
@@ -98,14 +98,14 @@ func TestEngine_Options(t *testing.T) {
 	reg.Register[asset]("asset", assets, diff.Root())
 
 	engine := diff.New(store, reg,
-		diff.WithLogger(nil),            // ignored
-		diff.WithLogger(slog.Default()), // applied
-		diff.WithClock(nil),             // ignored
-		diff.WithClock(hlc.New(nil)),    // applied
-		diff.WithPrefilter(nil),         // ignored
-		diff.WithMaxChanges(0),          // ignored (non-positive)
-		diff.WithMaxPatches(2),          // applied
-		diff.WithDefaultLimit(0),        // ignored (non-positive)
+		diff.WithLogger(nil),           // ignored
+		diff.WithLogger(log.Discard()), // applied
+		diff.WithClock(nil),            // ignored
+		diff.WithClock(hlc.New(nil)),   // applied
+		diff.WithPrefilter(nil),        // ignored
+		diff.WithMaxChanges(0),         // ignored (non-positive)
+		diff.WithMaxPatches(2),         // applied
+		diff.WithDefaultLimit(0),       // ignored (non-positive)
 	)
 
 	owner := uuid.NewV7()
@@ -189,7 +189,7 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 		t.Parallel()
 		pf := &prefilter{filErr: errors.New("valkey down")}
 		f := setup(diff.WithPrefilter(pf),
-			diff.WithLogger(slog.New(slog.DiscardHandler)))
+			diff.WithLogger(log.Discard()))
 		c := upsert(
 			"asset",
 			assetDoc(uuid.NewV7(), owner, uuid.Nil()),
@@ -210,7 +210,7 @@ func TestEngine_Sync_Prefilter(t *testing.T) {
 		t.Parallel()
 		pf := &prefilter{markErr: errors.New("valkey down")}
 		f := setup(diff.WithPrefilter(pf),
-			diff.WithLogger(slog.New(slog.DiscardHandler)))
+			diff.WithLogger(log.Discard()))
 		c := upsert(
 			"asset",
 			assetDoc(uuid.NewV7(), owner, uuid.Nil()),

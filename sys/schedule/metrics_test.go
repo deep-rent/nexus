@@ -82,7 +82,7 @@ func TestRun_CountsPanics(t *testing.T) {
 
 	reg := metrics.NewRegistry()
 	s := schedule.New(t.Context(),
-		schedule.WithLogger(log.Silent()),
+		schedule.WithLogger(log.Discard()),
 		schedule.WithRegistry(reg),
 	)
 

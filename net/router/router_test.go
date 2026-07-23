@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/net/router"
 )
 
 type mockHandler struct{}

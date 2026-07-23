@@ -17,7 +17,6 @@ package iam
 import (
 	"cmp"
 	"context"
-	"log/slog"
 	"net/http"
 	"time"
 	"uuid"
@@ -36,9 +35,8 @@ import (
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/nonce"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
-
 
 // Server implements the endpoints of an OAuth 2.0 authorization server.
 //
@@ -74,10 +72,9 @@ type Server struct {
 	throttle                  *throttle.Throttle
 	throttlePenalty           int
 	limit                     limit.Limiter
-	logger                    *slog.Logger
+	logger                    *log.Logger
 	now                       func() time.Time
 }
-
 
 // New assembles a [Server] from the given configuration and options.
 //
@@ -105,7 +102,7 @@ func New(cfg Config, opts ...Option) *Server {
 
 	logger := cfg.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = log.Discard()
 	}
 
 	s := &Server{

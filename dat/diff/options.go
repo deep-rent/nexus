@@ -15,9 +15,8 @@
 package diff
 
 import (
-	"log/slog"
-
 	"github.com/deep-rent/nexus/dat/diff/hlc"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Default engine limits.
@@ -32,7 +31,7 @@ const (
 
 // config holds configuration options for the [Engine].
 type config struct {
-	logger     *slog.Logger
+	logger     *log.Logger
 	clock      *hlc.Clock
 	prefilter  Prefilter
 	maxChanges int
@@ -44,8 +43,8 @@ type config struct {
 type Option func(*config)
 
 // WithLogger sets the logger used for structured sync diagnostics.
-// If not provided, [slog.Default] is used. A nil logger is ignored.
-func WithLogger(logger *slog.Logger) Option {
+// If not provided, logging is disabled. A nil logger is ignored.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

@@ -15,13 +15,13 @@
 package event
 
 import (
-	"log/slog"
 	"runtime"
 	"sync"
 	"sync/atomic"
 
-	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/std/ring"
+	"github.com/deep-rent/nexus/sys/log"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
 
 // OverflowMode determines how the bus behaves when the internal buffer is
@@ -86,7 +86,7 @@ func NewBus[T any](opts ...Option) *Bus[T] {
 	}
 
 	if cfg.logger == nil {
-		cfg.logger = slog.Default()
+		cfg.logger = log.Discard()
 	}
 	if cfg.registry == nil {
 		cfg.registry = metrics.DefaultRegistry

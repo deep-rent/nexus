@@ -16,7 +16,6 @@ package flow
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
@@ -24,7 +23,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Transaction is the persisted state of an in-progress login. It holds no
 // secret: the client-facing handle is stored only as its digest ([Transaction.ID]),
@@ -62,9 +60,8 @@ type Coordinator struct {
 	now      func() time.Time
 	hasher   *digest.Hasher
 	handles  *nonce.Generator
-	logger   *slog.Logger
+	logger   *log.Logger
 }
-
 
 // New creates a [Coordinator] backed by the given [Store]. It panics if store
 // is nil, since that is a startup configuration error.
@@ -78,7 +75,7 @@ func New(store Store, opts ...Option) *Coordinator {
 		now:      time.Now,
 		hasher:   digest.DefaultHasher,
 		handles:  nonce.DefaultGenerator,
-		logger:   slog.Default(),
+		logger:   log.Discard(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -297,6 +294,6 @@ func (c *Coordinator) expired(t Transaction) bool {
 // its expiry is the backstop for a failed deletion.
 func (c *Coordinator) deleteBestEffort(ctx context.Context, id, what string) {
 	if _, err := c.store.Delete(ctx, id); err != nil {
-		c.logger.ErrorContext(ctx, "Failed to delete "+what, log.Err(err))
+		c.logger.Error(ctx, "Failed to delete "+what, log.Err(err))
 	}
 }

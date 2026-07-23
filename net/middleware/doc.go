@@ -38,7 +38,7 @@
 //
 //	// Chain middleware around the final handler.
 //	// Order matters: Recover must be first (outermost).
-//	logger := slog.Default()
+//	logger := log.New()
 //	chainedHandler := middleware.Chain(handler,
 //	  middleware.Recover(logger),
 //	  middleware.RequestID(),

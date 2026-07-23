@@ -18,13 +18,13 @@ import (
 	"bytes"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"reflect"
 	"testing"
 	"testing/fstest"
 
 	"github.com/deep-rent/nexus/dat/migrate"
 	"github.com/deep-rent/nexus/dat/migrate/source/file"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 type mockWalkErrFS struct{}
@@ -50,7 +50,7 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	mfs := fstest.MapFS{}
-	l := slog.Default()
+	l := log.Discard()
 
 	s := file.New(mfs, file.WithExtension("txt"), file.WithLogger(l))
 	if got, want := s.Extension(), ".txt"; got != want {

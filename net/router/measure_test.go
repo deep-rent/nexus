@@ -20,10 +20,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/deep-rent/nexus/sys/log"
-	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/net/middleware"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sys/log"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
 
 // samples returns the request duration samples recorded in reg, keyed by
@@ -72,7 +72,7 @@ func TestMeasure_ObservesErrorHandlerStatus(t *testing.T) {
 
 	reg := metrics.NewRegistry()
 	r := router.New(
-		router.WithLogger(log.Silent()),
+		router.WithLogger(log.Discard()),
 		router.WithMiddleware(router.Measure(middleware.WithRegistry(reg))),
 	)
 	r.HandleFunc("GET /boom", func(*router.Exchange) error {

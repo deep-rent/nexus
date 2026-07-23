@@ -16,7 +16,8 @@ package router
 
 import (
 	"encoding/json/v2"
-	"log/slog"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Option defines a functional configuration option for the [Router].
@@ -52,8 +53,9 @@ func WithErrorHandler(h ErrorHandler) Option {
 	}
 }
 
-// WithLogger updates the default error handler to use the given logger.
-func WithLogger(logger *slog.Logger) Option {
+// WithLogger updates the default error handler to use the given
+// [log.Logger]. Without it, the router stays silent.
+func WithLogger(logger *log.Logger) Option {
 	return func(r *Router) {
 		if logger != nil {
 			r.errorHandler = defaultErrorHandler(logger)

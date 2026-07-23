@@ -17,10 +17,11 @@ package app
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Component defines a function that can be executed by the application runner.
@@ -41,15 +42,16 @@ type (
 	readyKey   struct{}
 )
 
-// Logger returns the [slog.Logger] configured on the runner via [WithLogger].
-// It returns [slog.Default] if ctx does not originate from a runner. Prefer
-// this over a package-level logger so that component output is correlated with
-// the application lifecycle. See also [Named].
-func Logger(ctx context.Context) *slog.Logger {
-	if log, ok := ctx.Value(loggerKey{}).(*slog.Logger); ok && log != nil {
-		return log
+// Logger returns the [log.Logger] configured on the runner via [WithLogger].
+// It returns [log.Discard] if ctx does not originate from a runner, so
+// components stay silent outside a managed run. Prefer this over a
+// package-level logger so that component output is correlated with the
+// application lifecycle. See also [Named].
+func Logger(ctx context.Context) *log.Logger {
+	if logger, ok := ctx.Value(loggerKey{}).(*log.Logger); ok && logger != nil {
+		return logger
 	}
-	return slog.Default()
+	return log.Discard()
 }
 
 // ShutdownTimeout returns the graceful shutdown budget configured on the
@@ -93,8 +95,8 @@ func Named(name string, c Component) Component {
 		panic("Named requires a non-nil component")
 	}
 	return func(ctx context.Context) error {
-		log := Logger(ctx).With(slog.String("component", name))
-		ctx = context.WithValue(ctx, loggerKey{}, log)
+		logger := Logger(ctx).With(log.String("component", name))
+		ctx = context.WithValue(ctx, loggerKey{}, logger)
 		if err := invoke(ctx, c); err != nil {
 			return &ComponentError{Name: name, Err: err}
 		}

@@ -15,25 +15,35 @@
 package iam
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"github.com/deep-rent/nexus/sec/iam/oauth"
-	"log/slog"
+	"github.com/deep-rent/nexus/sys/log"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 )
 
-// withLogger installs a logger that writes into buf, so that a test can
-// inspect what the server recorded.
-func withLogger(buf *bytes.Buffer, level slog.Level) Option {
-	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
-		Level: level,
-	}))
-	return func(s *Server) { s.logger = logger }
+// withLogger installs a logger that captures JSON records into the returned
+// buffer, so that a test can inspect what the server recorded.
+func withLogger(level log.Level) (Option, *log.Buffer) {
+	logger, buf := log.Capture(log.WithLevel(level))
+	return func(s *Server) { s.logger = logger }, buf
+}
+
+// records unmarshals every captured JSON line into a generic map.
+func records(t *testing.T, buf *log.Buffer) []map[string]any {
+	t.Helper()
+	lines := buf.Lines()
+	recs := make([]map[string]any, len(lines))
+	for i, line := range lines {
+		if err := json.Unmarshal([]byte(line), &recs[i]); err != nil {
+			t.Fatalf("decoding record %q: %v", line, err)
+		}
+	}
+	return recs
 }
 
 // failingGrant reports the given error from Authorize.
@@ -53,9 +63,9 @@ func (g *failingGrant) Authorize(
 func TestServer_LogsServerErrors(t *testing.T) {
 	const detail = "dial tcp 10.0.0.1:5432: connection refused"
 
-	var buf bytes.Buffer
+	logOpt, buf := withLogger(log.LevelDebug)
 	env := newTestEnv(t,
-		withLogger(&buf, slog.LevelDebug),
+		logOpt,
 		WithGrant(&failingGrant{
 			err: &oauth.Error{
 				Status:      http.StatusInternalServerError,
@@ -75,15 +85,10 @@ func TestServer_LogsServerErrors(t *testing.T) {
 	}
 
 	body := res.Body.String()
-	logs := buf.String()
 
 	// The cause is for the operator, not the client.
 	if strings.Contains(body, detail) {
 		t.Errorf("cause leaked to the client: %q", body)
-	}
-
-	if !strings.Contains(logs, detail) {
-		t.Errorf("cause missing from the logs: %q", logs)
 	}
 
 	var oerr oauth.Error
@@ -95,20 +100,31 @@ func TestServer_LogsServerErrors(t *testing.T) {
 		t.Fatal("response carries no error ID")
 	}
 
-	if !strings.Contains(logs, oerr.ID) {
-		t.Errorf("error ID %q not found in logs %q", oerr.ID, logs)
+	var rec map[string]any
+	for _, r := range records(t, buf) {
+		if r["level"] == "error" {
+			rec = r
+			break
+		}
+	}
+	if rec == nil {
+		t.Fatalf("server error not logged at error level: %q", buf.String())
 	}
 
-	if !strings.Contains(logs, "level=ERROR") {
-		t.Errorf("server error not logged at error level: %q", logs)
+	if got, _ := rec["error"].(string); !strings.Contains(got, detail) {
+		t.Errorf("cause missing from the logs: %q", buf.String())
+	}
+
+	if got, _ := rec["error_id"].(string); got != oerr.ID {
+		t.Errorf("error_id: got %q; want %q", got, oerr.ID)
 	}
 }
 
 // Protocol errors are ordinary traffic and must not be reported as failures
 // of the server.
 func TestServer_ProtocolErrorsAreNotErrors(t *testing.T) {
-	var buf bytes.Buffer
-	env := newTestEnv(t, withLogger(&buf, slog.LevelDebug))
+	logOpt, buf := withLogger(log.LevelDebug)
+	env := newTestEnv(t, logOpt)
 
 	res := env.postForm("/token", url.Values{
 		"grant_type": {"no_such_grant"},
@@ -118,22 +134,26 @@ func TestServer_ProtocolErrorsAreNotErrors(t *testing.T) {
 		t.Fatalf("status: got %d; want a client error", res.Code)
 	}
 
-	logs := buf.String()
-
-	if strings.Contains(logs, "level=ERROR") {
-		t.Errorf("protocol error logged at error level: %q", logs)
+	debug := false
+	for _, r := range records(t, buf) {
+		switch r["level"] {
+		case "error":
+			t.Errorf("protocol error logged at error level: %q", buf.String())
+		case "debug":
+			debug = true
+		}
 	}
 
-	if !strings.Contains(logs, "level=DEBUG") {
-		t.Errorf("protocol error not logged at debug level: %q", logs)
+	if !debug {
+		t.Errorf("protocol error not logged at debug level: %q", buf.String())
 	}
 }
 
 // A protocol error is not something a client reports back, so minting an
 // identifier for every one of them would be wasted work.
 func TestServer_ProtocolErrorHasNoID(t *testing.T) {
-	var buf bytes.Buffer
-	env := newTestEnv(t, withLogger(&buf, slog.LevelDebug))
+	logOpt, _ := withLogger(log.LevelDebug)
+	env := newTestEnv(t, logOpt)
 
 	res := env.postForm("/token", url.Values{
 		"grant_type": {"no_such_grant"},
@@ -151,15 +171,15 @@ func TestServer_ProtocolErrorHasNoID(t *testing.T) {
 
 // Nothing is formatted when the level is disabled.
 func TestServer_RespectsLogLevel(t *testing.T) {
-	var buf bytes.Buffer
-	env := newTestEnv(t, withLogger(&buf, slog.LevelError))
+	logOpt, buf := withLogger(log.LevelError)
+	env := newTestEnv(t, logOpt)
 
 	env.postForm("/token", url.Values{
 		"grant_type": {"no_such_grant"},
 	}, env.client, env.client.secret)
 
-	if buf.Len() != 0 {
-		t.Errorf("got %q; want nothing logged below the level", buf.String())
+	if out := buf.String(); out != "" {
+		t.Errorf("got %q; want nothing logged below the level", out)
 	}
 }
 

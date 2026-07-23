@@ -67,7 +67,7 @@ func TestController_CountsRefreshOutcomes(t *testing.T) {
 		srv.URL,
 		func(r *cache.Response) (string, error) { return string(r.Body), nil },
 		cache.WithClient(srv.Client()),
-		cache.WithLogger(log.Silent()),
+		cache.WithLogger(log.Discard()),
 		cache.WithRegistry(reg),
 	)
 

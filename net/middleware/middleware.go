@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log/slog"
+	"fmt"
 	"net"
 	"net/http"
 	"runtime/debug"
@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Pipe is a middleware function.
@@ -70,7 +72,7 @@ func Passthrough(next http.Handler) http.Handler { return next }
 // Panics with [http.ErrAbortHandler] are re-raised untouched: the standard
 // library uses this sentinel to abort a response on purpose, and the server
 // suppresses its stack trace.
-func Recover(logger *slog.Logger) Pipe {
+func Recover(logger *log.Logger) Pipe {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(res http.ResponseWriter, req *http.Request) {
@@ -82,11 +84,12 @@ func Recover(logger *slog.Logger) Pipe {
 						}
 						method, url := req.Method, req.URL.String()
 						logger.Error(
+							req.Context(),
 							"Panic caught by middleware",
-							slog.String("method", method),
-							slog.String("url", url),
-							slog.Any("panic", r),
-							slog.String("stack", string(debug.Stack())),
+							log.String("method", method),
+							log.String("url", url),
+							log.String("panic", fmt.Sprint(r)),
+							log.String("stack", string(debug.Stack())),
 						)
 						res.WriteHeader(http.StatusInternalServerError)
 					}
@@ -281,11 +284,10 @@ var (
 // If the logger has the debug level disabled, Log returns nil, which [Chain]
 // (and the router's Adapt) skip entirely, so a disabled logger adds no chaining
 // or per-request overhead. Enablement is decided once, when the pipe is built,
-// so
-// a logger whose level is raised to debug at runtime (e.g. via a
-// [slog.LevelVar]) will not begin logging; rebuild the chain to pick that up.
-func Log(logger *slog.Logger) Pipe {
-	if !logger.Enabled(context.Background(), slog.LevelDebug) {
+// so a logger whose level is raised to debug at runtime (e.g. via a
+// [log.Cutoff]) will not begin logging; rebuild the chain to pick that up.
+func Log(logger *log.Logger) Pipe {
+	if !logger.Enabled(context.Background(), log.LevelDebug) {
 		return nil
 	}
 	return func(next http.Handler) http.Handler {
@@ -293,17 +295,17 @@ func Log(logger *slog.Logger) Pipe {
 			start := time.Now()
 			incpt := &interceptor{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(incpt, r)
-			logger.DebugContext(
+			logger.Debug(
 				r.Context(),
 				"HTTP request handled",
-				slog.String("id", GetRequestID(r.Context())),
-				slog.String("method", r.Method),
-				slog.String("url", r.URL.String()),
-				slog.String("remote", r.RemoteAddr),
-				slog.String("user_agent", r.UserAgent()),
-				slog.Int("status", incpt.statusCode),
-				slog.Int64("bytes", incpt.bytes),
-				slog.Duration("duration", time.Since(start)),
+				log.String("id", GetRequestID(r.Context())),
+				log.String("method", r.Method),
+				log.String("url", r.URL.String()),
+				log.String("remote", r.RemoteAddr),
+				log.String("user_agent", r.UserAgent()),
+				log.Int("status", incpt.statusCode),
+				log.Int64("bytes", incpt.bytes),
+				log.Duration("duration", time.Since(start)),
 			)
 		})
 	}

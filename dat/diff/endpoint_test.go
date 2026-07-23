@@ -25,10 +25,10 @@ import (
 
 	"uuid"
 
-	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/dat/diff"
-	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sec/auth"
+	"github.com/deep-rent/nexus/sec/jose/jwt"
 )
 
 type mockVerifier struct {

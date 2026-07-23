@@ -15,9 +15,12 @@
 package event
 
 import (
-	"log/slog"
+	"context"
+	"fmt"
 	"runtime/debug"
 	"sync"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // dispatching. The identifier allows for constant-time unsubscription without
@@ -45,17 +48,20 @@ type dispatcher[T any] interface {
 // remaining subscribers from being notified. Completed deliveries and panics
 // are counted separately.
 func deliver[T any](
-	logger *slog.Logger,
+	logger *log.Logger,
 	stats *counters,
 	fn Subscriber[T],
 	event T,
 ) {
 	defer func() {
 		if r := recover(); r != nil {
+			// Subscribers are context-free, so there is no context to pass
+			// along here.
 			logger.Error(
+				context.Background(),
 				"Subscriber panicked",
-				slog.Any("panic", r),
-				slog.String("stack", string(debug.Stack())),
+				log.String("panic", fmt.Sprint(r)),
+				log.String("stack", string(debug.Stack())),
 			)
 			stats.panics.Inc()
 			return
@@ -69,7 +75,7 @@ func deliver[T any](
 // goroutine.
 type basicDispatcher[T any] struct {
 	// logger records any panics triggered by a subscriber function.
-	logger *slog.Logger
+	logger *log.Logger
 	// stats counts deliveries and panics.
 	stats *counters
 }
@@ -89,7 +95,7 @@ func (d *basicDispatcher[T]) wait() {}
 // subscriber.
 type asyncDispatcher[T any] struct {
 	// logger records any panics triggered by a subscriber function.
-	logger *slog.Logger
+	logger *log.Logger
 	// stats counts deliveries and panics.
 	stats *counters
 	// wg tracks deliveries that have been started but not yet completed.

@@ -15,9 +15,10 @@
 package proxy
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 const (
@@ -44,7 +45,7 @@ type handlerConfig struct {
 	// newErrorHandler is the factory for creating the error handling function.
 	newErrorHandler ErrorHandlerFactory
 	// logger is the structured logger for error reporting.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // HandlerOption defines a function for setting reverse proxy options.
@@ -122,11 +123,13 @@ func WithErrorHandler(f ErrorHandlerFactory) HandlerOption {
 	}
 }
 
-// WithLogger sets the logger to be used by the proxy's [ErrorHandler].
+// WithLogger sets the [log.Logger] to be used by the proxy's
+// [ErrorHandler].
 //
-// If nil is given, this option is ignored. The default error handler uses this
-// logger for capturing upstream errors.
-func WithLogger(logger *slog.Logger) HandlerOption {
+// If nil is given, this option is ignored. The default error handler uses
+// this logger for capturing upstream errors; without one, errors stay
+// silent ([log.Discard]).
+func WithLogger(logger *log.Logger) HandlerOption {
 	return func(cfg *handlerConfig) {
 		if logger != nil {
 			cfg.logger = logger

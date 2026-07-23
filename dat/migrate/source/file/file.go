@@ -15,16 +15,16 @@
 package file
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"strconv"
 	"strings"
 
 	"github.com/deep-rent/nexus/dat/migrate"
+	"github.com/deep-rent/nexus/sys/log"
 )
-
 
 // Errors explaining why the [Source.Parse] method has failed:
 var (
@@ -48,7 +48,6 @@ var (
 	ErrInvalidVersion = errors.New("invalid version")
 )
 
-
 // Source implements the [migrate.Source] interface for an [fs.FS].
 //
 // It scans the file system to discover and parse migration files.
@@ -58,7 +57,7 @@ type Source struct {
 	// ext is the file extension used to filter relevant scripts.
 	ext string
 	// logger is the logger used for debugging missed conventions.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // New creates a new [Source] instance that reads from the provided [fs.FS].
@@ -68,7 +67,7 @@ type Source struct {
 func New(dir fs.FS, opts ...Option) *Source {
 	cfg := &config{
 		ext:    DefaultExtension,
-		logger: slog.Default(),
+		logger: log.Discard(),
 	}
 
 	for _, opt := range opts {
@@ -189,10 +188,10 @@ func (s *Source) List() ([]migrate.SourceScript, error) {
 		name := d.Name()
 		version, desc, direction, tx, skipped := s.Parse(name)
 		if skipped != nil {
-			s.logger.Debug(
+			s.logger.Debug(context.Background(),
 				"Skipping file in migration directory",
-				slog.String("name", name),
-				slog.String("reason", skipped.Error()),
+				log.String("name", name),
+				log.String("reason", skipped.Error()),
 			)
 			return nil // Ignore files that don't match the naming convention
 		}

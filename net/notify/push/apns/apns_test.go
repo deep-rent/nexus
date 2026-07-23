@@ -19,7 +19,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,6 +27,7 @@ import (
 	"github.com/deep-rent/nexus/net/notify/push"
 	"github.com/deep-rent/nexus/net/notify/push/apns"
 	"github.com/deep-rent/nexus/sec/sign"
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 func generate(t *testing.T) []byte {
@@ -83,7 +83,7 @@ func TestAPNS_Send(t *testing.T) {
 		},
 		apns.WithClient(&http.Client{Timeout: 1 * time.Second, Transport: tr}),
 		apns.WithBaseURL("https://api.sandbox.push.apple.com"),
-		apns.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		apns.WithLogger(log.Discard()),
 	)
 
 	msg := push.NewMessage("Hello", "World", push.Target{Token: "device123"})
@@ -144,7 +144,7 @@ func TestAPNS_Topic(t *testing.T) {
 			opts := []apns.Option{
 				apns.WithClient(&http.Client{Transport: tr}),
 				apns.WithBaseURL(apns.SandboxBaseURL),
-				apns.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+				apns.WithLogger(log.Discard()),
 			}
 			if tt.configure != "" {
 				opts = append(opts, apns.WithTopic(tt.configure))

@@ -15,8 +15,9 @@
 package postgres
 
 import (
-	"log/slog"
 	"time"
+
+	"github.com/deep-rent/nexus/sys/log"
 )
 
 // Default names for the store's bookkeeping objects.
@@ -62,7 +63,7 @@ type config struct {
 	// sequence is the name of the global feed sequence.
 	sequence string
 	// logger is the structured logger for store activity.
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // Option configures a PostgreSQL [Store] instance.
@@ -155,8 +156,8 @@ func WithSequence(name string) Option {
 
 // WithLogger injects a structured logger to record store operations.
 //
-// Nil values are ignored, falling back to [slog.Default].
-func WithLogger(logger *slog.Logger) Option {
+// Nil values are ignored; without a logger, logging is disabled.
+func WithLogger(logger *log.Logger) Option {
 	return func(c *config) {
 		if logger != nil {
 			c.logger = logger

@@ -16,12 +16,13 @@ package schedule
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/deep-rent/nexus/std/jitter"
+	"github.com/deep-rent/nexus/sys/log"
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
@@ -163,7 +164,7 @@ type Scheduler interface {
 // Cancelling this context will also cause the scheduler to shut down.
 func New(ctx context.Context, opts ...Option) Scheduler {
 	cfg := config{
-		logger:   slog.Default(),
+		logger:   log.Discard(),
 		recovery: DefaultRecoveryDelay,
 		registry: metrics.DefaultRegistry,
 	}
@@ -188,7 +189,7 @@ func New(ctx context.Context, opts ...Option) Scheduler {
 type scheduler struct {
 	ctx      context.Context    // internal lifecycle context
 	cancel   context.CancelFunc // stops all dispatched goroutines
-	logger   *slog.Logger       // destination for internal logs
+	logger   *log.Logger        // destination for internal logs
 	recovery time.Duration      // delay applied after a tick panicked
 	minimum  time.Duration      // floor for the interval a tick asks for
 	start    time.Duration      // delay before the first run of a tick
@@ -269,11 +270,11 @@ func (s *scheduler) run(
 
 	defer func() {
 		if r := recover(); r != nil {
-			s.logger.ErrorContext(ctx,
+			s.logger.Error(ctx,
 				"Tick panicked",
-				slog.String("tick", name),
-				slog.Any("panic", r),
-				slog.String("stack", string(debug.Stack())),
+				log.String("tick", name),
+				log.String("panic", fmt.Sprint(r)),
+				log.String("stack", string(debug.Stack())),
 			)
 			d = s.recovery
 			s.registry.Counter(TickPanics, metrics.T("tick", name)).Inc()

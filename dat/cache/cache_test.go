@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deep-rent/nexus/std/backoff"
 	"github.com/deep-rent/nexus/dat/cache"
+	"github.com/deep-rent/nexus/std/backoff"
 )
 
 // handler is a test origin that serves a scripted sequence of responses.

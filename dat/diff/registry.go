@@ -21,8 +21,8 @@ import (
 	"slices"
 	"uuid"
 
-	"github.com/deep-rent/nexus/std/graph"
 	"github.com/deep-rent/nexus/dat/valid"
+	"github.com/deep-rent/nexus/std/graph"
 )
 
 // ModelShare is the reserved model implementing personal-document grants.
