@@ -145,7 +145,7 @@ func (c *Collector) scrape(ctx context.Context, t *target) {
 			"Scrape failed",
 			log.String("target", t.name),
 			log.String("url", t.url),
-			log.Err(err),
+			log.Error(err),
 		)
 	}
 
@@ -178,7 +178,7 @@ func (c *Collector) fetch(
 			c.logger.Warn(
 				ctx,
 				"Failed to close response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 	}()

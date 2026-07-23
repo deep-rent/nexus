@@ -140,7 +140,16 @@ func (c *Coordinator) Begin(
 	active := steps[0]
 	payload, err := active.Begin(ctx, &t, handle)
 	if err != nil {
-		c.deleteBestEffort(ctx, t.ID, "unstartable transaction")
+		// TODO: Log error?
+
+		if _, err := c.store.Delete(ctx, t.ID); err != nil {
+			c.logger.Error(
+				ctx,
+				"Could not delete unstartable transaction",
+				log.Error(err),
+			)
+		}
+
 		return "", Result{}, err
 	}
 
@@ -192,7 +201,14 @@ func (c *Coordinator) Continue(
 	case VerdictReject:
 		return Result{Status: StatusWrongInput}, nil
 	case VerdictFail:
-		c.deleteBestEffort(ctx, id, "failed transaction")
+		if _, err := c.store.Delete(ctx, t.ID); err != nil {
+			c.logger.Error(
+				ctx,
+				"Could not delete failed transaction",
+				log.Error(err),
+			)
+		}
+
 		return Result{Status: StatusInvalid}, nil
 	}
 
@@ -210,10 +226,19 @@ func (c *Coordinator) Continue(
 	}
 	payload, err := next.Begin(ctx, &t, handle)
 	if err != nil {
+		// TODO: Log error?
+
 		// The next step could not be activated (e.g. its code would not send).
 		// Abort the whole transaction so the client restarts from a clean slate
 		// rather than being stranded on a step with no prompt.
-		c.deleteBestEffort(ctx, id, "unadvanceable transaction")
+		if _, err := c.store.Delete(ctx, t.ID); err != nil {
+			c.logger.Error(
+				ctx,
+				"Could not delete unadvanceable transaction",
+				log.Error(err),
+			)
+		}
+
 		return Result{}, err
 	}
 
@@ -306,12 +331,4 @@ func (c *Coordinator) finish(
 // expired reports whether the transaction has passed its expiry.
 func (c *Coordinator) expired(t Transaction) bool {
 	return t.ExpiresAt != 0 && c.now().Unix() > t.ExpiresAt
-}
-
-// deleteBestEffort removes a transaction, logging but not returning a failure:
-// its expiry is the backstop for a failed deletion.
-func (c *Coordinator) deleteBestEffort(ctx context.Context, id, what string) {
-	if _, err := c.store.Delete(ctx, id); err != nil {
-		c.logger.Error(ctx, "Failed to delete "+what, log.Err(err))
-	}
 }

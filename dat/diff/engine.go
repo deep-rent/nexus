@@ -177,7 +177,7 @@ func (e *Engine[Tx]) Sync(
 			})
 			ids = fresh
 		} else {
-			e.cfg.logger.Warn(ctx, "prefilter failed", log.Err(err))
+			e.cfg.logger.Warn(ctx, "prefilter failed", log.Error(err))
 		}
 	}
 
@@ -242,7 +242,7 @@ func (e *Engine[Tx]) Sync(
 
 	if e.cfg.prefilter != nil && len(ids) > 0 {
 		if err := e.cfg.prefilter.Mark(ctx, ids); err != nil {
-			e.cfg.logger.Warn(ctx, "prefilter mark failed", log.Err(err))
+			e.cfg.logger.Warn(ctx, "prefilter mark failed", log.Error(err))
 		}
 	}
 

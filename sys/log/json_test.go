@@ -128,8 +128,8 @@ func TestSink_Kinds(t *testing.T) {
 			)),
 			want: "0195c2a7-9e4b-7c58-8000-0123456789ab",
 		},
-		{"error", log.Err(errors.New("boom")), "boom"},
-		{"nil error", log.Err(nil), nil},
+		{"error", log.Error(errors.New("boom")), "boom"},
+		{"nil error", log.Error(nil), nil},
 		{"nan", log.Float64("k", math.NaN()), "NaN"},
 		{"+inf", log.Float64("k", math.Inf(+1)), "+Inf"},
 		{"-inf", log.Float64("k", math.Inf(-1)), "-Inf"},
@@ -176,7 +176,7 @@ func TestSink_Traceable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			logger, buf := log.Capture()
-			logger.Error(t.Context(), "failed", log.Err(tt.in))
+			logger.Error(t.Context(), "failed", log.Error(tt.in))
 
 			m := record(t, buf)
 			got, ok := m[log.ErrorIDKey]

@@ -327,7 +327,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			s.logger.Warn(
 				ctx,
 				"Failed to drain response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		err := res.Body.Close()
@@ -335,7 +335,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			s.logger.Warn(
 				ctx,
 				"Failed to close response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 	}()

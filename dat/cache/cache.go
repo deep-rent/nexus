@@ -186,7 +186,7 @@ func (c *controller[T]) Run(ctx context.Context) time.Duration {
 		if !errors.Is(err, context.Canceled) {
 			c.logger.Error(ctx,
 				"Failed to fetch resource",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return c.retry(ctx)
@@ -269,7 +269,7 @@ func (c *controller[T]) update(
 	if err != nil {
 		c.logger.Error(ctx,
 			"Failed to read response body",
-			log.Err(err),
+			log.Error(err),
 		)
 		return c.retry(ctx)
 	}
@@ -282,7 +282,7 @@ func (c *controller[T]) update(
 	if err != nil {
 		c.logger.Error(ctx,
 			"Couldn't parse response body",
-			log.Err(err),
+			log.Error(err),
 		)
 		return c.retry(ctx)
 	}
@@ -309,7 +309,7 @@ func (c *controller[T]) close(res *http.Response) {
 	if err := res.Body.Close(); err != nil {
 		c.logger.Warn(context.Background(),
 			"Failed to close response body",
-			log.Err(err),
+			log.Error(err),
 		)
 	}
 }

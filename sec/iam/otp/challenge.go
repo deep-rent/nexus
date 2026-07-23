@@ -335,7 +335,7 @@ func (c *Challenger) expired(ch Challenge) bool {
 // the challenge's expiry is the backstop for a failed deletion.
 func (c *Challenger) deleteBestEffort(ctx context.Context, id, what string) {
 	if _, err := c.store.Delete(ctx, id); err != nil {
-		c.logger.Error(ctx, "Failed to delete "+what, log.Err(err))
+		c.logger.Error(ctx, "Failed to delete "+what, log.Error(err))
 	}
 }
 

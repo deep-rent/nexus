@@ -37,7 +37,7 @@ func BenchmarkLog(b *testing.B) {
 			log.String("path", "/api/v1/units"),
 			log.Int("status", 200),
 			log.Duration("elapsed", 1500*time.Microsecond),
-			log.Err(err),
+			log.Error(err),
 		)
 	}
 }

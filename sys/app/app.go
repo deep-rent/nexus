@@ -301,7 +301,7 @@ func (r *runner) report(ctx context.Context, err error) {
 		)
 		return
 	}
-	r.cfg.logger.Error(ctx, "Component failed", log.Err(err))
+	r.cfg.logger.Error(ctx, "Component failed", log.Error(err))
 }
 
 // stop cancels the started stages in reverse order, draining each one before

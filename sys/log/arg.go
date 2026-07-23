@@ -18,7 +18,6 @@ import (
 	"math"
 	"time"
 	"unsafe"
-
 	"uuid"
 )
 
@@ -49,7 +48,7 @@ const (
 )
 
 // Arg is a typed key/value pair attached to a log record. Args are plain
-// values constructed with functions like [String], [Int], or [Err];
+// values constructed with functions like [String], [Int], or [Error];
 // building one does not allocate for any kind except [Time] values that
 // fall outside the range representable as Unix nanoseconds.
 //
@@ -236,23 +235,23 @@ func UUID(key string, id uuid.UUID) Arg {
 	return String(key, id.String())
 }
 
-// ErrorKey is the key under which [Err] records an error. It is exported
+// ErrorKey is the key under which [Error] records an error. It is exported
 // so that sinks and log processors can find errors by a stable name.
 const ErrorKey = "error"
 
-// Err returns an [Arg] carrying err under the [ErrorKey]. It is the
+// Error returns an [Arg] carrying err under the [ErrorKey]. It is the
 // canonical way to log an error in this codebase, so that every error is
 // recorded under the same key and enriching that record later is a change
 // in one place rather than at every call site:
 //
-//	logger.Error(ctx, "Failed to fetch resource", log.Err(err))
+//	logger.Error(ctx, "Failed to fetch resource", log.Error(err))
 //
 // A nil error is encoded as null; callers should log an error argument
 // only when there is an error to report.
 //
 // If the error, or any error in its chain, is [Traceable], the JSON sink
 // also records its occurrence identifier under [ErrorIDKey].
-func Err(err error) Arg {
+func Error(err error) Arg {
 	return Arg{Key: ErrorKey, kind: KindError, any: err}
 }
 
@@ -263,7 +262,7 @@ const ErrorIDKey = "error_id"
 
 // Traceable is the interface of errors that carry a unique identifier
 // for their specific occurrence, correlating client-side reports with
-// server-side logs. When an error logged via [Err] has a Traceable in
+// server-side logs. When an error logged via [Error] has a Traceable in
 // its chain, the JSON sink automatically records the identifier under
 // [ErrorIDKey], so call sites never attach it by hand.
 type Traceable interface {

@@ -212,7 +212,7 @@ func (t *transport) discard(ctx context.Context, res *http.Response) {
 			t.logger.Warn(
 				ctx,
 				"Failed to drain response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		case n > t.drain:
 			t.logger.Debug(
@@ -227,7 +227,7 @@ func (t *transport) discard(ctx context.Context, res *http.Response) {
 		t.logger.Warn(
 			ctx,
 			"Failed to close response body",
-			log.Err(err),
+			log.Error(err),
 		)
 	}
 }
@@ -252,7 +252,7 @@ func (t *transport) log(
 		log.String("url", req.URL.String()),
 	}
 	if err != nil {
-		args = append(args, log.Err(err))
+		args = append(args, log.Error(err))
 	}
 	if res != nil {
 		args = append(args, log.Int("status", res.StatusCode))

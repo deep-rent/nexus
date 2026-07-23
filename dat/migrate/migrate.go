@@ -225,7 +225,7 @@ func (m *Migrator) lock(
 		)
 		defer cancel()
 		if err := m.driver.Unlock(c); err != nil {
-			m.logger.Error(c, "Failed to release lock", log.Err(err))
+			m.logger.Error(c, "Failed to release lock", log.Error(err))
 		}
 	}()
 
@@ -650,7 +650,7 @@ func (m *Migrator) run(ctx context.Context, migration Migration) error {
 	})
 	if err != nil {
 		err = fmt.Errorf("migration %d failed: %w", migration.Version, err)
-		m.logger.Error(ctx, "Migration failed", log.Err(err))
+		m.logger.Error(ctx, "Migration failed", log.Error(err))
 		return err
 	}
 

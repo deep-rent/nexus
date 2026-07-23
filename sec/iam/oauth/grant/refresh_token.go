@@ -85,7 +85,7 @@ func (g refreshToken) Authorize(
 			pro.Logger.Error(
 				ctx,
 				"Failed to delete expired refresh token",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return nil, &oauth.Error{

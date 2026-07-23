@@ -120,7 +120,7 @@ func (s *Store) Exec(
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
 			s.logger.Error(ctx,
 				"Failed to rollback transaction",
-				log.Err(e),
+				log.Error(e),
 			)
 		}
 	}()
@@ -1183,7 +1183,7 @@ func resolve(
 // caller's error.
 func close(rows *sql.Rows, logger *log.Logger) {
 	if err := rows.Close(); err != nil {
-		logger.Error(context.Background(), "Failed to close rows", log.Err(err))
+		logger.Error(context.Background(), "Failed to close rows", log.Error(err))
 	}
 }
 

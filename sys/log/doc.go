@@ -18,7 +18,7 @@
 // reflection-based encoding, and no package-level default logger; loggers
 // arrive by injection. Every call takes a [context.Context], and values are
 // attached as typed key/value pairs built with constructors such as
-// [String], [Int], and [Err].
+// [String], [Int], and [Error].
 //
 // # Usage
 //

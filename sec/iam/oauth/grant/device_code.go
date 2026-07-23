@@ -94,7 +94,7 @@ func (g deviceCode) Authorize(
 			pro.Logger.Error(
 				ctx,
 				"Failed to delete expired device code",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return nil, &oauth.Error{
@@ -123,7 +123,7 @@ func (g deviceCode) Authorize(
 			pro.Logger.Error(
 				ctx,
 				"Failed to record device code poll",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return nil, &oauth.Error{
@@ -137,7 +137,7 @@ func (g deviceCode) Authorize(
 			pro.Logger.Error(
 				ctx,
 				"Failed to delete denied device code",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return nil, &oauth.Error{

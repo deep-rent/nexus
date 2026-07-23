@@ -163,7 +163,7 @@ func New(
 				s.logger.Error(
 					ctx,
 					"failed to close response body",
-					log.Err(err),
+					log.Error(err),
 				)
 			}
 		}()

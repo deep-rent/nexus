@@ -168,7 +168,7 @@ func (s *Server) webAuthnSubject(e *router.Exchange) (Subject, error) {
 		s.logger.Debug(
 			e.Context(),
 			"Token verification failed during WebAuthn registration",
-			log.Err(err),
+			log.Error(err),
 		)
 		return nil, nil
 	}
@@ -281,7 +281,7 @@ func (s *Server) WebAuthnRegister(e *router.Exchange) error {
 		s.logger.Debug(
 			e.Context(),
 			"WebAuthn attestation rejected",
-			log.Err(out.Reason),
+			log.Error(out.Reason),
 		)
 		return &router.Error{
 			Status:      http.StatusBadRequest,
@@ -359,7 +359,7 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 		s.logger.Debug(
 			e.Context(),
 			"WebAuthn assertion rejected",
-			log.Err(out.Reason),
+			log.Error(out.Reason),
 		)
 		return &router.Error{
 			Status:      http.StatusUnauthorized,
@@ -471,7 +471,7 @@ func (g *webAuthnGrant) Authorize(
 		pro.Logger.Debug(
 			ctx,
 			"WebAuthn assertion rejected",
-			log.Err(out.Reason),
+			log.Error(out.Reason),
 		)
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,
