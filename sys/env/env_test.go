@@ -217,54 +217,6 @@ type mockBenchConfig struct {
 	Roles   []string `env:",split:';'"`
 }
 
-func BenchmarkUnmarshal(b *testing.B) {
-	mockEnv := map[string]string{
-		"HOST":    "localhost",
-		"PORT":    "9090",
-		"TIMEOUT": "30",
-		"DEBUG":   "true",
-		"ROLES":   "admin;user;guest",
-	}
-
-	opts := []env.Option{
-		env.WithLookup(func(k string) (string, bool) {
-			v, ok := mockEnv[k]
-			return v, ok
-		}),
-	}
-
-	for b.Loop() {
-		var cfg mockBenchConfig
-		if err := env.Unmarshal(&cfg, opts...); err != nil {
-			b.Fatalf("should not have returned an error: %v", err)
-		}
-	}
-}
-
-func BenchmarkExpand(b *testing.B) {
-	mockEnv := map[string]string{
-		"USER": "foo",
-		"HOST": "bar",
-		"PORT": "8080",
-	}
-
-	opts := []env.Option{
-		env.WithLookup(func(k string) (string, bool) {
-			v, ok := mockEnv[k]
-			return v, ok
-		}),
-	}
-
-	input := "user=$USER, pass=$$ECRET, dsn=${USER}@${HOST}:${PORT}"
-
-	for b.Loop() {
-		_, err := env.Expand(input, opts...)
-		if err != nil {
-			b.Fatalf("should not have returned an error: %v", err)
-		}
-	}
-}
-
 // A misconfigured environment should reveal every fault at once, so it can be
 // corrected in a single pass.
 func TestUnmarshal_CollectsAllErrors(t *testing.T) {

@@ -142,21 +142,6 @@ func TestVerify(t *testing.T) {
 	}
 }
 
-func BenchmarkVerify(b *testing.B) {
-	v, _ := pkce.Verifier(b.Context())
-	c, _ := pkce.Challenge(v, pkce.MethodS256)
-
-	for b.Loop() {
-		pkce.Verify(v, c, pkce.MethodS256)
-	}
-}
-
-func BenchmarkVerifier(b *testing.B) {
-	for b.Loop() {
-		_, _ = pkce.Verifier(b.Context())
-	}
-}
-
 func TestIsUnreserved(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

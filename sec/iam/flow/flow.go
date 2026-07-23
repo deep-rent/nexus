@@ -129,7 +129,7 @@ func (c Course) validate() error {
 	for _, s := range c {
 		id := s.ID()
 		if id == "" {
-			return fmt.Errorf("step ID must not be empty")
+			return errors.New("step ID must not be empty")
 		}
 		if _, ok := seen[id]; ok {
 			return fmt.Errorf("duplicate step ID %q", id)
