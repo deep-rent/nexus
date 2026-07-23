@@ -1015,11 +1015,9 @@ func TestDeviceFlow(t *testing.T) {
 		)
 	}
 
-	// Step 3: the resource owner approves the request. The user code is
-	// entered sloppily to exercise normalization.
-	body := `{"user_code":"` +
-		strings.ToLower(strings.ReplaceAll(res.UserCode, "-", " ")) +
-		`","action":"approve"}`
+	// Step 3: the resource owner approves the request, entering the user code
+	// in its canonical XXXX-XXXX form as issued.
+	body := `{"user_code":"` + res.UserCode + `","action":"approve"}`
 	req := httptest.NewRequest(
 		http.MethodPost,
 		testPrefix+oauth.PathDeviceVerify,

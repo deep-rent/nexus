@@ -123,7 +123,6 @@ func (r *cachingResolver) Resolve(rt reflect.Type) ([]field, error) {
 	return fields, nil
 }
 
-
 // Binder extracts values from a generic key-value source into a struct.
 type Binder struct {
 	resolver resolver

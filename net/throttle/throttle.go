@@ -71,7 +71,7 @@ type Throttle struct {
 func New(cfg Config) *Throttle {
 	limit := cfg.Rate
 	if limit == 0 {
-		limit = DefaultLimit
+		limit = DefaultRate
 	}
 	burst := cfg.Burst
 	if burst == 0 {
@@ -80,7 +80,7 @@ func New(cfg Config) *Throttle {
 
 	switch {
 	case limit <= 0:
-		panic("limit must be positive")
+		panic("rate must be positive")
 	case burst <= 0:
 		panic("burst must be positive")
 	}

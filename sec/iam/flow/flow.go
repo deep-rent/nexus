@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 )
 
 // ErrRateLimited is returned by [Step.Act] when an action is refused because a
@@ -85,13 +84,20 @@ type Prompt struct {
 // knowledge of the subject.
 //
 // A step owns its own state, deriving whatever it needs from the raw
-// transaction handle it is given; the transaction records only which steps are
-// complete. Implementations should be safe for concurrent use and honor the
-// context.
+// transaction handle it is given (typically by keying its own store on a value
+// derived from the handle). The [Transaction] it receives is read-only: the
+// [Coordinator] owns completion tracking and persistence, and does not save
+// any field a step sets on it, so implementations must not stash state there.
+// Implementations should be safe for concurrent use and honor the context.
 type Step interface {
-	// ID returns the step's identifier, stable across a single login and
-	// unique within a plan (e.g. "otp", "totp"). It labels the step to the
-	// client and keys the step's completion.
+	// ID returns the step's identifier, unique within a plan and stable
+	// across a single login for a given factor (e.g. "otp", "totp"). It
+	// labels the step to the client and keys the step's completion: a step
+	// whose ID already appears among the transaction's completed IDs is
+	// treated as satisfied and skipped, so a [Plan] must not reuse an ID for
+	// a different factor mid-login (e.g. return "otp" for an OTP step on one
+	// call and a WebAuthn step on the next) or the re-planned factor goes
+	// unverified.
 	ID() string
 	// Begin activates the step when it becomes current — for example, by
 	// delivering a code — and returns the payload describing its prompt.
@@ -133,11 +139,11 @@ func (c Course) validate() error {
 	return nil
 }
 
-// pending returns the first step whose ID is not yet completed in the given
-// transaction, or nil when every step is done.
-func (c Course) pending(t Transaction) Step {
+// pending returns the first step not yet completed in the given transaction,
+// or nil when every step is done.
+func (c Course) pending(t *Transaction) Step {
 	for _, s := range c {
-		if !slices.Contains(t.Completed, s.ID()) {
+		if !t.done(s.ID()) {
 			return s
 		}
 	}
