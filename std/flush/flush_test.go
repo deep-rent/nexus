@@ -346,3 +346,34 @@ func TestWriter_Observability(t *testing.T) {
 		t.Errorf("got size %d after close; want %d", got, want)
 	}
 }
+
+func TestWriter_FlushEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty buffer", func(t *testing.T) {
+		t.Parallel()
+		dst := new(fakeWriter)
+		w := flush.New(dst, flush.WithInterval(0))
+		defer w.Close()
+
+		if err := w.Flush(); err != nil {
+			t.Fatalf("flush on empty buffer failed: %v", err)
+		}
+		if exp, act := 0, dst.Writes(); act != exp {
+			t.Errorf("got %d writes on empty flush; want %d", act, exp)
+		}
+	})
+
+	t.Run("after close", func(t *testing.T) {
+		t.Parallel()
+		dst := new(fakeWriter)
+		w := flush.New(dst, flush.WithInterval(0))
+
+		if err := w.Close(); err != nil {
+			t.Fatalf("close failed: %v", err)
+		}
+		if err := w.Flush(); err != nil {
+			t.Errorf("flush after close failed: %v", err)
+		}
+	})
+}
