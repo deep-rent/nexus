@@ -213,7 +213,7 @@ func TestClassificationEquivalence(t *testing.T) {
 				b := byte(i)
 				want := strings.IndexByte(c.valid, b) >= 0
 				if got := c.got(b); got != want {
-					t.Errorf("%s(%#x) = %v; want %v", c.name, b, got, want)
+					t.Errorf("for %#x: got %v; want %v", b, got, want)
 				}
 			}
 		})

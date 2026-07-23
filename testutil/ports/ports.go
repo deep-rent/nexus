@@ -61,7 +61,7 @@ func Free(t testing.TB, host string) int {
 //
 // It dials the address every 100ms until a connection succeeds. If the test
 // context is canceled or its deadline is exceeded first, or no dial succeeds
-// within 30 seconds, the test fails immediately.
+// within 10 seconds, the test fails immediately.
 func Wait(t testing.TB, host string, port int) {
 	t.Helper()
 

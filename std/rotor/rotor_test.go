@@ -110,6 +110,7 @@ func TestRotor_Next_Sequential(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 				r := rotor.New(rotor.Sequential, tt.give)
 				for i, want := range tt.want {
 					if got := r.Next(); got != want {
