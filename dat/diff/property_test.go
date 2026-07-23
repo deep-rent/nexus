@@ -118,7 +118,7 @@ func TestProperty_Pagination_NoSkipWithTombstones(t *testing.T) {
 	rep := newReplica()
 	pages := rep.drain(t, f, scope, 4)
 	if pages < 2 {
-		t.Fatalf("expected multiple pages; got %d", pages)
+		t.Fatalf("got %d pages; want at least 2", pages)
 	}
 
 	if len(rep.docs) != len(live) {
