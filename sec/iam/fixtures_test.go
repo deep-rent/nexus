@@ -349,17 +349,15 @@ func newFakeStores() *fakeStores {
 		credentials: newFakeCredentialStore(),
 	}
 	s.Stores = Stores{
-		TokenStores: oauth.TokenStores{
-			AuthCodes:     s.authCodes,
-			RefreshTokens: s.refreshTokens,
-			DeviceCodes:   s.deviceCodes,
-		},
-		Sessions:    s.sessions,
-		Challenges:  s.challenges,
-		Flows:       s.flows,
-		Trust:       s.trust,
-		Ceremonies:  s.ceremonies,
-		Credentials: s.credentials,
+		AuthCodes:     s.authCodes,
+		RefreshTokens: s.refreshTokens,
+		DeviceCodes:   s.deviceCodes,
+		Sessions:      s.sessions,
+		Challenges:    s.challenges,
+		Flows:         s.flows,
+		Trust:         s.trust,
+		Ceremonies:    s.ceremonies,
+		Credentials:   s.credentials,
 	}
 	return s
 }

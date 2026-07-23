@@ -70,9 +70,7 @@ func TestMap_DeleteDecidesWinner(t *testing.T) {
 	var wins sync.Map
 	var wg sync.WaitGroup
 	for i := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			deleted, err := m.Delete(t.Context(), "a")
 			if err != nil {
 				t.Errorf("Delete: %v", err)
@@ -80,7 +78,7 @@ func TestMap_DeleteDecidesWinner(t *testing.T) {
 			if deleted {
 				wins.Store(i, true)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

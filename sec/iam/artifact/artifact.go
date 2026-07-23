@@ -48,6 +48,7 @@ package artifact
 
 import (
 	"context"
+	"maps"
 	"sync"
 )
 
@@ -156,9 +157,7 @@ func (m *Map[K, V]) Len() int {
 func (m *Map[K, V]) Range(f func(id K, v V) bool) {
 	m.mu.Lock()
 	snapshot := make(map[K]V, len(m.items))
-	for k, v := range m.items {
-		snapshot[k] = v
-	}
+	maps.Copy(snapshot, m.items)
 	m.mu.Unlock()
 
 	for k, v := range snapshot {
