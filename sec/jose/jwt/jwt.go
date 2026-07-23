@@ -29,6 +29,7 @@ import (
 
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/std/ascii"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Type is the media type of a JWT, as defined in RFC 7519.
@@ -425,7 +426,7 @@ type verifier[T Claims] struct {
 	audiences []string
 	leeway    time.Duration
 	age       time.Duration
-	now       func() time.Time
+	now       clock.Clock
 }
 
 var _ Verifier[Claims] = (*verifier[Claims])(nil)
@@ -437,7 +438,7 @@ func NewVerifier[T Claims](
 	opts ...VerifierOption,
 ) Verifier[T] {
 	cfg := verifierConfig{
-		now: time.Now,
+		now: clock.System,
 	}
 	for _, opt := range opts {
 		opt(&cfg)

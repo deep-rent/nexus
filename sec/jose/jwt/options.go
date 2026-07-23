@@ -16,6 +16,8 @@ package jwt
 
 import (
 	"time"
+
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // VerifierOption defines a functional option for configuring a [Verifier].
@@ -23,11 +25,11 @@ type VerifierOption func(*verifierConfig)
 
 // verifierConfig holds the configuration options for a [Verifier].
 type verifierConfig struct {
-	issuers   []string         // Set of trusted issuers
-	audiences []string         // Set of trusted audiences
-	leeway    time.Duration    // Clock skew tolerance
-	age       time.Duration    // Maximum allowed token age
-	now       func() time.Time // Time source for temporal validation
+	issuers   []string      // Set of trusted issuers
+	audiences []string      // Set of trusted audiences
+	leeway    time.Duration // Clock skew tolerance
+	age       time.Duration // Maximum allowed token age
+	now       clock.Clock   // Time source for temporal validation
 }
 
 // WithIssuers adds one or more trusted issuers to the verifier. If a token's
@@ -75,8 +77,8 @@ func WithMaxAge(d time.Duration) VerifierOption {
 
 // WithClock sets the function used to retrieve the current time during
 // validation. This is useful for deterministic testing or synchronizing with
-// an external time source. The default is [time.Now].
-func WithClock(now func() time.Time) VerifierOption {
+// an external time source. The default is [clock.System].
+func WithClock(now clock.Clock) VerifierOption {
 	return func(c *verifierConfig) {
 		if now != nil {
 			c.now = now

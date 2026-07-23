@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	"github.com/deep-rent/nexus/std/clock"
 	"github.com/deep-rent/nexus/sys/schedule"
 )
 
@@ -45,7 +46,7 @@ type Fetcher func(ctx context.Context) (string, time.Time, error)
 // config defines the configuration options for a [Source].
 type config struct {
 	buf   time.Duration
-	now   func() time.Time
+	now   clock.Clock
 	sched schedule.Scheduler
 }
 
@@ -63,8 +64,8 @@ func WithBufferTime(d time.Duration) Option {
 }
 
 // WithClock injects a custom clock function, primarily used for testing.
-// If not provided, [time.Now] is used; nil values will be ignored.
-func WithClock(now func() time.Time) Option {
+// If not provided, [clock.System] is used; nil values will be ignored.
+func WithClock(now clock.Clock) Option {
 	return func(c *config) {
 		if now != nil {
 			c.now = now
@@ -86,7 +87,7 @@ func WithScheduler(sched schedule.Scheduler) Option {
 type Source struct {
 	fetch Fetcher
 	buf   time.Duration
-	now   func() time.Time
+	now   clock.Clock
 
 	mu  sync.RWMutex
 	tok string
@@ -99,7 +100,7 @@ type Source struct {
 func NewSource(fetch Fetcher, opts ...Option) *Source {
 	cfg := config{
 		buf: DefaultBufferTime,
-		now: time.Now,
+		now: clock.System,
 	}
 	for _, opt := range opts {
 		opt(&cfg)

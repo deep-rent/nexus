@@ -28,6 +28,7 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwa"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
 	"github.com/deep-rent/nexus/sec/jose/jwt"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 type testClaims struct {
@@ -134,7 +135,7 @@ func TestVerifier_Validation(t *testing.T) {
 				set,
 				jwt.WithIssuers("good-iss"),
 				jwt.WithAudiences("good-aud"),
-				jwt.WithClock(func() time.Time { return now }),
+				jwt.WithClock(clock.Frozen(now)),
 			),
 			wantErr: nil,
 		},
@@ -143,7 +144,7 @@ func TestVerifier_Validation(t *testing.T) {
 			v: jwt.NewVerifier[*testClaims](
 				set,
 				jwt.WithIssuers("bad-iss"),
-				jwt.WithClock(func() time.Time { return now }),
+				jwt.WithClock(clock.Frozen(now)),
 			),
 			wantErr: jwt.ErrInvalidIssuer,
 		},
@@ -152,7 +153,7 @@ func TestVerifier_Validation(t *testing.T) {
 			v: jwt.NewVerifier[*testClaims](
 				set,
 				jwt.WithAudiences("bad-aud"),
-				jwt.WithClock(func() time.Time { return now }),
+				jwt.WithClock(clock.Frozen(now)),
 			),
 			wantErr: jwt.ErrInvalidAudience,
 		},
@@ -160,7 +161,7 @@ func TestVerifier_Validation(t *testing.T) {
 			name: "expired",
 			v: jwt.NewVerifier[*testClaims](
 				set,
-				jwt.WithClock(func() time.Time { return now.Add(d1) }),
+				jwt.WithClock(clock.Frozen(now.Add(d1))),
 			),
 			wantErr: jwt.ErrTokenExpired,
 		},
@@ -168,7 +169,7 @@ func TestVerifier_Validation(t *testing.T) {
 			name: "leeway saves",
 			v: jwt.NewVerifier[*testClaims](
 				set,
-				jwt.WithClock(func() time.Time { return now.Add(d2) }),
+				jwt.WithClock(clock.Frozen(now.Add(d2))),
 				jwt.WithLeeway(time.Minute),
 			),
 			wantErr: nil,
@@ -204,7 +205,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 
 		v := jwt.NewVerifier[*testClaims](
 			set,
-			jwt.WithClock(func() time.Time { return now }),
+			jwt.WithClock(clock.Frozen(now)),
 		)
 
 		wantErr := jwt.ErrTokenNotYetActive
@@ -221,7 +222,7 @@ func TestVerifier_TimeConstraints(t *testing.T) {
 		v := jwt.NewVerifier[*testClaims](
 			set,
 			jwt.WithMaxAge(time.Hour),
-			jwt.WithClock(func() time.Time { return now }),
+			jwt.WithClock(clock.Frozen(now)),
 		)
 
 		wantErr := jwt.ErrTokenTooOld
