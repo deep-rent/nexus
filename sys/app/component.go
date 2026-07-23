@@ -190,9 +190,9 @@ func Sequence(components ...Component) Component {
 	}
 }
 
-// invoke calls c, converting a panic into a [PanicError]. Nested calls are
-// harmless: the innermost recovery wins, which keeps the stack trace close to
-// the origin of the panic.
+// invoke runs the given component, converting a panic into a [PanicError].
+// Nested calls are harmless: the innermost recovery wins, which keeps the
+// stack trace close to the origin of the panic.
 func invoke(ctx context.Context, c Component) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -202,8 +202,8 @@ func invoke(ctx context.Context, c Component) (err error) {
 	return c(ctx)
 }
 
-// once returns a function that runs fn at most once. It is used to build the
-// idempotent readiness signal handed to each component.
+// once returns a function that runs the given function at most once. It is
+// used to build the idempotent readiness signal handed to each component.
 func once(fn func()) func() {
 	var o sync.Once
 	return func() { o.Do(fn) }

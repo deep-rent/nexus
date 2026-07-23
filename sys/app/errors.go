@@ -48,7 +48,7 @@ type PanicError struct {
 	Stack []byte
 }
 
-// Error implements the error interface.
+// Error implements the [error] interface.
 func (e *PanicError) Error() string {
 	return fmt.Sprintf("panic: %v", e.Value)
 }

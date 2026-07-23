@@ -22,15 +22,15 @@ import (
 
 // Recorder is a [Sink] that captures records in memory, letting tests
 // assert on what was logged without coupling to the JSON wire format. It
-// enables every level, and arguments bound via With are materialized into
-// each captured record, ahead of the call-site arguments.
+// enables every level, and arguments bound via [Recorder.With] are
+// materialized into each captured record, ahead of the call-site arguments.
 type Recorder struct {
 	state *recorderState
 	bound []Arg
 }
 
 // recorderState is the capture storage shared between a [Recorder] and
-// all sinks derived from it via With.
+// all sinks derived from it via [Recorder.With].
 type recorderState struct {
 	mu      sync.Mutex
 	records []Record

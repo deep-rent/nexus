@@ -167,8 +167,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 
 // Check is a convenience function to check for updates in a single call.
 //
-// It creates a temporary [update] with the provided config and calls its
-// [update.Check] method.
+// It creates a temporary [Updater] with the provided config and calls its
+// [Updater.Check] method.
 func Check(ctx context.Context, cfg *Config) (*Release, error) {
 	return New(cfg).Check(ctx)
 }

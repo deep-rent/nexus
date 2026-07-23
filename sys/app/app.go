@@ -377,7 +377,7 @@ type stageError struct {
 	timeout time.Duration
 }
 
-// Error implements the error interface.
+// Error implements the [error] interface.
 func (e *stageError) Error() string {
 	return ErrStartTimeout.Error() +
 		" after " + e.timeout.String() +

@@ -314,8 +314,9 @@ func TestMonitor_Timeout(t *testing.T) {
 	if got, want := rep.Status, health.StatusSick; got != want {
 		t.Errorf("report status: got %v; want %v", got, want)
 	}
-	if msg := rep.Checks["timeout"].Error; msg != "context deadline exceeded" {
-		t.Errorf("expected context deadline exceeded, got: %q", msg)
+	want := "context deadline exceeded"
+	if msg := rep.Checks["timeout"].Error; msg != want {
+		t.Errorf("check error: got %q; want %q", msg, want)
 	}
 }
 

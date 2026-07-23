@@ -237,7 +237,7 @@ func (r *Registry) lookup(
 
 	if got := e.inst.kind(); got != kind {
 		panic(fmt.Sprintf(
-			"metrics: %s already registered as %s, requested as %s",
+			"%s already registered as %s, requested as %s",
 			id, got, kind,
 		))
 	}
