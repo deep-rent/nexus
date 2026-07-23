@@ -24,7 +24,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/net/header"
 	"github.com/deep-rent/nexus/net/middleware"
 )
@@ -253,43 +252,3 @@ func New(opts ...Option) middleware.Pipe {
 	}
 }
 
-// config holds the middleware configuration.
-type config struct {
-	// level is the compression level.
-	level int
-	// exclude is the list of MIME types to skip.
-	exclude []string
-}
-
-// Option is a function that configures the middleware.
-type Option func(*config)
-
-// WithCompressionLevel sets the compression level.
-//
-// It accepts values ranging from [BestSpeed] (1) to [BestCompression] (9). For
-// other values, it will fall back to [DefaultCompression], a good balance
-// between speed and compression ratio.
-func WithCompressionLevel(level int) Option {
-	return func(c *config) {
-		if level >= NoCompression && level <= BestCompression {
-			c.level = level
-		}
-	}
-}
-
-// WithExcludeMimeTypes adds MIME types to the exclusion list.
-//
-// This option is additive and can be called multiple times; it appends to the
-// default exclusion list rather than replacing it. The matching logic supports
-// two formats:
-//
-//   - Exact: Provide the full MIME type (e.g., "application/pdf").
-//   - Prefix: End the MIME type with a wildcard "*" (e.g., "image/*")
-//     to exclude all subtypes for that primary type.
-func WithExcludeMimeTypes(types ...string) Option {
-	return func(c *config) {
-		for _, t := range types {
-			c.exclude = append(c.exclude, ascii.ToLower(t))
-		}
-	}
-}

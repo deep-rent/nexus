@@ -26,25 +26,6 @@ import (
 	"github.com/deep-rent/nexus/net/transport"
 )
 
-// config holds the optional configuration for the [HTTP] check.
-type config struct {
-	// client is the HTTP client used to perform the check request.
-	client *http.Client
-}
-
-// Option defines the functional option pattern for configuring the [HTTP]
-// check.
-type Option func(*config)
-
-// WithClient sets the [http.Client] used to perform the check request.
-// Defaults to [transport.DefaultClient]. Nil values are ignored.
-func WithClient(client *http.Client) Option {
-	return func(c *config) {
-		if client != nil {
-			c.client = client
-		}
-	}
-}
 
 // TCP returns a health check that attempts to establish a TCP connection
 // to the specified address.

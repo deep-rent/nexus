@@ -123,29 +123,6 @@ func (r *cachingResolver) Resolve(rt reflect.Type) ([]field, error) {
 	return fields, nil
 }
 
-type config struct {
-	transform Transformer
-	cache     bool
-}
-
-// Option configures a Binder.
-type Option func(*config)
-
-// WithTransformer sets the name transformation function.
-func WithTransformer(t Transformer) Option {
-	return func(c *config) {
-		if t != nil {
-			c.transform = t
-		}
-	}
-}
-
-// WithCache enables or disables metadata caching.
-func WithCache(enable bool) Option {
-	return func(c *config) {
-		c.cache = enable
-	}
-}
 
 // Binder extracts values from a generic key-value source into a struct.
 type Binder struct {

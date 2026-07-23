@@ -32,36 +32,6 @@ import (
 // environment, which is especially useful for testing.
 type Lookup func(key string) (string, bool)
 
-// Option is a functional option for configuring the [Unmarshal] behavior.
-type Option func(*config)
-
-// WithPrefix sets a prefix that will be prepended to all environment variable
-// keys before looking them up. If not provided, no prefix is used.
-func WithPrefix(prefix string) Option {
-	return func(c *config) {
-		c.Prefix = prefix
-	}
-}
-
-// WithLookup overrides the default mechanism for retrieving environment
-// variables. By default, [Unmarshal] uses [os.LookupEnv]. This option is
-// particularly useful for unit tests, allowing you to inject a mock environment
-// or an alternative configuration source.
-func WithLookup(lookup Lookup) Option {
-	return func(c *config) {
-		if lookup != nil {
-			c.Lookup = lookup
-		}
-	}
-}
-
-// config holds configuration options for environment variable processing.
-type config struct {
-	// Prefix is a common prefix for all environment variable keys.
-	Prefix string
-	// Lookup is the injectable callback for variable lookup.
-	Lookup Lookup
-}
 
 // binder is shared by every call to [Unmarshal]. Caching the reflection
 // metadata is safe because a type's tags cannot change, and it keeps a

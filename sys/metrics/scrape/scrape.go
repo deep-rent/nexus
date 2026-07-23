@@ -62,46 +62,6 @@ const DefaultTimeout = 10 * time.Second
 // misbehaving target cannot exhaust the collector.
 const maxBody = 8 << 20 // 8 MB
 
-// config holds the collector settings.
-type config struct {
-	client  *http.Client
-	logger  *slog.Logger
-	timeout time.Duration
-}
-
-// Option configures a [Collector].
-type Option func(*config)
-
-// WithClient sets the HTTP client used to fetch snapshots. It defaults to a
-// client built by [transport.NewClient] with the default timeout. A nil
-// value is ignored.
-func WithClient(client *http.Client) Option {
-	return func(c *config) {
-		if client != nil {
-			c.client = client
-		}
-	}
-}
-
-// WithLogger sets the logger receiving scrape failures. It defaults to
-// [slog.Default]. A nil value is ignored.
-func WithLogger(logger *slog.Logger) Option {
-	return func(c *config) {
-		if logger != nil {
-			c.logger = logger
-		}
-	}
-}
-
-// WithTimeout bounds each target fetch. Values of zero or less are ignored,
-// keeping [DefaultTimeout].
-func WithTimeout(d time.Duration) Option {
-	return func(c *config) {
-		if d > 0 {
-			c.timeout = d
-		}
-	}
-}
 
 // target is one registered collection endpoint together with its latest
 // scrape result.

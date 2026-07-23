@@ -401,47 +401,6 @@ var _ Handler = HandlerFunc(nil)
 // ErrorHandler defines a function that handles errors returned by routes.
 type ErrorHandler func(e *Exchange, err error)
 
-// Option defines a functional configuration option for the [Router].
-type Option func(*Router)
-
-// WithMiddleware adds global middleware to the [Router].
-func WithMiddleware(mws ...Middleware) Option {
-	return func(r *Router) {
-		r.mws = append(r.mws, mws...)
-	}
-}
-
-// WithMaxBodySize sets the maximum allowed size for request bodies.
-func WithMaxBodySize(bytes int64) Option {
-	return func(r *Router) {
-		r.maxBytes = bytes
-	}
-}
-
-// WithJSONOptions sets custom JSON options for the [Router].
-func WithJSONOptions(opts ...json.Options) Option {
-	return func(r *Router) {
-		r.jsonOpts = opts
-	}
-}
-
-// WithErrorHandler sets a custom error handler.
-func WithErrorHandler(h ErrorHandler) Option {
-	return func(r *Router) {
-		if h != nil {
-			r.errorHandler = h
-		}
-	}
-}
-
-// WithLogger updates the default error handler to use the given logger.
-func WithLogger(logger *slog.Logger) Option {
-	return func(r *Router) {
-		if logger != nil {
-			r.errorHandler = defaultErrorHandler(logger)
-		}
-	}
-}
 
 // Router represents an HTTP request router with middleware support.
 type Router struct {

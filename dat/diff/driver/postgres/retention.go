@@ -32,37 +32,6 @@ const (
 	DefaultTombstoneRetention = 90 * 24 * time.Hour
 )
 
-// RetentionOption configures a [Retention] task.
-type RetentionOption func(*Retention)
-
-// WithMutationRetention overrides [DefaultMutationRetention]. The window
-// bounds idempotent deduplication: a client replaying a change set older
-// than the window re-applies it. This is harmless to state (last-write-wins
-// skips equal timestamps on upserts and deletes alike), so the window
-// merely needs to exceed the longest realistic retry horizon.
-//
-// Non-positive values are ignored.
-func WithMutationRetention(d time.Duration) RetentionOption {
-	return func(r *Retention) {
-		if d > 0 {
-			r.mutations = d
-		}
-	}
-}
-
-// WithTombstoneRetention overrides [DefaultTombstoneRetention]. The window
-// bounds how long a device may stay offline without losing its cursor:
-// pruning advances the retention floor, and clients whose cursor predates
-// it are forced into a full resync from zero.
-//
-// Non-positive values are ignored.
-func WithTombstoneRetention(d time.Duration) RetentionOption {
-	return func(r *Retention) {
-		if d > 0 {
-			r.tombstones = d
-		}
-	}
-}
 
 // Retention is a ready-made maintenance task enforcing the store's two
 // retention windows: it prunes aged mutation deduplication records

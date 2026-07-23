@@ -122,24 +122,6 @@ const (
 	KindAll = KindReadiness | KindLiveness
 )
 
-// Option configures a health check.
-type Option func(*check)
-
-// WithTimeout sets a maximum execution duration for the check. If the check
-// takes longer than this timeout, it is canceled and reports as sick.
-func WithTimeout(t time.Duration) Option {
-	return func(c *check) {
-		c.timeout = t
-	}
-}
-
-// WithKind categorizes the check, restricting it to specific probes like
-// liveness or readiness. By default, checks are evaluated for all probes.
-func WithKind(k Kind) Option {
-	return func(c *check) {
-		c.kind = k
-	}
-}
 
 // check wraps a registered check with its caching state and mutex.
 type check struct {

@@ -62,39 +62,6 @@ type Manager struct {
 	now    func() time.Time
 }
 
-// Option configures a [Manager].
-type Option func(*Manager)
-
-// WithHasher sets the hasher that fingerprints session keys before they
-// reach the store. A nil hasher is ignored. Defaults to
-// [digest.DefaultHasher].
-func WithHasher(h *digest.Hasher) Option {
-	return func(m *Manager) {
-		if h != nil {
-			m.hasher = h
-		}
-	}
-}
-
-// WithGenerator overrides the source of session keys. A nil generator is
-// ignored. Defaults to [nonce.DefaultGenerator] (256-bit keys).
-func WithGenerator(g *nonce.Generator) Option {
-	return func(m *Manager) {
-		if g != nil {
-			m.keys = g
-		}
-	}
-}
-
-// WithClock overrides the time source, primarily for testing. A nil function
-// is ignored. Defaults to [time.Now].
-func WithClock(now func() time.Time) Option {
-	return func(m *Manager) {
-		if now != nil {
-			m.now = now
-		}
-	}
-}
 
 // New creates a [Manager] backed by the given [Store]. It panics if store is
 // nil, since that is a startup configuration error.

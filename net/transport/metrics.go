@@ -26,24 +26,6 @@ import (
 // transport; see [WithMetrics].
 const RequestDuration = "http_client_request_duration_seconds"
 
-// metricsConfig holds the configuration for a metrics transport.
-type metricsConfig struct {
-	registry *metrics.Registry
-}
-
-// MetricsOption configures a metrics transport created by
-// [NewMetricsTransport] or enabled via [WithMetrics].
-type MetricsOption func(*metricsConfig)
-
-// WithRegistry sets the destination registry. It defaults to
-// [metrics.DefaultRegistry]. A nil value is ignored.
-func WithRegistry(reg *metrics.Registry) MetricsOption {
-	return func(c *metricsConfig) {
-		if reg != nil {
-			c.registry = reg
-		}
-	}
-}
 
 // metricsTransport wraps an underlying [http.RoundTripper] with request
 // measurement.

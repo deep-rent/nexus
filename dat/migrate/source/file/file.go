@@ -53,43 +53,6 @@ var (
 	ErrInvalidVersion = errors.New("invalid version")
 )
 
-// config holds the internal configuration options for the file source.
-type config struct {
-	// ext is the file extension to filter for.
-	ext string
-	// logger is the structured logger for reporting skipped files.
-	logger *slog.Logger
-}
-
-// Option configures a [Source] instance.
-type Option func(*config)
-
-// WithExtension sets a custom file extension for migration files.
-//
-// It automatically prepends a leading dot if one is missing. Empty string
-// values are ignored.
-func WithExtension(ext string) Option {
-	return func(c *config) {
-		if ext == "" {
-			return
-		}
-		if !strings.HasPrefix(ext, ".") {
-			ext = "." + ext
-		}
-		c.ext = ext
-	}
-}
-
-// WithLogger injects a structured logger to record skipped files.
-//
-// Nil values are ignored, falling back to [slog.Default].
-func WithLogger(logger *slog.Logger) Option {
-	return func(c *config) {
-		if logger != nil {
-			c.logger = logger
-		}
-	}
-}
 
 // Source implements the [migrate.Source] interface for an [fs.FS].
 //

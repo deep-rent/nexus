@@ -195,24 +195,6 @@ type Outcome struct {
 // OK reports whether the outcome represents success.
 func (o Outcome) OK() bool { return o.Status == StatusOK }
 
-// Config carries the relying party settings for [New].
-type Config struct {
-	// RPID is the relying party identifier: the effective domain that
-	// passkeys are scoped to (e.g., "example.com"). Native apps must be
-	// associated with this domain (apple-app-site-association on iOS,
-	// assetlinks.json on Android) to use the same passkeys. Required.
-	RPID string
-	// RPDisplayName is the human-palatable relying party name shown by
-	// authenticators during ceremonies. Required.
-	RPDisplayName string
-	// RPOrigins lists the origins allowed to answer challenges. Web clients
-	// appear as regular origins (e.g., "https://app.example.com"); Android
-	// apps appear as "android:apk-key-hash:..." origins and must be listed
-	// explicitly. Required.
-	RPOrigins []string
-	// Lifetime overrides [DefaultLifetime].
-	Lifetime time.Duration
-}
 
 // RelyingParty runs the lifecycle of WebAuthn ceremonies — beginning them,
 // persisting their state, and verifying the authenticator responses that
@@ -229,40 +211,6 @@ type RelyingParty struct {
 	now         func() time.Time
 }
 
-// Option configures a [RelyingParty].
-type Option func(*RelyingParty)
-
-// WithHasher sets the hasher that fingerprints ceremony handles before they
-// reach the store. A nil hasher is ignored. Defaults to
-// [digest.DefaultHasher].
-func WithHasher(h *digest.Hasher) Option {
-	return func(p *RelyingParty) {
-		if h != nil {
-			p.hasher = h
-		}
-	}
-}
-
-// WithHandleGenerator overrides the source of client-facing ceremony
-// handles. A nil generator is ignored. Defaults to [nonce.DefaultGenerator]
-// (256-bit handles).
-func WithHandleGenerator(g *nonce.Generator) Option {
-	return func(p *RelyingParty) {
-		if g != nil {
-			p.handles = g
-		}
-	}
-}
-
-// WithClock overrides the time source, primarily for testing. A nil function
-// is ignored. Defaults to [time.Now].
-func WithClock(now func() time.Time) Option {
-	return func(p *RelyingParty) {
-		if now != nil {
-			p.now = now
-		}
-	}
-}
 
 // New creates a [RelyingParty] from the given configuration.
 //

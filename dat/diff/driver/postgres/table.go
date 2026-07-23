@@ -36,45 +36,6 @@ import (
 	"github.com/deep-rent/nexus/std/quote"
 )
 
-// tableConfig holds the internal configuration options of a [Table].
-type tableConfig struct {
-	// schema overrides the store's default schema for this table.
-	schema string
-	// parent is the table name of the ownership parent (child tables only).
-	parent string
-	// ref is the column and JSON field referencing the parent row.
-	ref string
-}
-
-// TableOption configures a single [Table] registration.
-type TableOption func(*tableConfig)
-
-// WithTableSchema sets a custom database schema for this table, overriding
-// the store's default.
-//
-// Empty string values are ignored.
-func WithTableSchema(name string) TableOption {
-	return func(c *tableConfig) {
-		if name != "" {
-			c.schema = name
-		}
-	}
-}
-
-// WithParent marks the table as a child of the given parent table (by its
-// table name, which must already be registered with the store). The ref
-// argument names both the child column and the JSON payload field that
-// reference the parent row's id; by convention they must be equal.
-//
-// Empty string values are ignored.
-func WithParent(parent, ref string) TableOption {
-	return func(c *tableConfig) {
-		if parent != "" && ref != "" {
-			c.parent = parent
-			c.ref = ref
-		}
-	}
-}
 
 // Table implements the [diff.Handler] interface for one document model
 // backed by a single PostgreSQL table. It enforces row-level

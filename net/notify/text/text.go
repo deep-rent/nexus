@@ -163,48 +163,6 @@ type sender struct {
 
 var _ Sender = (*sender)(nil)
 
-// config holds the optional configuration for the [sender].
-type config struct {
-	// baseURL overrides the default Twilio API endpoint.
-	baseURL string
-	// logger specifies the custom structured [slog.Logger].
-	logger *slog.Logger
-	// client is the HTTP client used for outbound API requests.
-	client *http.Client
-}
-
-// Option defines the functional option pattern for configuring the [sender].
-type Option func(*config)
-
-// WithClient sets the [http.Client] used for outbound API requests. Defaults
-// to [transport.DefaultClient]. Nil values are ignored.
-func WithClient(client *http.Client) Option {
-	return func(c *config) {
-		if client != nil {
-			c.client = client
-		}
-	}
-}
-
-// WithBaseURL allows overriding the Twilio API base URL for testing or mocking.
-// Empty string values are ignored.
-func WithBaseURL(url string) Option {
-	return func(c *config) {
-		if url != "" {
-			c.baseURL = url
-		}
-	}
-}
-
-// WithLogger injects a structured [slog.Logger] into the sender.
-// Nil values are ignored.
-func WithLogger(logger *slog.Logger) Option {
-	return func(c *config) {
-		if logger != nil {
-			c.logger = logger
-		}
-	}
-}
 
 // NewSender creates a configured Twilio client with the given account SID and
 // authentication token. Requests are dispatched through

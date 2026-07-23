@@ -46,27 +46,6 @@ type Release struct {
 	Notes string `json:"body"`
 }
 
-// Config holds the configuration for the [Updater].
-type Config struct {
-	// BaseURL is the base URL for the GitHub API. It defaults to
-	// [DefaultBaseURL] if not set.
-	BaseURL string
-	// Owner is the GitHub repository owner (required).
-	Owner string
-	// Repo is the name of the GitHub repository (required).
-	Repo string
-	// Current is the current version string of the application (required).
-	Current string
-	// UserAgent is the value for the User-Agent header sent with requests.
-	UserAgent string
-	// Token is the GitHub Personal Access Token used for authenticating
-	// requests,
-	// allowing access to private repositories.
-	Token string
-	// Client overrides the HTTP client used for API requests. It defaults to
-	// [transport.DefaultClient] if not set.
-	Client *http.Client
-}
 
 // Updater checks for updates on GitHub for a specific repository.
 type Updater struct {

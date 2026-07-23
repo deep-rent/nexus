@@ -51,30 +51,6 @@ const SecretLifetime = 5 * time.Minute
 // DefaultScopes requests the user's name and email on first authorization.
 var DefaultScopes = []string{"name", "email"}
 
-// Config carries the settings for the Apple identity provider.
-type Config struct {
-	// ClientID is the Services ID configured for Sign in with Apple (e.g.,
-	// "com.example.web"). Required.
-	ClientID string
-	// TeamID is the 10-character Apple Developer team identifier. Required.
-	TeamID string
-	// KeyID is the identifier of the private key registered for Sign in
-	// with Apple. Required.
-	KeyID string
-	// PrivateKey is the PEM-encoded PKCS#8 private key downloaded from the
-	// Apple Developer portal (the AuthKey_<KeyID>.p8 file). Required.
-	PrivateKey []byte
-	// RedirectURI is the absolute URL of the authorization server's external
-	// callback endpoint registered with Apple. Required.
-	RedirectURI string
-	// Scopes overrides the requested scopes. Defaults to "name email".
-	// When at least one scope is requested, Apple mandates the form_post
-	// response mode.
-	Scopes []string
-	// Client overrides the HTTP client used for outbound requests to
-	// Apple. Defaults to [transport.DefaultClient].
-	Client *http.Client
-}
 
 // Provider implements [idp.Provider] for Apple.
 type Provider struct {

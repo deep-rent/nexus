@@ -84,31 +84,6 @@ type Hasher struct {
 	algorithms map[string]Algorithm
 }
 
-// Option customizes a [Hasher] during construction with [New].
-type Option func(*Hasher)
-
-// WithAlgorithm registers an [Algorithm] for verification under its name.
-// Records naming the algorithm verify against it; new hashes are not
-// affected. Registering a second algorithm with the same name replaces the
-// first.
-//
-// It panics if the algorithm is nil or unnamed, since both are startup
-// configuration errors.
-func WithAlgorithm(alg Algorithm) Option {
-	return func(h *Hasher) { h.register(alg) }
-}
-
-// WithDefault registers an [Algorithm] like [WithAlgorithm] and
-// additionally selects it for hashing new passwords.
-//
-// It panics if the algorithm is nil or unnamed, since both are startup
-// configuration errors.
-func WithDefault(alg Algorithm) Option {
-	return func(h *Hasher) {
-		h.register(alg)
-		h.def = alg
-	}
-}
 
 // register adds the algorithm to the verification registry.
 func (h *Hasher) register(alg Algorithm) {
