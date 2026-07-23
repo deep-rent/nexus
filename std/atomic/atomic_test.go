@@ -236,13 +236,11 @@ func TestFloat32_Add_Concurrent(t *testing.T) {
 	var f atomic.Float32
 	var wg sync.WaitGroup
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range iterations {
 				f.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
