@@ -307,7 +307,7 @@ func (c *controller[T]) update(
 // close releases the response body.
 func (c *controller[T]) close(res *http.Response) {
 	if err := res.Body.Close(); err != nil {
-		c.logger.Warn(context.Background(),
+		c.logger.Warn(res.Request.Context(),
 			"Failed to close response body",
 			log.Error(err),
 		)
