@@ -12,19 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package oauth defines the wire-level vocabulary of the OAuth 2.0
-// authorization framework: grant types, the [Grant] contract and its
+// Package oauth implements an OAuth 2.0 authorization server and the
+// wire-level vocabulary it speaks: grant types, the [Grant] contract and its
 // [Proposal]/[Issuance] exchange, RFC 6749 error codes, the request and
-// response payloads of the token machinery, and the digest-keyed [TokenStores]
-// persistence contract for authorization codes, refresh tokens, and device
-// codes.
+// response payloads of the token machinery, and the digest-keyed
+// [TokenStores] persistence contract.
 //
-// The package is deliberately free of transport and policy: it contains no
-// HTTP handlers and takes no decisions. The authorization server lives in the
-// parent package, [github.com/deep-rent/nexus/sec/iam]; the standard grant
-// implementations live in
-// [github.com/deep-rent/nexus/sec/iam/oauth/grant]; PKCE helpers live in
-// [github.com/deep-rent/nexus/sec/iam/oauth/pkce].
+// # The server
+//
+// The [Server] serves the token, authorization, introspection, revocation,
+// and device authorization endpoints, together with the RFC 8414 metadata
+// and JWKS documents. It is deliberately login-agnostic: everything it knows
+// about resource owners arrives through two narrow seams — a
+// [SessionResolver] that authenticates the request's resource owner and an
+// [OwnerResolver] that resolves owners for claim minting — so it can stand
+// alone or be composed with a login system.
+//
+// A standalone machine-to-machine issuer needs neither seam:
+//
+//	s := oauth.NewServer(oauth.ServerConfig{
+//	  Vault:   myVault,
+//	  Clients: myClientStore,
+//	  Tokens:  myTokenStores,
+//	  Issuer:  "https://id.example.com",
+//	}, oauth.WithGrant(grant.ClientCredentials()))
+//
+//	r := router.New()
+//	s.Mount(r, "/oauth")
+//
+// The full identity stack — password and passwordless logins, passkeys,
+// social login, device trust — lives in the parent package,
+// [github.com/deep-rent/nexus/sec/iam], whose Server embeds this one and
+// supplies the resolver seams from its session machinery. The standard grant
+// implementations live in [github.com/deep-rent/nexus/sec/iam/oauth/grant];
+// PKCE helpers live in [github.com/deep-rent/nexus/sec/iam/oauth/pkce].
 //
 // # Bearer artifacts and digests
 //

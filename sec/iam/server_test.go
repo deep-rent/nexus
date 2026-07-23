@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -306,7 +305,7 @@ func TestWellKnown(t *testing.T) {
 
 	w := env.do(httptest.NewRequest(
 		http.MethodGet,
-		testPrefix+PathWellKnown,
+		testPrefix+oauth.PathWellKnown,
 		nil,
 	))
 
@@ -320,17 +319,17 @@ func TestWellKnown(t *testing.T) {
 	if meta.Issuer != testIssuer {
 		t.Errorf("got issuer %q; want %q", meta.Issuer, testIssuer)
 	}
-	if want := base + PathToken; meta.TokenEndpoint != want {
+	if want := base + oauth.PathToken; meta.TokenEndpoint != want {
 		t.Errorf("got token endpoint %q; want %q", meta.TokenEndpoint, want)
 	}
-	if want := base + PathAuthorize; meta.AuthorizationEndpoint != want {
+	if want := base + oauth.PathAuthorize; meta.AuthorizationEndpoint != want {
 		t.Errorf(
 			"got authorization endpoint %q; want %q",
 			meta.AuthorizationEndpoint,
 			want,
 		)
 	}
-	if want := base + PathDeviceAuthorization; meta.DeviceAuthorizationEndpoint != want {
+	if want := base + oauth.PathDeviceAuthorization; meta.DeviceAuthorizationEndpoint != want {
 		t.Errorf(
 			"got device authorization endpoint %q; want %q",
 			meta.DeviceAuthorizationEndpoint,
@@ -367,7 +366,7 @@ func TestWellKnown(t *testing.T) {
 
 	// RFC 8414 Section 3: the metadata must also be served at the location
 	// clients derive from the issuer (well-known path inserted at the root).
-	w = env.do(httptest.NewRequest(http.MethodGet, PathWellKnown, nil))
+	w = env.do(httptest.NewRequest(http.MethodGet, oauth.PathWellKnown, nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf(
 			"got status %d at root well-known location; want %d",
@@ -397,7 +396,7 @@ func TestRefreshScopePreserved(t *testing.T) {
 
 	// RFC 6749 Section 6: narrowing applies to the issued access token only;
 	// the rotated refresh token must keep the original grant scope.
-	w := env.postForm(PathToken, url.Values{
+	w := env.postForm(oauth.PathToken, url.Values{
 		"grant_type":    {string(oauth.GrantTypeRefreshToken)},
 		"refresh_token": {"rt-1"},
 		"scope":         {"read"},
@@ -437,7 +436,7 @@ func TestTokenClientCredentials(t *testing.T) {
 		"grant_type": {string(oauth.GrantTypeClientCredentials)},
 		"scope":      {"read"},
 	}
-	w := env.postForm(PathToken, form, env.client, "s3cret")
+	w := env.postForm(oauth.PathToken, form, env.client, "s3cret")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d; want %d: %s", w.Code, http.StatusOK, w.Body)
@@ -484,7 +483,7 @@ func TestTokenErrors(t *testing.T) {
 		env := newTestEnv(t)
 
 		w := env.postForm(
-			PathToken,
+			oauth.PathToken,
 			form(string(oauth.GrantTypeClientCredentials)),
 			env.client,
 			"wrong",
@@ -515,7 +514,7 @@ func TestTokenErrors(t *testing.T) {
 		f.Set("client_secret", "s3cret")
 		req := httptest.NewRequest(
 			http.MethodPost,
-			testPrefix+PathToken,
+			testPrefix+oauth.PathToken,
 			strings.NewReader(f.Encode()),
 		)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -541,7 +540,7 @@ func TestTokenErrors(t *testing.T) {
 		f.Set("client_id", env.client.id.String())
 		req := httptest.NewRequest(
 			http.MethodPost,
-			testPrefix+PathToken,
+			testPrefix+oauth.PathToken,
 			strings.NewReader(f.Encode()),
 		)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -566,7 +565,7 @@ func TestTokenErrors(t *testing.T) {
 		f.Set("client_id", env.public.id.String())
 		req := httptest.NewRequest(
 			http.MethodPost,
-			testPrefix+PathToken,
+			testPrefix+oauth.PathToken,
 			strings.NewReader(f.Encode()),
 		)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -582,7 +581,7 @@ func TestTokenErrors(t *testing.T) {
 		t.Parallel()
 		env := newTestEnv(t)
 
-		w := env.postForm(PathToken, form("password"), env.client, "s3cret")
+		w := env.postForm(oauth.PathToken, form("password"), env.client, "s3cret")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("got status %d; want %d", w.Code, http.StatusBadRequest)
 		}
@@ -602,7 +601,7 @@ func TestTokenErrors(t *testing.T) {
 		env.client.grants = []oauth.GrantType{oauth.GrantTypeAuthorizationCode}
 
 		w := env.postForm(
-			PathToken,
+			oauth.PathToken,
 			form(string(oauth.GrantTypeClientCredentials)),
 			env.client,
 			"s3cret",
@@ -648,7 +647,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	}
 	req := httptest.NewRequest(
 		http.MethodGet,
-		testPrefix+PathAuthorize+"?"+q.Encode(),
+		testPrefix+oauth.PathAuthorize+"?"+q.Encode(),
 		nil,
 	)
 	req.AddCookie(cookie)
@@ -671,7 +670,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	}
 
 	// Step 2: exchange the code for tokens.
-	w = env.postForm(PathToken, url.Values{
+	w = env.postForm(oauth.PathToken, url.Values{
 		"grant_type":    {string(oauth.GrantTypeAuthorizationCode)},
 		"code":          {code},
 		"redirect_uri":  {testRedirect},
@@ -699,7 +698,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	}
 
 	// Step 3: rotate the refresh token.
-	w = env.postForm(PathToken, url.Values{
+	w = env.postForm(oauth.PathToken, url.Values{
 		"grant_type":    {string(oauth.GrantTypeRefreshToken)},
 		"refresh_token": {res.RefreshToken},
 	}, env.client, "s3cret")
@@ -714,7 +713,7 @@ func TestAuthCodeFlow(t *testing.T) {
 	}
 
 	// Step 4: the old refresh token must be unusable.
-	w = env.postForm(PathToken, url.Values{
+	w = env.postForm(oauth.PathToken, url.Values{
 		"grant_type":    {string(oauth.GrantTypeRefreshToken)},
 		"refresh_token": {res.RefreshToken},
 	}, env.client, "s3cret")
@@ -731,7 +730,7 @@ func TestAuthorizeErrors(t *testing.T) {
 	t.Parallel()
 
 	authorizeURL := func(q url.Values) string {
-		return testPrefix + PathAuthorize + "?" + q.Encode()
+		return testPrefix + oauth.PathAuthorize + "?" + q.Encode()
 	}
 
 	t.Run("unauthenticated resource owner", func(t *testing.T) {
@@ -809,7 +808,7 @@ func TestIntrospect(t *testing.T) {
 	env := newTestEnv(t)
 
 	// Mint a token to introspect.
-	w := env.postForm(PathToken, url.Values{
+	w := env.postForm(oauth.PathToken, url.Values{
 		"grant_type": {string(oauth.GrantTypeClientCredentials)},
 		"scope":      {"read"},
 	}, env.client, "s3cret")
@@ -819,7 +818,7 @@ func TestIntrospect(t *testing.T) {
 	token := decodeJSON[oauth.TokenResponse](t, w).AccessToken
 
 	t.Run("active token", func(t *testing.T) {
-		w := env.postForm(PathIntrospect, url.Values{
+		w := env.postForm(oauth.PathIntrospect, url.Values{
 			"token": {token},
 		}, env.client, "s3cret")
 
@@ -850,7 +849,7 @@ func TestIntrospect(t *testing.T) {
 	})
 
 	t.Run("garbage token", func(t *testing.T) {
-		w := env.postForm(PathIntrospect, url.Values{
+		w := env.postForm(oauth.PathIntrospect, url.Values{
 			"token": {"garbage"},
 		}, env.client, "s3cret")
 
@@ -863,7 +862,7 @@ func TestIntrospect(t *testing.T) {
 	})
 
 	t.Run("public client rejected", func(t *testing.T) {
-		w := env.postForm(PathIntrospect, url.Values{
+		w := env.postForm(oauth.PathIntrospect, url.Values{
 			"token": {token},
 		}, env.public, "")
 
@@ -893,7 +892,7 @@ func TestRevoke(t *testing.T) {
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
 		})
 
-		w := env.postForm(PathRevoke, url.Values{
+		w := env.postForm(oauth.PathRevoke, url.Values{
 			"token": {"token-1"},
 		}, env.client, "s3cret")
 
@@ -917,7 +916,7 @@ func TestRevoke(t *testing.T) {
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
 		})
 
-		w := env.postForm(PathRevoke, url.Values{
+		w := env.postForm(oauth.PathRevoke, url.Values{
 			"token": {"token-2"},
 		}, env.client, "s3cret")
 
@@ -940,7 +939,7 @@ func TestDeviceFlow(t *testing.T) {
 	env := newTestEnv(t)
 
 	// Step 1: the device requests a device and user code pair.
-	w := env.postForm(PathDeviceAuthorization, url.Values{
+	w := env.postForm(oauth.PathDeviceAuthorization, url.Values{
 		"scope": {"read"},
 	}, env.client, "s3cret")
 
@@ -966,7 +965,7 @@ func TestDeviceFlow(t *testing.T) {
 	}
 
 	poll := func() *httptest.ResponseRecorder {
-		return env.postForm(PathToken, url.Values{
+		return env.postForm(oauth.PathToken, url.Values{
 			"grant_type":  {string(oauth.GrantTypeDeviceCode)},
 			"device_code": {res.DeviceCode},
 		}, env.client, "s3cret")
@@ -992,7 +991,7 @@ func TestDeviceFlow(t *testing.T) {
 		`","action":"approve"}`
 	req := httptest.NewRequest(
 		http.MethodPost,
-		testPrefix+PathDeviceVerify,
+		testPrefix+oauth.PathDeviceVerify,
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -1054,7 +1053,7 @@ func TestDeviceVerifyErrors(t *testing.T) {
 	) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(
 			http.MethodPost,
-			testPrefix+PathDeviceVerify,
+			testPrefix+oauth.PathDeviceVerify,
 			strings.NewReader(body),
 		)
 		req.Header.Set("Content-Type", "application/json")
@@ -1125,56 +1124,6 @@ func TestDeviceVerifyErrors(t *testing.T) {
 	})
 }
 
-func TestNewUserCode(t *testing.T) {
-	t.Parallel()
-
-	t.Run("format", func(t *testing.T) {
-		t.Parallel()
-		env := newTestEnv(t)
-		pattern := regexp.MustCompile(
-			`^[` + UserCodeAlphabet + `]{4}-[` + UserCodeAlphabet + `]{4}$`,
-		)
-		for range 100 {
-			code, err := env.server.newUserCode(t.Context())
-			if err != nil {
-				t.Fatalf("should not have returned an error: %v", err)
-			}
-			if !pattern.MatchString(code) {
-				t.Fatalf("user code %q does not match %q", code, pattern)
-			}
-		}
-	})
-
-	t.Run("propagates source failure", func(t *testing.T) {
-		t.Parallel()
-		env := newTestEnv(t, WithNonceSource(failingSource{}))
-		if _, err := env.server.newUserCode(t.Context()); err == nil {
-			t.Error("expected an error from the failing source")
-		}
-	})
-}
-
-func TestNormalizeUserCode(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"BCDF-GHJK", "BCDF-GHJK"},
-		{"bcdf-ghjk", "BCDF-GHJK"},
-		{"bcdfghjk", "BCDF-GHJK"},
-		{" bcdf ghjk ", "BCDF-GHJK"},
-		{"bcd", "BCD"},
-	}
-
-	for _, tt := range tests {
-		if got := normalizeUserCode(tt.in); got != tt.want {
-			t.Errorf("normalizeUserCode(%q) = %q; want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
 // failingSource simulates an exhausted entropy source: every artifact the
 // server tries to mint fails.
 type failingSource struct{}
@@ -1211,7 +1160,7 @@ func TestInternalFailures(t *testing.T) {
 		env := newTestEnv(t)
 		env.clients.err = errors.New("db down")
 
-		w := env.postForm(PathToken, url.Values{
+		w := env.postForm(oauth.PathToken, url.Values{
 			"grant_type": {string(oauth.GrantTypeClientCredentials)},
 		}, env.client, "s3cret")
 
@@ -1223,7 +1172,7 @@ func TestInternalFailures(t *testing.T) {
 		env := newTestEnv(t)
 		env.stores.setErr(errors.New("db down"))
 
-		w := env.postForm(PathToken, url.Values{
+		w := env.postForm(oauth.PathToken, url.Values{
 			"grant_type":    {string(oauth.GrantTypeRefreshToken)},
 			"refresh_token": {"token-1"},
 		}, env.client, "s3cret")
@@ -1244,7 +1193,7 @@ func TestInternalFailures(t *testing.T) {
 		}
 		req := httptest.NewRequest(
 			http.MethodGet,
-			testPrefix+PathAuthorize+"?"+q.Encode(),
+			testPrefix+oauth.PathAuthorize+"?"+q.Encode(),
 			nil,
 		)
 		req.AddCookie(env.login())
@@ -1263,7 +1212,7 @@ func TestInternalFailures(t *testing.T) {
 			ExpiresAt: env.now.Add(time.Hour).Unix(),
 		})
 
-		w := env.postForm(PathToken, url.Values{
+		w := env.postForm(oauth.PathToken, url.Values{
 			"grant_type":    {string(oauth.GrantTypeRefreshToken)},
 			"refresh_token": {"rt-1"},
 		}, env.client, "s3cret")
@@ -1294,7 +1243,7 @@ func TestInternalFailures(t *testing.T) {
 		env := newTestEnv(t, WithNonceSource(failingSource{}))
 
 		w := env.postForm(
-			PathDeviceAuthorization,
+			oauth.PathDeviceAuthorization,
 			url.Values{},
 			env.client,
 			"s3cret",
@@ -1352,7 +1301,7 @@ func TestInternalFailures(t *testing.T) {
 
 		req := httptest.NewRequest(
 			http.MethodPost,
-			testPrefix+PathDeviceVerify,
+			testPrefix+oauth.PathDeviceVerify,
 			strings.NewReader(`{"user_code":"BCDF-GHJK","action":"deny"}`),
 		)
 		req.Header.Set("Content-Type", "application/json")
@@ -1399,7 +1348,7 @@ func TestThrottleIntegration(t *testing.T) {
 
 		// Two wrong secrets are answered with the usual rejection.
 		for i := range 2 {
-			w := env.postForm(PathToken, form(), env.client, "wrong")
+			w := env.postForm(oauth.PathToken, form(), env.client, "wrong")
 			if w.Code != http.StatusUnauthorized {
 				t.Fatalf(
 					"attempt %d: got status %d; want %d",
@@ -1411,7 +1360,7 @@ func TestThrottleIntegration(t *testing.T) {
 		}
 
 		// The third is locked out before the secret is even considered.
-		w := env.postForm(PathToken, form(), env.client, "wrong")
+		w := env.postForm(oauth.PathToken, form(), env.client, "wrong")
 		if w.Code != http.StatusTooManyRequests {
 			t.Fatalf(
 				"got status %d; want %d",
@@ -1427,7 +1376,7 @@ func TestThrottleIntegration(t *testing.T) {
 		}
 
 		// Even the correct secret is refused while the lockout stands.
-		w = env.postForm(PathToken, form(), env.client, "s3cret")
+		w = env.postForm(oauth.PathToken, form(), env.client, "s3cret")
 		if w.Code != http.StatusTooManyRequests {
 			t.Fatalf(
 				"got status %d; want %d during lockout",
@@ -1438,7 +1387,7 @@ func TestThrottleIntegration(t *testing.T) {
 
 		// Once the allowance recovers, the correct secret works again.
 		now = now.Add(time.Minute)
-		w = env.postForm(PathToken, form(), env.client, "s3cret")
+		w = env.postForm(oauth.PathToken, form(), env.client, "s3cret")
 		if w.Code != http.StatusOK {
 			t.Fatalf(
 				"got status %d; want %d after recovery: %s",
@@ -1461,9 +1410,9 @@ func TestThrottleIntegration(t *testing.T) {
 		// One failure, then a success, then two more failures: the success
 		// must have reset the count, so the third failure is still answered
 		// normally rather than locked out.
-		env.postForm(PathToken, form, env.client, "wrong")
+		env.postForm(oauth.PathToken, form, env.client, "wrong")
 		if w := env.postForm(
-			PathToken,
+			oauth.PathToken,
 			form,
 			env.client,
 			"s3cret",
@@ -1472,7 +1421,7 @@ func TestThrottleIntegration(t *testing.T) {
 		}
 
 		for i := range 2 {
-			w := env.postForm(PathToken, form, env.client, "wrong")
+			w := env.postForm(oauth.PathToken, form, env.client, "wrong")
 			if w.Code != http.StatusUnauthorized {
 				t.Fatalf(
 					"attempt %d: got status %d; want %d",
@@ -1545,7 +1494,7 @@ func TestThrottleIntegration(t *testing.T) {
 		guess := func() *httptest.ResponseRecorder {
 			req := httptest.NewRequest(
 				http.MethodPost,
-				testPrefix+PathDeviceVerify,
+				testPrefix+oauth.PathDeviceVerify,
 				strings.NewReader(
 					`{"user_code":"BCDF-GHJK","action":"approve"}`,
 				),
@@ -1583,7 +1532,7 @@ func TestThrottleIntegration(t *testing.T) {
 			"grant_type": {string(oauth.GrantTypeClientCredentials)},
 		}
 		for range 5 {
-			w := env.postForm(PathToken, form, env.client, "wrong")
+			w := env.postForm(oauth.PathToken, form, env.client, "wrong")
 			if w.Code != http.StatusUnauthorized {
 				t.Fatalf(
 					"got status %d; want %d without a throttle",

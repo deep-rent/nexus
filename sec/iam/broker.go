@@ -28,6 +28,7 @@ import (
 	"github.com/deep-rent/nexus/net/router"
 	"github.com/deep-rent/nexus/sec/auth"
 	"github.com/deep-rent/nexus/sec/iam/flow"
+	"github.com/deep-rent/nexus/sec/iam/internal/limit"
 	"github.com/deep-rent/nexus/sec/iam/trust"
 	"github.com/deep-rent/nexus/sys/log"
 )
@@ -57,7 +58,7 @@ func (s *Server) Login(e *router.Exchange) error {
 
 	// Guesses are counted per account, folded to lower case so that varying
 	// the capitalization cannot buy a fresh allowance.
-	userKey := scopeUser + strings.ToLower(cred.Username)
+	userKey := limit.ScopeUser + strings.ToLower(cred.Username)
 	if s.throttled(e, userKey) {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
@@ -148,7 +149,7 @@ func (s *Server) Identify(e *router.Exchange) error {
 		return err
 	}
 
-	userKey := scopeUser + strings.ToLower(req.Username)
+	userKey := limit.ScopeUser + strings.ToLower(req.Username)
 	if s.throttled(e, userKey) {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
@@ -220,7 +221,7 @@ func (s *Server) Continue(e *router.Exchange) error {
 		return err
 	}
 
-	flowKey := scopeOTP + string(s.digest(req.Handle))
+	flowKey := limit.ScopeOTP + string(s.digest(req.Handle))
 	if s.throttled(e, flowKey) {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,
@@ -258,7 +259,7 @@ func (s *Server) Action(e *router.Exchange) error {
 		return err
 	}
 
-	flowKey := scopeOTP + string(s.digest(req.Handle))
+	flowKey := limit.ScopeOTP + string(s.digest(req.Handle))
 	if s.throttled(e, flowKey) {
 		return &router.Error{
 			Status:      http.StatusTooManyRequests,

@@ -19,17 +19,22 @@
 //
 // # Architecture
 //
-// The core of the package is the [Server], which manages the lifecycle of
-// authorization requests, token issuance, and resource owner sessions. It
-// relies on the [oauth.ClientStore] and [SubjectStore] interfaces and the
-// [Stores] bundle of [github.com/deep-rent/nexus/sec/iam/artifact.Store] backends, which must be implemented to
-// bridge the library with the underlying database or persistence layer.
+// The core of the package is the [Server]: the login machinery composed
+// around an embedded [oauth.Server], which handles the OAuth 2.0 token
+// machinery and reaches back into the login world only through its session
+// and owner resolver seams. It relies on the [oauth.ClientStore] and
+// [SubjectStore] interfaces and the [Stores] bundle of
+// [github.com/deep-rent/nexus/sec/iam/artifact.Store] backends, which must
+// be implemented to bridge the library with the underlying database or
+// persistence layer.
 //
 // The protocol machinery is layered into subpackages:
 //
-//   - [github.com/deep-rent/nexus/sec/iam/oauth] defines the OAuth 2.0
-//     vocabulary: grant types, the [oauth.Grant] contract, error codes,
-//     response payloads, and the digest-keyed [oauth.TokenStores].
+//   - [github.com/deep-rent/nexus/sec/iam/oauth] implements the standalone
+//     OAuth 2.0 authorization server ([oauth.Server]) and its vocabulary:
+//     grant types, the [oauth.Grant] contract, error codes, response
+//     payloads, and the digest-keyed [oauth.TokenStores]. A pure
+//     machine-to-machine deployment can mount it without this package.
 //   - [github.com/deep-rent/nexus/sec/iam/oauth/grant] provides the standard
 //     grant implementations registered via [WithGrant].
 //   - [github.com/deep-rent/nexus/sec/iam/oauth/pkce] implements RFC 7636.

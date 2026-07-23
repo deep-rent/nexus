@@ -281,91 +281,19 @@ func (r *ActionRequest) Validate(v *valid.Validator) {
 
 var _ valid.Validatable = (*ActionRequest)(nil)
 
+// Path constants define the login-machinery endpoints managed by the
+// [Server]. The token-machinery paths live in the oauth package (e.g.
+// [oauth.PathToken]).
 const (
-	// DeviceVerificationApprove signals that the resource owner approves the
-	// pending device authorization request.
-	DeviceVerificationApprove = "approve"
-	// DeviceVerificationDeny signals that the resource owner rejects the
-	// pending device authorization request.
-	DeviceVerificationDeny = "deny"
-)
-
-// DeviceVerificationRequest represents the payload for the device
-// verification endpoint (RFC 8628 Section 3.3).
-//
-// It is consumed by [Server.DeviceVerify] to let an authenticated resource
-// owner approve or deny a pending device authorization request identified by
-// its user code.
-type DeviceVerificationRequest struct {
-	// UserCode is the code displayed on the device, entered by the resource
-	// owner. Case and embedded whitespace are ignored.
-	UserCode string `json:"user_code"`
-	// Action is either [DeviceVerificationApprove] or
-	// [DeviceVerificationDeny].
-	Action string `json:"action"`
-}
-
-// Validate implements the [valid.Validatable] interface.
-func (r *DeviceVerificationRequest) Validate(v *valid.Validator) {
-	v.NotEmpty("user_code", r.UserCode)
-	v.Whitelist(
-		"action",
-		r.Action,
-		DeviceVerificationApprove,
-		DeviceVerificationDeny,
-	)
-}
-
-var _ valid.Validatable = (*DeviceVerificationRequest)(nil)
-
-// Path constants define the specific endpoints managed by the [Server].
-const (
-	PathAuthorize               = "/authorize"
-	PathDeviceAuthorization     = "/device_authorization"
-	PathDeviceVerify            = "/device"
 	PathExternalCallback        = "/callback/{provider}"
 	PathExternalLogin           = "/login/{provider}"
-	PathIntrospect              = "/introspect"
-	PathKeySet                  = "/jwks.json"
 	PathLogin                   = "/login"
 	PathLoginIdentify           = "/login/identify"
 	PathLoginContinue           = "/login/continue"
 	PathLoginAction             = "/login/action"
 	PathLogout                  = "/logout"
-	PathRevoke                  = "/revoke"
-	PathToken                   = "/token"
 	PathWebAuthnLogin           = "/webauthn/login"
 	PathWebAuthnLoginOptions    = "/webauthn/login/options"
 	PathWebAuthnRegister        = "/webauthn/register"
 	PathWebAuthnRegisterOptions = "/webauthn/register/options"
-	PathWellKnown               = "/.well-known/oauth-authorization-server"
-)
-
-// Key namespaces keep the identifier spaces disjoint within the single
-// [throttle.Throttle] the server shares across every axis it limits, so that
-// a client ID can never share a bucket with a username, a one-time code, or a
-// network address.
-const (
-	scopeAddr   = "addr:"
-	scopeClient = "client:"
-	scopeUser   = "user:"
-	scopeCode   = "code:"
-	scopeOTP    = "otp:"
-)
-
-// Token generation defaults. Every opaque bearer artifact is drawn from one
-// [nonce.Generator]; user codes are drawn from one [nonce.Sampler].
-const (
-	// NonceSize is the byte length of an opaque bearer artifact. 32 bytes yield
-	// 256 bits of entropy and a 43-character base64url string.
-	NonceSize = 32
-
-	// UserCodeAlphabet is the character set for user codes, as recommended by
-	// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
-	// prevent accidental words) and visually ambiguous characters.
-	UserCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
-
-	// UserCodeLength is the number of characters sampled for a user code,
-	// rendered as two dash-separated groups (XXXX-XXXX).
-	UserCodeLength = 8
 )

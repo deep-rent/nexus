@@ -583,7 +583,7 @@ func TestWebAuthnGrant(t *testing.T) {
 
 		handle, opts := env.beginLogin(t)
 
-		w := env.postForm(PathToken, url.Values{
+		w := env.postForm(oauth.PathToken, url.Values{
 			"grant_type": {string(oauth.GrantTypeWebAuthn)},
 			"handle":     {handle},
 			"assertion":  {env.assert(opts)},
@@ -668,7 +668,7 @@ func TestWebAuthnGrant(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				tt.form.Set("grant_type", string(oauth.GrantTypeWebAuthn))
-				w := env.postForm(PathToken, tt.form, env.client, "s3cret")
+				w := env.postForm(oauth.PathToken, tt.form, env.client, "s3cret")
 				res := decodeJSON[oauth.Error](t, w)
 				if res.Code != tt.code {
 					t.Errorf(
@@ -693,7 +693,7 @@ func TestWebAuthnGrant(t *testing.T) {
 
 		handle, opts := env.beginLogin(t)
 
-		w := env.postForm(PathToken, url.Values{
+		w := env.postForm(oauth.PathToken, url.Values{
 			"grant_type": {string(oauth.GrantTypeWebAuthn)},
 			"handle":     {handle},
 			"assertion":  {env.assert(opts)},
@@ -715,7 +715,7 @@ func TestWebAuthnGrant(t *testing.T) {
 
 		w := env.do(httptest.NewRequest(
 			http.MethodGet,
-			testPrefix+PathWellKnown,
+			testPrefix+oauth.PathWellKnown,
 			nil,
 		))
 		if w.Code != http.StatusOK {
