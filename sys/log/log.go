@@ -22,15 +22,6 @@ import (
 	"github.com/deep-rent/nexus/std/ascii"
 )
 
-// Default configuration values for a new logger.
-const (
-	// DefaultLevel is the level used when none is specified.
-	DefaultLevel = slog.LevelInfo
-	// DefaultAddSource is the default setting for including source information.
-	DefaultAddSource = false
-	// DefaultFormat is the format used when none is specified.
-	DefaultFormat = FormatText
-)
 
 // Format defines the log output format, such as JSON or plain text.
 type Format uint8

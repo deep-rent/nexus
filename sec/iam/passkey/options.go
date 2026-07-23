@@ -21,6 +21,11 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
+// DefaultLifetime is the validity period of a ceremony applied by [New] when
+// [Config.Lifetime] is not given: the time a client may take between
+// requesting ceremony options and submitting the authenticator's response.
+const DefaultLifetime = 5 * time.Minute
+
 // Config carries the relying party settings for [New].
 type Config struct {
 	// RPID is the relying party identifier: the effective domain that

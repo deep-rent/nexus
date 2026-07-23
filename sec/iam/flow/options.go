@@ -22,6 +22,11 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
+// DefaultLifetime is the validity period of a login transaction applied by
+// [New] when [WithLifetime] is not given. It bounds the whole multi-step login,
+// independent of any per-step lifetime.
+const DefaultLifetime = 10 * time.Minute
+
 // Option configures a [Coordinator].
 type Option func(*Coordinator)
 

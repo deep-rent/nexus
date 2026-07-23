@@ -20,16 +20,6 @@ import (
 	"github.com/deep-rent/nexus/std/jitter"
 )
 
-const (
-	// DefaultMinDelay is the default minimum time between consecutive retries.
-	DefaultMinDelay = 1 * time.Second
-	// DefaultMaxDelay is the default maximum time between consecutive retries.
-	DefaultMaxDelay = 1 * time.Minute
-	// DefaultGrowthFactor is the default growth factor in exponential backoff.
-	DefaultGrowthFactor float64 = 2.0
-	// DefaultJitterAmount is the default amount of jitter applied.
-	DefaultJitterAmount float64 = 0.5
-)
 
 // Strategy defines the contract for a backoff algorithm.
 //

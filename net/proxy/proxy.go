@@ -29,14 +29,6 @@ import (
 	"github.com/deep-rent/nexus/net/proxy/buffer"
 )
 
-const (
-	// DefaultMinBufferSize is the default minimum size of pooled buffers (32
-	// KiB).
-	DefaultMinBufferSize = 32 << 10
-	// DefaultMaxBufferSize is the default maximum size of pooled buffers (256
-	// KiB).
-	DefaultMaxBufferSize = 256 << 10
-)
 
 // Handler is an alias of [http.Handler] representing a reverse proxy.
 type Handler = http.Handler

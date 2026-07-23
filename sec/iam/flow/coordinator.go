@@ -25,10 +25,6 @@ import (
 	"github.com/deep-rent/nexus/sys/log"
 )
 
-// DefaultLifetime is the validity period of a login transaction applied by
-// [New] when [WithLifetime] is not given. It bounds the whole multi-step login,
-// independent of any per-step lifetime.
-const DefaultLifetime = 10 * time.Minute
 
 // Transaction is the persisted state of an in-progress login. It holds no
 // secret: the client-facing handle is stored only as its digest ([Transaction.ID]),

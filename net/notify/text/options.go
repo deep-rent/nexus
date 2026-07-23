@@ -19,6 +19,11 @@ import (
 	"net/http"
 )
 
+const (
+	// DefaultBaseURL is the standard API endpoint for Twilio Messaging.
+	DefaultBaseURL = "https://api.twilio.com/2010-04-01"
+)
+
 // config holds the optional configuration for the [sender].
 type config struct {
 	// baseURL overrides the default Twilio API endpoint.

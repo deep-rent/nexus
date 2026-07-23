@@ -24,6 +24,27 @@ import (
 	"github.com/deep-rent/nexus/sec/vault"
 )
 
+// Default values applied by [NewServer] for optional [ServerConfig] fields.
+const (
+	// DefaultRealm is the authentication realm announced in WWW-Authenticate
+	// challenges.
+	DefaultRealm = "oauth"
+	// DefaultAccessTokenLifetime is the validity period of access tokens.
+	DefaultAccessTokenLifetime = 1 * time.Hour
+	// DefaultRefreshTokenLifetime is the validity period of refresh tokens.
+	DefaultRefreshTokenLifetime = 30 * 24 * time.Hour
+	// DefaultAuthCodeLifetime is the validity period of authorization codes.
+	DefaultAuthCodeLifetime = 10 * time.Minute
+	// DefaultDeviceCodeLifetime is the validity period of device codes.
+	DefaultDeviceCodeLifetime = 15 * time.Minute
+	// DefaultDevicePollInterval is the minimum delay between device code
+	// polling attempts.
+	DefaultDevicePollInterval = 5 * time.Second
+	// DefaultThrottlePenalty is the number of tokens charged against a
+	// throttle bucket for a single failed authentication attempt.
+	DefaultThrottlePenalty = 10
+)
+
 // ServerConfig carries the mandatory dependencies and tunable settings for a
 // [Server]. Zero values for optional fields are replaced with the package
 // defaults by [NewServer].

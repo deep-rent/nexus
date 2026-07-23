@@ -51,10 +51,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
-// DefaultLifetime is the validity period of a ceremony applied by [New] when
-// [Config.Lifetime] is not given: the time a client may take between
-// requesting ceremony options and submitting the authenticator's response.
-const DefaultLifetime = 5 * time.Minute
 
 // Credential is a passkey credential record as verified and consumed by the
 // underlying WebAuthn implementation. Store implementations should treat it

@@ -30,10 +30,6 @@ import (
 	"github.com/deep-rent/nexus/net/transport"
 )
 
-const (
-	// DefaultBaseURL is the standard API endpoint for Twilio Messaging.
-	DefaultBaseURL = "https://api.twilio.com/2010-04-01"
-)
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.

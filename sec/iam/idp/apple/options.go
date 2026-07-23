@@ -18,6 +18,9 @@ import (
 	"net/http"
 )
 
+// DefaultScopes requests the user's name and email on first authorization.
+var DefaultScopes = []string{"name", "email"}
+
 // Config carries the settings for the Apple identity provider.
 type Config struct {
 	// ClientID is the Services ID configured for Sign in with Apple (e.g.,

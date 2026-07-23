@@ -22,15 +22,6 @@ import (
 	"github.com/deep-rent/nexus/sys/log"
 )
 
-// Default retention windows enforced by [Retention].
-const (
-	// DefaultMutationRetention is the default age above which mutation
-	// deduplication records are pruned.
-	DefaultMutationRetention = 30 * 24 * time.Hour
-	// DefaultTombstoneRetention is the default age above which tombstones
-	// are pruned, advancing the retention floor.
-	DefaultTombstoneRetention = 90 * 24 * time.Hour
-)
 
 
 // Retention is a ready-made maintenance task enforcing the store's two

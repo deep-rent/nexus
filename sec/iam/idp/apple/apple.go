@@ -48,8 +48,6 @@ const (
 // is minted per exchange.
 const SecretLifetime = 5 * time.Minute
 
-// DefaultScopes requests the user's name and email on first authorization.
-var DefaultScopes = []string{"name", "email"}
 
 
 // Provider implements [idp.Provider] for Apple.

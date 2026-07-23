@@ -24,6 +24,59 @@ import (
 	"github.com/deep-rent/nexus/sys/metrics"
 )
 
+// DefaultTimeout specifies the default overall timeout for HTTP clients.
+const DefaultTimeout = 5 * time.Second
+
+// DefaultDialTimeout is the maximum amount of time a dial will wait for
+// a connect to complete.
+const DefaultDialTimeout = 2 * time.Second
+
+// DefaultKeepAlive specifies the interval between keep-alive probes for an
+// active network connection.
+const DefaultKeepAlive = 30 * time.Second
+
+// DefaultTLSHandshakeTimeout specifies the maximum amount of time waiting to
+// wait for a TLS handshake.
+const DefaultTLSHandshakeTimeout = 2 * time.Second
+
+// DefaultMaxIdleConns specifies the maximum number of idle (keep-alive)
+// connections across all hosts.
+const DefaultMaxIdleConns = 1024
+
+// DefaultMaxIdleConnsPerHost specifies the maximum number of idle (keep-alive)
+// connections per host.
+const DefaultMaxIdleConnsPerHost = 1024
+
+// DefaultIdleConnTimeout specifies the maximum amount of time an idle
+// (keep-alive) connection will remain idle before closing itself.
+const DefaultIdleConnTimeout = 90 * time.Second
+
+// DefaultExpectContinueTimeout specifies the amount of time to wait for
+// a server's first response headers after fully writing the request headers if
+// the request has an "Expect: 100-continue" header.
+const DefaultExpectContinueTimeout = 1 * time.Second
+
+// DefaultForceAttemptHTTP2 specifies whether to attempt HTTP/2 by default.
+const DefaultForceAttemptHTTP2 = true
+
+// DefaultMaxConnsPerHost optionally limits the total number of connections per
+// host.
+const DefaultMaxConnsPerHost = 1024
+
+// DefaultResponseHeaderTimeout specifies the amount of time to wait for a
+// server's response headers.
+const DefaultResponseHeaderTimeout = 0
+
+// DefaultMaxResponseHeaderBytes specifies a limit on how many response bytes
+// are allowed in the server's response header.
+const DefaultMaxResponseHeaderBytes = 64 * 1024 // 64 KB
+
+// DefaultWriteBufferSize specifies the size of the write buffer used.
+const DefaultWriteBufferSize = 4 * 1024 // 4 KB
+
+// DefaultReadBufferSize specifies the size of the read buffer used.
+const DefaultReadBufferSize = 4 * 1024 // 4 KB
+
 // config is used to hold the configuration for a [Transport].
 type config struct {
 	dialTimeout            time.Duration

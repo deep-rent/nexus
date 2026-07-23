@@ -32,9 +32,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
-// DefaultLifetime is the trust window applied by [New] when [WithLifetime] is
-// not given.
-const DefaultLifetime = 30 * 24 * time.Hour
 
 // Record is the persisted state of a device trust. The token is stored only
 // as its digest, never in the clear.

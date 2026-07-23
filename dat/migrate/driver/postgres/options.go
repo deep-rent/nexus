@@ -19,6 +19,14 @@ import (
 	"time"
 )
 
+const (
+	// DefaultTable is the default name for the migration tracking table.
+	DefaultTable = "migrations"
+	// DefaultSchema is the default PostgreSQL schema where the tracking table
+	// resides.
+	DefaultSchema = "public"
+)
+
 // config holds the internal configuration options for the PostgreSQL driver.
 type config struct {
 	// table is the name of the migration tracking table.

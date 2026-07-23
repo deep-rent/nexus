@@ -19,6 +19,11 @@ import (
 	"net/http"
 )
 
+const (
+	// DefaultBaseURL is the standard API endpoint for SendGrid v3.
+	DefaultBaseURL = "https://api.sendgrid.com/v3"
+)
+
 // config holds the optional configuration for the [sender].
 type config struct {
 	// baseURL overrides the default SendGrid API endpoint.

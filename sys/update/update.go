@@ -28,12 +28,6 @@ import (
 	"github.com/deep-rent/nexus/net/transport"
 )
 
-// Default configuration values for the [Updater].
-const (
-	// DefaultBaseURL is the default GitHub API base URL.
-	DefaultBaseURL = "https://api.github.com"
-)
-
 // Release represents a published release on GitHub.
 type Release struct {
 	// Version is the tag name of the release (e.g., "v1.0.0").

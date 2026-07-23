@@ -30,10 +30,6 @@ import (
 	"github.com/deep-rent/nexus/net/transport"
 )
 
-const (
-	// DefaultBaseURL is the standard API endpoint for SendGrid v3.
-	DefaultBaseURL = "https://api.sendgrid.com/v3"
-)
 
 var (
 	// ErrNilMessage is returned when a nil [Message] is validated.

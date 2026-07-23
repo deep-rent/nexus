@@ -25,11 +25,6 @@ import (
 	"github.com/deep-rent/nexus/dat/migrate"
 )
 
-const (
-	// DefaultExtension is the default file extension used when searching for
-	// migration scripts in the file system.
-	DefaultExtension = ".sql"
-)
 
 // Errors explaining why the [Source.Parse] method has failed:
 var (

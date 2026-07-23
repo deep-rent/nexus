@@ -20,6 +20,15 @@ import (
 	"time"
 )
 
+const (
+	// DefaultMinBufferSize is the default minimum size of pooled buffers (32
+	// KiB).
+	DefaultMinBufferSize = 32 << 10
+	// DefaultMaxBufferSize is the default maximum size of pooled buffers (256
+	// KiB).
+	DefaultMaxBufferSize = 256 << 10
+)
+
 // handlerConfig holds the configurable settings for the proxy handler.
 type handlerConfig struct {
 	// transport handles the network communication with the upstream.

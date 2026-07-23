@@ -27,14 +27,6 @@ import (
 	"github.com/deep-rent/nexus/net/router"
 )
 
-// Default values applied by [New] for the optional [Config] fields.
-const (
-	// DefaultRate is the sustained rate, in tokens per second, at which a
-	// drained allowance recovers.
-	DefaultRate = rate.Limit(1)
-	// DefaultBurst is the number of tokens each key may hold.
-	DefaultBurst = 60
-)
 
 // sweepInterval bounds how often idle buckets are evicted.
 const sweepInterval = time.Minute

@@ -38,27 +38,6 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
-// Default values applied by [New] for optional [Config] fields.
-const (
-	// DefaultSessionCookieName names the cookie carrying the resource owner's
-	// session key.
-	DefaultSessionCookieName = "oauth_session"
-	// DefaultStateCookieName names the cookie carrying the CSRF state during
-	// external login flows.
-	DefaultStateCookieName = "oauth_state"
-	// DefaultTrustCookieName names the cookie carrying the remember-me device
-	// trust token.
-	DefaultTrustCookieName = "oauth_trust"
-	// DefaultSessionLifetime is the server-side validity period of a session
-	// established without the remember flag.
-	DefaultSessionLifetime = 24 * time.Hour
-	// DefaultRememberedSessionLifetime is the persistence of a session when the
-	// client asked to be remembered.
-	DefaultRememberedSessionLifetime = 30 * 24 * time.Hour
-	// DefaultTrustedDeviceLifetime is the validity period of a remember-me
-	// device trust token.
-	DefaultTrustedDeviceLifetime = 30 * 24 * time.Hour
-)
 
 
 // Server implements the endpoints of an OAuth 2.0 authorization server.

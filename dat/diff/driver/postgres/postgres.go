@@ -39,23 +39,6 @@ import (
 	"github.com/deep-rent/nexus/std/quote"
 )
 
-// Default names for the store's bookkeeping objects.
-const (
-	// DefaultSchema is the default PostgreSQL schema.
-	DefaultSchema = "public"
-	// DefaultMutationsTable is the default name of the mutation
-	// deduplication table.
-	DefaultMutationsTable = "document_mutations"
-	// DefaultTombstonesTable is the default name of the tombstone table.
-	DefaultTombstonesTable = "document_tombstones"
-	// DefaultStateTable is the default name of the state table holding the
-	// retention floor.
-	DefaultStateTable = "document_state"
-	// DefaultSharesTable is the default name of the share grants table.
-	DefaultSharesTable = "document_shares"
-	// DefaultSequence is the default name of the global feed sequence.
-	DefaultSequence = "document_seq"
-)
 
 // zeroUUID is the SQL literal of the zero UUID, the sentinel for personal
 // documents: NULL team columns read as the zero UUID and vice versa.

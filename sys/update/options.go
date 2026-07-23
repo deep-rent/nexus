@@ -18,6 +18,12 @@ import (
 	"net/http"
 )
 
+// Default configuration values for the [Updater].
+const (
+	// DefaultBaseURL is the default GitHub API base URL.
+	DefaultBaseURL = "https://api.github.com"
+)
+
 // Config holds the configuration for the [Updater].
 type Config struct {
 	// BaseURL is the base URL for the GitHub API. It defaults to

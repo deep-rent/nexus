@@ -54,9 +54,6 @@ import (
 	"github.com/deep-rent/nexus/net/transport"
 )
 
-// DefaultTimeout bounds a single target fetch unless the context imposes a
-// tighter deadline.
-const DefaultTimeout = 10 * time.Second
 
 // maxBody caps how many bytes of a snapshot response are read, so that a
 // misbehaving target cannot exhaust the collector.

@@ -19,6 +19,34 @@ import (
 	"time"
 )
 
+// Default names for the store's bookkeeping objects.
+const (
+	// DefaultSchema is the default PostgreSQL schema.
+	DefaultSchema = "public"
+	// DefaultMutationsTable is the default name of the mutation
+	// deduplication table.
+	DefaultMutationsTable = "document_mutations"
+	// DefaultTombstonesTable is the default name of the tombstone table.
+	DefaultTombstonesTable = "document_tombstones"
+	// DefaultStateTable is the default name of the state table holding the
+	// retention floor.
+	DefaultStateTable = "document_state"
+	// DefaultSharesTable is the default name of the share grants table.
+	DefaultSharesTable = "document_shares"
+	// DefaultSequence is the default name of the global feed sequence.
+	DefaultSequence = "document_seq"
+)
+
+// Default retention windows enforced by [Retention].
+const (
+	// DefaultMutationRetention is the default age above which mutation
+	// deduplication records are pruned.
+	DefaultMutationRetention = 30 * 24 * time.Hour
+	// DefaultTombstoneRetention is the default age above which tombstones
+	// are pruned, advancing the retention floor.
+	DefaultTombstoneRetention = 90 * 24 * time.Hour
+)
+
 // config holds the internal configuration options for the PostgreSQL store.
 type config struct {
 	// schema is the PostgreSQL schema containing the bookkeeping objects.

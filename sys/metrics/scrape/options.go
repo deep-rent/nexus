@@ -20,6 +20,10 @@ import (
 	"time"
 )
 
+// DefaultTimeout bounds a single target fetch unless the context imposes a
+// tighter deadline.
+const DefaultTimeout = 10 * time.Second
+
 // config holds the collector settings.
 type config struct {
 	client  *http.Client

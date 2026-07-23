@@ -36,12 +36,6 @@ import (
 	"github.com/deep-rent/nexus/net/transport"
 )
 
-const (
-	// DefaultBaseURL is the production endpoint for APNs.
-	DefaultBaseURL = "https://api.push.apple.com"
-	// SandboxBaseURL is the sandbox endpoint for APNs.
-	SandboxBaseURL = "https://api.sandbox.push.apple.com"
-)
 
 // Sender implements the [push.Sender] interface for the Apple Push Notification
 // service (APNs). It handles authentication, payload construction, and

@@ -25,18 +25,6 @@ import (
 	"github.com/deep-rent/nexus/sys/log"
 )
 
-// Default policy values applied by [New] when the corresponding option is not
-// given. They match the historical oauth two-factor defaults.
-const (
-	// DefaultLifetime is the validity period of a challenge.
-	DefaultLifetime = 5 * time.Minute
-	// DefaultMaxAttempts is the number of failed confirmations after which a
-	// challenge is burned.
-	DefaultMaxAttempts = 5
-	// DefaultMaxResends is the number of times a single challenge may have its
-	// code redelivered. A negative value disables resending entirely.
-	DefaultMaxResends = 3
-)
 
 // Status is the logical result of a [Challenger.Verify] or [Challenger.Resend]
 // call. It is distinct from a Go error, which is reserved for storage and

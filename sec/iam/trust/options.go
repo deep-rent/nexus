@@ -21,6 +21,10 @@ import (
 	"github.com/deep-rent/nexus/sec/nonce"
 )
 
+// DefaultLifetime is the trust window applied by [New] when [WithLifetime] is
+// not given.
+const DefaultLifetime = 30 * 24 * time.Hour
+
 // Option configures a [Manager].
 type Option func(*Manager)
 

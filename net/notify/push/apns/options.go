@@ -20,6 +20,13 @@ import (
 	"time"
 )
 
+const (
+	// DefaultBaseURL is the production endpoint for APNs.
+	DefaultBaseURL = "https://api.push.apple.com"
+	// SandboxBaseURL is the sandbox endpoint for APNs.
+	SandboxBaseURL = "https://api.sandbox.push.apple.com"
+)
+
 type config struct {
 	baseURL string
 	topic   string

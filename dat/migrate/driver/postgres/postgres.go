@@ -34,13 +34,6 @@ import (
 	"github.com/deep-rent/nexus/std/quote"
 )
 
-const (
-	// DefaultTable is the default name for the migration tracking table.
-	DefaultTable = "migrations"
-	// DefaultSchema is the default PostgreSQL schema where the tracking table
-	// resides.
-	DefaultSchema = "public"
-)
 
 
 // Driver implements the [migrate.Driver] interface for PostgreSQL.

@@ -15,8 +15,38 @@
 package gzip
 
 import (
+	"compress/gzip"
+
 	"github.com/deep-rent/nexus/std/ascii"
 )
+
+// Mirror constants from the [compress/gzip] package for easy access without
+// requiring an extra import.
+const (
+	// BestCompression provides the highest level of compression.
+	BestCompression = gzip.BestCompression
+	// BestSpeed provides the fastest compression time.
+	BestSpeed = gzip.BestSpeed
+	// DefaultCompression provides a balance between speed and ratio.
+	DefaultCompression = gzip.DefaultCompression
+	// NoCompression disables compression entirely.
+	NoCompression = gzip.NoCompression
+)
+
+// defaultExcludeList lists common media types that are already compressed.
+var defaultExcludeList = []string{
+	// Media
+	"image/*",
+	"video/*",
+	"audio/*",
+	// Fonts
+	"font/*",
+	// Archives & Documents
+	"application/zip",
+	"application/gzip",
+	"application/pdf",
+	"application/wasm",
+}
 
 // config holds the middleware configuration.
 type config struct {

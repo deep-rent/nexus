@@ -19,6 +19,12 @@ import (
 	"strings"
 )
 
+const (
+	// DefaultExtension is the default file extension used when searching for
+	// migration scripts in the file system.
+	DefaultExtension = ".sql"
+)
+
 // config holds the internal configuration options for the file source.
 type config struct {
 	// ext is the file extension to filter for.

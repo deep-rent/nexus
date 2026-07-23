@@ -20,6 +20,16 @@ import (
 	"github.com/deep-rent/nexus/dat/diff/hlc"
 )
 
+// Default engine limits.
+const (
+	// DefaultMaxChanges caps the number of changes accepted per request.
+	DefaultMaxChanges = 500
+	// DefaultMaxPatches caps the requestable patch feed page size.
+	DefaultMaxPatches = 1000
+	// DefaultLimit is the feed page size applied when the request omits one.
+	DefaultLimit = 200
+)
+
 // config holds configuration options for the [Engine].
 type config struct {
 	logger     *slog.Logger

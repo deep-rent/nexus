@@ -31,15 +31,6 @@ import (
 	"github.com/deep-rent/nexus/dat/valid"
 )
 
-// Default engine limits.
-const (
-	// DefaultMaxChanges caps the number of changes accepted per request.
-	DefaultMaxChanges = 500
-	// DefaultMaxPatches caps the requestable patch feed page size.
-	DefaultMaxPatches = 1000
-	// DefaultLimit is the feed page size applied when the request omits one.
-	DefaultLimit = 200
-)
 
 
 // Engine orchestrates the bidirectional sync pipeline: it ingests change
