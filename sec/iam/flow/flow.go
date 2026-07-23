@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // ErrRateLimited is returned by [Step.Act] when an action is refused because a
@@ -132,15 +133,11 @@ func (c Course) validate() error {
 	return nil
 }
 
-// pending returns the first step whose ID is not yet among the set of completed
-// IDs, or nil when every step is done.
-func (c Course) pending(completed []string) Step {
-	done := make(map[string]struct{}, len(completed))
-	for _, id := range completed {
-		done[id] = struct{}{}
-	}
+// pending returns the first step whose ID is not yet completed in the given
+// transaction, or nil when every step is done.
+func (c Course) pending(t Transaction) Step {
 	for _, s := range c {
-		if _, ok := done[s.ID()]; !ok {
+		if !slices.Contains(t.Completed, s.ID()) {
 			return s
 		}
 	}

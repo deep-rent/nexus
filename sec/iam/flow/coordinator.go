@@ -223,7 +223,7 @@ func (c *Coordinator) Continue(
 		return Result{}, err
 	}
 
-	active := steps.pending(t.Completed)
+	active := steps.pending(t)
 	if active == nil {
 		// The plan no longer has pending steps (it shrank since the last call);
 		// nothing is left to prove, so the login is complete.
@@ -244,7 +244,7 @@ func (c *Coordinator) Continue(
 
 	t.Completed = append(t.Completed, active.ID())
 
-	next := steps.pending(t.Completed)
+	next := steps.pending(t)
 	if next == nil {
 		return c.finish(ctx, t)
 	}
@@ -293,7 +293,7 @@ func (c *Coordinator) Act(
 		return Result{}, err
 	}
 
-	active := steps.pending(t.Completed)
+	active := steps.pending(t)
 	if active == nil {
 		return Result{Status: StatusInvalid}, nil
 	}
