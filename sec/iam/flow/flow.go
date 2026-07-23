@@ -17,6 +17,7 @@ package flow
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // ErrRateLimited is returned by [Step.Act] when an action is refused because a
@@ -112,11 +113,45 @@ type Step interface {
 	) (any, error)
 }
 
+type Course []Step
+
+// validate rejects a plan with empty or duplicate step IDs, since both would
+// make completion tracking ambiguous.
+func (c Course) validate() error {
+	seen := make(map[string]struct{}, len(c))
+	for _, s := range c {
+		id := s.ID()
+		if id == "" {
+			return fmt.Errorf("step ID must not be empty")
+		}
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("duplicate step ID %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+// pending returns the first step whose ID is not yet among the set of completed
+// IDs, or nil when every step is done.
+func (c Course) pending(completed []string) Step {
+	done := make(map[string]struct{}, len(completed))
+	for _, id := range completed {
+		done[id] = struct{}{}
+	}
+	for _, s := range c {
+		if _, ok := done[s.ID()]; !ok {
+			return s
+		}
+	}
+	return nil
+}
+
 // Plan produces the ordered steps for a login given the owner recorded in the
 // transaction. It is invoked on every continuation, so changes to the owner's
 // enrolled factors take effect mid-login. Returning an empty slice means no
 // (further) factors are required.
-type Plan func(ctx context.Context, owner string) ([]Step, error)
+type Plan func(ctx context.Context, owner string) (Course, error)
 
 // Status is the logical result of a [Coordinator] operation.
 type Status int

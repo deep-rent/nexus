@@ -74,7 +74,7 @@ func (s *fakeStep) Act(
 
 // planOf returns a [flow.Plan] yielding the given steps.
 func planOf(steps ...flow.Step) flow.Plan {
-	return func(context.Context, string) ([]flow.Step, error) {
+	return func(context.Context, string) (flow.Course, error) {
 		return steps, nil
 	}
 }

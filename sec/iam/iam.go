@@ -139,7 +139,7 @@ type SubjectStore interface {
 // ceremony sessions.
 //
 // All records are keyed by digests — the server hashes every bearer secret
-// before it crosses a store boundary — and follow the [github.com/deep-rent/nexus/sec/iam/artifact.Store]
+// before it crosses a store boundary — and follow the same basic CRUD
 // contract. A single generic backend can therefore be instantiated per
 // artifact type; the stores enabled by the server's options must be non-nil
 // (see [New]).
@@ -239,7 +239,8 @@ type FlowResponse struct {
 // It is consumed by [Server.Continue] to satisfy the active step of a pending
 // login with the credential the resource owner supplied. The active step reads
 // whichever field it expects: a code-based step (such as a one-time password)
-// reads Code, while an assertion-based step (such as WebAuthn) reads Credential.
+// reads the code, while an assertion-based step (such as WebAuthn) reads
+// the credential.
 type ContinueRequest struct {
 	// Handle is the flow handle returned by the login endpoint.
 	Handle string `json:"handle"`

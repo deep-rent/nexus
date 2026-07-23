@@ -149,8 +149,8 @@ func newOTPStepFixture(t *testing.T, multi bool) *otpStepFixture {
 		sms:   sms,
 		email: email,
 		step:  step,
-		plan: func(context.Context, string) ([]flow.Step, error) {
-			return []flow.Step{step}, nil
+		plan: func(context.Context, string) (flow.Course, error) {
+			return flow.Course{step}, nil
 		},
 	}
 }
@@ -158,7 +158,7 @@ func newOTPStepFixture(t *testing.T, multi bool) *otpStepFixture {
 func (f *otpStepFixture) begin(t *testing.T, remember bool) (string, flow.Result) {
 	t.Helper()
 	handle, res, err := f.coord.Begin(
-		t.Context(), "user-1", remember, []flow.Step{f.step},
+		t.Context(), "user-1", remember, flow.Course{f.step},
 	)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)

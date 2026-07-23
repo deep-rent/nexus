@@ -301,7 +301,7 @@ func (s *Server) Action(e *router.Exchange) error {
 // transaction and re-runs the planner, folding in the requesting device's trust
 // (from the trust token) so plan changes take effect mid-login.
 func (s *Server) plan(trustToken string) flow.Plan {
-	return func(ctx context.Context, owner string) ([]flow.Step, error) {
+	return func(ctx context.Context, owner string) (flow.Course, error) {
 		id, err := uuid.Parse(owner)
 		if err != nil {
 			return nil, err

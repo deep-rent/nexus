@@ -16,7 +16,6 @@ package flow
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -156,9 +155,9 @@ func (c *Coordinator) Begin(
 	ctx context.Context,
 	owner string,
 	remember bool,
-	steps []Step,
+	steps Course,
 ) (handle string, res Result, err error) {
-	if err := validatePlan(steps); err != nil {
+	if err := steps.validate(); err != nil {
 		return "", Result{}, err
 	}
 	if len(steps) == 0 {
@@ -224,7 +223,7 @@ func (c *Coordinator) Continue(
 		return Result{}, err
 	}
 
-	active := firstIncomplete(steps, t.Completed)
+	active := steps.pending(t.Completed)
 	if active == nil {
 		// The plan no longer has pending steps (it shrank since the last call);
 		// nothing is left to prove, so the login is complete.
@@ -244,7 +243,8 @@ func (c *Coordinator) Continue(
 	}
 
 	t.Completed = append(t.Completed, active.ID())
-	next := firstIncomplete(steps, t.Completed)
+
+	next := steps.pending(t.Completed)
 	if next == nil {
 		return c.finish(ctx, t)
 	}
@@ -293,7 +293,7 @@ func (c *Coordinator) Act(
 		return Result{}, err
 	}
 
-	active := firstIncomplete(steps, t.Completed)
+	active := steps.pending(t.Completed)
 	if active == nil {
 		return Result{Status: StatusInvalid}, nil
 	}
@@ -314,12 +314,12 @@ func (c *Coordinator) resolve(
 	ctx context.Context,
 	plan Plan,
 	owner string,
-) ([]Step, error) {
+) (Course, error) {
 	steps, err := plan(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	if err := validatePlan(steps); err != nil {
+	if err := steps.validate(); err != nil {
 		return nil, err
 	}
 	return steps, nil
@@ -357,36 +357,4 @@ func (c *Coordinator) deleteBestEffort(ctx context.Context, id, what string) {
 	if _, err := c.store.Delete(ctx, id); err != nil {
 		c.logger.ErrorContext(ctx, "Failed to delete "+what, log.Err(err))
 	}
-}
-
-// firstIncomplete returns the first step whose ID is not yet in completed, or
-// nil when every step is done.
-func firstIncomplete(steps []Step, completed []string) Step {
-	done := make(map[string]struct{}, len(completed))
-	for _, id := range completed {
-		done[id] = struct{}{}
-	}
-	for _, s := range steps {
-		if _, ok := done[s.ID()]; !ok {
-			return s
-		}
-	}
-	return nil
-}
-
-// validatePlan rejects a plan with empty or duplicate step IDs, since both
-// would make completion tracking ambiguous.
-func validatePlan(steps []Step) error {
-	seen := make(map[string]struct{}, len(steps))
-	for _, s := range steps {
-		id := s.ID()
-		if id == "" {
-			return fmt.Errorf("flow: step ID must not be empty")
-		}
-		if _, ok := seen[id]; ok {
-			return fmt.Errorf("flow: duplicate step ID %q", id)
-		}
-		seen[id] = struct{}{}
-	}
-	return nil
 }
