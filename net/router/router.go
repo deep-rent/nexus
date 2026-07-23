@@ -340,7 +340,7 @@ func (e *Exchange) Status(code int) {
 	e.W.WriteHeader(code)
 }
 
-// NoContent sends a HTTP 204 No Content response.
+// NoContent sends an HTTP 204 No Content response.
 func (e *Exchange) NoContent() {
 	e.Status(http.StatusNoContent)
 }

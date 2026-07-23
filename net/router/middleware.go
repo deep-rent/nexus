@@ -66,7 +66,7 @@ func Wrap(h http.Handler) Handler {
 // Adapt converts a standard [middleware.Pipe] into a [Middleware].
 //
 // This bridges low-level HTTP transport middlewares into the router's
-// ecosystem. It ensuring that any modifications made to the request or response
+// ecosystem, ensuring that any modifications made to the request or response
 // writer by the transport middleware are preserved.
 //
 // A nil pipe means "no middleware": Adapt returns nil so that [Chain] skips it,
