@@ -239,14 +239,14 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			s.logger.Warn(
 				ctx,
 				"Failed to drain response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		if err := res.Body.Close(); err != nil {
 			s.logger.Warn(
 				ctx,
 				"Failed to close response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 	}()
@@ -260,7 +260,7 @@ func (s *sender) Send(ctx context.Context, msg *Message) error {
 			s.logger.Warn(
 				ctx,
 				"Failed to parse API error response",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return &apiErr

@@ -18,7 +18,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/sys/log"
@@ -168,14 +167,14 @@ func TestArg_Constructors(t *testing.T) {
 		},
 		{
 			name:    "error",
-			in:      log.Err(err),
+			in:      log.Error(err),
 			wantKey: log.ErrorKey,
 			want:    log.KindError,
 			wantVal: err,
 		},
 		{
 			name:    "nil error",
-			in:      log.Err(nil),
+			in:      log.Error(nil),
 			wantKey: log.ErrorKey,
 			want:    log.KindError,
 			wantVal: nil,
@@ -199,10 +198,10 @@ func TestArg_Constructors(t *testing.T) {
 }
 
 // The key must stay stable, since sinks and log processors match on it.
-func TestErr_Key(t *testing.T) {
+func TestError_Key(t *testing.T) {
 	t.Parallel()
 
-	if got := log.Err(errors.New("x")).Key; got != log.ErrorKey {
+	if got := log.Error(errors.New("x")).Key; got != log.ErrorKey {
 		t.Errorf("got %q; want %q", got, log.ErrorKey)
 	}
 

@@ -152,7 +152,7 @@ func (d *Driver) Lock(ctx context.Context) error {
 		if e := conn.Close(); e != nil {
 			d.logger.Error(ctx,
 				"Failed to close connection after lock failure",
-				log.Err(e),
+				log.Error(e),
 			)
 		}
 		return fmt.Errorf("failed to acquire advisory lock: %w", err)
@@ -226,7 +226,7 @@ func (d *Driver) Applied(ctx context.Context) ([]migrate.Record, error) {
 	}
 	defer func() {
 		if e := rows.Close(); e != nil {
-			d.logger.Error(ctx, "Failed to close rows", log.Err(e))
+			d.logger.Error(ctx, "Failed to close rows", log.Error(e))
 		}
 	}()
 
@@ -269,7 +269,7 @@ func (d *Driver) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 		if e := tx.Rollback(); e != nil && !errors.Is(e, sql.ErrTxDone) {
 			d.logger.Error(ctx,
 				"Failed to rollback transaction",
-				log.Err(e),
+				log.Error(e),
 			)
 		}
 	}()
@@ -352,7 +352,7 @@ func (d *Driver) Execute(
 			); e != nil {
 				d.logger.Error(ctx,
 					"Failed to undo dirty marker after rollback",
-					log.Err(e),
+					log.Error(e),
 				)
 			}
 			return err

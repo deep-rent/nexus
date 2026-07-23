@@ -602,7 +602,7 @@ func (s *Server) introspect(e *router.Exchange) error {
 		s.logger.Debug(
 			e.Context(),
 			"Token verification failed during introspection",
-			log.Err(err),
+			log.Error(err),
 		)
 	} else {
 		res = IntrospectionResponse{
@@ -1044,7 +1044,7 @@ func (s *Server) revoke(e *router.Exchange) error {
 		s.logger.Error(
 			e.Context(),
 			"Failed to delete refresh token during revocation",
-			log.Err(err),
+			log.Error(err),
 		)
 	}
 
@@ -1312,7 +1312,7 @@ func (s *Server) record(e *router.Exchange, oerr *Error) {
 		attrs = append(attrs, log.String(log.ErrorIDKey, oerr.ID))
 	}
 	if oerr.Cause != nil {
-		attrs = append(attrs, log.Err(oerr.Cause))
+		attrs = append(attrs, log.Error(oerr.Cause))
 	}
 
 	s.logger.Log(ctx, level, oerr.Description, attrs...)

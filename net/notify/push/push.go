@@ -241,14 +241,14 @@ func Deliver(
 			logger.Warn(
 				ctx,
 				"Failed to drain response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		if err := res.Body.Close(); err != nil {
 			logger.Warn(
 				ctx,
 				"Failed to close response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 	}()
@@ -265,7 +265,7 @@ func Deliver(
 			logger.Warn(
 				ctx,
 				"Failed to read response body",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 		return &APIError{Status: res.StatusCode, Body: string(body)}

@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/sec/digest"
@@ -325,6 +324,11 @@ func (e Error) Error() string {
 func (e Error) ErrorID() string {
 	return e.ID
 }
+
+var (
+	_ error         = Error{}
+	_ log.Traceable = Error{}
+)
 
 // Proposal represents the raw input of an OAuth 2.0 grant request. It
 // encapsulates the verified identity of the requesting client and the

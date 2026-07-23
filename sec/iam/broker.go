@@ -392,7 +392,7 @@ func (s *Server) completeLogin(
 		)
 		if err != nil {
 			s.logger.Error(e.Context(),
-				"Failed to issue device trust", log.Err(err),
+				"Failed to issue device trust", log.Error(err),
 			)
 		} else {
 			e.SetCookie(s.newTrustCookie(
@@ -454,7 +454,7 @@ func (s *Server) Logout(e *router.Exchange) error {
 			s.logger.Error(
 				e.Context(),
 				"Failed to destroy session",
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 	}
@@ -575,7 +575,7 @@ func (s *Server) externalCallback(e *router.Exchange) error {
 			"Failed to process external exchange",
 			log.String("idp", name),
 			log.String(log.ErrorIDKey, id),
-			log.Err(err),
+			log.Error(err),
 		)
 
 		return &router.Error{

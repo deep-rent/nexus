@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/sys/log"
@@ -88,7 +87,10 @@ func (e *Error) WithContext(ctx any) *Error {
 	return e
 }
 
-var _ error = (*Error)(nil)
+var (
+	_ error         = (*Error)(nil)
+	_ log.Traceable = (*Error)(nil)
+)
 
 // Fail builds an [Error] with the given status, reason and description. Use
 // the chainable [Error.WithCause] and [Error.WithContext] to add detail:
@@ -177,7 +179,7 @@ func defaultErrorHandler(logger *log.Logger) ErrorHandler {
 		if e.W.Closed() {
 			logger.Error(ctx,
 				"Handler returned error after writing response",
-				log.Err(err),
+				log.Error(err),
 				log.String("method", e.Method()),
 				log.String("path", e.Path()),
 			)
@@ -205,7 +207,7 @@ func defaultErrorHandler(logger *log.Logger) ErrorHandler {
 		if werr := e.JSON(res.Status, res); werr != nil {
 			logger.Warn(ctx,
 				"Failed to write error response",
-				log.Err(werr),
+				log.Error(werr),
 			)
 		}
 	}
@@ -243,7 +245,7 @@ func record(
 	// The cause carries the internal detail that the description withholds
 	// from the client.
 	if res.Cause != nil {
-		attrs = append(attrs, log.Err(res.Cause))
+		attrs = append(attrs, log.Error(res.Cause))
 	}
 
 	// A recovered panic is only useful with the stack that produced it.

@@ -132,7 +132,7 @@ func NewErrorHandler(logger *log.Logger) ErrorHandler {
 				"Upstream request failed",
 				log.String("method", method),
 				log.String("uri", uri),
-				log.Err(err),
+				log.Error(err),
 			)
 		}
 

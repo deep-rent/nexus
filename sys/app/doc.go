@@ -92,7 +92,7 @@
 //	    app.WithLogger(logger),
 //	  )
 //	  if err != nil {
-//	    logger.Error(context.Background(), "Application failed", log.Err(err))
+//	    logger.Error(context.Background(), "Application failed", log.Error(err))
 //	    os.Exit(1)
 //	  }
 //	}

@@ -31,24 +31,6 @@ import (
 	"github.com/deep-rent/nexus/sys/log"
 )
 
-// WithPasskeys enables passkey support with the given relying party
-// settings; see [passkey.Config].
-//
-// Once enabled, [Server.Mount] registers the WebAuthn registration and
-// login endpoints, and the token endpoint accepts the
-// [oauth.GrantTypeWebAuthn] grant for clients that exchange a passkey
-// assertion directly for tokens (native apps bypassing browser redirects).
-// Ceremony state and credentials persist through [Stores.Ceremonies] and
-// [Stores.Credentials].
-//
-// Registered credentials are required to be discoverable (resident keys)
-// with user verification, so a passkey login is inherently multi-factor. The
-// dedicated login endpoints stand alone; a passkey can additionally serve as
-// a step-up factor within a [WithFlow] login via [Steps.WebAuthn].
-func WithPasskeys(cfg passkey.Config) Option {
-	return func(s *Server) { s.passkeyCfg = &cfg }
-}
-
 // WebAuthnOptionsResponse is the payload returned by the endpoints that
 // begin a WebAuthn ceremony.
 //
@@ -186,7 +168,7 @@ func (s *Server) webAuthnSubject(e *router.Exchange) (Subject, error) {
 		s.logger.Debug(
 			e.Context(),
 			"Token verification failed during WebAuthn registration",
-			log.Err(err),
+			log.Error(err),
 		)
 		return nil, nil
 	}
@@ -299,7 +281,7 @@ func (s *Server) WebAuthnRegister(e *router.Exchange) error {
 		s.logger.Debug(
 			e.Context(),
 			"WebAuthn attestation rejected",
-			log.Err(out.Reason),
+			log.Error(out.Reason),
 		)
 		return &router.Error{
 			Status:      http.StatusBadRequest,
@@ -377,7 +359,7 @@ func (s *Server) WebAuthnLogin(e *router.Exchange) error {
 		s.logger.Debug(
 			e.Context(),
 			"WebAuthn assertion rejected",
-			log.Err(out.Reason),
+			log.Error(out.Reason),
 		)
 		return &router.Error{
 			Status:      http.StatusUnauthorized,
@@ -489,7 +471,7 @@ func (g *webAuthnGrant) Authorize(
 		pro.Logger.Debug(
 			ctx,
 			"WebAuthn assertion rejected",
-			log.Err(out.Reason),
+			log.Error(out.Reason),
 		)
 		return nil, &oauth.Error{
 			Status:      http.StatusBadRequest,

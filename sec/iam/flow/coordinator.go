@@ -16,6 +16,7 @@ package flow
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/deep-rent/nexus/sec/digest"
@@ -42,6 +43,19 @@ type Transaction struct {
 	// ExpiresAt is the expiry of the whole login as a Unix timestamp in
 	// seconds.
 	ExpiresAt int64 `json:"expires_at"`
+}
+
+// done reports whether the step with the given ID has been completed.
+func (t *Transaction) done(id string) bool {
+	return slices.Contains(t.Completed, id)
+}
+
+// complete records the step as finished. It reallocates Completed rather than
+// appending in place, so the transaction never shares a backing array with the
+// stored record — two concurrent operations on the same handle therefore cannot
+// race on it.
+func (t *Transaction) complete(id string) {
+	t.Completed = append(slices.Clip(t.Completed), id)
 }
 
 // Store persists login transactions keyed by [Transaction.ID]. See
@@ -126,7 +140,16 @@ func (c *Coordinator) Begin(
 	active := steps[0]
 	payload, err := active.Begin(ctx, &t, handle)
 	if err != nil {
-		c.deleteBestEffort(ctx, t.ID, "unstartable transaction")
+		// TODO: Log error?
+
+		if _, err := c.store.Delete(ctx, t.ID); err != nil {
+			c.logger.Error(
+				ctx,
+				"Could not delete unstartable transaction",
+				log.Error(err),
+			)
+		}
+
 		return "", Result{}, err
 	}
 
@@ -163,7 +186,7 @@ func (c *Coordinator) Continue(
 		return Result{}, err
 	}
 
-	active := steps.pending(t)
+	active := steps.pending(&t)
 	if active == nil {
 		// The plan no longer has pending steps (it shrank since the last call);
 		// nothing is left to prove, so the login is complete.
@@ -178,13 +201,20 @@ func (c *Coordinator) Continue(
 	case VerdictReject:
 		return Result{Status: StatusWrongInput}, nil
 	case VerdictFail:
-		c.deleteBestEffort(ctx, id, "failed transaction")
+		if _, err := c.store.Delete(ctx, t.ID); err != nil {
+			c.logger.Error(
+				ctx,
+				"Could not delete failed transaction",
+				log.Error(err),
+			)
+		}
+
 		return Result{Status: StatusInvalid}, nil
 	}
 
-	t.Completed = append(t.Completed, active.ID())
+	t.complete(active.ID())
 
-	next := steps.pending(t)
+	next := steps.pending(&t)
 	if next == nil {
 		return c.finish(ctx, t)
 	}
@@ -196,10 +226,19 @@ func (c *Coordinator) Continue(
 	}
 	payload, err := next.Begin(ctx, &t, handle)
 	if err != nil {
+		// TODO: Log error?
+
 		// The next step could not be activated (e.g. its code would not send).
 		// Abort the whole transaction so the client restarts from a clean slate
 		// rather than being stranded on a step with no prompt.
-		c.deleteBestEffort(ctx, id, "unadvanceable transaction")
+		if _, err := c.store.Delete(ctx, t.ID); err != nil {
+			c.logger.Error(
+				ctx,
+				"Could not delete unadvanceable transaction",
+				log.Error(err),
+			)
+		}
+
 		return Result{}, err
 	}
 
@@ -233,9 +272,12 @@ func (c *Coordinator) Act(
 		return Result{}, err
 	}
 
-	active := steps.pending(t)
+	active := steps.pending(&t)
 	if active == nil {
-		return Result{Status: StatusInvalid}, nil
+		// The plan shrank to nothing pending since the last call, so the login
+		// is already complete — mirror Continue and finish it rather than
+		// rejecting an action on an effectively-done flow.
+		return c.finish(ctx, t)
 	}
 
 	payload, err := active.Act(ctx, &t, handle, a)
@@ -289,12 +331,4 @@ func (c *Coordinator) finish(
 // expired reports whether the transaction has passed its expiry.
 func (c *Coordinator) expired(t Transaction) bool {
 	return t.ExpiresAt != 0 && c.now().Unix() > t.ExpiresAt
-}
-
-// deleteBestEffort removes a transaction, logging but not returning a failure:
-// its expiry is the backstop for a failed deletion.
-func (c *Coordinator) deleteBestEffort(ctx context.Context, id, what string) {
-	if _, err := c.store.Delete(ctx, id); err != nil {
-		c.logger.Error(ctx, "Failed to delete "+what, log.Err(err))
-	}
 }

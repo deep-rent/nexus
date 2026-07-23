@@ -538,7 +538,7 @@ var mapper cache.Mapper[Set] = func(r *cache.Response) (Set, error) {
 		r.Logger.Debug(
 			r.Ctx,
 			"Some keys could not be parsed",
-			log.Err(err),
+			log.Error(err),
 		)
 	}
 	// Don't complain unless there are no keys available at all.

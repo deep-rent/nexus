@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/sec/jose/jwk"
+	"github.com/deep-rent/nexus/std/ascii"
 )
 
 // Type is the media type of a JWT, as defined in RFC 7519.
@@ -417,7 +417,6 @@ type Verifier[T Claims] interface {
 	// according to the verifier's configuration.
 	Verify(in []byte) (T, error)
 }
-
 
 // verifier is the default implementation of the [Verifier] interface.
 type verifier[T Claims] struct {

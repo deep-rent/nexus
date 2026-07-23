@@ -46,7 +46,7 @@
 //	// This request will be retried automatically on temporary failures.
 //	res, err := client.Get("http://example.com/flaky")
 //	if err != nil {
-//	  logger.Error(ctx, "Request failed after all retries", log.Err(err))
+//	  logger.Error(ctx, "Request failed after all retries", log.Error(err))
 //	  return
 //	}
 //	defer res.Body.Close()

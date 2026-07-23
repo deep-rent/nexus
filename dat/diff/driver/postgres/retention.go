@@ -67,12 +67,12 @@ func NewRetention(s *Store, opts ...RetentionOption) *Retention {
 func (r *Retention) Run(ctx context.Context) {
 	logger := r.store.logger
 	if n, err := r.store.PruneMutations(ctx, r.mutations); err != nil {
-		logger.Error(ctx, "Failed to prune mutations", log.Err(err))
+		logger.Error(ctx, "Failed to prune mutations", log.Error(err))
 	} else if n > 0 {
 		logger.Info(ctx, "Pruned aged mutations", log.Int64("count", n))
 	}
 	if n, err := r.store.PruneTombstones(ctx, r.tombstones); err != nil {
-		logger.Error(ctx, "Failed to prune tombstones", log.Err(err))
+		logger.Error(ctx, "Failed to prune tombstones", log.Error(err))
 	} else if n > 0 {
 		logger.Info(ctx, "Pruned aged tombstones", log.Int64("count", n))
 	}
