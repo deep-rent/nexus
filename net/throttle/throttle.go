@@ -23,14 +23,12 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/deep-rent/nexus/sys/metrics"
 	"github.com/deep-rent/nexus/net/router"
+	"github.com/deep-rent/nexus/sys/metrics"
 )
-
 
 // sweepInterval bounds how often idle buckets are evicted.
 const sweepInterval = time.Minute
-
 
 // Names of the counters recorded by a [Throttle], tagged with the instance
 // name from [Config.Name].
@@ -82,7 +80,7 @@ func New(cfg Config) *Throttle {
 
 	switch {
 	case limit <= 0:
-		panic("rate must be positive")
+		panic("limit must be positive")
 	case burst <= 0:
 		panic("burst must be positive")
 	}
