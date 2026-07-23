@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
 	"uuid"
 
 	"github.com/deep-rent/nexus/sys/log"
@@ -88,7 +87,10 @@ func (e *Error) WithContext(ctx any) *Error {
 	return e
 }
 
-var _ error = (*Error)(nil)
+var (
+	_ error         = (*Error)(nil)
+	_ log.Traceable = (*Error)(nil)
+)
 
 // Fail builds an [Error] with the given status, reason and description. Use
 // the chainable [Error.WithCause] and [Error.WithContext] to add detail:
