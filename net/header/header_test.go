@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/net/header"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 type mockRoundTripper struct{ trap *http.Request }
@@ -108,25 +109,21 @@ func TestThrottle(t *testing.T) {
 	tests := []struct {
 		name string
 		h    http.Header
-		now  func() time.Time
 		want time.Duration
 	}{
 		{
 			name: "retry-after seconds",
 			h:    http.Header{"Retry-After": {"60"}},
-			now:  func() time.Time { return now },
 			want: 60 * time.Second,
 		},
 		{
 			name: "retry-after http date future",
 			h:    http.Header{"Retry-After": {future.Format(http.TimeFormat)}},
-			now:  func() time.Time { return now },
 			want: 30 * time.Second,
 		},
 		{
 			name: "retry-after http date past",
 			h:    http.Header{"Retry-After": {past.Format(http.TimeFormat)}},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
@@ -135,7 +132,6 @@ func TestThrottle(t *testing.T) {
 				"X-Ratelimit-Remaining": {"0"},
 				"X-Ratelimit-Reset":     {strconv.FormatInt(future.Unix(), 10)},
 			},
-			now:  func() time.Time { return now },
 			want: 30 * time.Second,
 		},
 		{
@@ -144,7 +140,6 @@ func TestThrottle(t *testing.T) {
 				"X-Ratelimit-Remaining": {"0"},
 				"X-Ratelimit-Reset":     {strconv.FormatInt(past.Unix(), 10)},
 			},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
@@ -153,19 +148,16 @@ func TestThrottle(t *testing.T) {
 				"X-Ratelimit-Remaining": {"10"},
 				"X-Ratelimit-Reset":     {strconv.FormatInt(future.Unix(), 10)},
 			},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
 			name: "no headers",
 			h:    http.Header{},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
 			name: "invalid retry-after",
 			h:    http.Header{"Retry-After": {"invalid"}},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 	}
@@ -174,7 +166,7 @@ func TestThrottle(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := header.Throttle(tt.h, tt.now)
+			got := header.Throttle(tt.h, clock.Frozen(now))
 			diff := got - tt.want
 			if diff < 0 {
 				diff = -diff
@@ -196,37 +188,31 @@ func TestLifetime(t *testing.T) {
 	tests := []struct {
 		name string
 		h    http.Header
-		now  func() time.Time
 		want time.Duration
 	}{
 		{
 			name: "cache-control max-age",
 			h:    http.Header{"Cache-Control": {"max-age=3600"}},
-			now:  func() time.Time { return now },
 			want: 3600 * time.Second,
 		},
 		{
 			name: "cache-control no-cache",
 			h:    http.Header{"Cache-Control": {"no-cache"}},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
 			name: "cache-control no-store",
 			h:    http.Header{"Cache-Control": {"no-store"}},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
 			name: "expires future",
 			h:    http.Header{"Expires": {future.Format(http.TimeFormat)}},
-			now:  func() time.Time { return now },
 			want: 60 * time.Second,
 		},
 		{
 			name: "expires past",
 			h:    http.Header{"Expires": {past.Format(http.TimeFormat)}},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
@@ -235,19 +221,16 @@ func TestLifetime(t *testing.T) {
 				"Cache-Control": {"max-age=1800"},
 				"Expires":       {future.Format(http.TimeFormat)},
 			},
-			now:  func() time.Time { return now },
 			want: 1800 * time.Second,
 		},
 		{
 			name: "no cache headers",
 			h:    http.Header{},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 		{
 			name: "invalid max-age",
 			h:    http.Header{"Cache-Control": {"max-age=invalid"}},
-			now:  func() time.Time { return now },
 			want: 0,
 		},
 	}
@@ -256,7 +239,7 @@ func TestLifetime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := header.Lifetime(tt.h, tt.now)
+			got := header.Lifetime(tt.h, clock.Frozen(now))
 			diff := got - tt.want
 			if diff < 0 {
 				diff = -diff

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/std/ascii"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Directives parses a comma-separated header value into an iterator of
@@ -50,10 +51,10 @@ func Directives(s string) iter.Seq2[string, string] {
 }
 
 // Throttle determines the required delay before the next request based on
-// rate-limiting headers in the response. It accepts a clock function to
-// calculate relative times. If no throttling is indicated, it returns a
-// duration of 0.
-func Throttle(h http.Header, now func() time.Time) time.Duration {
+// rate-limiting headers in the response. It reads the current time from the
+// given clock to calculate relative times. If no throttling is indicated, it
+// returns a duration of 0.
+func Throttle(h http.Header, now clock.Clock) time.Duration {
 	if v := h.Get("Retry-After"); v != "" {
 		if d, err := strconv.ParseInt(v, 10, 64); err == nil && d > 0 {
 			return time.Duration(d) * time.Second

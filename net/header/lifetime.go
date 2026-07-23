@@ -18,12 +18,14 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // Lifetime determines the cache lifetime of a response based on caching
-// headers. It accepts a clock function to calculate relative times. It returns
-// a duration of 0 if the response is not cacheable or does not carry any
-// caching information.
+// headers. It reads the current time from the given clock to calculate
+// relative times. It returns a duration of 0 if the response is not cacheable
+// or does not carry any caching information.
 //
 // Directives are evaluated as a set rather than in the order they appear, so
 // a no-store or no-cache anywhere in Cache-Control suppresses the lifetime
@@ -35,7 +37,7 @@ import (
 // the Age header, is subtracted from a max-age. No such correction applies to
 // Expires, which names an absolute instant and is therefore measured against
 // the clock directly.
-func Lifetime(h http.Header, now func() time.Time) time.Duration {
+func Lifetime(h http.Header, now clock.Clock) time.Duration {
 	// Cache-Control takes precedence over Expires
 	if v := h.Get("Cache-Control"); v != "" {
 		var (

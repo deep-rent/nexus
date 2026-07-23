@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/deep-rent/nexus/net/header"
+	"github.com/deep-rent/nexus/std/clock"
 )
 
 // A directive that forbids caching must win no matter where it appears.
@@ -90,14 +91,13 @@ func TestLifetime_FallsBackToExpires(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
-	clock := func() time.Time { return now }
 
 	h := http.Header{
 		"Cache-Control": []string{"public"},
 		"Expires":       []string{now.Add(time.Hour).Format(http.TimeFormat)},
 	}
 
-	if got, want := header.Lifetime(h, clock), time.Hour; got != want {
+	if got, want := header.Lifetime(h, clock.Frozen(now)), time.Hour; got != want {
 		t.Errorf("got %v; want %v", got, want)
 	}
 }
@@ -176,14 +176,13 @@ func TestLifetime_IgnoresAgeForExpires(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
-	clock := func() time.Time { return now }
 
 	h := http.Header{
 		"Expires": []string{now.Add(time.Hour).Format(http.TimeFormat)},
 		"Age":     []string{"1800"},
 	}
 
-	if got, want := header.Lifetime(h, clock), time.Hour; got != want {
+	if got, want := header.Lifetime(h, clock.Frozen(now)), time.Hour; got != want {
 		t.Errorf("got %v; want %v", got, want)
 	}
 }
