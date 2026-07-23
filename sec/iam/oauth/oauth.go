@@ -64,10 +64,8 @@ type Client interface {
 	// registered secret.
 	//
 	// Implementations must compare in constant time and should persist only
-	// a cryptographic hash of the secret — for example, store its
-	// [github.com/deep-rent/nexus/sec/digest.Hasher] fingerprint and verify with
-	// [github.com/deep-rent/nexus/sec/digest.Hasher.Match] — so that neither timing
-	// nor a leaked client registry reveals usable credentials.
+	// a cryptographic hash of the secret, so that neither timing nor a leaked
+	// client registry reveals usable credentials.
 	VerifySecret(secret string) bool
 	// VerifyRedirectURI checks if the specified URI is an allowed redirect
 	// destination for the client.

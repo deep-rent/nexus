@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -37,7 +38,6 @@ import (
 	"github.com/deep-rent/nexus/sec/jose/jwt"
 	"github.com/deep-rent/nexus/sec/nonce"
 	"github.com/deep-rent/nexus/sec/vault"
-	"github.com/deep-rent/nexus/std/ascii"
 	"github.com/deep-rent/nexus/sys/log"
 )
 
@@ -69,14 +69,21 @@ const (
 	// 256 bits of entropy and a 43-character base64url string.
 	NonceSize = 32
 
-	// UserCodeAlphabet is the character set for user codes, as recommended by
+	// userCodeAlphabet is the character set for user codes, as recommended by
 	// RFC 8628 Section 6.1: uppercase consonants only, avoiding vowels (to
 	// prevent accidental words) and visually ambiguous characters.
-	UserCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
+	userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
 
-	// UserCodeLength is the number of characters sampled for a user code,
-	// rendered as two dash-separated groups (XXXX-XXXX).
-	UserCodeLength = 8
+	// userCodeLength is the number of characters sampled for a user code.
+	// Including the hyphen separator, the user code will be 9 characters long
+	// in total.
+	userCodeLength = 8
+)
+
+// userCodeRegex matches a user code rendered in the canonical XXXX-XXXX format.
+// Matching expects uppercase letters, a hyphen separator and no whitespace.
+var userCodeRegex = regexp.MustCompile(
+	`^[` + userCodeAlphabet + `]{4}-[` + userCodeAlphabet + `]{4}$`,
 )
 
 // Path constants define the endpoints managed by the [Server].
@@ -117,7 +124,7 @@ type DeviceVerificationRequest struct {
 
 // Validate implements the [valid.Validatable] interface.
 func (r *DeviceVerificationRequest) Validate(v *valid.Validator) {
-	v.NotEmpty("user_code", r.UserCode)
+	v.Match("user_code", r.UserCode, userCodeRegex)
 	v.Whitelist(
 		"action",
 		r.Action,
@@ -329,7 +336,7 @@ func NewServer(cfg ServerConfig, opts ...ServerOption) *Server {
 			panic("verification URI is not a valid URL: " + err.Error())
 		}
 		if cfg.Tokens.DeviceCodes == nil {
-			panic("ServerConfig.VerificationURI requires Tokens.DeviceCodes")
+			panic("verification URI requires a device code store")
 		}
 	}
 
@@ -410,8 +417,8 @@ func NewServer(cfg ServerConfig, opts ...ServerOption) *Server {
 	s.nonce = nonce.NewGenerator(s.nonceSource, NonceSize)
 	s.userCodes = nonce.NewSampler(
 		s.nonceSource,
-		UserCodeAlphabet,
-		UserCodeLength,
+		userCodeAlphabet,
+		userCodeLength,
 	)
 
 	s.introspector = jwt.NewVerifier[*auth.Claims](
@@ -1231,7 +1238,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
-	userCode, err := s.newUserCode(e.Context())
+	userCode, err := s.userCodes.Draw(e.Context())
 	if err != nil {
 		return &Error{
 			Status:      http.StatusInternalServerError,
@@ -1241,6 +1248,10 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 		}
 	}
 
+	// Render the user code in the canonical XXXX-XXXX format composed of two
+	// dash-separated groups.
+	userCode = userCode[:4] + "-" + userCode[4:]
+
 	interval := int64(s.devicePollInterval.Seconds())
 
 	// The user code is digested in its canonical form so that the lookup in
@@ -1248,7 +1259,7 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 	// matches, regardless of the generator's output format.
 	if err := s.tokens.DeviceCodes.Create(e.Context(), DeviceCode{
 		DeviceCode: s.digest(deviceCode),
-		UserCode:   s.digest(normalizeUserCode(userCode)),
+		UserCode:   s.digest(userCode),
 		ClientID:   pro.Client.ID(),
 		Scope:      scope,
 		Status:     DeviceCodeStatusPending,
@@ -1297,6 +1308,8 @@ func (s *Server) deviceAuthorization(e *router.Exchange) error {
 // The resource owner is identified via the configured [SessionResolver]. The
 // request payload is a [DeviceVerificationRequest] carrying the user code
 // displayed on the device and the desired action.
+//
+// Note that the user code is not canonicalized, it is matched as-is.
 func (s *Server) DeviceVerify(e *router.Exchange) error {
 	owner, err := s.resolveSession(e)
 	if err != nil {
@@ -1330,7 +1343,7 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 
 	code, found, err := s.tokens.DeviceCodes.GetByUserCode(
 		e.Context(),
-		s.digest(normalizeUserCode(req.UserCode)),
+		s.digest(req.UserCode),
 	)
 	if err != nil {
 		return router.ServerError("failed to retrieve device code",
@@ -1372,29 +1385,6 @@ func (s *Server) DeviceVerify(e *router.Exchange) error {
 	e.NoContent()
 
 	return nil
-}
-
-// newUserCode draws a user code and renders it in the canonical XXXX-XXXX
-// format: two dash-separated groups sampled from [UserCodeAlphabet].
-func (s *Server) newUserCode(ctx context.Context) (string, error) {
-	raw, err := s.userCodes.Draw(ctx)
-	if err != nil {
-		return "", err
-	}
-	return raw[:4] + "-" + raw[4:], nil
-}
-
-// normalizeUserCode canonicalizes a user code: embedded whitespace is
-// stripped, letters are uppercased, and a missing hyphen is re-inserted for
-// the XXXX-XXXX format produced by [Server.newUserCode]. It is applied both
-// when storing the code digest and when looking up user input, so a user who
-// omits the hyphen or varies the case still matches.
-func normalizeUserCode(code string) string {
-	code = ascii.ToUpper(strings.Join(strings.Fields(code), ""))
-	if !strings.Contains(code, "-") && len(code) == 8 {
-		code = code[:4] + "-" + code[4:]
-	}
-	return code
 }
 
 // wrap executes the handler and translates any returned [Error] into an HTTP
