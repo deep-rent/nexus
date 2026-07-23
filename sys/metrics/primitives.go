@@ -20,33 +20,9 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
+
+	xatomic "github.com/deep-rent/nexus/std/atomic"
 )
-
-// atomicFloat is a float64 manipulated through atomic bit operations.
-type atomicFloat struct {
-	bits atomic.Uint64
-}
-
-// Load returns the current value.
-func (f *atomicFloat) Load() float64 {
-	return math.Float64frombits(f.bits.Load())
-}
-
-// Store replaces the current value.
-func (f *atomicFloat) Store(v float64) {
-	f.bits.Store(math.Float64bits(v))
-}
-
-// Add adds delta to the current value using a CAS loop.
-func (f *atomicFloat) Add(delta float64) {
-	for {
-		old := f.bits.Load()
-		next := math.Float64bits(math.Float64frombits(old) + delta)
-		if f.bits.CompareAndSwap(old, next) {
-			return
-		}
-	}
-}
 
 // Counter is a monotonically increasing count. The zero value is ready for
 // use, but counters should be obtained from a [Registry] so they appear in
@@ -80,7 +56,7 @@ func (c *Counter) sample(s *Sample) {
 // size. The zero value is ready for use, but gauges should be obtained from
 // a [Registry] so they appear in snapshots.
 type Gauge struct {
-	value atomicFloat
+	value xatomic.Float64
 }
 
 // Set replaces the current value.
@@ -128,7 +104,7 @@ type Histogram struct {
 	bounds []float64 // sorted upper bounds
 	counts []atomic.Uint64
 	count  atomic.Uint64
-	sum    atomicFloat
+	sum    xatomic.Float64
 }
 
 // newHistogram builds a histogram with the given sorted upper bounds,
@@ -196,9 +172,9 @@ type Meter struct {
 	started   time.Time     // creation time, for the mean rate
 
 	tick atomic.Int64 // unix nanos of the last rate advance
-	r01  atomicFloat
-	r05  atomicFloat
-	r15  atomicFloat
+	r01  xatomic.Float64
+	r05  xatomic.Float64
+	r15  xatomic.Float64
 	warm atomic.Bool // whether the rates have been seeded
 
 	now func() time.Time // clock, replaced in tests
